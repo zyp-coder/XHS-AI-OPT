@@ -1726,7 +1726,7 @@ async function handleClassifyCustomers(data) {
   return { ok: true, applied, dormantDays: blockedDay, prompts: { system: systemPrompt, user: userPrompt } };
 }
 
-/* ─── 获客清单：批量收集"赞了我们内容/评论"的人（点赞户，全部直接入库，记录点赞的评论） ─── */
+/* ─── 获客清单：批量收集通知页互动人群（点赞/收藏/回复/关注），按信号类型打标入库 ─── */
 async function handleCollectLikers(data) {
   const items = (data && data.items) || [];
   if (!items.length) return { ok: true, added: 0, already: 0, total: 0 };
@@ -1734,15 +1734,19 @@ async function handleCollectLikers(data) {
   let added = 0, already = 0;
   for (const it of items) {
     if (!it.userId && !it.userName) continue;
+    // ★ 信号类型：点赞/收藏 → 线索；回复我们的评论 → 积极互动→商机；关注 → 线索
+    const type = it.signalType || '点赞';
+    const isReply = type === '回复';
+    const stageEntry = isReply ? '回复' : (type === '关注' ? '关注' : '点赞');
     const r = await Storage.addProspect({
       userId: it.userId || '',
       nickname: it.userName || '未知用户',
-      source: { noteTitle: it.likedNote || '', noteUrl: it.userLink || '', comment: it.likedComment || '', userUrl: it.userLink || '' },
+      source: { noteTitle: it.likedNote || '', noteUrl: it.userLink || '', comment: it.likedComment || '', userUrl: it.userLink || '', stageEntry, signalType: type, signalText: it.likedComment || '' },
       dmStatus: 'pending',
-      isLiker: true, // ★ 标记为"点赞户"，与常规客户区分
+      isLiker: !isReply,            // 回复算积极互动（非"点赞户"）；其余互动仍标线索户
       likedComment: it.likedComment || '',
-      origin: '点赞',
-      keywordHit: '__liker__',
+      origin: '互动',
+      keywordHit: '__' + type + '__',
     });
     if (r.added) added++; else already++;
   }
@@ -2034,11 +2038,14 @@ async function handleSendDm(data) {
   const p = personData.find(x => x.id === person.id);
   if (p) {
     const newCount = (p.dmCount || 0) + 1;
-    await Storage.updateProspect(person.id, {
+    const updates = {
       dmStatus: 'sent',
       dmCount: newCount,
       lastDmAt: Date.now(),
-    });
+    };
+    // ★ 对线索池做了动作（发出私信）→ 即视为接触 → 自动升为商机
+    if ((p.stage || 'lead') === 'lead') updates.stage = 'prospect';
+    await Storage.updateProspect(person.id, updates);
   }
   await Storage.addDmRecord({
     personId: person.id,

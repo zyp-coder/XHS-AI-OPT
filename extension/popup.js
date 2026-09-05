@@ -2177,7 +2177,7 @@ const PL_PAGE_SIZE = 50;
 let _plFilter = { keyword: '', tag: '', intent: '' };
 let _plPage = 0;
 let _plData = { list: [], allTags: [], fullList: [] };
-let _plStage = 'all'; // 子视图：all(全部) / prospect(商机池) / lead(线索池) / customer(客户池)
+let _plStage = 'all'; // 子视图：all(全部) / prospect(商机池) / lead(线索池)
 
 // 意向色点
 function _plDot(intent) {
@@ -2186,17 +2186,15 @@ function _plDot(intent) {
 }
 function _intentLabel(v) { return v === 'high' ? '高' : v === 'medium' ? '中' : v === 'low' ? '低' : ''; }
 
-// ── v2 字段访问器（统一从 storage 的 v2 结构读取，旧字段在读写处已迁移）──
+// ── v2 字段访问器（二级管线：lead / prospect）──
 const _plGetStage = p => (p && p.stage) || 'lead';
 const _plFunnel = p => (p && p.funnel) || { step: 'pending', dmCount: 0, lastDmAt: null };
-const _plAccount = p => (p && p.account) || { status: 'maintain', value: null, closedAt: null };
 const _plEntry = p => ((p && p.source && p.source.stageEntry) || '');
 
 // 层内子状态定义
 const PL_STAGE_META = {
   lead: { t: '🎇 线索', c: '#0f766e', bg: '#ecfdf5' },
   prospect: { t: '🎯 商机', c: '#7c3aed', bg: '#f5f3ff' },
-  customer: { t: '💰 客户', c: '#92400e', bg: '#fef3c7' },
 };
 const PL_FUNNEL = {
   pending: { t: '待触达', c: '#2563eb', bg: '#eff6ff' },
@@ -2205,14 +2203,10 @@ const PL_FUNNEL = {
   talking: { t: '谈单中', c: '#7c3aed', bg: '#f5f3ff' },
   closed: { t: '已成交', c: '#92400e', bg: '#fef3c7' },
 };
-const PL_ACCOUNT = {
-  maintain: { t: '维护中', c: '#059669', bg: '#ecfdf5' },
-  after_sale: { t: '售后', c: '#f59e0b', bg: '#fffbeb' },
-  repurchase: { t: '复购意向', c: '#7c3aed', bg: '#f5f3ff' },
-  dormant: { t: '沉睡', c: '#6b7280', bg: '#f3f4f6' },
-};
 const PL_ENTRY_BADGE = {
   '点赞': { t: '💗点赞', c: '#0e7490', bg: '#ecfeff' },
+  '关注': { t: '👣关注', c: '#475569', bg: '#f1f5f9' },
+  '回复': { t: '💬回复', c: '#059669', bg: '#ecfdf5' },
   '评论': { t: '💬评论', c: '#4f46e5', bg: '#eef2ff' },
   '关键词命中': { t: '🔑关键词', c: '#b45309', bg: '#fffbeb' },
   'AI路由': { t: '🧠AI', c: '#7c3aed', bg: '#f5f3ff' },
@@ -2220,11 +2214,10 @@ const PL_ENTRY_BADGE = {
   '手动': { t: '✋手动', c: '#475569', bg: '#f1f5f9' },
 };
 
-// 层徽章：商机池显示跟进阶段，客户池显示客户状态，线索池显示层级
+// 层徽章：商机池显示跟进阶段，线索池显示层级
 function _plStageBadge(p) {
-  const s = _plStage(p);
+  const s = _plGetStage(p);
   if (s === 'prospect') { const m = PL_FUNNEL[_plFunnel(p).step] || PL_FUNNEL.pending; return `<span class="pl-badge" style="background:${m.bg};color:${m.c};">${m.t}</span>`; }
-  if (s === 'customer') { const m = PL_ACCOUNT[_plAccount(p).status] || PL_ACCOUNT.maintain; return `<span class="pl-badge" style="background:${m.bg};color:${m.c};">${m.t}</span>`; }
   const m = PL_STAGE_META.lead; return `<span class="pl-badge" style="background:${m.bg};color:${m.c};">${m.t}</span>`;
 }
 // 来源徽章
@@ -2233,18 +2226,17 @@ function _plEntryBadge(p) {
   if (!m) return '';
   return `<span class="pl-origin" style="background:${m.bg};color:${m.c};">${m.t}</span>`;
 }
-// 层内"下一步"建议（体现"他在哪层 → 下一步该做啥 → 做完往哪走"）
+// 层内"下一步"建议（体现"接触过没 → 下一步该做啥"）
 function _plNextHint(p) {
-  const s = _plStage(p);
-  if (s === 'lead') return '🎇 线索 · 再互动一次即可升格商机，先观察不硬推';
-  if (s === 'customer') { const a = _plAccount(p).status; return a === 'dormant' ? '🥱 沉睡 · 先评论互动破冰，再到复购' : `💰 客户 · ${(PL_ACCOUNT[a] || PL_ACCOUNT.maintain).t}，按 SOP 维护`; }
+  const s = _plGetStage(p);
+  if (s === 'lead') return '🎇 线索 · 未接触：发个私信或手动升格，接触过就算商机';
   const st = _plFunnel(p).step;
   const hint = {
     pending: '➡️ 下一步：✉️ 私信触达',
     touched: '➡️ 下一步：等回复 / 真人跟进',
     replied: '➡️ 下一步：谈单推进',
     talking: '➡️ 下一步：促成成交',
-    closed: '💰 已成交 → 移入客户池维护',
+    closed: '💰 已成交（此处仅标注，成交一般走线下/微信）',
   };
   return hint[st] || hint.pending;
 }
@@ -2326,7 +2318,7 @@ function renderProspectList(container) {
   if (_plStage === 'all') {
     list = allList.slice();
   } else {
-    list = allList.filter(p => _plStage(p) === _plStage); // v2：按层过滤
+    list = allList.filter(p => _plGetStage(p) === _plStage); // v2：按层过滤
   }
   const total = list.length;
   const fullList = _plData.fullList || allList;
@@ -2334,7 +2326,7 @@ function renderProspectList(container) {
   // ── v2 层级导航：全部 / 商机池 / 线索池 / 客户池 ──
   const subNav = document.createElement('div');
   subNav.className = 'pl-subnav';
-  const STAGES = [['all', '🗂 全部'], ['prospect', '🎯 商机池'], ['lead', '🎇 线索池'], ['customer', '💰 客户池']];
+  const STAGES = [['all', '🗂 全部'], ['prospect', '🎯 商机池'], ['lead', '🎇 线索池']];
   STAGES.forEach(([v, label]) => {
     const b = document.createElement('button');
     b.textContent = label;
@@ -2350,9 +2342,9 @@ function renderProspectList(container) {
   const plN = (pred) => fullList.filter(pred).length;
   const cards = [
     { label: '总人数', num: fullList.length },
-    { label: '待触达', num: plN(p => _plStage(p) === 'prospect' && _plFunnel(p).step === 'pending') },
-    { label: '客户池', num: plN(p => _plStage(p) === 'customer') },
-    { label: '沉睡唤醒', num: plN(p => _plStage(p) === 'customer' && _plAccount(p).status === 'dormant') },
+    { label: '商机池', num: plN(p => _plGetStage(p) === 'prospect') },
+    { label: '线索池', num: plN(p => _plGetStage(p) === 'lead') },
+    { label: '待触达', num: plN(p => _plGetStage(p) === 'prospect' && _plFunnel(p).step === 'pending') },
   ];
   cards.forEach(c => {
     const d = document.createElement('div');
@@ -2374,17 +2366,12 @@ function renderProspectList(container) {
     bBtn.addEventListener('click', () => runProfileOne(unpro, container));
     batch.appendChild(bBtn);
     const tip = document.createElement('span');
-    tip.textContent = '⋯ 商机池重点经营：画像 → 私信 → 谈单 → 成交';
+    tip.textContent = '⋯ 商机池＝已接触：画像 → 私信 → 谈单 → 成交';
     tip.style.cssText = 'font-size:11px;color:#0f766e;';
     batch.appendChild(tip);
   } else if (_plStage === 'lead') {
     const tip = document.createElement('span');
-    tip.textContent = '💡 线索池：有互动信号即可，不主动硬推。命中二次信号或手动升格 → 商机池';
-    tip.style.cssText = 'font-size:11px;color:#0f766e;';
-    batch.appendChild(tip);
-  } else if (_plStage === 'customer') {
-    const tip = document.createElement('span');
-    tip.textContent = '💡 客户池：按 SOP 做维护（售后/复购/唤醒沉睡）';
+    tip.textContent = '💡 线索池＝未接触：发个私信 / 手动升格，接触过即自动进商机池';
     tip.style.cssText = 'font-size:11px;color:#0f766e;';
     batch.appendChild(tip);
   }
@@ -2445,7 +2432,7 @@ function renderProspectList(container) {
   pageList.forEach(p => {
     const card = document.createElement('div');
     card.className = 'pl-card';
-    const s = _plStage(p);
+    const s = _plGetStage(p);
     const pf = p.profile || {};
     const tagsHtml = (Array.isArray(pf.tags) && pf.tags.length ? pf.tags.map(esc).join(' · ') : '');
     const idHtml = p.userId ? `ID:${esc(p.userId)}` : '';
@@ -2472,21 +2459,19 @@ function renderProspectList(container) {
     let statusSel = '';
     if (s === 'prospect') {
       statusSel = `<select class="pl-status" data-plid="${p.id}" data-kind="funnel" title="跟进阶段（你维护）">${Object.entries(PL_FUNNEL).map(([k, v]) => `<option value="${k}" ${_plFunnel(p).step === k ? 'selected' : ''}>${v.t}</option>`).join('')}</select>`;
-    } else if (s === 'customer') {
-      statusSel = `<select class="pl-status" data-plid="${p.id}" data-kind="account" title="客户状态（你维护）">${Object.entries(PL_ACCOUNT).map(([k, v]) => `<option value="${k}" ${(_plAccount(p).status === k || (!_plAccount(p).status && k === 'maintain')) ? 'selected' : ''}>${v.t}</option>`).join('')}</select>`;
     }
 
-    // 层内动作（按出ロ绑定，不做跨层多余动作）
+    // 层内动作（按出ロ绑定）：商机=画像/私信/成交；线索=私信(接触即转商机)/手动升格
     let actions = '';
     if (s === 'prospect') {
       actions =
         (pf.intentLevel ? '' : `<button class="act" data-plid="${p.id}" data-action="profile">⚡ 画像</button>`) +
         `<button class="act send" data-plid="${p.id}" data-action="dm">✉️ 私信</button>` +
-        `<button class="act sell" data-plid="${p.id}" data-action="close">✔️ 成交</button>`;
-    } else if (s === 'lead') {
-      actions = `<button class="act sell" data-plid="${p.id}" data-action="promote">⚡ 升格商机</button>`;
-    } else if (s === 'customer') {
-      actions = `<button class="act" data-plid="${p.id}" data-action="reactivate">🌱 唤醒</button>`;
+        `<button class="act sell" data-plid="${p.id}" data-action="close" title="成交（此处仅标注，成交一般走线下/微信）">✔️ 成交</button>`;
+    } else {
+      actions =
+        `<button class="act send" data-plid="${p.id}" data-action="dm" title="发私信即视为接触→自动进商机池">✉️ 私信</button>` +
+        `<button class="act sell" data-plid="${p.id}" data-action="promote" title="主动升格为商机（已接触）">⚡ 升格商机</button>`;
     }
 
     card.innerHTML = `
@@ -2552,19 +2537,13 @@ function renderProspectList(container) {
     sel.addEventListener('change', async () => {
       const id = sel.dataset.plid;
       const v = sel.value || '';
-      const kind = sel.dataset.kind || 'funnel'; // funnel / account
+      const kind = sel.dataset.kind || 'funnel'; // funnel
       const person = list.find(p => p.id === id);
       if (!person) return;
       try {
-        let updates;
-        if (kind === 'account') {
-          updates = { account: Object.assign({}, _plAccount(person), { status: v }) };
-        } else {
-          updates = { funnel: Object.assign({}, _plFunnel(person), { step: v }) };
-          if (v === 'closed') updates.stage = 'customer'; // 成交 → 移入客户池
-        }
+        const updates = { funnel: Object.assign({}, _plFunnel(person), { step: v }) };
         await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates } });
-        addLog(`✅ ${person.nickname} → ${v === 'closed' ? '已成交（移入客户池）' : (kind === 'account' ? ('客户状态 ' + (PL_ACCOUNT[v] ? PL_ACCOUNT[v].t : v)) : ('跟进阶段 ' + (PL_FUNNEL[v] ? PL_FUNNEL[v].t : v)))}`, 'success');
+        addLog(`✅ ${person.nickname} → 跟进阶段 ${(PL_FUNNEL[v] ? PL_FUNNEL[v].t : v)}`, 'success');
         loadProspectList(container);
       } catch (e) {
         addLog(`❌ 更新状态失败：${e.message}`, 'error');
@@ -2599,20 +2578,15 @@ function renderProspectList(container) {
       else if (action === 'profile') { runProfileOne([person], container); return; }
       else if (action === 'dm') { openDmModal(person); return; }
       else if (action === 'close') {
-        if (!window.confirm(`确认将 ${person.nickname} 标记为成交并移入客户池？`)) return;
-        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { stage: 'customer', funnel: Object.assign({}, _plFunnel(person), { step: 'closed' }), account: { status: 'maintain', value: _plAccount(person).value, closedAt: Date.now() } } } });
-        addLog(`💰 ${person.nickname} 已成交，移入客户池`, 'success');
+        // 成交仅在商机上做标注（不单独建客户层）
+        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { funnel: Object.assign({}, _plFunnel(person), { step: 'closed' }) } } });
+        addLog(`💰 ${person.nickname} 已成交标注（成交一般走线下/微信）`, 'success');
         loadProspectList(container); return;
       }
       else if (action === 'promote') {
-        if (!window.confirm(`确认将线索 ${person.nickname} 升格到商机池？`)) return;
+        if (!window.confirm(`确认将线索 ${person.nickname} 升格为商机（已接触）？`)) return;
         await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { stage: 'prospect', funnel: { step: 'pending', dmCount: 0, lastDmAt: null } } } });
-        addLog(`➡️ ${person.nickname} 已升格到商机池`, 'success');
-        loadProspectList(container); return;
-      }
-      else if (action === 'reactivate') {
-        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { account: Object.assign({}, _plAccount(person), { status: 'repurchase' }) } } });
-        addLog(`🌱 ${person.nickname} 标记为复购意向`, 'success');
+        addLog(`➡️ ${person.nickname} 已升格为商机`, 'success');
         loadProspectList(container); return;
       }
     });
@@ -4883,9 +4857,11 @@ async function loadProspecting(container, skipScreen) {
             noteUrl: pageData.url || '',
             comment: original || '',
             userUrl: userLink || '',
+            stageEntry: 'AI路由',   // ★ 搜索评论的商机卡片 → 主动联系 → 直接进商机池
           },
           keywordHit: null,
           origin: '手动',
+          stage: 'prospect',       // ★ 主动联系的商机：直接从商机池开始，不从线索转
         };
         btn.disabled = true;
         try {

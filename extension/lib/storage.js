@@ -462,13 +462,14 @@ function _originWin(cur, neu) {
   return n > c ? neu : cur;
 }
 
-/* ─── 获客清单：v1 → v2 䞩时迁移（惰性 + 幂等） ───
- * v1 用三套状态（dmStatus / customerStatus / intentLevel）+ origin / isLiker / keywordHit='__liker__'
- * 混在同一张平铺表。v2 统一为一条 stage（lead/prospect/customer）+ 层内子状态（lead/funnel/account）。
- * 迁移只在读到旧字段时才发生并一次性落库；已是 v2 的记录原样返回（幂等，不重复执行）。
+/* ─── 获客清单：v1 → v2 迁移（惰性 + 幂等） ───
+ * v1 用三套状态（dmStatus / customerStatus / intentLevel）+ origin / isLiker / keywordHit='__liker__'。
+ * v2 收敛为「二级管线」：stage = lead（线索，未接触）/ prospect（商机，已接触）。
+ *  - lead.prospect 只是"接触过没"：对线索池做了动作（私信/接触）即自动升为商机；
+ *  - 客户不单独分层（成交不依赖私信控制），成交只在 prospect.funnel.step='closed' 作标注。
+ * 迁移只在读到旧字段时才发生并一次性落库；已是 v2 的记录只做容器归一化（幂等）。
  */
 const _STEP_FROM_DM = { pending: 'pending', invalid: 'pending', sent: 'touched', touched: 'touched', replied: 'replied', talking: 'talking', converted: 'closed', closed: 'closed' };
-const _ACCOUNT_FROM_CS = { intent: 'maintain', sales: 'maintain', after_sale: 'after_sale', dormant: 'dormant', maintain: 'maintain', repurchase: 'repurchase' };
 const _ORIGIN_TO_ENTRY = { '评论跟进': '评论跟进', '评论': '评论', '手动': '手动', '点赞': '点赞', 'AI筛选': 'AI路由' };
 
 function _isLikerRec(p) {
@@ -480,14 +481,14 @@ function _originToEntry(origin) {
   return _ORIGIN_TO_ENTRY[origin] || '';
 }
 
-// 无显式 stage 时，依据入口口径 + 旧状态推断所在层
+// 无显式 stage 时，依据入口口径 + 旧状态推断所在层（二级：lead / prospect）
 function _inferStage(person) {
   const entry = person.stageEntry || (person.source && person.source.stageEntry) || _originToEntry(person.origin);
-  if (entry === 'AI路由' || entry === '评论跟进') return 'prospect';
-  if (entry === '点赞') return 'lead';
-  if (person.dmStatus === 'converted') return 'customer';
-  if (String(person.customerStatus || '') && ['intent', 'sales', 'after_sale', 'dormant'].includes(person.customerStatus)) return 'customer';
-  return 'lead'; // 默认待养：无需求证据的评论一律先进线索池
+  // 主动/对话/被主动联系 → 商机池；被动信号 → 线索池待接触
+  if (entry === 'AI路由' || entry === '评论跟进' || entry === '回复' || entry === '手动') return 'prospect';
+  if (person.dmStatus === 'converted') return 'prospect';
+  if (String(person.customerStatus || '') && ['intent', 'sales', 'after_sale', 'dormant'].includes(person.customerStatus)) return 'prospect';
+  return 'lead'; // 默认待接触：点赞/关注/关键词/普通评论先进线索池
 }
 
 /**
@@ -507,24 +508,27 @@ function _migrateOldProspect(p) {
     if (isLiker) {
       m.stage = 'lead';
     } else if (cs && (cs === 'intent' || cs === 'sales' || cs === 'after_sale' || cs === 'dormant')) {
-      m.stage = 'customer';
-      m.account = { status: _ACCOUNT_FROM_CS[cs] || 'maintain', value: p.accountValue ?? null, closedAt: p.closedAt ?? (dm === 'converted' ? (p.updatedAt || null) : null) };
+      // 旧客户层已废弃：曾是客户 → 收敛到商机(已接触)，funnel.closed 保留"成交/售后"痕迹
+      m.stage = 'prospect';
+      m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null };
+      delete m.account; delete m.accountValue;
     } else if (dm === 'converted') {
-      m.stage = 'customer';
-      m.account = { status: 'maintain', value: p.accountValue ?? null, closedAt: p.updatedAt || null };
+      m.stage = 'prospect';
+      m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null };
     } else if (dm && Object.prototype.hasOwnProperty.call(_STEP_FROM_DM, dm)) {
       m.stage = 'prospect';
       m.funnel = { step: _STEP_FROM_DM[dm] || 'pending', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null };
     } else {
-      m.stage = 'lead';
+      m.stage = _inferStage(p); // 尊重入口口径：回复/主动联系 → prospect，否则 lead
     }
     changed = true;
   }
 
-  // ── ② 层内容器归一化（v1/v2 都执行，保证 stage 变动后结构完整）──
+  // ── ② 层内容器归一化（v1/v2 都执行）+ 确保无残留旧 customer/account ──
   if (m.stage === 'prospect' && !m.funnel) { m.funnel = { step: 'pending', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; changed = true; }
-  else if (m.stage === 'customer' && !m.account) { m.account = { status: 'maintain', value: null, closedAt: null }; changed = true; }
   if (m.stage === 'lead' && !m.lead) { m.lead = { signalCount: 0, signals: [], lastSignalAt: null }; changed = true; }
+  if (m.account) { delete m.account; changed = true; }
+  if (m.stage === 'customer') { m.stage = 'prospect'; if (!m.funnel) m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; changed = true; }
 
   // ── ③ affinity：意向仅作排序权重 ──
   if (!m.affinity) { m.affinity = { intentLevel: p.intentLevel || (p.profile && p.profile.intentLevel) || 'medium' }; changed = true; }
@@ -559,10 +563,9 @@ function _coerceUpdateStages(updates) {
   }
   if ('dmCount' in out) { if (out.funnel && typeof out.funnel === 'object') out.funnel.dmCount = out.dmCount; delete out.dmCount; }
   if ('lastDmAt' in out) { if (out.funnel && typeof out.funnel === 'object') out.funnel.lastDmAt = out.lastDmAt; delete out.lastDmAt; }
-  if ('customerStatus' in out) {
-    out.account = Object.assign({}, out.account && typeof out.account === 'object' ? out.account : {}, { status: _ACCOUNT_FROM_CS[out.customerStatus] || 'maintain' });
-    delete out.customerStatus;
-  }
+  if ('customerStatus' in out) { delete out.customerStatus; } // 客户层已废弃，忽略旧写入
+  // 层升级标准化：调用方把 target 传成 customer → 收敛为 prospect（funnel.closed 标注）
+  if (out.stage === 'customer') { out.stage = 'prospect'; out.funnel = Object.assign({ step: 'closed', dmCount: 0, lastDmAt: null }, out.funnel && typeof out.funnel === 'object' ? out.funnel : {}); delete out.account; }
   if (out.isLiker) {
     out.lead = Object.assign({ signalCount: 1, signals: ['liked'], lastSignalAt: Date.now() }, out.lead && typeof out.lead === 'object' ? out.lead : {});
   }
@@ -604,19 +607,19 @@ const entry = {
     source: { ...(person.source || {}), stageEntry: person.stageEntry || (person.source && person.source.stageEntry) || _originToEntry(person.origin) || '评论' },
     keywordHit: person.keywordHit || null,
     profile: person.profile || null,
-    // ★ v2：一条 stage + 层内子状态（替换旧 dmStatus/customerStatus 并存）
+    // ★ v2：一条 stage（lead/prospect）+ 层内子状态
     stage: person.stage || _inferStage(person),
     lead: { signalCount: 0, signals: [], lastSignalAt: null },
     funnel: null,
-    account: null,
     affinity: { intentLevel: (person.profile && person.profile.intentLevel) || person.intentLevel || 'medium' },
     chatHistory: Array.isArray(person.chatHistory) ? person.chatHistory : null, // 评论跟进的历史对话（记录我们跟对方说过啥）
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+  // 客户层已废弃：调用方仍传 customer → 收敛到商机
+  if (entry.stage === 'customer') entry.stage = 'prospect';
   // 补齐层内容器
   if (entry.stage === 'prospect') entry.funnel = { step: _STEP_FROM_DM[person.dmStatus] || 'pending', dmCount: person.dmCount || 0, lastDmAt: person.lastDmAt || null };
-  else if (entry.stage === 'customer') entry.account = { status: _ACCOUNT_FROM_CS[person.customerStatus] || 'maintain', value: null, closedAt: null };
   else entry.lead = { signalCount: person.isLiker ? 1 : 0, signals: person.isLiker ? ['liked'] : [], lastSignalAt: person.isLiker ? Date.now() : null };
   list.unshift(entry);
   await set(KEYS.PROSPECT_LIST, list);

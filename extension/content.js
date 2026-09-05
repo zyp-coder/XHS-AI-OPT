@@ -2535,8 +2535,14 @@
       const userId = _extractNotificationUserId(container);
       if (!userId || seen.has(userId)) continue;
       const txt = (container.textContent || '');
-      // 只收"赞/收藏了我们的..."（点赞/收藏我们的内容或评论）
-      if (!/(赞了你的|收藏了你的|赞了你的评论|赞了你的笔记|收藏了你的笔记)/.test(txt)) continue;
+      // ★ 商机信号分类（获客清单收录）：点赞/收藏我们的内容或评论 → 点赞；回复我们的评论 → 回复；关注我们 → 关注
+      let signalType = '';
+      if (/(关注了你|关注了你的)/.test(txt)) signalType = '关注';
+      else if (/(回复了你的|回复你的评论|评论了你的|评论你的)/.test(txt)) signalType = '回复';
+      else if (/(赞了你的|收藏了你的|赞了你的评论|赞了你的笔记|收藏了你的笔记|赞了你的分享|收藏了你的分享|赞了你的)|(赞了|收藏了)/.test(txt)) signalType = '点赞';
+      // 兜底：确实有"你的"且有互动词，但难归类 → 归点赞
+      if (!signalType && /(你的)/.test(txt)) signalType = '点赞';
+      if (!signalType) continue;
       seen.add(userId);
       // 昵称
       const ul = container.querySelector('a[href*="/user/profile/"]');
@@ -2546,12 +2552,12 @@
         const ne = container.querySelector('.user-info .name, .user-info .nickname, .interaction-user, .user-name, .nickname, .name');
         userName = ne ? ne.textContent.trim() : '';
       }
-      // 点赞的是我们哪条评论/笔记（quote-info 若是评论，则是我们写的那条；另抓交互内容/笔记标题作补充）
+      // 互动对象内容（点赞→我们写的评论/笔记原文；回复→对方回复的话）
       const quote = container.querySelector('.quote-info');
       const likedComment = quote ? quote.textContent.trim() : '';
       const other = container.querySelector('.interaction-content');
       const likedNote = container.querySelector('.note-title, .content, [class*="title"]');
-      likers.push({ userId, userName, userLink, likedComment, likedNote: (likedNote ? likedNote.textContent.trim() : (other ? other.textContent.trim() : '')).slice(0, 60), time: '' });
+      likers.push({ userId, userName, userLink, signalType, likedComment, likedNote: (likedNote ? likedNote.textContent.trim() : (other ? other.textContent.trim() : '')).slice(0, 60), time: '' });
     }
     _hideStatus();
     return { success: true, items: likers, count: likers.length, url: window.location.href };
