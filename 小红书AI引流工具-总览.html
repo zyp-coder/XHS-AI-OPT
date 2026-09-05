@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI雕兄 — 三支柱架构</title>
+<style>
+  :root{
+    --bg:#f5f6fa; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --zhuan:#e11d48; --zhu:#7c3aed; --qin:#f59e0b;
+    --line:#e5e7eb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);padding:32px 20px;line-height:1.6}
+  .wrap{max-width:1100px;margin:0 auto}
+  h1{font-size:26px;text-align:center;margin-bottom:4px}
+  .sub{text-align:center;color:var(--sub);font-size:14px;margin-bottom:28px}
+  .tagline{text-align:center;font-size:15px;font-weight:700;margin-bottom:32px}
+  .tagline b{color:var(--zhu)}
+  /* pillars */
+  .pillars{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:40px}
+  @media(max-width:820px){.pillars{grid-template-columns:1fr}}
+  .pillar{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 6px 24px rgba(0,0,0,.05)}
+  .pillar .tag{display:inline-block;font-size:12px;font-weight:700;color:#fff;padding:2px 10px;border-radius:999px;margin-bottom:8px}
+  .c-zhuan .tag{background:var(--zhuan)} .c-zhu .tag{background:var(--zhu)} .c-qin .tag{background:var(--qin)}
+  .pillar h2{font-size:18px;margin-bottom:4px}
+  .pillar .solve{color:var(--sub);font-size:13px;margin-bottom:12px;border-bottom:1px dashed var(--line);padding-bottom:10px}
+  .pillar ul{padding-left:18px}
+  .pillar li{font-size:13.5px;margin:6px 0}
+  .pillar li b{font-weight:700}
+  .hl{color:var(--sub);font-weight:700}
+  /* design logic table */
+  h3{font-size:19px;margin:34px 0 14px;border-left:4px solid var(--zhu);padding-left:10px}
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.05)}
+  th,td{border:1px solid var(--line);padding:12px 14px;font-size:13.5px;text-align:left;vertical-align:top}
+  th{background:#f9fafb;font-weight:700;white-space:nowrap}
+  /* knowledge base */
+  .kb{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:820px){.kb{grid-template-columns:1fr}}
+  .entry{background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 4px 16px rgba(0,0,0,.04);border-left:4px solid #cbd5e1}
+  .entry.one{border-left-color:var(--zhu)} .entry.two{border-left-color:var(--qin)} .entry.three{border-left-color:var(--zhuan)}
+  .entry h4{font-size:14px;margin-bottom:4px}
+  .entry .cat{font-size:11px;color:#fff;padding:1px 8px;border-radius:999px;background:#94a3b8}
+  .entry p{font-size:12.5px;color:var(--sub)}
+  .note{font-size:13px;color:var(--sub);margin-top:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI雕兄</h1>
+  <div class="sub">断症 · 练剑 · 截流 ｜ 三大支柱闭环</div>
+  <div class="tagline">别家给<b>军火</b>（火力量变）｜我们给<b>兵法</b>（方向 · 对象 · 时机）</div>
+
+  <!-- 三大支柱 -->
+  <div class="pillars">
+    <div class="pillar c-zhuan">
+      <span class="tag">支柱 ①</span>
+      <h2>断症 — 复盘+诊断</h2>
+      <div class="solve">解决「方向错 = 白努力」</div>
+      <ul>
+        <li><b>账号诊断</b>：读笔记表现+知识库 → 出<b>频率建议</b>+<b>选题清单</b>+<b>笔记规划</b></li>
+        <li><b>数据看板</b>：笔记 / AI调用 / 引流执行</li>
+        <li><b>账号管理</b>：多号 cookies 集中管</li>
+        <li><b>回复日志</b>：每次灌水全留痕</li>
+        <li><b>引流任务×3</b>：自营回评 / 关键词截流 / 账号追踪</li>
+        <li><b>防失控</b>：任务级每日上限 / 时段 / 随机间隔</li>
+      </ul>
+    </div>
+
+    <div class="pillar c-zhu">
+      <span class="tag">支柱 ②</span>
+      <h2>练剑 — 内容生产</h2>
+      <div class="solve">解决「写了没人看」</div>
+      <ul>
+        <li><b>4周发布日历</b>：28篇选题+封面+正文+话术</li>
+        <li><b>素材库 / 话术库</b>：复制即用</li>
+        <li><b>操作手册 SOP</b>：早发笔记·上下灌水·晚复盘</li>
+        <li><b>冷启动技巧</b>：发后30-60分钟先互动</li>
+        <li><b>行业案例</b>：房贷/情感/宝妈 一键导入</li>
+      </ul>
+    </div>
+
+    <div class="pillar c-qin">
+      <span class="tag">支柱 ③</span>
+      <h2>截流 — 自动获客</h2>
+      <div class="solve">解决「涨粉不成交」</div>
+      <ul>
+        <li><b>一键灌水</b>：搜笔记→扫评论→认商机→发话术</li>
+        <li><b>12类心理话术</b>：分层打"有心理状态的人"</li>
+        <li><b>话术随机引擎</b>：3风格随机，看不出广告</li>
+        <li><b>知识库驱动</b>：强制引用真数据，越细越专业</li>
+        <li><b>拟人化9项</b>：防封号、随机上浮50%</li>
+        <li><b>铁律</b>：自动话术只用第一次，回评手写</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 设计逻辑 -->
+  <h3>贯穿三支柱的设计逻辑（为什么这么设计）</h3>
+  <table>
+    <tr>
+      <th>支柱</th><th>核心问题</th><th>底层人性</th><th>设计巧思</th>
+    </tr>
+    <tr>
+      <td>① 断症</td><td>努力错方向=白努力</td><td>人对自我带滤镜、爱自嗨</td><td>用数据当"客观第三方"复盘，先诊断再下药</td>
+    </tr>
+    <tr>
+      <td>② 练剑</td><td>凭灵感不稳定</td><td>灵感不可复制</td><td>把灵感降维成"流水线"，28篇全现成、可批量</td>
+    </tr>
+    <tr>
+      <td>③ 截流</td><td>流量≠客户</td><td>购买是一条心理链</td><td>12类心理+随机话术，分层打、帮客户"下决心"</td>
+    </tr>
+  </table>
+  <p style="margin-top:14px;font-size:14px"><b>一句话：</b>断症=不白忙；练剑=会生产；截流=直接见钱。三层是一条漏斗 <b>方向→内容→成交</b>，市面上工具只做一环，我们打通了诊断—生产—转化闭环。</p>
+
+  <!-- 知识库条目 -->
+  <h3>知识库条目（20条 · AI 生成话术时引用）</h3>
+  <div class="kb">
+    <div class="entry three"><h4>产品是什么 · 挂机躺着收货客</h4><span class="cat">产品介绍</span><p>AI把找笔记→找客户→写评论→发评论全自动做掉，你只填产品、录知识库、设关键词。</p></div>
+    <div class="entry three"><h4>三大支柱：断症/练剑/截流</h4><span class="cat">产品介绍</span><p>断症=数据复盘找方向，练剑=内容生产，截流=自动获客，串成漏斗不白干。</p></div>
+    <div class="entry three"><h4>一天能找回多少客户</h4><span class="cat">产品介绍</span><p>上下各一轮、每轮≤20篇、间隔≥3小时，一天触达几十篇目标评论区。</p></div>
+    <div class="entry three"><h4>只找真想买的人</h4><span class="cat">产品介绍</span><p>商机=主动露出需求/痛点/纠结/求助，宁漏勿蹭、不招黑、不耗AI。</p></div>
+    <div class="entry three"><h4>三种话术随机发</h4><span class="cat">产品介绍</span><p>A朋友/B顾问/C产品，三版随机+拟人微调，看不出是广告。</p></div>
+    <div class="entry three"><h4>知识库驱动回复</h4><span class="cat">产品介绍</span><p>强制引用真数据/经历，可随评配图，越细越专业=核心燃料。</p></div>
+    <div class="entry three"><h4>一套系统管多产品</h4><span class="cat">产品介绍</span><p>一租户一产品，配置知识库话术记录整套隔离，一套赚几份钱。</p></div>
+    <div class="entry three"><h4>拟人化防封号</h4><span class="cat">产品介绍</span><p>9项停留参数+拟人推荐值+随机上浮50%，互动单独控制。</p></div>
+    <div class="entry two"><h4>断症·数据复盘</h4><span class="cat">产品介绍</span><p>后台看板统一管，回复日志全留痕，用数据告诉你哪篇爆、哪条有效。</p></div>
+    <div class="entry two"><h4>练剑·4周日历+素材</h4><span class="cat">产品介绍</span><p>28篇现成选题+封面+正文+话术，照SOP执行，上手就开跑。</p></div>
+    <div class="entry two"><h4>多模型随便切</h4><span class="cat">产品介绍</span><p>DeepSeek/OpenAI/通义/硅基流动，测试连接随时验证。</p></div>
+    <div class="entry one"><h4>花多少AI钱</h4><span class="cat">数据资料</span><p>日志统计实时查调用/Token/成功率，一次几百Token，成本透明。</p></div>
+    <div class="entry one"><h4>12种商机心理画像</h4><span class="cat">数据资料</span><p>问价/冲动/求测评/被坑/求助/好辩/拖延/观望/高价值/货比三家/想学/沉默。</p></div>
+    <div class="entry one"><h4>为什么随机12种话术</h4><span class="cat">数据资料</span><p>随机=防封/防厌/防群发；分层打+帮客户"下决心"+把围观变对话。</p></div>
+    <div class="entry three"><h4>从手动评论到挂机</h4><span class="cat">个人经历</span><p>把3小时重复劳动压缩到30分钟点两下鼠标，客户慢慢加到微信。</p></div>
+    <div class="entry three"><h4>避坑·全是无商机</h4><span class="cat">个人经历</span><p>关键词太泛，换精准长尾词（"组合贷能取公积金吗"）商机率立涨。</p></div>
+    <div class="entry three"><h4>避坑·别让AI回第二遍</h4><span class="cat">个人经历</span><p>铁律：自动话术只用第一次触达，回评后必须手写跟进。</p></div>
+    <div class="entry three"><h4>避坑·发完先冷启动</h4><span class="cat">个人经历</span><p>发后30-60分钟自己先互动，喂进流量池，后面才有商机可挖。</p></div>
+    <div class="entry two"><h4>账号诊断：频率+选题+笔记规划</h4><span class="cat">产品介绍</span><p>AI读笔记表现+知识库，出频率建议、选题清单、一份先后有序的笔记规划。</p></div>
+    <div class="entry one"><h4>笔记规划怎么排序</h4><span class="cat">数据资料</span><p>说服阶梯：破冰→示警→实证→干货→产品→收割；频率跳一跳够得着。</p></div>
+  </div>
+
+  <p class="note">文件配套：<b>小红书AI引流工具-产品简述.md</b>（卖点文案） ｜ <b>小红书AI引流工具知识库.json</b>（18条可导入工具） ｜ 本页为可视化总览</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,332 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; color: #e7e9ee; width: 210mm; background:#07090f; }
+
+  /* ===== 内容页 · 黑红科技 ===== */
+  .page { width:210mm; height:297mm; padding:10mm 11mm; position:relative; overflow:hidden; page-break-after:always;
+          background:
+            radial-gradient(860px 500px at 18% -8%, rgba(255,36,66,.14), transparent 60%),
+            radial-gradient(720px 480px at 102% 114%, rgba(255,36,66,.09), transparent 55%),
+            linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
+            linear-gradient(160deg,#11151f 0%,#0a0d14 100%);
+          background-size:auto,auto,38px 38px,38px 38px,auto; }
+  .page:last-child { page-break-after: auto; }
+
+  .h { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .h .no { background:#ff2442; color:#fff; border-radius:50%; width:32px; height:32px;
+           display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px;
+           box-shadow:0 0 16px rgba(255,36,66,.5);}
+  .h h2 { font-size:20px; color:#f1f2f6; }
+  .lead { font-size:14px; color:#b6bac5; line-height:1.7; margin-bottom:10px; }
+  .block { border-radius:10px; padding:8px 13px; margin:7px 0; }
+  .block .bt { font-size:12.5px; font-weight:700; margin-bottom:5px; display:flex; align-items:center; gap:6px;}
+  .painbox { background:rgba(255,36,66,.07); border:1px solid rgba(255,36,66,.32); }
+  .painbox .bt{color:#ff7a93;} .painbox .bdesc{font-size:12.5px;color:#ecc6cc;line-height:1.5;}
+  .solbox { background:rgba(26,86,176,.10); border:1px solid rgba(90,142,255,.28); } .solbox .bt{color:#7fb6ff;}
+  .sysbox { background:rgba(15,173,90,.07); border:1px solid rgba(90,230,150,.26); } .sysbox .bt{color:#7fe0a8;}
+  .point { display:flex; gap:8px; margin-top:5px; }
+  .point .ico { flex:none; width:23px; height:23px; border-radius:6px; background:rgba(255,36,66,.13);
+                color:#ff647d; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .point .txt b { font-size:12.5px; color:#eef0f4; display:block; }
+  .point .txt span { font-size:11px; color:#99a0ae; line-height:1.4; display:block; }
+  .dlg { display:grid; grid-template-columns:1fr 1fr; column-gap:12px; }
+
+  .ph { border:1px solid #2a3244; border-radius:10px; background:#0e1219; padding:5px; overflow:hidden; margin:9px 0; }
+  .ph img { width:100%; max-height:560px; object-fit:contain; display:block; }
+  .ph.sm img { max-height:300px; }
+  .ph .cap { font-size:11px; color:#6c7485; text-align:center; margin-top:5px; }
+  .g2 { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:9px 0; }
+  .g2 .ph { margin:0; }
+
+  .feats { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .feat { border:1px solid #2a3244; border-radius:12px; padding:12px 14px; background:rgba(19,24,36,.6); }
+  .feat b { font-size:13.5px; color:#eef0f4; display:block; margin-bottom:3px;}
+  .feat span { font-size:12px; color:#aab0bd; line-height:1.55; display:block; }
+
+  .foot { position:absolute; bottom:6mm; left:14mm; right:14mm; border-top:1px solid #222a38;
+          padding-top:6px; display:flex; justify-content:space-between; font-size:10px; color:#5a6170; }
+
+  /* ===== 封面 · 黑红科技 ===== */
+  .cover { color:#fff; display:flex; flex-direction:column; padding: 12mm 14mm;
+           background:
+             radial-gradient(880px 520px at 15% -10%, rgba(255,36,66,.42), transparent 60%),
+             radial-gradient(700px 480px at 105% 112%, rgba(255,36,66,.26), transparent 55%),
+             linear-gradient(160deg,#2b0710 0%,#8f0f2e 45%,#340911 100%); }
+  .cover::before { content:""; position:absolute; inset:0; pointer-events:none;
+     background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+       linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+     background-size: 36px 36px; }
+  .cover > * { position:relative; z-index:1; }
+  .cover .front { margin:auto 0; text-align:center; }
+  .cover .painzone { margin-top:6mm; }
+  .cover .brand { font-size:64px; font-weight:900; letter-spacing:0; color:#ffffff; line-height:1; }
+  .cover .sub { font-size:23px; font-weight:600; margin-top:10px; color:#f6f7fa; }
+  .cover .tagline { font-size:15px; margin-top:8px; color:#dfe3ec; }
+  .cover .cpt { font-size:14px; font-weight:700; margin:10px 0 12px; letter-spacing:.5px; color:#ffd9e0; }
+  .cover .cpains { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .pain { background:rgba(7,8,13,.5); border:1px solid rgba(255,255,255,.14); color:#eef0f5;
+          border-radius:12px; padding:12px 14px; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+  .pain b { font-size:14px; color:#ff7a93; display:block; margin-bottom:6px; }
+  .pain b .no { display:inline-block; background:#ff2442; color:#fff; border-radius:6px; padding:0 7px;
+                font-size:12px; margin-right:6px; box-shadow:0 0 12px rgba(255,36,66,.6);}
+  .pain span { font-size:12.5px; color:#b9becb; line-height:1.55; display:block; }
+  .cover .ctick { margin-top:14px; background:rgba(0,0,0,.4); border:1px solid rgba(255,36,66,.45);
+                  border-radius:12px; padding:12px 16px; font-size:13px; text-align:center; color:#ffb3c0; }
+</style>
+</head>
+<body>
+
+<!-- 第1页 封面：黑红科技 + 5 大痛点 -->
+<div class="page cover">
+  <div class="front">
+    <div class="brand">AI雕兄</div>
+    <div class="sub">小红书全自动引流 · 断症 / 练剑 / 截流</div>
+    <div class="tagline">浏览器装个插件，AI 在小红书替你自动获客</div>
+  </div>
+
+  <div class="painzone">
+    <div class="cpt">🔥 开篇最扎心的 5 个痛点，你中了几条？</div>
+    <div class="cpains">
+      <div class="pain"><b><span class="no">01</span>不会规划账号</b><span>你只是在"发内容"，不是在"卖"。发什么全凭灵感、多久一篇看心情、先说什么后说什么没谱——拿枪乱扫，一场也打不中客户。</span></div>
+      <div class="pain"><b><span class="no">02</span>笔记没人看</b><span>不是不努力，是踩不住点。选题不戳痛、标题没钩子、正文没干货，发再多也是自嗨。</span></div>
+      <div class="pain"><b><span class="no">03</span>捞不到客户</b><span>客户在哪、谁想买、怎么开口，你全不知道。评论区"在哪买""多少钱"的需求，眼睁睁看着流走。</span></div>
+      <div class="pain"><b><span class="no">04</span>捞到却留不下</b><span>加了人却不知谁意向高、私信怎么开口、怎么跟到成交，客户晾着晾着就凉了，一分钱没赚到。</span></div>
+    </div>
+    <div class="pain" style="margin-top:10px;"><b><span class="no">05</span>人肉运营，又贵又累</b><span>刷笔记、翻评论、想话术、逐条发，累死效率还低；跟风用 AI，又烧 Token 又没人味，效果一言难尽。</span></div>
+
+    <div class="ctick">这 5 个痛点，<b style="color:#fff;">AI雕兄</b> 一个一个替你拆掉 —— 下面每条痛点，都有对应的解法。</div>
+  </div>
+</div>
+
+<!-- 屏：痛点① 不会规划账号 -->
+<div class="page">
+  <div class="h"><div class="no">1</div><h2>痛点① · 破解"不会规划账号"</h2></div>
+  <div class="block painbox"><div class="bt">⚠ 你现在的处境</div><div class="bdesc">你在"销售"，不是在"卖"——没有用户视角、没有内容体系，发什么全凭感觉，越干越没方向、越干越没人看。</div></div>
+
+  <div class="block solbox"><div class="bt">🔧 怎么破 —— 账号诊断：先把你个人账号里里外外查一遍</div>
+    <div class="dlg">
+      <div class="point"><div class="ico">🪪</div><div class="txt"><b>定位诊断</b><span>账号定位清不清、够不够垂直、人设立没立起来</span></div></div>
+      <div class="point"><div class="ico">👥</div><div class="txt"><b>人群诊断</b><span>内容在服务谁、理想客群对不对、有没有写给错的人</span></div></div>
+      <div class="point"><div class="ico">📅</div><div class="txt"><b>频率诊断</b><span>发笔记节奏合不合理，怎么调到跳一跳够得着</span></div></div>
+      <div class="point"><div class="ico">🎯</div><div class="txt"><b>选题诊断</b><span>选题踩不踩目标人群的点、有没有主线</span></div></div>
+      <div class="point"><div class="ico">🩸</div><div class="txt"><b>内容硬伤诊断</b><span>标题钩子 / 封面点击 / 开头留人，有没有自嗨</span></div></div>
+      <div class="point"><div class="ico">📈</div><div class="txt"><b>历史归因</b><span>哪篇爆了、哪篇沉了，规律是什么，直接抄对的</span></div></div>
+    </div>
+  </div>
+
+  <div class="block" style="background:rgba(255,102,160,.08);border:1px solid rgba(255,102,160,.35);"><div class="bt" style="color:#ff9abb;">📤 诊断完，直接给你一张能照做的"频率 + 选题 + 笔记规划"</div></div>
+
+  <div class="ph"><img src="pdf素材/08_账号诊断.png"><div class="cap">▲ 账号诊断结果页（定位 / 人群 / 频率 / 选题诊断 + 笔记规划）</div></div>
+
+  <div class="block sysbox"><div class="bt">🧭 运营体系（断症）</div>
+    <span style="font-size:12.5px;color:#a9e7c4;line-height:1.6;display:block;">先把"为谁服务、发什么、什么节奏"想清楚再动手。方向对了，后面每篇都不白写——这就是整套闭环的起点。</span>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>屏1 · 痛点① → 账号诊断</span></div>
+</div>
+
+<!-- 屏：痛点② 笔记没人看 -->
+<div class="page">
+  <div class="h"><div class="no">2</div><h2>痛点② · 破解"笔记没人看"</h2></div>
+  <div class="block painbox"><div class="bt">⚠ 你现在的处境</div><div class="bdesc">你讲的内容踩不住点。选题不戳痛、标题没钩子、正文没干货，平台不推、用户划过——发再多也只是自我感动。</div></div>
+
+  <div class="block solbox"><div class="bt">🔧 怎么破 —— 从"套模板"到"按你账号定制的结构"</div>
+    <div class="point"><div class="ico">🏗</div><div class="txt"><b>不同账号，结构不同</b><span>起步期要吸睛、成熟期要转化，笔记结构按你的阶段与人群单独设计，不套流水线模板</span></div></div>
+    <div class="point"><div class="ico">💥</div><div class="txt"><b>卖点 × 人群定点爆破</b><span>每一篇都对着"一个卖点 × 一类人群"精准打，不贪多、不泛泛，篇篇有靶心</span></div></div>
+    <div class="point"><div class="ico">⚙️</div><div class="txt"><b>笔记工作流（8 节点全程点选）</b><span>内容赛道 → 选题 → 标题A/B/C → 正文7段 → 标签 → 配图 → 发布节奏 → 成稿，你只点选、不填词，AI 出候选</span></div></div>
+    <div class="point"><div class="ico">📚</div><div class="txt"><b>文案由知识库组装</b><span>正文从你产品知识库的真实数据、功能、经历里组装，具体有信息量，没有通用 AI 那种发虚感</span></div></div>
+  </div>
+
+  <div class="ph"><img src="pdf素材/09_笔记工作流.png"><div class="cap">▲ 笔记工作流向导（赛道 → 选题 → 标题 → 正文 → 标签 → 成稿）</div></div>
+
+  <div class="block sysbox"><div class="bt">🧭 运营体系（练剑）</div>
+    <span style="font-size:12.5px;color:#a9e7c4;line-height:1.6;display:block;">内容是"练剑"：结构因人而异、每篇定点爆破、文案用知识库撑起干货。一套工作流跑下来，账号主线清晰，没人看的笔记自然少下去。</span>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>屏2 · 痛点② → 定制结构发笔记</span></div>
+</div>
+
+<!-- 屏：痛点③ 捞不到客户 -->
+<div class="page">
+  <div class="h"><div class="no">3</div><h2>痛点③ · 破解"捞不到客户"</h2></div>
+  <div class="block painbox"><div class="bt">⚠ 你现在的处境</div><div class="bdesc">你不知道客户在哪、谁想买、怎么开口。评论区明明有人问"在哪买""多少钱"，你却没接住，需求白白流走。</div></div>
+
+  <div class="block solbox"><div class="bt">🔧 怎么破 —— 针对性商机挖掘 + 12 类心理话术</div>
+    <div class="point"><div class="ico">🔎</div><div class="txt"><b>有针对性的商机挖掘</b><span>扫评论区，只挑"主动露出需求"的人（求助 / 疑问 / 被坑），宁缺毋滥，不硬蹭</span></div></div>
+    <div class="point"><div class="ico">🧭</div><div class="txt"><b>12 类心理识别 + 话术</b><span>先识别每位的买前心理（问价 / 犹豫 / 被坑 / 观望…），再按心理匹配最对味的话术</span></div></div>
+    <div class="point"><div class="ico">💬</div><div class="txt"><b>真实话术，避免发虚</b><span>话术由知识库的产品数据 + 个人经历组装，具体数字、步骤、真实体验，不是通用 AI 的空喊</span></div></div>
+    <div class="point"><div class="ico">🤖</div><div class="txt"><b>拟人发布不招黑</b><span>人话铺 + 随机 + 拟人节奏，一条条像真人一对一，不像广告、不封号</span></div></div>
+  </div>
+
+  <div class="ph"><img src="pdf素材/03_挖商机_话术卡.png"><div class="cap">▲ 商机 + 12 类心理话术</div></div>
+
+  <div class="block sysbox"><div class="bt">🧭 运营体系（截流 · 捞）</div>
+    <span style="font-size:12.5px;color:#a9e7c4;line-height:1.6;display:block;">在目标笔记评论区精准"捞"：扫商机 → 认心理 → 发话术。只撩真需求，宁漏勿蹭，评论自然不招黑，商机一个个进池子。</span>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>屏3 · 痛点③ → 商机挖掘 + 12类话术</span></div>
+</div>
+
+<!-- 屏：痛点④ 捞到却留不下 → 获客清单 -->
+<div class="page">
+  <div class="h"><div class="no">4</div><h2>痛点④ · 破解"捞到却留不下"</h2></div>
+  <div class="block painbox"><div class="bt">⚠ 你现在的处境</div><div class="bdesc">好不容易加上人、回了评，却不知道谁意向高、谁该先跟、私信怎么开头、怎么一路跟到成交——客户晾着晾着就凉了。</div></div>
+
+  <div class="block solbox"><div class="bt">🔧 怎么破 —— 获客清单：把商机管起来，一路跟到成交</div>
+    <div class="point"><div class="ico">📥</div><div class="txt"><b>高意向自动入库</b><span>有价值的商机自动沉进「获客清单」，一个不漏，跟着你走</span></div></div>
+    <div class="point"><div class="ico">🖼</div><div class="txt"><b>AI 画像分级</b><span>自动给每个人画像、标意向高 / 中 / 低，先跟谁一眼看清</span></div></div>
+    <div class="point"><div class="ico">📩</div><div class="txt"><b>定向私信</b><span>AI 按画像生成个性化私信，人工确认才发，不打扰不硬推</span></div></div>
+    <div class="point"><div class="ico">📈</div><div class="txt"><b>成交漏斗可追踪</b><span>从捞到 → 私信 → 回复 → 成交，每步留痕，谁都跑不掉</span></div></div>
+  </div>
+
+  <div class="ph"><img src="pdf素材/05_获客清单.png"><div class="cap">▲ 获客清单 · 统计卡 + 人员卡 + 意向等级</div></div>
+
+  <div class="block sysbox"><div class="bt">🧭 运营体系（截流 · 留）</div>
+    <span style="font-size:12.5px;color:#a9e7c4;line-height:1.6;display:block;">把"捞到的商机"变成"看得见的客户池"：入库 → 画像分级 → 定向私信 → 跟进成交。漏斗在哪、卡在哪，一屏看清，客户不再晾凉。</span>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>屏4 · 痛点④ → 获客清单</span></div>
+</div>
+
+<!-- 屏：痛点⑤ 人肉运营 / 烧 token -->
+<div class="page">
+  <div class="h"><div class="no">5</div><h2>痛点⑤ · 破解"人肉运营 / 烧 Token"</h2></div>
+  <div class="block painbox"><div class="bt">⚠ 你现在的处境</div><div class="bdesc">刷笔记、翻评论、想文案、逐条发，一天下来腰酸背痛也没几条；换成通用 AI，每次烧一堆 Token，出来的还不像真人、不适合你的业务。</div></div>
+
+  <div class="block solbox"><div class="bt">🔧 怎么破 —— 一体化自动执行 + 省 Token</div>
+    <div class="point"><div class="ico">🤖</div><div class="txt"><b>一条龙自动干</b><span>AI 自动搜 → 扫 → 写 → 发 → 记结果，把每天 3 小时人肉重复压缩到点两下鼠标</span></div></div>
+    <div class="point"><div class="ico">🛡</div><div class="txt"><b>拟人化防封</b><span>浏览停留、逐字打字、随机点赞，风控友好，批量也不怕</span></div></div>
+    <div class="point"><div class="ico">📚</div><div class="txt"><b>知识库引用省 Token</b><span>用的是你自己录的产品资料和经历，精准命中、不空转，效果比通用 AI 更贴你的生意、更省钱</span></div></div>
+    <div class="point"><div class="ico">📊</div><div class="txt"><b>运营后台复盘</b><span>看板 / 日志 / 获客清单一条龙，成本透明，哪有效一屏看清</span></div></div>
+  </div>
+
+  <div class="ph"><img src="pdf素材/02b_智能推广_运行中.png"><div class="cap">▲ 自动执行任务进度</div></div>
+
+  <div class="block sysbox"><div class="bt">🧭 运营体系（自动化 + SOP）</div>
+    <span style="font-size:12.5px;color:#a9e7c4;line-height:1.6;display:block;">把"苦力活"交给工具，把"聪明活"留给自己：早发笔记、上下午各一轮灌水、晚上复盘改关键词。同一套 SOP 可复制到多产品，一个人管几个项目的生意。</span>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>屏5 · 痛点⑤ → 一体化+省Token</span></div>
+</div>
+
+<!-- 其他功能一览 -->
+<div class="page">
+  <div class="h"><div class="no">+</div><h2>痛点之外，这些运营能力你随手就有</h2></div>
+  <div class="lead">解决上面 5 个痛点之外，AI雕兄 还内置一套完整的获客配套，帮你把流量吃干榨净。</div>
+
+  <div class="feats">
+    <div class="feat"><b>🔥 冷启动 + 循环计划</b><span>想冲量用冷启动，看笔记就灌、日发20篇；想精准蹭热度用循环计划，采样点赞增长、只挑正在火的热门笔记下手。</span></div>
+    <div class="feat"><b>💬 评论跟进</b><span>把通知流按用户整理成对话，AI 判断时机生成回复 / 定向私信，人工确认才发，不打扰不硬推。</span></div>
+  </div>
+  <div class="feats" style="margin-top:10px;">
+    <div class="feat"><b>📊 运营总结</b><span>今天 / 本周 / 累计自动记账，每一条发送记录——哪篇、回了谁、用什么话术，随时回看、一键复制。</span></div>
+    <div class="feat" style="border-style:dashed;color:#9aa1af;"><b>📄 获客清单（已单列）</b><span>已在痛点④展开讲解：高意向入库 → 画像分级 → 定向私信 → 漏斗追踪。</span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0;">
+    <div class="ph sm" style="margin:0;"><img src="pdf素材/02_冷启动_循环计划_下拉.png"><div class="cap">冷启动 / 循环计划</div></div>
+    <div class="ph sm" style="margin:0;"><img src="pdf素材/01_笔记评论区.png"><div class="cap">评论区高亮</div></div>
+    <div class="ph sm" style="margin:0;"><img src="pdf素材/04_评论跟进.png"><div class="cap">评论跟进</div></div>
+    <div class="ph sm" style="margin:0;"><img src="pdf素材/06_运营总结.png"><div class="cap">运营总结</div></div>
+  </div>
+
+  <div class="foot"><span>AI雕兄</span><span>其他功能一览</span></div>
+</div>
+
+<!-- 运营体系总览 + 结尾 CTA（合并） -->
+<div class="page" style="display:flex;flex-direction:column;">
+  <div>
+    <div class="h"><div class="no">✓</div><h2>一套运营体系，串起你整个账号</h2></div>
+    <div style="text-align:center;font-size:14px;color:#ff7a93;margin-bottom:14px;">断症 → 练剑 → 截流 → 复盘，循环往复，越跑越准。</div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+      <div style="background:rgba(59,113,192,.20);border:1px solid #3572c9;border-radius:10px;padding:10px 12px;"><b style="color:#7fb2ff;">① 断症</b><div style="font-size:11.5px;color:#c9d8f0;line-height:1.5;">账号诊断 + 数据复盘，先想清楚为谁、发什么、什么节奏。</div></div>
+      <div style="background:rgba(176,0,42,.16);border:1px solid #c4103a;border-radius:10px;padding:10px 12px;"><b style="color:#ff7a98;">② 练剑</b><div style="font-size:11.5px;color:#f0c9d2;line-height:1.5;">笔记工作流按规划产内容，结构定制、选题戳点、文案用知识库撑。</div></div>
+      <div style="background:rgba(26,86,176,.16);border:1px solid #1a56b0;border-radius:10px;padding:10px 12px;"><b style="color:#7fb2ff;">③ 截流</b><div style="font-size:11.5px;color:#c9d8f0;line-height:1.5;">评论区捞商机 → 12类心理话术 → 获客清单私信成交。</div></div>
+      <div style="background:rgba(15,122,61,.16);border:1px solid #0f7a3d;border-radius:10px;padding:10px 12px;"><b style="color:#6fc98f;">④ 复盘</b><div style="font-size:11.5px;color:#c8e8d3;line-height:1.5;">日志 / 看板 / 获客清单，哪有效、怎么调。</div></div>
+    </div>
+
+    </div>
+
+  <div style="margin-top:22px;">
+    <div style="text-align:center;font-size:19px;font-weight:800;color:#ff2442;margin-bottom:12px;">💰 方案与价格 · 按月订阅</div>
+    <div style="text-align:center;font-size:12px;color:#8b93a3;margin-bottom:10px;">按月收费 · 版本打包写入、安装即固定 · 仅列各版本间不同功能</div>
+    <table style="width:100%;border-collapse:separate;border-spacing:4px 4px;font-size:12.5px;text-align:center;">
+      <tr>
+        <th style="background:#1a2230;color:#aab0bd;padding:8px 10px;text-align:left;border-radius:8px;">版本 / 功能</th>
+        <th style="background:rgba(255,36,66,.22);color:#ffb3c0;padding:8px 10px;border-radius:8px;">全功能版<span style="display:block;font-size:10px;color:#ffd9e0;font-weight:400;">推荐</span></th>
+        <th style="background:#1a2230;color:#aab0bd;padding:8px 10px;border-radius:8px;">单关键词</th>
+        <th style="background:#1a2230;color:#aab0bd;padding:8px 10px;border-radius:8px;">多关键词</th>
+      </tr>
+      <tr>
+        <td style="background:rgba(255,255,255,.05);color:#cfcfcf;padding:7px 10px;text-align:left;border-radius:8px;">💰 定价</td>
+        <td style="background:rgba(255,36,66,.12);color:#ff2442;font-weight:800;padding:7px 10px;border-radius:8px;font-size:15px;">¥539<span style="font-size:10px;color:#ff2442;">/月</span></td>
+        <td style="background:rgba(255,255,255,.05);color:#eef0f4;padding:7px 10px;border-radius:8px;">¥239<span style="font-size:10px;color:#9aa1af;">/月</span></td>
+        <td style="background:rgba(255,255,255,.05);color:#eef0f4;padding:7px 10px;border-radius:8px;">¥399<span style="font-size:10px;color:#9aa1af;">/月</span></td>
+      </tr>
+      <tr>
+        <td style="background:rgba(255,255,255,.02);color:#cfcfcf;padding:7px 10px;text-align:left;border-radius:8px;">🔑 灌水关键词数量</td>
+        <td style="background:rgba(255,36,66,.06);color:#eef0f4;padding:7px 10px;border-radius:8px;">8 个</td>
+        <td style="background:rgba(255,255,255,.02);color:#eef0f4;padding:7px 10px;border-radius:8px;">1 个</td>
+        <td style="background:rgba(255,255,255,.02);color:#eef0f4;padding:7px 10px;border-radius:8px;">8 个</td>
+      </tr>
+      <tr>
+        <td style="background:rgba(255,255,255,.05);color:#cfcfcf;padding:7px 10px;text-align:left;border-radius:8px;">🎯 获客清单（定向私信·画像）</td>
+        <td style="background:rgba(255,36,66,.06);color:#4fd07f;padding:7px 10px;border-radius:8px;font-weight:600;">✔</td>
+        <td style="background:rgba(255,255,255,.05);color:#c0c4cc;padding:7px 10px;border-radius:8px;">—</td>
+        <td style="background:rgba(255,255,255,.05);color:#4fd07f;padding:7px 10px;border-radius:8px;font-weight:600;">✔</td>
+      </tr>
+      <tr>
+        <td style="background:rgba(255,255,255,.02);color:#cfcfcf;padding:7px 10px;text-align:left;border-radius:8px;">🏢 多产品·多租户切换</td>
+        <td style="background:rgba(255,36,66,.06);color:#4fd07f;padding:7px 10px;border-radius:8px;font-weight:600;">✔</td>
+        <td style="background:rgba(255,255,255,.02);color:#c0c4cc;padding:7px 10px;border-radius:8px;">—</td>
+        <td style="background:rgba(255,255,255,.02);color:#c0c4cc;padding:7px 10px;border-radius:8px;">—</td>
+      </tr>
+      <tr>
+        <td style="background:rgba(255,255,255,.05);color:#cfcfcf;padding:7px 10px;text-align:left;border-radius:8px;">📚 产品库·知识库（AI 引用）</td>
+        <td style="background:rgba(255,36,66,.06);color:#4fd07f;padding:7px 10px;border-radius:8px;font-weight:600;">✔</td>
+        <td style="background:rgba(255,255,255,.05);color:#c0c4cc;padding:7px 10px;border-radius:8px;">—</td>
+        <td style="background:rgba(255,255,255,.05);color:#c0c4cc;padding:7px 10px;border-radius:8px;">—</td>
+      </tr>
+    </table>
+    <div style="border:1px solid rgba(255,36,66,.45);background:rgba(255,36,66,.08);border-radius:10px;padding:10px 14px;margin-top:12px;">
+      <b style="font-size:12.5px;color:#ff7a93;">📦 打包交付 · 请发送你的「小红书号」</b>
+      <div style="font-size:12px;color:#ecc6cc;line-height:1.6;margin-top:4px;">下单后请把你的<b style="color:#fff;">小红书号</b>发给我们，用于<b style="color:#fff;">打包</b>——安装包绑定到该小红书号，本人主页验证通过才可用，防转卖散装；从「单关键词」可补差价升级。</div>
+    </div>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>运营体系 · 方案与价格</span></div>
+</div>
+
+<!-- 联系与免责声明 -->
+<div class="page">
+  <div class="h"><div class="no">✦</div><h2>联系我们 · 免责声明</h2></div>
+  <div class="lead">想详细了解功能、咨询产品定制或获取授权，欢迎随时联系。</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+    <div style="background:rgba(255,36,66,.08);border:1px solid rgba(255,36,66,.3);border-radius:12px;padding:16px;">
+      <b style="font-size:14px;color:#ff7a93;display:block;margin-bottom:8px;">📬 联系方式</b>
+      <div style="font-size:13px;color:#d8dbe2;line-height:2;">
+        <div>微信&nbsp;：<b style="color:#fff;">13360308932</b></div>
+        <div style="font-size:12px;color:#8b93a3;">添加请备注「AI雕兄」</div>
+      </div>
+    </div>
+    <div style="background:rgba(181,121,20,.08);border:1px solid rgba(216,150,60,.3);border-radius:12px;padding:16px;">
+      <b style="font-size:14px;color:#f0b35e;display:block;margin-bottom:8px;">⚖️ 免责声明</b>
+      <div style="font-size:12px;color:#c9c3b8;line-height:1.8;">
+        <div>1. 本工具仅用于辅助自动化运营，请遵守小红书平台规则及相关法律法规。</div>
+        <div>2. 请务必遵守各平台社区规范，因违规操作产生的一切后果由使用者自行承担。</div>
+        <div>3. 软件功能、界面及词不构成任何承诺，最终以实际版本为准。</div>
+      </div>
+    </div>
+  </div>
+  <div style="border:1px solid #2a3244;border-radius:10px;padding:12px 16px;font-size:12px;color:#8b93a3;line-height:1.9;">
+    <div><b>📜 更多说明</b></div>
+    <div>本演示文稿由「AI雕兄」自动生成，仅供产品功能展示与交流使用。文中涉及的界面截图、数据样例均为演示用途，不代表真实运营数据。</div>
+    <div>如有疑问或商务合作，请通过上述联系方式与我们取得联系。</div>
+    <div>© AI雕兄 · 保留所有权利</div>
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>联系我们 · 免责声明</span></div>
+</div>
+
+</body>
+</html>

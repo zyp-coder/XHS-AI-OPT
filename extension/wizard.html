@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>首次设置 · 小红书评论助手</title>
+<style>
+  :root{
+    --bg:#141417; --card:#1e1e22; --card2:#26262b; --line:#33333a;
+    --txt:#f2f2f4; --sub:#a6a6b0; --dim:#6f6f79; --red:#ff274b; --ok:#3dd68c; --blue:#5b8dff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;}
+  header{max-width:640px;margin:0 auto;padding:28px 20px 0;}
+  header h1{font-size:22px;margin:0 0 4px;}
+  header p{color:var(--sub);font-size:13px;margin:0;}
+  .steps{display:flex;gap:6px;margin-top:18px;}
+  .step{flex:1;height:4px;border-radius:3px;background:var(--line);transition:background .25s;}
+  .step.on{background:var(--red);}
+  main{max-width:640px;margin:0 auto;padding:28px 20px 90px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;}
+  .card h2{font-size:17px;margin:0 0 6px;}
+  .hint{font-size:12.5px;color:var(--sub);line-height:1.7;margin:0 0 16px;}
+  .row{margin-bottom:16px;}
+  .row label{display:block;font-size:13px;color:var(--sub);margin-bottom:6px;}
+  input[type=text],input[type=password],input[type=number],textarea,select{
+    width:100%;background:var(--card2);border:1px solid var(--line);border-radius:9px;
+    color:var(--txt);padding:10px 12px;font-size:14px;outline:none;font-family:inherit;}
+  input:focus,textarea:focus,select:focus{border-color:var(--blue);}
+  textarea{resize:vertical;min-height:64px;}
+  .providers{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}
+  .provider{border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center;font-size:13px;cursor:pointer;background:var(--card2);color:var(--sub);transition:.15s;}
+  .provider:hover{border-color:var(--dim);}
+  .provider.on{border-color:var(--red);color:var(--txt);background:rgba(255,39,75,.08);}
+  .goals{display:flex;flex-direction:column;gap:10px;}
+  .goal{border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer;background:var(--card2);transition:.15s;}
+  .goal.on{border-color:var(--red);background:rgba(255,39,75,.08);}
+  .goal b{display:block;font-size:15px;margin-bottom:4px;}
+  .goal span{font-size:12.5px;color:var(--sub);display:block;line-height:1.6;}
+  .goal em{font-style:normal;color:var(--ok);font-size:16px;float:right;opacity:0;}
+  .goal.on em{opacity:1;}
+  .btnbar{position:fixed;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;padding:14px 20px 22px;display:flex;gap:10px;background:linear-gradient(transparent,var(--bg) 40%);}
+  .btn{padding:12px 22px;border:none;border-radius:11px;font-size:15px;font-weight:600;cursor:pointer;}
+  .btn.primary{background:var(--red);color:#fff;flex:1;}
+  .btn.ghost{background:var(--card2);color:var(--sub);border:1px solid var(--line);}
+  .btn:disabled{opacity:.55;cursor:not-allowed;}
+  .btn:active:not(:disabled){transform:scale(.97);}
+  .spinner{display:inline-block;width:15px;height:15px;margin-right:7px;vertical-align:-2px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .msg{border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.7;margin-top:14px;}
+  .msg.ok{background:rgba(61,214,140,.12);color:var(--ok);}
+  .msg.err{background:rgba(255,39,75,.12);color:#ffb3c1;}
+  .msg.info{background:rgba(91,141,255,.12);color:#b9ceff;}
+  .outer{border:1px dashed var(--line);border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:14px;}
+  .outer b{color:var(--txt);}
+  .hidden{display:none;}
+  .bar{display:flex;padding:3px 0;}
+  .bar .t{font-size:13px;color:var(--dim);}
+  .bar .v{margin-left:auto;font-size:13px;color:var(--sub);}
+  @media(max-width:520px){.providers{grid-template-columns:repeat(2,1fr);}}
+  .sp-card{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+  .sp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .sp-head b{font-size:12.5px;color:var(--red);}
+  .sp-head button{border:1px solid #3a2630;background:#2a2025;color:#ff8ba0;font-size:11px;border-radius:7px;padding:2px 8px;cursor:pointer;}
+  .sp-body{display:flex;gap:8px;align-items:flex-start;}
+  .sp-fields{flex:1;min-width:0;}
+  .sp-fields input,.sp-fields textarea{width:100%;margin-bottom:6px;font-size:13px;background:var(--bg);border-color:#2c2c33;}
+  .sp-fields textarea{min-height:42px;}
+  .sp-img{flex:none;width:86px;text-align:center;}
+  .sp-img img{width:86px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block;cursor:pointer;}
+  .sp-img .clr{width:100%;margin-top:3px;font-size:10px;padding:1px 0;border:1px solid #3a2630;background:transparent;color:#ff8ba0;border-radius:5px;cursor:pointer;}
+  .sp-add{display:flex;align-items:center;justify-content:center;width:86px;height:64px;border:1px dashed var(--dim);border-radius:8px;font-size:11px;color:var(--dim);cursor:pointer;background:transparent;}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎯 小红书评论助手 · 首次设置</h1>
+  <p>几步填完基础配置，最后验证账号即可开始使用。</p>
+  <div class="steps"><div class="step on" id="s1"></div><div class="step" id="s2"></div></div>
+</header>
+
+<main id="main">
+
+  <!-- 第 1 步：AI -->
+  <section id="page1" class="card">
+    <h2>① 配置 AI（用于分析评论、生成回复）</h2>
+    <p class="hint">选一个你已注册的 AI 服务商，填它的 API Key。Key 只存在你本地浏览器，不会上传。</p>
+    <div class="providers" id="providers"></div>
+    <div class="row"><label>API 地址</label><input type="text" id="baseUrl" placeholder="https://api.deepseek.com/v1"></div>
+    <div class="row" id="modelRow"><label>模型</label><select id="model"></select></div>
+    <div class="row" style="margin-bottom:6px;"><label>API Key *（只存本地）</label><input type="password" id="apiKey" placeholder="sk-…" style="font-family:monospace;"></div>
+    <div id="mmToggle" style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--blue);font-size:13px;padding:8px 0;user-select:none;">
+      <span id="mmCaret">＋</span> 多模态模型（选配）：用于配图 / 图片理解，默认通义千问 Qwen3.7 Plus
+    </div>
+    <div id="mmBody" class="hidden" style="border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:4px;">
+      <div class="providers" id="mmProviders" style="grid-template-columns:repeat(3,1fr);"></div>
+      <div class="row"><label>多模态 API 地址</label><input type="text" id="mmBaseUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"></div>
+      <div class="row"><label>多模态模型</label><select id="mmModel"></select></div>
+      <div class="row" style="margin-bottom:0;"><label>多模态 API Key（选填，想用多模态就填，留空则不启用）</label><input type="password" id="mmApiKey" style="font-family:monospace;"></div>
+    </div>
+  </section>
+
+  <!-- 第 2 步：验证 -->
+  <section id="page2" class="card hidden">
+    <h2>② 绑定账号验证</h2>
+    <p class="hint">本工具只给绑定的账号用。请先在另一个小红书网页登录该号并打开你自己的「我的」主页（保持网页打开），回来点下面按钮。产品、人设、知识库、内容规划等请在之后的「账号诊断」工作流里配置。</p>
+    <div class="outer">绑定小红书号：<b id="bXhs" style="color:#fff;">读取中…</b></div>
+    <button class="btn primary" id="verifyBtn">验证并完成</button>
+  </section>
+
+</main>
+
+<div class="btnbar">
+  <button class="btn ghost" id="prevB" style="display:none;">上一步</button>
+  <button class="btn primary" id="nextB">下一步</button>
+</div>
+
+<script src="wizard.js"></script>
+</body>
+</html>

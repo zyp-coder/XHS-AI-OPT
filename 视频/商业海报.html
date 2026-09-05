@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: 1080px auto; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html,body { width: 1080px; }
+  body {
+    font-family: "PingFang SC","Microsoft YaHei","Segoe UI",sans-serif; color: #eef0f4;
+    background:
+      radial-gradient(720px 460px at 12% -6%, rgba(255,36,66,.40), transparent 60%),
+      radial-gradient(660px 420px at 106% 106%, rgba(255,36,66,.28), transparent 55%),
+      linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
+      linear-gradient(160deg,#15080d 0%,#1a0c12 30%,#0c0f16 100%);
+    background-size: auto,auto,34px 34px,34px 34px,auto;
+  }
+  .poster { width: 1080px; padding: 32px 50px 28px; }
+
+  .top { text-align: center; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 900; color: #fff; }
+  .brand .dot { width: 13px; height: 13px; border-radius: 50%; background: #ff2442; box-shadow: 0 0 16px rgba(255,36,66,.8); }
+  .hero { margin-top: 10px; }
+  .hero h1 { font-size: 31px; font-weight: 900; color: #fff; line-height: 1.24; }
+  .hero h1 b { color: #ff2442; }
+  .hero .sub { margin-top: 6px; font-size: 13.5px; color: #aeb6c4; }
+
+  .sec-t { font-size: 18px; font-weight: 800; color: #fff; margin: 22px 0 10px; }
+  .sec-t i { font-style: normal; color: #ff2442; }
+  .sec-t small { font-size: 11.5px; font-weight: 400; color: #8d96a8; margin-left: 8px; }
+
+  .card { border: 1px solid #2a3244; border-radius: 15px; background: linear-gradient(180deg, rgba(25,30,44,.9), rgba(15,19,29,.95)); padding: 15px 19px; box-shadow: 0 10px 22px rgba(0,0,0,.32); }
+  .card .ch { font-size: 15px; font-weight: 800; color: #fff; margin-bottom: 9px; }
+  .card .ch .tag { font-size: 11px; color: #8d96a8; font-weight: 400; margin-left: 6px; }
+
+  .pains { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pain { display: flex; gap: 8px; align-items: flex-start; border: 1px solid #2a3244; border-radius: 10px; padding: 8px 11px; background: rgba(19,24,36,.6); }
+  .pain .ic { font-size: 14px; flex: none; }
+  .pain .pp { font-size: 11.5px; color: #c9d0dc; line-height: 1.4; }
+  .pain .pp b { color: #ff7a93; }
+
+  /* 断症 */
+  .row { display: grid; grid-template-columns: 248px 1fr; gap: 14px; align-items: center; }
+  .radar-wrap { border: 1px solid #2a3244; border-radius: 13px; background: rgba(10,13,20,.6); padding: 6px; text-align: center; }
+  .radar-wrap .rt { font-size: 12px; color: #ff7a93; font-weight: 700; }
+  .dl { font-size: 12.5px; color: #aab2c2; line-height: 1.6; margin-bottom: 5px; }
+  .dl .no { display: inline-block; width: 20px; height: 20px; border-radius: 6px; background: rgba(255,36,66,.15); color: #ff647d; font-weight: 800; font-size: 11px; text-align: center; line-height: 20px; margin-right: 8px; }
+  .dl b { color: #eef0f4; }
+  .dl span.r { color: #8d96a8; }
+  .keyline { margin-top: 6px; font-size: 12px; color: #ffb3c0; }
+
+  /* 练剑 */
+  .sy2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .sy { border: 1px solid #2a3244; border-radius: 11px; padding: 11px 13px; background: rgba(19,24,36,.6); }
+  .sy .hh { font-size: 13.5px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  .sy .lines { font-size: 12px; color: #b6bfd0; line-height: 1.55; }
+  .sy .lines b { color: #7fb2ff; }
+  .chipz { display: inline-block; background: rgba(26,86,176,.2); border: 1px solid rgba(127,178,255,.35); color: #a9c9ff; border-radius: 6px; font-size: 11px; padding: 2px 7px; margin: 2px 3px 2px 0; }
+  .note { margin-top: 9px; font-size: 12px; color: #ffb3c0; }
+
+  /* 截流 */
+  .pipe { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 10px; }
+  .pn { border: 1px solid #2a3244; border-radius: 11px; padding: 9px 9px; text-align: center; background: rgba(19,24,36,.6); }
+  .pn .t { font-size: 12px; font-weight: 800; color: #ff7a93; margin-bottom: 3px; }
+  .pn .d { font-size: 10.5px; color: #9aa3b5; line-height: 1.4; }
+
+  .psycht { width: 100%; border-collapse: separate; border-spacing: 4px 3px; font-size: 11.5px; }
+  .psycht th { background: #1a2230; color: #ffd088; padding: 6px 8px; border-radius: 7px; text-align: left; }
+  .psycht td { background: rgba(19,24,36,.6); color: #c9d0dc; padding: 5px 9px; border-radius: 7px; vertical-align: middle; }
+  .psycht td.c { color: #ffd088; font-weight: 700; white-space: nowrap; }
+  .psycht tr:nth-child(even) td { background: rgba(24,30,44,.8); }
+
+  .kit { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-top: 11px; }
+  .ki { border: 1px solid rgba(255,36,66,.32); border-radius: 10px; padding: 9px 11px; background: rgba(255,36,66,.07); text-align: center; }
+  .ki .ic { font-size: 18px; }
+  .ki b { display: block; font-size: 12px; color: #fff; margin-top: 3px; }
+  .ki span { font-size: 10.5px; color: #ffd9e0; line-height: 1.3; display: block; margin-top: 2px; }
+  .formula { margin-top: 10px; border: 1px solid rgba(255,36,66,.4); border-radius: 10px; padding: 9px 14px; background: rgba(255,36,66,.08); font-size: 13px; color: #eef0f4; text-align: center; }
+  .formula b { color: #ff7a93; }
+  .formula small { font-size: 11.5px; color: #ffd9e0; }
+
+  /* 复盘 */
+  .rv { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+  .ri { border: 1px solid #2a3244; border-radius: 10px; padding: 9px 9px; text-align: center; background: rgba(19,24,36,.6); }
+  .ri .ic { font-size: 17px; }
+  .ri b { display: block; font-size: 12px; color: #eef0f4; margin-top: 3px; }
+  .ri span { font-size: 10.5px; color: #8d96a8; line-height: 1.35; display: block; margin-top: 2px; }
+
+  .vals { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .val { display: flex; gap: 9px; align-items: flex-start; border: 1px solid rgba(36,166,96,.35); background: rgba(15,173,90,.08); border-radius: 11px; padding: 9px 12px; }
+  .val .mk { color: #4fd07f; flex: none; }
+  .val .vp { font-size: 12px; color: #d5dbe5; line-height: 1.45; }
+  .val .vp b { color: #fff; font-size: 12.5px; }
+
+  .foot { margin-top: 20px; }
+  .box { border: 1px solid rgba(255,36,66,.4); border-radius: 16px; padding: 15px 22px; background: linear-gradient(90deg, rgba(255,36,66,.12), rgba(255,36,66,.04)); text-align: center; }
+  .box .cta { font-size: 20px; font-weight: 800; color: #fff; }
+  .box .cta i { font-style: normal; color: #ff2442; }
+  .box .cta2 { font-size: 12px; color: #ffd9e0; margin-top: 5px; }
+  .meta { margin-top: 9px; font-size: 11.5px; color: #8d96a8; text-align: center; }
+</style>
+</head>
+<body>
+<div class="poster">
+
+  <div class="top">
+    <div class="brand"><span class="dot"></span>AI雕兄</div>
+    <div class="hero">
+      <h1>一套运营体系，把你“刷评论”的苦活<br>变成<b>自动获客 + 私信成交</b></h1>
+      <div class="sub">不看屏幕、不雇人、不用自己想话术</div>
+    </div>
+  </div>
+
+  <div class="sec-t">先从痛点说起<i>·</i><small>做号时，你是不是常遇到这 6 种情况？</small></div>
+  <div class="pains">
+    <div class="pain"><div class="ic">🔍</div><div class="pp"><b>不会规划账号</b>只发内容、不是在“卖”，没主线。</div></div>
+    <div class="pain"><div class="ic">🤔</div><div class="pp"><b>笔记不知道发什么</b>没选题库、没节奏，打开就愣住。</div></div>
+    <div class="pain"><div class="ic">📉</div><div class="pp"><b>笔记没人看</b>选题不戳痛、标题没钩子，平台不推。</div></div>
+    <div class="pain"><div class="ic">💸</div><div class="pp"><b>捞不到客户</b>客户在哪、谁想买全不知道，需求流走。</div></div>
+    <div class="pain"><div class="ic">🧊</div><div class="pp"><b>捞到留不下</b>不知谁意向高、怎么跟到成交，客户晾凉。</div></div>
+    <div class="pain"><div class="ic">😮‍💨</div><div class="pp"><b>人肉运营又贵又累</b>刷评论想话术逐条发，效率低还烧钱。</div></div>
+  </div>
+
+  <div class="sec-t">怎么破 —— 一套<b>闭环</b>体系，把这 6 个痛点逐个拆掉<i>·</i><small>断症 → 练剑 → 截流 → 复盘</small></div>
+
+  <div class="card" style="margin-bottom:11px;">
+    <div class="ch">🩺 第一步 · 断症 <span class="tag">先用 6 个维度照一遍，接着帮你把“地基”搭好</span></div>
+    <div class="row">
+      <div class="radar-wrap">
+        <div class="rt">六大维度画像</div>
+        <svg viewBox="0 0 256 240" width="244" height="232">
+          <polygon points="190,72 193,158 148,203 76,158 79,72 120,30" fill="rgba(255,36,66,.05)" stroke="rgba(255,36,66,.3)"/>
+          <polygon points="172,93 176,155 141,183 93,155 97,93 120,60" fill="none" stroke="rgba(255,255,255,.12)"/>
+          <polygon points="156,114 158,152 134,164 105,152 107,114 120,91" fill="none" stroke="rgba(255,255,255,.12)"/>
+          <line x1="120" y1="116" x2="190" y2="72" stroke="rgba(255,255,255,.18)"/><line x1="120" y1="116" x2="193" y2="158" stroke="rgba(255,255,255,.18)"/>
+          <line x1="120" y1="116" x2="148" y2="203" stroke="rgba(255,255,255,.18)"/><line x1="120" y1="116" x2="76" y2="158" stroke="rgba(255,255,255,.18)"/>
+          <line x1="120" y1="116" x2="79" y2="72" stroke="rgba(255,255,255,.18)"/><line x1="120" y1="116" x2="120" y2="30" stroke="rgba(255,255,255,.18)"/>
+          <circle cx="120" cy="116" r="3" fill="#ff2442"/>
+          <circle cx="120" cy="30" r="2.4" fill="#ff7a93"/><circle cx="190" cy="72" r="2.4" fill="#ff7a93"/><circle cx="193" cy="158" r="2.4" fill="#ff7a93"/>
+          <circle cx="148" cy="203" r="2.4" fill="#ff7a93"/><circle cx="76" cy="158" r="2.4" fill="#ff7a93"/><circle cx="79" cy="72" r="2.4" fill="#ff7a93"/>
+          <text x="120" y="16" fill="#eef0f4" font-size="11.5" text-anchor="middle">定位</text>
+          <text x="226" y="78" fill="#eef0f4" font-size="11.5" text-anchor="middle">人群</text>
+          <text x="222" y="176" fill="#eef0f4" font-size="11.5" text-anchor="middle">频率</text>
+          <text x="120" y="238" fill="#eef0f4" font-size="11.5" text-anchor="middle">选题</text>
+          <text x="6" y="176" fill="#eef0f4" font-size="11.5" text-anchor="middle">硬伤</text>
+          <text x="4" y="78" fill="#eef0f4" font-size="11.5" text-anchor="middle">历史</text>
+        </svg>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#8d96a8;margin-bottom:7px;">6 维诊断：定位 / 人群 / 频率 / 选题 / 内容硬伤 / 历史归因 —— 哪篇爆、哪篇沉，规律直接抄对的。</div>
+        <div class="dl"><span class="no">a</span><b>帮你做人设定位</b><span class="r">　通过 AI 多轮问答，帮你把“你是谁、立哪种人设”立起来</span></div>
+        <div class="dl"><span class="no">b</span><b>帮你总结产品卖点</b><span class="r">　提炼你的产品卖点，一页说清</span></div>
+        <div class="dl"><span class="no">c</span><b>帮你整理知识库</b><span class="r">　把产品/专业知识理成可引用的库</span></div>
+        <div class="dl"><span class="no">d</span><b>梳理笔记规划</b><span class="r">　笔记规划（破冰→点痛→信任→教方法→展示→收割）+ 笔记架构 + 发布节奏</span></div>
+        <div class="dl"><span class="no">e</span><b>主页重设计</b><span class="r">　帮你的主页简介、头像封面重新设计，人设一眼立住</span></div>
+        <div class="keyline">断症不是给你说“挺好”，是把「你这个号怎么做」整套搭好再开工。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:11px;">
+    <div class="ch">🏗️ 第二步 · 练剑 <span class="tag">内容不靠灵感，靠这套生产方法</span></div>
+    <div class="sy2">
+      <div class="sy">
+        <div class="hh">a) 选题 · 四步动作</div>
+        <div class="lines">① 按<b>产品卖点</b>出发 → ② 选<b>人群</b>（对不同人群<b>单独总结话术</b>）→ ③ 选<b>话题</b> → ④ <b>汇总话术</b>　<b>四步完成一篇笔记的选题</b></div>
+      </div>
+      <div class="sy">
+        <div class="hh">b) 笔记结构 · 按账号类型设计</div>
+        <div class="lines">按你的账号属于哪类，给对应的<b>页数 + 每页 P1..Pn 功能</b>：</div>
+        <div class="lines"><span class="chipz">虚拟资料</span><span class="chipz">实物评测</span><span class="chipz">场景种草</span><span class="chipz">干货教程</span><span class="chipz">合集盘点</span><span class="chipz">情感经历</span></div>
+      </div>
+      <div class="sy">
+        <div class="hh">c) 封面</div>
+        <div class="lines"><b>背景 + 文案</b>：账号 + 人设 + 标题 + 引流，一张封面把“你是谁+这篇讲啥+为什么要看”一次说清</div>
+      </div>
+      <div class="sy">
+        <div class="hh">d) 配图</div>
+        <div class="lines"><b>卖点素材配图 + 文案素材</b>：先把产品卖点配成图，再配文案素材，图文拼好直接能用</div>
+      </div>
+    </div>
+    <div class="note">用料：文案/配图全部由你的 <b>产品知识库 + 真实经历</b> 组装（系统级强制引用，不空喊）——这套“卖点×人群×话题”的打法，通用 AI-Skill 给不了。</div>
+  </div>
+
+  <div class="card" style="margin-bottom:11px;">
+    <div class="ch">🎯 第三步 · 截流 <span class="tag">只捞“主动露出需求”的人 · 一步步走</span></div>
+    <div class="pipe">
+      <div class="pn"><div class="t">① 找有需求的人</div><div class="d">扫评论区，只挑求助/疑问/被坑/好奇的，宁缺毋滥</div></div>
+      <div class="pn"><div class="t">② 分析他的人格</div><div class="d">识别买前心理，属于下面 12 类哪一类</div></div>
+      <div class="pn"><div class="t">③ 按卖点+人设生成话术</div><div class="d">对味下话，用你的卖点和数据、以“我”的口吻写</div></div>
+      <div class="pn"><div class="t">④ 给到对方</div><div class="d">拟人节奏逐字发布，不招黑不封号，进获客清单跟进</div></div>
+    </div>
+
+    <div style="font-size:14px;font-weight:800;color:#fff;margin:4px 0 8px;">12 类买前心理 —— 认准了，才知道怎么撩</div>
+    <table class="psycht">
+      <tr><th style="width:18%;">心理类型</th><th>判断信号 & 最对味的撩法</th></tr>
+      <tr><td class="c">问价</td><td>直接问多钱 → 报价 + 讲清值在哪，给方案</td></tr>
+      <tr><td class="c">冲动</td><td>说想买 → 顺势给好评证，帮他下决心</td></tr>
+      <tr><td class="c">求测评</td><td>求对比/测评 → 给真实横评数据，显得懂</td></tr>
+      <tr><td class="c">被坑</td><td>说被坑过 → 共情 + 避坑干货，建信任</td></tr>
+      <tr><td class="c">求助</td><td>直接求助 → 先给干货解决，再自然带产品</td></tr>
+      <tr><td class="c">好辩</td><td>爱抬杠 → 不硬怼，借机补充观点立人设</td></tr>
+      <tr><td class="c">拖延</td><td>想买但拖 → 给个不拖延的理由/紧迫感</td></tr>
+      <tr><td class="c">观望</td><td>还在看 → 用知识库数据帮他判断，别催</td></tr>
+      <tr><td class="c">高价值</td><td>有预算 → 高段位共鸣，匹配他的身份</td></tr>
+      <tr><td class="c">货比三家</td><td>在比价 → 摆差异化优势，帮他下结论</td></tr>
+      <tr><td class="c">想学</td><td>想学怎么弄 → 给步骤教学，显专业</td></tr>
+      <tr><td class="c">沉默</td><td>只围观 → 别硬撩，自然提到一次产品等互动</td></tr>
+    </table>
+
+    <div class="kit">
+      <div class="ki"><div class="ic">🧍</div><b>人设</b><span>以“我”第一人称</span></div>
+      <div class="ki"><div class="ic">💎</div><b>卖点</b><span>随话术自然带出</span></div>
+      <div class="ki"><div class="ic">📚</div><b>产品知识库</b><span>强制引用不空喊</span></div>
+      <div class="ki"><div class="ic">✍️</div><b>话术打法库</b><span>看菜下饭选用</span></div>
+      <div class="ki"><div class="ic">🎙️</div><b>口吻样本</b><span>模仿你的语气</span></div>
+      <div class="ki"><div class="ic">🗣️</div><b>口癖词</b><span>随机口癖像真人</span></div>
+      <div class="ki"><div class="ic">🚫</div><b>合规红线</b><span>评论不直导站外</span></div>
+      <div class="ki"><div class="ic">📥</div><b>获客清单</b><span>高意向自动入池</span></div>
+    </div>
+    <div class="formula">拟人又专业 ＝ <b>人设</b>＋<b>卖点</b>＋<b>产品知识库</b>＋<b>话术打法</b>＋<b>你的口吻语气</b> <small>—— 通用 AI-Skill 给不了</small></div>
+  </div>
+
+  <div class="card" style="margin-bottom:11px;">
+    <div class="ch">📈 第四步 · 复盘 <span class="tag">数据留痕 + 自动判断，反馈喂回断症</span></div>
+    <div class="rv">
+      <div class="ri"><div class="ic">📊</div><b>运营看板</b><span>发多少、回谁、卡哪步一屏看清</span></div>
+      <div class="ri"><div class="ic">👥</div><b>画像分级</b><span>高/中/低意向 + 客户四态：继续聊/可发资料/售后/沉睡</span></div>
+      <div class="ri"><div class="ic">🕒</div><b>销售时机</b><span>now / warm_up / wait 自动判断，时机不到不硬发</span></div>
+      <div class="ri"><div class="ic">📜</div><b>跟进留痕</b><span>评论跟进先聊够 N 轮再销售，私信首句必引对方原话</span></div>
+    </div>
+  </div>
+
+  <div class="sec-t">装完你直接得到<i>·</i><small>系统设计亮点已并入上面各功能步</small></div>
+  <div class="vals">
+    <div class="val"><div class="mk">✅</div><div class="vp"><b>全自动获客</b>　早上发笔记、自动灌水，一天十余篇跑量。</div></div>
+    <div class="val"><div class="mk">✅</div><div class="vp"><b>精准私信成交</b>　先捞后筛两段式 → 画像分级 → 时机判断，跟到买单。</div></div>
+    <div class="val"><div class="mk">✅</div><div class="vp"><b>多产品隔离 + 多模型</b>　房贷/宝妈/情感一套跑；DeepSeek/OpenAI/通义/硅基可切换。</div></div>
+    <div class="val"><div class="mk">✅</div><div class="vp"><b>省人工&nbsp;·&nbsp;拟人防封</b>　逐字打字随机口癖、知识库最高优先级，单人管几个项目。</div></div>
+  </div>
+
+  <div class="foot">
+    <div class="box">
+      <div class="cta">别再人肉翻评论、<i>瞎发笔记</i> —— 今天就装，今天就引流</div>
+      <div class="cta2">断症带路 → 练剑产内容 → 截流捞客户 → 复盘调更准——你只负责看复盘、定方向、确认成交</div>
+    </div>
+    <div class="meta">📦 打包交付：请提供你的「小红书号」用于绑定安装　·　微信 13360308932</div>
+  </div>
+
+</div>
+</body>
+</html>

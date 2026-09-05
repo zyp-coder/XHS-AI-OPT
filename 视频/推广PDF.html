@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #1a1a1a;
+         width: 210mm; }
+  .page { width: 210mm; height: 297mm; padding: 16mm 14mm; page-break-after: always;
+          position: relative; overflow: hidden; }
+  .page:last-child { page-break-after: auto; }
+
+  /* 封面 */
+  .cover { background: linear-gradient(150deg, #ff2442 0%, #c4103a 60%, #8f0f2e 100%); color: #fff; }
+  .cover .inner { display: flex; flex-direction: column; align-items: center; justify-content: center;
+                  height: 100%; text-align: center; }
+  .cover .logo { font-size: 46px; font-weight: 800; margin-bottom: 10px; letter-spacing: 1px; }
+  .cover .sub { font-size: 20px; opacity: .92; margin-bottom: 40px; }
+  .cover .tag { font-size: 14px; border: 1px solid rgba(255,255,255,.6); border-radius: 30px;
+                padding: 10px 28px; opacity: .95; }
+  .cover .marks { margin-top: 50px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; width: 100%; }
+  .cover .mark { background: rgba(255,255,255,.12); border-radius: 12px; padding: 16px 10px; }
+  .cover .mark b { font-size: 22px; display: block; }
+  .cover .mark span { font-size: 12px; opacity: .9; }
+
+  /* 内容页 */
+  .h { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .h .no { background: #ff2442; color: #fff; border-radius: 50%; width: 34px; height: 34px;
+           display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; }
+  .h h2 { font-size: 22px; color: #1a1a1a; }
+  .lead { font-size: 14px; color: #555; line-height: 1.7; margin-bottom: 14px; }
+  .shot { border: 1px solid #eceff3; border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+  .shot img { width: 100%; display: block; }
+  .caption { font-size: 11px; color: #888; }
+  .point { display: flex; gap: 10px; margin-top: 12px; }
+  .point .ico { flex: none; width: 28px; height: 28px; border-radius: 8px; background: #fff0f3;
+                color: #ff2442; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .point .txt b { font-size: 14px; color: #222; display: block; }
+  .point .txt span { font-size: 12px; color: #666; line-height: 1.6; }
+  .foot { position: absolute; bottom: 8mm; left: 14mm; right: 14mm; border-top: 1px solid #eee;
+          padding-top: 6px; display: flex; justify-content: space-between; font-size: 10px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="page cover">
+  <div class="inner">
+    <div class="logo">AI雕兄</div>
+    <div class="sub">小红书全自动获客 · 断症 / 练剑 / 截流</div>
+    <div class="tag">不用雇人 · 不用刷手机 · AI 替你盯评论区</div>
+    <div class="marks">
+      <div class="mark"><b>断症</b><span>数据复盘找方向</span></div>
+      <div class="mark"><b>练剑</b><span>28篇选题+话术庫</span></div>
+      <div class="mark"><b>截流</b><span>12类心理话术·捞精准客户</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 页2：操作总览 -->
+<div class="page">
+  <div class="h"><div class="no">1</div><h2>三步上手 · 全自动运营</h2></div>
+  <div class="lead">打开任意小红书笔记，AI 自动注入。你只需要三步，剩下的交给工具：搜索 → 挖商机 → 一键发布。</div>
+  <div class="point"><div class="ico">🔍</div><div class="txt"><b>第一批 · 搜笔记</b><span>输入关键词（如"房贷利率"），自动搜索小红书笔记列表</span></div></div>
+  <div class="point"><div class="ico">🎯</div><div class="txt"><b>第二批 · 挖商机</b><span>AI 扫描评论区，识别真正有需求的潜在客户，并按 12 类买前心理匹配话术</span></div></div>
+  <div class="point"><div class="ico">📤</div><div class="txt"><b>第三批 · 一键发布</b><span>逐条或批量发送，自动推进，全程记录结果</span></div></div>
+  <div class="shot" style="margin-top:14px;"><img src="pdf素材/scene1-note.png"></div>
+  <div class="caption">▲ 小红书笔记页：AI 自动高亮"高意向商机"与"命中关键词"的评论</div>
+  <div class="foot"><span>AI雕兄</span><span>全自动 AI 引流系统</span></div>
+</div>
+
+<!-- 页3：AI 挖商机 + 话术 -->
+<div class="page">
+  <div class="h"><div class="no">2</div><h2>AI 挖商机 · 话术贴合真人</h2></div>
+  <div class="lead">打开一篇笔记，一键扫描评论区。AI 找出最有价值的 Top 商机，并按这位用户"买前心理"直接给出最对味的话术。</div>
+  <div class="shot"><img src="pdf素材/scene2-popup.png"></div>
+  <div class="caption">▲ 评论助手弹窗：486 条评论、7 条商机，每条按 12 类心理画像匹配话术</div>
+  <div class="point"><div class="ico">🎯</div><div class="txt"><b>12 类心理画像</b><span>问价 / 冲动 / 求测评 / 被坑 / 求助 / 好辩 / 拖延 / 观望 / 高价值 / 货比三家 / 想学 / 沉默</span></div></div>
+  <div class="point"><div class="ico">🧠</div><div class="txt"><b>对心坎下刀</b><span>不同心理用不同话术，直击 TA 此刻最容易被说动的那一点</span></div></div>
+  <div class="point"><div class="ico">🎲</div><div class="txt"><b>随机发射</b><span>心理匹配后再随机换语气，条条像真人一对一，看不出广告</span></div></div>
+  <div class="foot"><span>AI雕兄</span><span>知识库驱动 · 12 类心理话术</span></div>
+</div>
+
+<!-- 页4：一键灌水自动化 -->
+<div class="page">
+  <div class="h"><div class="no">3</div><h2>一键灌水 · 全自动跑</h2></div>
+  <div class="lead">输入关键词点开始，AI 自动：搜笔记 → 找商机 → 生成话术 → 逐字打字发布 → 记结果。每天上下午各一轮，一轮 20 篇。</div>
+  <div class="shot"><img src="pdf素材/scene3-autowater.png"></div>
+  <div class="caption">▲ 一键灌水运行中：进度 13/20，逐篇成功发布，失败/跳过一目了然</div>
+  <div class="point"><div class="ico">🛡</div><div class="txt"><b>拟人化操作</b><span>浏览停留、逐字打字、随机点赞关注，风控友好</span></div></div>
+  <div class="point"><div class="ico">📚</div><div class="txt"><b>知识库驱动</b><span>话术引用你的真实产品数据，专业且不像广告</span></div></div>
+  <div class="foot"><span>AI雕兄</span><span>你只负责成交</span></div>
+</div>
+
+<!-- 页5：核心卖点 -->
+<div class="page">
+  <div class="h"><div class="no">4</div><h2>为什么选择它</h2></div>
+  <div class="point"><div class="ico">⚡</div><div class="txt"><b>全自动流程</b><span>从搜笔记到发评论一条龙，不用人工盯</span></div></div>
+  <div class="point"><div class="ico">🎯</div><div class="txt"><b>精准挖商机</b><span>只找"主动表现出需求"的人，评论自然不招黑</span></div></div>
+  <div class="point"><div class="ico">🧠</div><div class="txt"><b>知识库 + 12类心理话术</b><span>话术基于真实资料，按买前心理匹配+随机，看不出广告痕迹</span></div></div>
+  <div class="point"><div class="ico">🏢</div><div class="txt"><b>多产品运营</b><span>一套系统同时运营房贷/宝妈/情感等多个产品互不干扰</span></div></div>
+  <div class="point"><div class="ico">🔌</div><div class="txt"><b>多模型接入</b><span>DeepSeek / OpenAI / 通义 / 硅基流动，随时切换</span></div></div>
+  <div class="point"><div class="ico">📈</div><div class="txt"><b>数据可复盘</b><span>断症看板、回复日志、获客清单一眼掌握</span></div></div>
+  <div class="foot"><span>AI雕兄</span><span>装上它 · 今天就引流</span></div>
+</div>
+
+<!-- 页6：方案与价格 · 打包交付 -->
+<div class="page">
+  <div class="h"><div class="no">¥</div><h2>方案与价格 · 一次付费长期使用</h2></div>
+  <div class="lead">三个版本均为<b>买断制</b>，一次付费、长期使用；版本由打包时写入，安装即固定。以下为面向客户的产品版本（开发自用版不对外）。</div>
+
+  <table style="width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0 16px;">
+    <tr>
+      <th style="border:1px solid #eceef0;background:#f6f7f9;padding:8px 10px;text-align:left;width:34%;">功能项</th>
+      <th style="border:1px solid #eceef0;background:#f6f7f9;padding:8px 10px;">全功能版</th>
+      <th style="border:1px solid #eceef0;background:#f6f7f9;padding:8px 10px;">评论助手·单关键词</th>
+      <th style="border:1px solid #eceef0;background:#f6f7f9;padding:8px 10px;">评论助手·多关键词</th>
+    </tr>
+    <tr><td>定价</td><td style="color:#ff274b;font-weight:700;">¥539</td><td style="color:#ff274b;font-weight:700;">¥239</td><td style="color:#ff274b;font-weight:700;">¥399</td></tr>
+    <tr><td>核心评论助手（回复/私信/话术）</td><td>✔</td><td>✔</td><td>✔</td></tr>
+    <tr><td>运营总结（灌水总结/数据报表）</td><td>✔</td><td>✔</td><td>✔</td></tr>
+    <tr><td>灌水关键词数量</td><td>8 个</td><td>1 个</td><td>8 个</td></tr>
+    <tr><td>获客清单（人群筛选/定向私信/画像）</td><td>✔</td><td>—</td><td>✔</td></tr>
+    <tr><td>多产品 / 多租户切换</td><td>✔</td><td>—</td><td>—</td></tr>
+    <tr><td>产品库 / 知识库（AI 引用真实数据）</td><td>✔</td><td>—</td><td>—</td></tr>
+    <tr><td>账号绑定（仅指定小红书号可用）</td><td>✔</td><td>✔</td><td>✔</td></tr>
+  </table>
+
+  <div style="border:2px solid #ff2442;border-radius:12px;background:#fff0f3;padding:14px 16px;margin-bottom:14px;">
+    <b style="font-size:14px;color:#c00036;">📦 打包交付 · 请发送你的「小红书号」</b>
+    <div style="font-size:12.5px;color:#555;line-height:1.7;margin-top:6px;">下单后，请把你的<b style="color:#222;">小红书号</b>发给我们，用于<b style="color:#222;">打包</b>——安装包会绑定到该小红书号，只有本人主页验证通过后才可使用，防止转卖散装，这也是你拿到「一次性安装压缩包」的凭证。</div>
+  </div>
+
+  <div style="font-size:12px;color:#888;line-height:1.8;">
+    <b style="color:#444;">· 说明：</b>
+    · 版本由打包时写入、安装即固定；从「单关键词」可补差价升级到「多关键词」或「全功能版」。<br>
+    · 全功能版支持多产品/多租户切换与产品库、知识库；多关键词按顺序逐个执行，稳定不串号。
+  </div>
+  <div class="foot"><span>AI雕兄</span><span>方案与价格 · 打包交付</span></div>
+</div>
+
+</body>
+</html>

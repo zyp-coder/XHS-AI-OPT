@@ -1,0 +1,159 @@
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f7f7f7;
+  color: #333;
+  font-size: 14px;
+}
+.page { display: flex; width: 1280px; min-height: 900px; background: #fff; }
+.xhs-main {
+  flex: 1;
+  padding: 24px 32px;
+  border-right: 1px solid #eee;
+  overflow-y: auto;
+}
+.note-author { display: flex; align-items: center; margin-bottom: 16px; }
+.avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #ff6b9d, #ff8fab); margin-right: 10px; display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600; }
+.author-info .name { font-weight: 600; font-size: 14px; }
+.author-info .meta { font-size: 12px; color: #999; margin-top: 2px; }
+.follow-btn {
+  margin-left: auto; background: #ff2442; color: #fff; border: none; padding: 6px 18px;
+  border-radius: 20px; font-size: 13px; cursor: pointer;
+}
+.note-title { font-size: 20px; font-weight: 700; margin: 12px 0 10px; line-height: 1.4; }
+.note-content { font-size: 14px; line-height: 1.8; color: #444; margin-bottom: 16px; }
+.note-content p { margin-bottom: 10px; }
+.note-tags span {
+  color: #2169db; font-size: 13px; margin-right: 8px; cursor: pointer;
+}
+.note-stats { display: flex; gap: 20px; padding: 16px 0; border-bottom: 1px solid #f0f0f0; color: #999; font-size: 13px; }
+.note-stats .item { display: flex; align-items: center; gap: 4px; }
+
+.comments-section { padding-top: 20px; }
+.comments-header { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+.comment-item { padding: 12px 0; border-bottom: 1px solid #f5f5f5; }
+.comment-item .c-head { display: flex; align-items: center; margin-bottom: 6px; }
+.comment-item .c-name { font-size: 13px; font-weight: 600; color: #333; }
+.comment-item .c-time { font-size: 12px; color: #bbb; margin-left: 10px; }
+.comment-item .c-text { font-size: 13.5px; line-height: 1.6; color: #333; margin-bottom: 6px; }
+.comment-item .c-actions { font-size: 12px; color: #999; display: flex; gap: 16px; }
+.comment-item .c-actions span { cursor: pointer; }
+.comment-item.highlight { background: #fff8e6; border-radius: 8px; padding: 12px; margin: 4px -12px; }
+.comment-item .prospect-tag {
+  display: inline-block; background: #ff2442; color: #fff; font-size: 11px;
+  padding: 1px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle;
+}
+.comment-item .keyword-tag {
+  display: inline-block; background: #ffd60a; color: #333; font-size: 11px;
+  padding: 1px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle;
+}
+
+.reply-input-bar {
+  position: sticky; bottom: 0; background: #fafafa; padding: 10px 16px;
+  border-top: 1px solid #eee; display: flex; align-items: center; gap: 10px;
+}
+.reply-input-bar input {
+  flex: 1; border: 1px solid #e5e5e5; border-radius: 20px; padding: 8px 16px;
+  font-size: 13px; outline: none;
+}
+.reply-input-bar button {
+  background: #ff2442; color: #fff; border: none; padding: 8px 20px;
+  border-radius: 20px; font-size: 13px; cursor: pointer;
+}
+
+/* popup 弹窗样式 */
+.popup-overlay {
+  position: fixed; top: 60px; right: 40px; width: 620px;
+  background: #fff; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.2);
+  z-index: 100; overflow: hidden; display: flex; flex-direction: column;
+}
+.popup-header {
+  padding: 12px 16px; background: #fff; border-bottom: 1px solid #eee;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.popup-header .title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.popup-header .badge { font-size: 11px; padding: 2px 10px; border-radius: 10px; background: #e8f5e9; color: #2e7d32; }
+.popup-tabs { display: flex; border-bottom: 1px solid #eee; background: #fafafa; }
+.popup-tabs .tab {
+  flex: 1; padding: 10px; text-align: center; font-size: 13px; cursor: pointer;
+  color: #666; border-bottom: 2px solid transparent;
+}
+.popup-tabs .tab.active { color: #ff2442; border-bottom-color: #ff2442; background: #fff; font-weight: 600; }
+.popup-body { padding: 14px 16px; max-height: 520px; overflow-y: auto; }
+
+.prospect-card {
+  background: #fffaf0; border: 1px solid #ffe0b2; border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.prospect-card .pc-title { font-size: 13px; font-weight: 600; color: #e65100; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+.prospect-card .pc-score { font-size: 11px; background: #ff6d00; color: #fff; padding: 1px 8px; border-radius: 10px; }
+.prospect-card .pc-comment { font-size: 13px; color: #333; line-height: 1.6; margin-bottom: 8px; }
+.prospect-card .pc-replies { display: flex; flex-direction: column; gap: 6px; }
+.prospect-card .pc-reply {
+  background: #fff; border: 1px solid #eee; border-radius: 6px;
+  padding: 8px 10px; font-size: 12.5px; line-height: 1.5;
+}
+.prospect-card .pc-reply .reply-label { font-size: 11px; color: #ff2442; font-weight: 600; margin-right: 6px; }
+
+.analysis-summary {
+  background: #f5f8ff; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  display: grid; grid-template-columns: repeat(3,1fr); gap: 10px;
+}
+.analysis-summary .stat { text-align: center; }
+.analysis-summary .stat .num { font-size: 20px; font-weight: 700; color: #2169db; }
+.analysis-summary .stat .label { font-size: 12px; color: #666; margin-top: 2px; }
+
+.action-bar { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid #eee; background: #fafafa; }
+.btn-primary {
+  background: #ff2442; color: #fff; border: none; padding: 8px 18px;
+  border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500;
+}
+.btn-secondary {
+  background: #fff; color: #333; border: 1px solid #ddd; padding: 8px 14px;
+  border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+.btn-success {
+  background: #4caf50; color: #fff; border: none; padding: 8px 18px;
+  border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+.input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.input-row input {
+  flex: 1; border: 1px solid #e5e5e5; border-radius: 6px; padding: 8px 12px;
+  font-size: 13px; outline: none;
+}
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tag-row .tag { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: #f0f0f0; color: #666; }
+.tag-row .tag.hot { background: #ffebee; color: #c62828; }
+
+.water-status {
+  background: #f1f8e9; border: 1px solid #c5e1a5; border-radius: 10px;
+  padding: 14px; margin-bottom: 12px;
+}
+.water-status .ws-title { font-weight: 600; font-size: 13px; color: #33691e; margin-bottom: 8px; }
+.water-status .ws-progress { height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; }
+.water-status .ws-bar { height: 100%; background: linear-gradient(90deg,#66bb6a,#43a047); width: 65%; transition: width .3s; }
+.water-status .ws-text { font-size: 12px; color: #558b2f; margin-top: 6px; display: flex; justify-content: space-between; }
+
+.note-item {
+  display: flex; gap: 10px; padding: 10px; border: 1px solid #eee;
+  border-radius: 8px; margin-bottom: 8px; background: #fff;
+}
+.note-item .ni-cover { width: 60px; height: 60px; border-radius: 6px; background: linear-gradient(135deg,#81d4fa,#4fc3f7); flex-shrink: 0; }
+.note-item .ni-info { flex: 1; min-width: 0; }
+.note-item .ni-title { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
+.note-item .ni-meta { font-size: 12px; color: #999; margin-top: 4px; }
+.note-item .ni-status {
+  font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 4px; display: inline-block;
+}
+.status-success { background: #e8f5e9; color: #2e7d32; }
+.status-pending { background: #fff3e0; color: #e65100; }
+.status-skipped { background: #f5f5f5; color: #999; }
+
+/* 侧边栏 - 视频右侧信息 */
+.side-info {
+  width: 280px; padding: 20px 16px; background: #fafafa; font-size: 12px;
+}
+.side-info .card { background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.side-info .card-title { font-weight: 600; font-size: 13px; margin-bottom: 10px; color: #333; }
+.side-info .kv { display: flex; justify-content: space-between; margin-bottom: 6px; color: #666; }
+.side-info .kv .v { color: #333; font-weight: 500; }

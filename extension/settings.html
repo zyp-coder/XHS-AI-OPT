@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>小红书评论助手 — 设置</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 侧边栏 Tab 导航 -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">📝</span>
+        <span>评论助手设置</span>
+      </div>
+      <ul class="tab-list">
+        <li class="tab-group" data-group="accounts">🎯 账号配置</li>
+        <li class="tab-item active" data-tab="tenant">🏢 租户/产品</li>
+        <li class="tab-item" data-tab="ai">🤖 AI 配置</li>
+        <li class="tab-group" data-group="ops">🧠 运营体系</li>
+        <li class="tab-item" data-tab="persona">👤 人设 & 话术风格</li>
+        <li class="tab-item" data-tab="product">📦 产品配置</li>
+        <li class="tab-item" data-tab="knowledge">📚 知识库</li>
+        <li class="tab-item" data-tab="cover">🖼️ 封面设置</li>
+        <li class="tab-group" data-group="auto">⚙️ 自动执行</li>
+        <li class="tab-item" data-tab="delays">⏱️ 停留时间</li>
+        <li class="tab-item" data-tab="autowater">💧 一键灌水</li>
+        <li class="tab-group" data-group="data">📊 数据与高级</li>
+        <li class="tab-item" data-tab="logs">📊 日志统计</li>
+        <li class="tab-item" data-tab="prompts">🧩 提示词</li>
+      </ul>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main">
+
+      <!-- 免责声明 -->
+      <div style="margin:0 0 16px;padding:12px 16px;background:#fff4e8;border:1px solid #ffd9b3;border-radius:10px;font-size:13px;line-height:1.7;color:#7a4a1f;">
+        <b>免责声明：</b>因使用本工具、操作过于频繁或任何平台原因导致的账号异常、限流或封禁，责任由使用者自担，作者与工具方概不负责。
+      </div>
+
+      <!-- ── Tab: 租户/产品 ── -->
+      <section id="tab-tenant" class="tab-panel active">
+        <div class="panel-header">
+          <h2>租户 / 产品</h2>
+          <p>一个租户 = 一个产品。切换租户后，产品信息、AI 配置、知识库、话术、提示词、已灌水/已回复记录都会整套切换，彼此彻底隔离。</p>
+        </div>
+        <div class="form-group">
+          <label>新建租户</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="newTenantName" placeholder="产品名称，例：房贷小程序 / 装修工具" maxlength="30" style="flex:1;">
+            <button id="createTenantBtn" class="btn-primary" style="white-space:nowrap;">➕ 新建</button>
+          </div>
+          <span class="hint">新租户是一张白纸（空知识库/默认提示词），新建后去各 Tab 填写该产品的配置</span>
+        </div>
+        <div class="form-group">
+          <label>租户列表</label>
+          <div id="tenantList"></div>
+        </div>
+        <div id="tenantSaveMsg" class="save-msg"></div>
+      </section>
+
+      <!-- ── Tab: 产品配置 ── -->
+      <section id="tab-product" class="tab-panel">
+        <div class="panel-header">
+          <h2>产品配置</h2>
+          <p>配置你的产品信息和商机筛选关键词</p>
+        </div>
+        <div class="form-group">
+          <label>产品名称 <span class="req">*</span><span class="badge-req">必配</span></label>
+          <input type="text" id="productName" placeholder="例：慧眼识人助手、XX小程序" maxlength="50">
+          <span class="hint">在提示词中用 {product_name} 引用，回复时会自动替换；AI 靠它知道你在推广什么</span>
+        </div>
+        <!-- 推广目标（已合并原「引导方式」）：目标决定引导去哪 + 话术风格 A/B/C -->
+        <div class="form-group" style="padding:12px 14px;background:#f8f9fb;border:1px solid #e5e8ee;border-radius:8px;">
+          <label style="font-weight:600;">🎯 推广目标</label>
+          <div style="display:flex;gap:8px;margin-top:6px;">
+            <select id="styleTemplateSelect" style="flex:1;">
+              <option value="">—— 选择推广目标 ——</option>
+            </select>
+            <button type="button" class="btn-secondary" id="applyStyleTemplateBtn">应用</button>
+          </div>
+          <!-- 引导去向：仅「工具/应用引流」需要手填，其余目标自动设定并隐藏 -->
+          <div id="guideRow" style="margin-top:8px;display:none;">
+            <input type="text" id="productGuide" placeholder="引导对方去哪？例：微信小程序、公众号、App" maxlength="30">
+          </div>
+          <span class="hint" id="promoGoalHint">选择目标后点「应用」，自动设定判定口径与引导去向并保存；话术打法请到「话术风格」Tab 选「评论目的」</span>
+        </div>
+        <div class="form-group">
+          <label>产品卖点 <span class="badge-req">核心</span></label>
+          <span class="hint" style="display:block;margin:0 0 8px;">可维护 <b>1~10</b> 个卖点，每个卖点含「标题」「内容」「配图」。标题与内容会自动喂给评论/文案的提示词；配图会在「发笔记」里选中该卖点时列出，直接作为文案配图元素挑选加工。</span>
+          <div id="sellPointList"></div>
+          <button type="button" id="addSellPointBtn" class="btn-secondary" style="margin-top:8px;">＋ 添加卖点</button>
+        </div>
+        <div class="form-group">
+          <label>我的小红书昵称（防重复灌水）</label>
+          <textarea id="myAccountNames" rows="2" placeholder="每行一个昵称，可填多个（如小号/曾用过的名字）。例：
+码农小张
+张工程师"></textarea>
+          <span class="hint">扫描时若发现笔记里已有你这些名字的评论，会直接判定这篇已灌水、跳过 AI，并记入已灌水清单</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="saveProductBtn">保存产品配置</button>
+        </div>
+        <div id="productSaveMsg" class="save-msg"></div>
+      </section>
+
+      <!-- ── Tab: 封面设置 ── -->
+      <section id="tab-cover" class="tab-panel">
+        <div class="panel-header">
+          <h2>封面设置</h2>
+          <p>配置发笔记封面的署名、引流文案与底图模板</p>
+        </div>
+        <div class="form-group">
+          <label>小红书昵称（封面顶带署名）</label>
+          <input type="text" id="productUsername" placeholder="例如：AI雕兄" maxlength="20">
+          <span class="hint">封面「上板块」署名用的主昵称（可填你的小红书账号名）</span>
+        </div>
+        <div class="form-group">
+          <label>发行引流方式（封面下板块）</label>
+          <input type="text" id="productCta" placeholder="例如：私信"玄铁剑"领试用版" maxlength="30">
+          <span class="hint">封面「下板块」的引流文案；发笔记时也可临时改</span>
+        </div>
+        <div class="form-group">
+          <label>页面封面简介（coverHook）</label>
+          <input type="text" id="coverHookInput" placeholder="可以是 AI 建人设时顺带沉淀的一句，也可手填，如：大厂码农" maxlength="24">
+          <span class="hint">封面「上板块」的人设一句话；留空则用 AI 建人设沉淀的</span>
+        </div>
+        <div class="form-group" style="padding:12px 14px;background:#f8fbff;border:1px solid #dfe8f5;border-radius:10px;">
+          <label style="font-weight:600;">🖼️ 封面底图模板 <span style="font-weight:normal;color:#999;font-size:12px;">（上/中/下三板块固定式：上=署名品牌，中=留白放标题/副标题/卖点，下=引流。中部留白越大越好）</span></label>
+          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+            <button type="button" id="coverGenBtn" class="btn-secondary btn-sm">🤖 按用户名+人设生成候选</button>
+            <button type="button" id="coverUpBtn" class="btn-secondary btn-sm">📤 上传一张作底图</button>
+            <button type="button" id="coverClearBtn" class="btn-danger btn-sm" style="display:none;">🗑 清除模板</button>
+          </div>
+          <div id="coverCandidates" style="margin-top:8px;"></div>
+          <div id="coverPreview" style="margin-top:8px;"></div>
+          <input type="file" id="coverFileInput" accept="image/*" style="display:none;">
+          <span class="hint" style="display:block;margin-top:6px;">底图为 3:4；无模板时封面会用中带压暗渐变+文字兜底生成</span>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="saveCoverBtn">保存封面设置</button>
+        </div>
+        <div id="coverSaveMsg" class="save-msg"></div>
+      </section>
+
+      <!-- ── Tab: 账号人设 ── -->
+      <section id="tab-persona" class="tab-panel">
+        <div class="panel-header">
+          <h2>👤 人设 & 话术风格</h2>
+          <p>人设定"你是谁"、话术定"你怎么说话"。先读简介、答 5 个问题，AI 整理成账号人设；再选评论倾向、口癖、口吻样本。与「账号诊断」工作流第②步一致，改动自动同步。</p>
+        </div>
+        <div class="form-group" style="padding:12px 14px;background:#fffafb;border:1px solid #f0e2e6;border-radius:10px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <label style="font-weight:600;margin:0;">🤖 我的账号人设 <span style="font-weight:normal;color:#999;font-size:12px;">（评论 + 文案生成都会用它）用 AI 建人设：先读简介、答 5 个问题，AI 自动整理，结果就保存在这里</span></label>
+            <button type="button" id="personaResetBtn" style="margin-left:auto;font-size:12px;padding:3px 10px;border:1px solid #f2c2cd;border-radius:12px;cursor:pointer;background:#fff;color:#c41d3c;">🔄 重置人设（重新填）</button>
+          </div>
+          <div id="personaStatus" style="font-size:12px;color:#666;margin-bottom:8px;"></div>
+          <details id="personaBuildWrap" style="border:1px solid #f0e2e6;border-radius:10px;padding:10px 12px;background:#fff;">
+            <summary style="cursor:pointer;font-size:12.5px;color:#c02;font-weight:600;">🤖 用 AI 建人设（读账号简介 + 答 5 个问题 → AI 自动整理成人设并保存）</summary>
+            <div style="margin-top:10px;">
+              <div style="font-size:12px;color:#888;margin-bottom:4px;">① 账号简介：</div>
+              <div style="display:flex;gap:6px;margin-bottom:6px;">
+                <button type="button" id="personaReadBioBtn" style="font-size:12px;padding:4px 10px;border:1px solid #c9a;border-radius:8px;cursor:pointer;background:#fff;color:#a80;display:flex;align-items:center;">🧲 读取我当前打开的本主页简介</button>
+                <span style="font-size:11px;color:#bbb;align-self:center;">或直接在下面粘贴</span>
+              </div>
+              <textarea id="personaBio" rows="2" placeholder="账号主页简介（自动读/粘贴都行，留空则 AI 只按你答题来）"></textarea>
+              <div style="font-size:12px;color:#888;margin:10px 0 4px;">② 回答下面 5 个问题（答得越具体，人设越好用）：</div>
+              <div id="personaQuestions"></div>
+              <button type="button" id="personaBuildBtn" style="margin-top:8px;font-size:12.5px;padding:6px 14px;border:none;border-radius:8px;cursor:pointer;background:#c41d3c;color:#fff;">✨ 用 AI 整理成人设并保存</button>
+              <div style="font-size:12px;color:#888;margin:12px 0 4px;">③ 或自己写一份人设（会覆盖 AI 整理的结果）：</div>
+              <textarea id="personaManual" rows="4" placeholder="第一人称，写清：我是谁、做过什么（多久/帮过多少人/踩过的坑）、擅长什么、账号定位、写给谁、人设调性语气。"></textarea>
+              <button type="button" id="personaSaveManualBtn" style="margin-top:8px;font-size:12.5px;padding:6px 12px;border:1px solid #cbb;border-radius:8px;cursor:pointer;background:#fff;color:#666;" title="直接把下方"我的自定义人设"存为人设">💾 按我下方写的人设保存</button>
+              <div id="personaBuildMsg" style="margin-top:8px;font-size:12px;color:#0a7b5a;"></div>
+            </div>
+          </details>
+        </div>
+
+        <div style="margin-top:22px;padding-top:18px;border-top:2px solid #eee;">
+          <h3 style="font-size:15px;font-weight:700;margin:0 0 4px;color:#333;">🎙️ 话术风格</h3>
+          <p style="font-size:12px;color:#888;margin:0 0 12px;">人设定"你是谁"，这里定"你怎么说话"。先选这一批评论的整体倾向，再微调字数、口癖、口吻样本。</p>
+          <div class="version-config-section">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 6px;color:#333;">本次评论目的（决定用什么打法）</h4>
+            <p style="font-size:12px;color:#888;margin-bottom:12px;">不同目的，系统会按不同优先级挑打法并调整分寸。同一目的下打法会加权随机，避免整批看起来像一个人在开车。</p>
+            <div class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:6px;">评论目的</label>
+              <select id="scriptPurposeSelect" style="width:100%;max-width:420px;">
+                <option value="sell">🛍️ 卖产品（获客转化）——教程/避雷/对比优先，自然带产品</option>
+                <option value="brand">🏷️ 品牌种草（信任/口碑）——对比/补充/数据，立口碑不硬卖</option>
+                <option value="profile">👤 主页涨粉（引流主页）——给干货让人来主页</option>
+                <option value="likes">👍 互动涨赞（养号/数据）——金句/提问/玩梗，不谈产品</option>
+                <option value="trend">🔥 蹭热点（借话题/大V）——借势拉曝光</option>
+                <option value="auto">🧩 综合自动（每条看菜下饭）——AI 见什么评论就用什么打法，最像真人</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">话术字数范围 <span style="font-size:11px;color:#999;">（市场：以自己真实评论长度为准，上限别超 300）</span><span style="margin-left:auto;display:inline-flex;align-items:center;gap:10px;font-size:12px;color:#666;font-weight:normal;">最少<input type="number" id="purposeMinChars" min="20" max="500" step="10" style="width:70px;margin-left:4px;" value="100">最多<input type="number" id="purposeMaxChars" min="50" max="500" step="10" style="width:70px;margin-left:4px;" value="300"></span></label>
+            </div>
+          </div>
+          <div style="margin-top:16px;padding-top:14px;border-top:1px solid #eee;">
+            <h4 style="font-size:14px;font-weight:600;margin:0 0 4px;color:#333;">反 AI 味 · 反封助手</h4>
+            <p style="font-size:12px;color:#888;margin-bottom:12px;">这里的两样东西能明显压低"一眼 AI 味"的机率：口癖池随机自然带出口语感；口吻样本让 AI 跟着你本人真实评论的语感和节奏来写。</p>
+            <div class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:4px;">口癖池 <span style="font-weight:normal;color:#999;font-size:12px;">（抽 1-2 个自然用上，逗号/顿号/换行分隔；留空用内置）</span></label>
+              <textarea id="toneMannerisms" rows="2" placeholder="例：说实话、我记得、当时也是、其实、可能吧"></textarea>
+            </div>
+            <div class="form-group">
+              <label style="display:block;font-weight:600;margin-bottom:4px;">博主口吻样本 <span style="font-weight:normal;color:#999;font-size:12px;">（贴 3-5 条自己真实发过的评论，AI 按你的语感写，最有效）</span></label>
+              <textarea id="personaSample" rows="4" placeholder="每行一条你自己真实发过的评论，例如：&#10;杭州首套 3.1 感觉还行，不过要看网签价别被坑了…&#10;我去年也纠结这个，后来问了才知道看的是评估价，日期很关键&#10;别信那个说法，实际是看放款时间，我亲测过"></textarea>
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn-primary" id="saveStyleBtn">保存话术风格配置</button>
+          </div>
+          <div id="styleSaveMsg" class="save-msg"></div>
+        </div>
+      </section>
+
+      <!-- ── Tab: AI 配置 ── -->
+      <section id="tab-ai" class="tab-panel">
+        <div class="panel-header">
+          <h2>AI 配置</h2>
+          <p>分「Chat 模型」和「多模态模型」两类：Chat 负责日常文本对话/回复；多模态负责识图、截图理解等（可选）</p>
+        </div>
+        <div class="form-group" style="border-top:1px solid #eee;padding-top:8px;margin-top:8px;">
+          <label class="section-label" style="font-weight:700;color:#333;display:block;margin-bottom:2px;">🤖 Chat 模型（日常对话 / 回复）</label>
+        </div>
+        <div class="form-group">
+          <label>API Key <span class="req">*</span><span class="badge-req">必配</span></label>
+          <div class="input-eye-wrap">
+            <input type="password" id="apiKey" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off">
+            <button class="eye-btn" id="toggleApiKey" title="显示/隐藏">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>API 提供商</label>
+          <select id="apiProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="qwen">通义千问（阿里云）</option>
+            <option value="siliconflow">硅基流动 SiliconFlow</option>
+            <option value="qianfan">百度千帆 Qianfan</option>
+            <option value="custom">自定义（手动填写）</option>
+          </select>
+          <span class="hint">选择提供商后，Base URL 和模型会自动匹配</span>
+        </div>
+        <div class="form-group" id="customBaseUrlGroup" style="display:none">
+          <label>自定义 API Base URL</label>
+          <input type="text" id="apiBaseUrlCustom" placeholder="https://your-api.com/v1">
+        </div>
+        <div class="form-group">
+          <label>模型</label>
+          <select id="apiModel">
+            <!-- 由 JS 根据提供商动态填充 -->
+          </select>
+          <span class="hint">日常使用选「Chat 模型（非推理）」即可：快、便宜、稳定；「推理模型」思考深但慢、费 token，一般用不上</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>Temperature（创造性）</label>
+            <select id="temperature">
+              <option value="0">0 — 最严谨（适合专业回复）</option>
+              <option value="0.3">0.3 — 偏严谨</option>
+              <option value="0.5">0.5 — 平衡</option>
+              <option value="0.7">0.7 — 偏创意</option>
+              <option value="0.8" selected>0.8 — 较有创意（推荐）</option>
+              <option value="1.0">1.0 — 高创意</option>
+              <option value="1.2">1.2 — 非常发散</option>
+              <option value="1.5">1.5 — 极度发散</option>
+              <option value="2.0">2.0 — 最大随机</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Max Tokens</label>
+            <select id="maxTokens">
+              <option value="500">500（短回复）</option>
+              <option value="1000">1000</option>
+              <option value="1500">1500</option>
+              <option value="2000" selected>2000（推荐）</option>
+              <option value="3000">3000</option>
+              <option value="4000">4000</option>
+              <option value="6000">6000（长文）</option>
+              <option value="8000">8000（超长）</option>
+            </select>
+          </div>
+        </div>
+        <!-- ── 多模态模型（识图 / 截图理解，可选） ── -->
+        <div class="form-group" style="border-top:1px solid #eee;padding-top:16px;margin-top:20px;">
+          <label class="section-label" style="font-weight:700;color:#333;display:block;margin-bottom:8px;">🖼️ 多模态模型（可选 · 识图 / 截图理解）</label>
+          <p class="hint" style="margin-bottom:12px;">用于识图、OCR、分析截图等需要「看到图片」的场景；与 Chat 模型相互独立，不涉及主备切换。填了才启用多模态功能，留空则只用 Chat 模型。</p>
+        </div>
+        <div class="form-group">
+          <label>多模态 API Key</label>
+          <div class="input-eye-wrap">
+            <input type="password" id="fallbackApiKey" placeholder="sk-xxxxxxxxxxxxxxxx（可选）" autocomplete="off">
+            <button class="eye-btn" id="toggleFallbackApiKey" title="显示/隐藏">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>多模态 API 提供商</label>
+          <select id="fallbackApiProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="qwen">通义千问（阿里云）</option>
+            <option value="siliconflow">硅基流动 SiliconFlow</option>
+            <option value="qianfan">百度千帆 Qianfan</option>
+            <option value="custom">自定义（手动填写）</option>
+          </select>
+          <span class="hint">选择提供商后，Base URL 和模型会自动匹配</span>
+        </div>
+        <div class="form-group" id="fallbackCustomBaseUrlGroup" style="display:none">
+          <label>多模态自定义 API Base URL</label>
+          <input type="text" id="fallbackApiBaseUrlCustom" placeholder="https://your-api.com/v1">
+        </div>
+        <div class="form-group">
+          <label>多模态模型</label>
+          <select id="fallbackApiModel"></select>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" id="saveAiBtn">保存 AI 配置</button>
+          <button class="btn-secondary" id="testAiBtn">🔌 测试连接</button>
+        </div>
+        <div id="aiSaveMsg" class="save-msg"></div>
+        <div id="testResult" class="test-result" style="display:none"></div>
+      </section>
+
+            <!-- ── Tab: 知识库 ── -->
+      <section id="tab-knowledge" class="tab-panel">
+        <div class="panel-header">
+          <h2>知识库管理 <span class="badge-req">强烈建议必配</span></h2>
+          <p>专业知识、个人经历、话术模板统一管理。设置角色后 AI 会自动路由匹配；不配也能用，但话术会比较泛，建议录入让自己更有干货</p>
+        </div>
+        <div class="toolbar">
+          <button class="btn-primary btn-sm" id="addKbBtn">＋ 添加条目</button>
+          <button class="btn-secondary btn-sm" id="importKbBtn">📥 导入 JSON</button>
+          <button class="btn-secondary btn-sm" id="exportKbBtn">📤 导出 JSON</button>
+          <button class="btn-danger btn-sm" id="clearKbBtn">🗑️ 一键清空</button>
+          <input type="text" id="kbSearch" placeholder="搜索标题/内容..." class="search-input">
+          <select id="kbTagFilter" class="search-input" style="max-width:150px;">
+            <option value="">全部标签</option>
+          </select>
+        </div>
+        <div id="kbList" class="item-list"></div>
+
+        <!-- 添加/编辑弹窗 -->
+        <div id="kbModal" class="modal" style="display:none">
+          <div class="modal-box">
+            <div class="modal-header">
+              <h3 id="kbModalTitle">添加知识库条目</h3>
+              <button class="modal-close" id="closeKbModal">✕</button>
+            </div>
+            <div class="form-group">
+              <label>标题 <span class="req">*</span></label>
+              <input type="text" id="kbTitle" placeholder="简短标题">
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <input type="text" id="kbCategory" placeholder="个人经历 / 数据资料 / 政策法规 / 通用" list="kbCategoryList">
+              <datalist id="kbCategoryList">
+                <option value="个人经历">
+                <option value="数据资料">
+                <option value="政策法规">
+                <option value="话术模板">
+                <option value="通用">
+              </datalist>
+            </div>
+            <div class="form-group">
+              <label>角色（可选）</label>
+              <input type="text" id="kbRole" placeholder="中介 / 装修顾问 / 贷款顾问 / 普通用户" list="kbRoleList">
+              <datalist id="kbRoleList">
+                <option value="中介">
+                <option value="装修顾问">
+                <option value="贷款顾问">
+                <option value="普通用户">
+              </datalist>
+              <span class="hint">设置角色后，AI 检测到对应角色时优先引用此条目</span>
+            </div>
+            <div class="form-group">
+              <label>内容 <span class="req">*</span></label>
+              <textarea id="kbContent" rows="6" placeholder="详细内容..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>图片（可选，引用此知识时一起发送）</label>
+              <input type="file" id="kbImageInput" accept="image/*">
+              <div style="margin-top:8px;">
+                <img id="kbImagePreview" style="display:none;max-width:200px;max-height:150px;border-radius:6px;border:1px solid #ddd;">
+                <button type="button" id="kbImageDelete" class="btn-secondary btn-sm" style="display:none;margin-left:8px;">删除图片</button>
+              </div>
+              <span class="hint">支持 JPG/PNG，图片会随评论一起发送</span>
+            </div>
+            <div class="form-group">
+              <label>标签（用逗号分隔）</label>
+              <input type="text" id="kbTags" placeholder="房贷, 利率, LPR">
+            </div>
+            <div class="form-group">
+              <label class="toggle-label">
+                <label class="toggle">
+                  <input type="checkbox" id="kbIsActive" checked>
+                  <span class="slider"></span>
+                </label>
+                <span>启用此条目</span>
+              </label>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="cancelKbModal">取消</button>
+              <button class="btn-primary" id="saveKbEntry">保存</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="kbImportFile" accept=".json" style="display:none">
+      </section>
+
+      <!-- ── Tab: 提示词管理 ── -->
+      <section id="tab-prompts" class="tab-panel">
+        <div class="panel-header">
+          <h2>提示词管理</h2>
+          <p>👇 点击左侧的场景卡片即可打开该场景的 System / User Prompt 进行编辑（编辑框右下角可拖拽放大）</p>
+        </div>
+        <div class="prompt-layout">
+          <div class="prompt-scene-list" id="promptSceneList"></div>
+          <div class="prompt-editor" id="promptEditor">
+            <div class="prompt-placeholder">👈 点击左侧场景卡片打开编辑器<br><span style="font-size:12px;color:#bbb;">可编辑各场景的提示词，支持拖拽调整编辑框大小</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Tab: 日志统计 ── -->
+      <section id="tab-logs" class="tab-panel">
+        <div class="panel-header">
+          <h2>日志统计</h2>
+          <p>查看 AI 调用记录和回复统计</p>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="stat-num" id="statTotalCalls">-</div><div class="stat-label">AI 调用次数</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTotalTokens">-</div><div class="stat-label">总 Token 消耗</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTotalReplies">-</div><div class="stat-label">已回复评论</div></div>
+          <div class="stat-card"><div class="stat-num" id="statSuccessRate">-</div><div class="stat-label">成功率</div></div>
+        </div>
+        <div class="toolbar" style="margin-top:16px">
+          <button class="btn-secondary btn-sm" id="clearLogsBtn">🗑️ 清空日志</button>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </section>
+
+      <!-- 停留时间（全系统拟人停留/间隔统一配置，存 delay_config，默认全 0 = 最快） -->
+      <section id="tab-delays" class="tab-panel">
+        <div class="panel-header">
+          <h2>⏱️ 停留时间</h2>
+          <p>统一配置各环节的拟人停留/间隔（单位：毫秒）。每项都是「最小 至 最大」区间，执行时在区间内<b>随机取值</b>（更像真人、更防爬）。默认 = 技术下限（能跑通的最快值）；批量操作建议点「填入拟人推荐值」。</p>
+        </div>
+
+        <div style="border:1px solid #e3e7f0;border-radius:10px;padding:14px 16px;margin-bottom:18px;background:#f8fafd;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+            <div style="font-weight:700;font-size:14px;">🕐 拟人化挡位</div>
+            <span style="font-size:11px;color:#bbb;">拖动挡位自动填下方区间，选完点「保存」生效</span>
+          </div>
+          <input type="range" id="delayPreset" min="0" max="5" step="1" value="2" style="width:100%;margin:12px 0 4px;">
+          <div style="display:flex;justify-content:space-between;color:#999;font-size:11px;margin-bottom:8px;"><span>0 极速·裸跑</span><span>1 轻装</span><span>2 标准拟人</span><span>3 保守</span><span>4 养号</span><span>5 极致防御</span></div>
+          <div id="delayPresetName" style="font-weight:600;color:#1f6feb;font-size:13px;margin-bottom:2px;"></div>
+          <div id="delayPresetDesc" style="font-size:12px;color:#555;"></div>
+          <div style="margin-top:10px;font-size:13px;">
+            每轮篇数 <input id="dl_estimateRound" type="number" min="0" max="1000" value="0" title="0=不限（以每日评论上限为准）" style="width:64px;padding:2px 6px;border:1px solid #ccc;border-radius:6px;">
+            ｜ 预计灌完 <b id="delayPresetEst" style="color:#e5530d;"></b>
+            ｜ 每轮处理 <span id="delayPresetRound" style="font-weight:600;color:#1f6feb;">≤ 10 篇</span>
+          </div>
+          <div style="font-size:11px;color:#999;margin-top:6px;">拖动挡位 = 自动填入下方各区间，选完点「保存」生效；可再逐项微调。默认挡位 2（标准拟人），日常推荐。</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label>👀 自动发送前·模拟浏览每段停留 <span style="font-size:11px;color:#999;">（0=跳过模拟浏览）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_browseDwell_min" min="0" max="60000" step="100" value="0" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_browseDwell_max" min="0" max="60000" step="100" value="0" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">区间内随机（毫秒），0 表示不等待</div>
+          </div>
+          <div class="form-group">
+            <label>⌨️ 自动发送·逐字打字每字延迟 <span style="font-size:11px;color:#999;">（0=不逐字、一次性填入）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_typingCharDelay_min" min="0" max="1000" step="5" value="0" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_typingCharDelay_max" min="0" max="1000" step="5" value="0" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">每字延迟随机（毫秒），0=不逐字</div>
+          </div>
+          <div class="form-group">
+            <label>👍 批量点赞·每条间隔 <span style="font-size:11px;color:#999;">（0=连着点）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_likeGap_min" min="0" max="60000" step="100" value="0" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_likeGap_max" min="0" max="60000" step="100" value="0" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">点赞间隔随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>📜 加载评论·每轮懒加载等待 <span style="font-size:11px;color:#999;">（技术下限 300，太小抓不全评论）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_lazyLoadWait_min" min="0" max="60000" step="100" value="300" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_lazyLoadWait_max" min="0" max="60000" step="100" value="300" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">加载评论等待随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>↩️ 抓错页自愈·返回后停顿 <span style="font-size:11px;color:#999;">（技术下限 300）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_retryBackWait_min" min="0" max="60000" step="100" value="300" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_retryBackWait_max" min="0" max="60000" step="100" value="300" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">返回后停顿随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>🔁 抓错页自愈·重开笔记等待 <span style="font-size:11px;color:#999;">（技术下限 800）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_retryOpenWait_min" min="0" max="60000" step="100" value="800" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_retryOpenWait_max" min="0" max="60000" step="100" value="800" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">重开笔记等待随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>🔗 列表打开笔记·就绪前缓冲 <span style="font-size:11px;color:#999;">（技术下限 300）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_noteOpenBuffer_min" min="0" max="60000" step="100" value="300" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_noteOpenBuffer_max" min="0" max="60000" step="100" value="300" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">打开笔记缓冲随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>🤜 点赞后·关注前停顿 <span style="font-size:11px;color:#999;">（0=不停）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_preSendGap_min" min="0" max="60000" step="100" value="500" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_preSendGap_max" min="0" max="60000" step="100" value="500" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">关注前停顿随机（毫秒）</div>
+          </div>
+          <div class="form-group">
+            <label>📤 批量发送·每条之间间隔 <span style="font-size:11px;color:#999;">（评论/灌水之间，防连发风控）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_batchItemGap_min" min="0" max="600000" step="500" value="0" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_batchItemGap_max" min="0" max="600000" step="500" value="0" style="flex:1;">
+            </div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">每条评论之间间隔随机（毫秒），建议 4000-8000 防连发</div>
+          </div>
+        </div>
+
+        <div class="panel-header" style="margin-top:24px;">
+          <h2 style="font-size:15px;">🤝 互动行为</h2>
+          <p>关注是风控权重最高的动作，可在这里关掉或降频；保存按钮在下方（与停留时间一起保存）</p>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group" style="display:flex;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="bhAutoFollow" checked>
+              发评论前自动关注对方 <span style="font-size:11px;color:#999;">（关闭后只点赞+发评论，不关注）</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label>批量发送时每隔几条关注一次 <span style="font-size:11px;color:#999;">（1=每条都关；3=每3条只关第1条；仅批量时生效，手动单发只看左侧开关）</span></label>
+            <input type="number" id="bhFollowEvery" min="1" max="50" step="1" value="1">
+          </div>
+        </div>
+
+        <div class="toolbar" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
+          <button class="btn-primary" id="delaySaveBtn">保存</button>
+          <button class="btn-secondary btn-sm" id="delayRecommendBtn" title="填入历史版本的拟人节奏（不会自动保存，填入后需点保存）">填入拟人推荐值</button>
+          <button class="btn-secondary btn-sm" id="delayZeroBtn" title="恢复默认：各项回到技术下限（能跑通的最快值，不会自动保存，填入后需点保存）">恢复默认（最快）</button>
+          <span id="delaySaveMsg" class="save-msg"></span>
+        </div>
+      </section>
+
+      <!-- 一键灌水（只保留灌水历史；搜索关键词已移到插件弹窗左上方输入框） -->
+      <section id="tab-autowater" class="tab-panel">
+        <div class="panel-header">
+          <h2>💧 一键灌水</h2>
+          <p>搜索关键词请在插件弹窗左上角「关键词列表」里添加（可添加多个，存到 <上限> 个，回车或点＋添加）；搜索时按顺序逐个关键词搜索：第一个完成才开始第二个。此处查看灌水历史并设置「🔄 循环计划」度控制</p>
+        </div>
+
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">🔄 循环计划设置</h3>
+        <p style="font-size:11px;color:#888;margin:0 0 10px;">循环计划每隔一段时间自动搜索并挑选「点赞增长中」的笔记评论（无视已灌水标记，但受下方上限约束，防止打扰博主）</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:560px;">
+          <div>
+            <label style="font-size:12px;color:#555;">每轮最多评论（篇）</label>
+            <input type="number" id="ntMaxPerRound" min="1" max="20" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">每篇笔记最多总评论（次）</label>
+            <input type="number" id="ntMaxPerNote" min="1" max="10" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">同一篇笔记冷却时间（小时）</label>
+            <input type="number" id="ntCooldownHours" min="1" max="168" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">扫描间隔（分钟）</label>
+            <input type="number" id="ntScanIntervalMin" min="5" max="240" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="btn-secondary btn-sm" id="ntSaveBtn">保存循环计划设置</button>
+          <span id="ntSaveMsg" class="save-msg"></span>
+        </div>
+
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">灌水历史</h3>
+        <div class="toolbar">
+          <button class="btn-secondary btn-sm" id="awClearHistoryBtn">清空历史</button>
+          <span id="awHistoryCount" style="font-size:12px;color:#999;margin-left:8px;"></span>
+        </div>
+        <div id="awHistoryList" style="max-height:300px;overflow-y:auto;margin-top:8px;font-size:12px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f5f5f5;text-align:left;">
+                <th style="padding:6px 8px;">笔记标题</th>
+                <th style="padding:6px 8px;">状态</th>
+                <th style="padding:6px 8px;">时间</th>
+              </tr>
+            </thead>
+            <tbody id="awHistoryBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      </main>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

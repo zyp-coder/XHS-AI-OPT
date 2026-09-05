@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小红书智慧运维工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="flex h-screen overflow-hidden" x-data="app()">
+        <!-- 侧边栏 -->
+        <aside class="w-56 flex-col flex-shrink-0" style="background-color:#111827;border-right:1px solid #1f2937;">
+            <div class="p-4" style="border-bottom:1px solid #1f2937;">
+                <h1 style="font-size:1.125rem;font-weight:700;color:#f87171;">🔥 小红书运维</h1>
+                <p class="text-xs mt-1" style="color:#6b7280;">智慧运维工具 v2.0</p>
+            </div>
+            <nav class="flex-1 p-2 space-y-1 overflow-y-auto">
+                <template x-for="item in navItems" :key="item.id">
+                    <a href="#"
+                       @click.prevent="navigate(item.id)"
+                       class="nav-link"
+                       :class="currentPage === item.id ? 'active' : ''">
+                        <span x-text="item.icon" style="font-size:1.125rem;"></span>
+                        <span x-text="item.label"></span>
+                    </a>
+                </template>
+            </nav>
+            <div class="p-3" style="border-top:1px solid #1f2937;font-size:0.75rem;color:#4b5563;">
+                <div class="flex items-center gap-2">
+                    <span class="status-dot" :style="aiReady ? 'background-color:#10b981' : 'background-color:#ef4444'"></span>
+                    <span x-text="aiReady ? 'AI 已就绪' : 'AI 未配置'"></span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- 主内容 -->
+        <main class="flex-1 flex-col overflow-hidden" style="display:flex;">
+            <!-- 顶栏 -->
+            <header style="height:3.5rem;background-color:rgba(17,24,39,0.5);border-bottom:1px solid #1f2937;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;flex-shrink:0;">
+                <h2 style="font-size:1rem;font-weight:500;" x-text="currentPageTitle"></h2>
+                <div style="display:flex;align-items:center;gap:1rem;font-size:0.875rem;color:#9ca3af;">
+                    <span class="flex items-center gap-1" style="display:inline-flex;align-items:center;gap:0.375rem;">
+                        <span class="status-dot" :style="'background-color:' + browserStatusColor"></span>
+                        <span x-text="browserStatusText" style="color:#d1d5db;"></span>
+                    </span>
+                    <span style="color:#4b5563;">|</span>
+                    <span>AI 调用 <strong style="color:#e5e7eb;" x-text="aiStats.today_calls"></strong></span>
+                    <span>引流 <strong style="color:#e5e7eb;" x-text="dashStats.today_drains"></strong></span>
+                    <span style="color:#4b5563;">|</span>
+                    <a href="https://www.xiaohongshu.com" target="_blank" style="color:#9ca3af;">小红书 ↗</a>
+                </div>
+            </header>
+
+            <!-- 页面内容 -->
+            <div class="flex-1 overflow-y-auto p-6" id="page-content">
+                <!-- 由 JS 动态渲染 -->
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/router.js"></script>
+    <script src="/static/js/pages/dashboard.js"></script>
+    <script src="/static/js/pages/diagnosis.js"></script>
+    <script src="/static/js/pages/accounts.js"></script>
+    <script src="/static/js/pages/notes.js"></script>
+    <script src="/static/js/pages/mortgage.js"></script>
+    <script src="/static/js/pages/comments.js"></script>
+    <script src="/static/js/pages/drain.js"></script>
+    <script src="/static/js/pages/knowledge.js"></script>
+    <script src="/static/js/pages/ai_config.js"></script>
+    <script src="/static/js/pages/comment_logs.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js" defer></script>
+</body>
+</html>

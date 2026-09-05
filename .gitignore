@@ -1,0 +1,43 @@
+# ── Node ──
+node_modules/
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+
+# ── 浏览器自动化 / 敏感运行数据（登录 cookie / 浏览器画像 / 数据库 / 上传）──
+data/
+.DS_Store
+Thumbs.db
+
+# ── 密钥 & 证书（小红书插件签名私钥、CRX 等）──
+*.pem
+*.key
+*.p12
+*.pfx
+web-extension.crx
+*.crx
+*.zip
+
+# ── 构建产物 ──
+dist/
+build/
+
+# ── 日志 ──
+*.log
+server_output.log
+server.log
+srv_test.err.log
+srv_test.out.log
+
+# ── 本地环境 / 密钥文件 ──
+.env
+.env.*
+config.json         # 若含本地路径或密钥，请勿入库；正式密钥请用环境变量
+
+# ── 字面名为 %APPDATA% 的本地目录 ──
+%APPDATA%/
+
+# ── 临时杂项 ──
+nul
+__test_escape.txt

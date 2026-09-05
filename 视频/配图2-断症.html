@@ -1,0 +1,107 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  @page { size: 1080px auto; margin: 0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:1080px; }
+  body{
+    font-family:"PingFang SC","Microsoft YaHei",sans-serif; color:#eef0f4;
+    background:radial-gradient(760px 480px at 15% -6%, rgba(255,36,66,.4), transparent 60%),
+               radial-gradient(680px 440px at 106% 106%, rgba(255,36,66,.26), transparent 55%),
+               linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+               linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px),
+               linear-gradient(160deg,#15080d,#1a0c12 30%,#0c0f16);
+    background-size:auto,auto,34px 34px,34px 34px,auto;
+  }
+  .page{ width:1080px; padding:44px 60px 30px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-size:19px; font-weight:900; color:#fff; margin-bottom:20px; }
+  .brand .dot{ width:13px; height:13px; border-radius:50%; background:#ff2442; }
+  .sec-h{ font-size:58px; font-weight:900; color:#fff; }
+  .sec-h .ig{ font-size:1.15em; }
+  .sec-h b{ color:#ff7a93; }
+  .sec-s{ font-size:21px; color:#b6bfd0; font-weight:700; margin-top:6px; }
+
+  .radar{ display:flex; align-items:center; gap:26px; margin-top:22px; border:1px solid #2a3244; border-radius:16px; background:rgba(10,13,20,.6); padding:18px 24px; }
+  .radar .dims{ flex:1; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .dz{ border:1px solid #2a3244; border-radius:12px; padding:12px 14px; background:rgba(19,24,36,.6); }
+  .dz b{ font-size:22px; color:#ffd088; }
+  .dz .dd{ font-size:15px; color:#aab2c2; margin-top:4px; line-height:1.5; }
+
+  .grp{ margin-top:26px; border:1px solid rgba(255,255,255,.12); border-radius:16px; background:rgba(19,24,36,.55); padding:18px 22px; }
+  .grp .gt{ font-size:34px; font-weight:800; color:#fff; display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .grp .gt .gs{ font-size:15px; color:#ffd9e0; background:rgba(255,36,66,.14); padding:2px 10px; border-radius:20px; font-weight:400; }
+  .gitems{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .it{ border:1px solid #2a3244; border-radius:12px; padding:14px 16px; background:rgba(10,13,20,.5); }
+  .it b{ font-size:28px; color:#ffd088; }
+  .it .i{ font-size:22px; }
+  .it .dd{ font-size:15px; color:#c9d0dc; margin-top:6px; line-height:1.6; }
+  .ga .gt b{ color:#ffb3c0;} .ga .it{ border-color:rgba(255,137,160,.35);}
+  .gb .gt b{ color:#8fc2ff;} .gb .it{ border-color:rgba(127,178,255,.35);}
+  .gc .gt b{ color:#8fe0ab;} .gc .it{ border-color:rgba(90,230,150,.35);}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="brand"><span class="dot"></span>AI雕兄</div>
+
+  <div class="sec-h">🩺 断症 —— <b>先把你的号照一遍</b></div>
+  <div class="sec-s">不是拍脑袋，用雷达先把「你这号该怎么做」摸清楚，再动手。</div>
+
+  <div class="radar">
+    <svg viewBox="0 0 258 240" width="250" height="232">
+      <polygon points="191,76 196,142 155,182 82,142 87,76 124,36" fill="rgba(255,36,66,.05)" stroke="rgba(255,36,66,.3)"/>
+      <polygon points="172,97 177,136 142,162 96,136 100,97 124,68" fill="none" stroke="rgba(255,255,255,.12)"/>
+      <line x1="124" y1="109" x2="191" y2="76" stroke="rgba(255,255,255,.18)"/><line x1="124" y1="109" x2="196" y2="142" stroke="rgba(255,255,255,.18)"/>
+      <line x1="124" y1="109" x2="155" y2="182" stroke="rgba(255,255,255,.18)"/><line x1="124" y1="109" x2="82" y2="142" stroke="rgba(255,255,255,.18)"/>
+      <line x1="124" y1="109" x2="87" y2="76" stroke="rgba(255,255,255,.18)"/><line x1="124" y1="109" x2="124" y2="36" stroke="rgba(255,255,255,.18)"/>
+      <circle cx="124" cy="109" r="3" fill="#ff2442"/>
+      <circle cx="124" cy="36" r="2.6" fill="#ff7a93"/><circle cx="191" cy="76" r="2.6" fill="#ff7a93"/><circle cx="196" cy="142" r="2.6" fill="#ff7a93"/>
+      <circle cx="155" cy="182" r="2.6" fill="#ff7a93"/><circle cx="82" cy="142" r="2.6" fill="#ff7a93"/><circle cx="87" cy="76" r="2.6" fill="#ff7a93"/>
+      <text x="124" y="22" fill="#fff" font-size="12" text-anchor="middle">定位</text>
+      <text x="228" y="82" fill="#fff" font-size="12" text-anchor="middle">人群</text>
+      <text x="224" y="160" fill="#fff" font-size="12" text-anchor="middle">频率</text>
+      <text x="124" y="218" fill="#fff" font-size="12" text-anchor="middle">选题</text>
+      <text x="4" y="160" fill="#fff" font-size="12" text-anchor="middle">硬伤</text>
+      <text x="2" y="82" fill="#fff" font-size="12" text-anchor="middle">历史</text>
+    </svg>
+    <div class="dims">
+      <div class="dz"><b>① 定位</b><div class="dd">你这号到底“卖什么、给谁”，够不够垂直、人设立没立起来。</div></div>
+      <div class="dz"><b>② 人群</b><div class="dd">内容在服务谁，是写给目标客户，还是写给了同行、写给了自己爽。</div></div>
+      <div class="dz"><b>③ 频率</b><div class="dd">多久一篇、什么时段发，合不合理，能不能“跳一跳够得着”。</div></div>
+      <div class="dz"><b>④ 选题</b><div class="dd">选题踩不踩目标人群的痛点、有没有一条主线。</div></div>
+      <div class="dz"><b>⑤ 内容硬伤</b><div class="dd">标题有没有钩子、封面点不点得进、开头留不留得住人。</div></div>
+      <div class="dz"><b>⑥ 历史归因</b><div class="dd">把你发过的笔记翻一遍，哪篇爆、哪篇沉，规律直接抄对的。</div></div>
+    </div>
+  </div>
+
+  <div class="grp ga">
+    <div class="gt">🧺 核心素材 <span class="gs">先有料，才有米做饭</span></div>
+    <div class="gitems">
+      <div class="it"><div class="i">🧍</div><b>人设定位</b><div class="dd">通过 AI 多轮问答，帮你把“你是谁、立哪种人设、为什么立”定下来——之后所有话术都以“这个账号的我”开口，专业又像真人。</div></div>
+      <div class="it"><div class="i">💎</div><b>产品卖点</b><div class="dd">你的产品到底卖什么、好在哪，提炼成一页说得清——之后笔记和评论才讲得准、不像广告。</div></div>
+      <div class="it"><div class="i">📚</div><b>产品知识库</b><div class="dd">把真实数据、操作步骤、个人经历理成 AI 可直接引用的库——话术才有据、专业、不空喊。</div></div>
+    </div>
+  </div>
+
+  <div class="grp gb">
+    <div class="gt">🗂 内容规划 <span class="gs">接下来发什么的路线图</span></div>
+    <div class="gitems">
+      <div class="it"><div class="i">🗺</div><b>选题蓝图</b><div class="dd">这一阶段做哪几个方向：引流探饵 / 信任干货 / 转化成交，每一条能直接当标题，不愁没题可发。</div></div>
+      <div class="it"><div class="i">🧱</div><b>笔记架构</b><div class="dd">按账号类型定每篇几页、每页放什么功能（P1 封面…Pn 收尾），不套模板、篇篇有结构。</div></div>
+      <div class="it"><div class="i">⏰</div><b>发布节奏</b><div class="dd">一周几篇、什么时段发、到点提醒——节奏稳定，更新不乱更。</div></div>
+    </div>
+  </div>
+
+  <div class="grp gc">
+    <div class="gt">🔖 主页优化 <span class="gs">让路过的人一眼记住你</span></div>
+    <div class="gitems">
+      <div class="it"><div class="i">🖼</div><b>头像</b><div class="dd">专业感 / 人设感一眼识别，和你定位挂钩，不靠撞大运。</div></div>
+      <div class="it"><div class="i">📝</div><b>简介</b><div class="dd">一句话说清“你是谁 + 能帮什么 + 怎么联系”，承接不迷路。</div></div>
+      <div class="it"><div class="i">🗂</div><b>笔记栏</b><div class="dd">置顶、归类、导航好——新访客进来就懂你卖什么、看哪篇。</div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

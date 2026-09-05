@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+pydantic-settings
+playwright
+playwright-stealth
+apscheduler
+openai
+aiofiles
+python-multipart
+cryptography

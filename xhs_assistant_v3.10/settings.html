@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>小红书评论助手 — 设置</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 侧边栏 Tab 导航 -->
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">📝</span>
+        <span>评论助手设置</span>
+      </div>
+      <ul class="tab-list">
+        <li class="tab-item active" data-tab="basic">📦 基本配置</li>
+        <li class="tab-item" data-tab="ai">🤖 AI 配置</li>
+        <li class="tab-item" data-tab="style">✍️ 话术风格</li>
+        <li class="tab-item" data-tab="knowledge">📚 知识库</li>
+        <li class="tab-item" data-tab="prompts">⚙️ 提示词</li>
+        <li class="tab-item" data-tab="logs">📊 日志统计</li>
+        <li class="tab-item" data-tab="autowater">💧 一键灌水</li>
+      </ul>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main">
+
+      <!-- ── Tab: 基本配置 ── -->
+      <section id="tab-basic" class="tab-panel active">
+        <div class="panel-header">
+          <h2>基本配置</h2>
+          <p>配置你的产品信息和商机筛选关键词</p>
+        </div>
+        <div class="form-group">
+          <label>产品名称 <span class="req">*</span></label>
+          <input type="text" id="productName" placeholder="例：房奴计算器、XX小程序" maxlength="50">
+          <span class="hint">在提示词中用 {product_name} 引用，回复时会自动替换</span>
+        </div>
+        <div class="form-group">
+          <label>引导方式</label>
+          <input type="text" id="productGuide" placeholder="例：微信小程序、公众号、App" maxlength="30">
+          <span class="hint">在提示词中用 {product_guide} 引用</span>
+        </div>
+        <div class="form-group">
+          <label>产品简述</label>
+          <textarea id="productDescription" rows="3" placeholder="用一两句话描述产品功能，AI 会用来理解产品场景"></textarea>
+          <span class="hint">在提示词中用 {product_description} 引用</span>
+        </div>
+        <div class="form-group">
+          <label>商机关键词过滤</label>
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="filterEnabled">
+              <span class="slider"></span>
+            </label>
+            <span id="filterStatusText">关闭（扫描所有评论）</span>
+          </div>
+        </div>
+        <div id="filterOptions" class="form-group" style="display:none">
+          <label>包含关键词（命中则纳入扫描）</label>
+          <div class="tag-input-wrap">
+            <div id="includeTagContainer" class="tag-container"></div>
+            <input type="text" id="includeKeywordInput" placeholder="输入关键词后按 Enter" class="tag-input">
+          </div>
+          <label style="margin-top:10px">排除关键词（命中则跳过）</label>
+          <div class="tag-input-wrap">
+            <div id="excludeTagContainer" class="tag-container"></div>
+            <input type="text" id="excludeKeywordInput" placeholder="输入关键词后按 Enter" class="tag-input">
+          </div>
+          <label style="margin-top:10px">评论最短字数</label>
+          <input type="number" id="minCommentLength" value="5" min="1" max="50" style="width:80px">
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="saveBasicBtn">保存基本配置</button>
+        </div>
+        <div id="basicSaveMsg" class="save-msg"></div>
+      </section>
+
+      <!-- ── Tab: AI 配置 ── -->
+      <section id="tab-ai" class="tab-panel">
+        <div class="panel-header">
+          <h2>AI 配置</h2>
+          <p>配置大语言模型 API，支持 DeepSeek 及 OpenAI 兼容接口</p>
+        </div>
+        <div class="form-group">
+          <label>API Key <span class="req">*</span></label>
+          <div class="input-eye-wrap">
+            <input type="password" id="apiKey" placeholder="sk-xxxxxxxxxxxxxxxx" autocomplete="off">
+            <button class="eye-btn" id="toggleApiKey" title="显示/隐藏">👁</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>API 提供商</label>
+          <select id="apiProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="qwen">通义千问（阿里云）</option>
+            <option value="siliconflow">硅基流动 SiliconFlow</option>
+            <option value="custom">自定义（手动填写）</option>
+          </select>
+          <span class="hint">选择提供商后，Base URL 和模型会自动匹配</span>
+        </div>
+        <div class="form-group" id="customBaseUrlGroup" style="display:none">
+          <label>自定义 API Base URL</label>
+          <input type="text" id="apiBaseUrlCustom" placeholder="https://your-api.com/v1">
+        </div>
+        <div class="form-group">
+          <label>模型</label>
+          <select id="apiModel">
+            <!-- 由 JS 根据提供商动态填充 -->
+          </select>
+          <span class="hint">根据所选提供商自动列出可用模型</span>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <label>Temperature（创造性）</label>
+            <select id="temperature">
+              <option value="0">0 — 最严谨（适合专业回复）</option>
+              <option value="0.3">0.3 — 偏严谨</option>
+              <option value="0.5">0.5 — 平衡</option>
+              <option value="0.7">0.7 — 偏创意</option>
+              <option value="0.8" selected>0.8 — 较有创意（推荐）</option>
+              <option value="1.0">1.0 — 高创意</option>
+              <option value="1.2">1.2 — 非常发散</option>
+              <option value="1.5">1.5 — 极度发散</option>
+              <option value="2.0">2.0 — 最大随机</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1">
+            <label>Max Tokens</label>
+            <select id="maxTokens">
+              <option value="500">500（短回复）</option>
+              <option value="1000">1000</option>
+              <option value="1500">1500</option>
+              <option value="2000" selected>2000（推荐）</option>
+              <option value="3000">3000</option>
+              <option value="4000">4000</option>
+              <option value="6000">6000（长文）</option>
+              <option value="8000">8000（超长）</option>
+            </select>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-primary" id="saveAiBtn">保存 AI 配置</button>
+          <button class="btn-secondary" id="testAiBtn">🔌 测试连接</button>
+        </div>
+        <div id="aiSaveMsg" class="save-msg"></div>
+        <div id="testResult" class="test-result" style="display:none"></div>
+      </section>
+
+      <!-- ── Tab: 话术风格 ── -->
+      <section id="tab-style" class="tab-panel">
+        <div class="panel-header">
+          <h2>话术风格</h2>
+          <p>自定义每个版本的话术风格，AI 生成回复时会按照这些风格要求来写</p>
+        </div>
+
+        <!-- 话术版本配置 -->
+        <div class="version-config-section" style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#333;">话术版本风格配置</h3>
+          <p style="font-size:12px;color:#888;margin-bottom:12px;">自定义每个版本的话术风格，AI 生成回复时会按照这些风格要求来写</p>
+
+          <div class="form-group">
+            <label>版本 A 风格 <span style="font-size:11px;color:#999;">（默认：朋友分享型）</span></label>
+            <textarea id="versionAStyle" rows="3" placeholder="例如：口语化，像朋友聊天，可以带点小八卦感；引用个人经历类知识库数据，讲自己当时的具体故事"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>版本 B 风格 <span style="font-size:11px;color:#999;">（默认：数据分析型）</span></label>
+            <textarea id="versionBStyle" rows="3" placeholder="例如：用数据和逻辑说服人，给出完整分析思路——'你现在 XX 情况，按 YY 计算，每月能省/多花 ZZ 元，10 年下来差距是 WW 万'，必须有具体数字支撑"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>版本 C 风格 <span style="font-size:11px;color:#999;">（默认：荒诞吸睛型）</span></label>
+            <textarea id="versionCStyle" rows="3" placeholder="例如：找这个话题里的搞笑点、反常识点，或者编一个和话题有点相关的奇怪/离谱小故事或类比，目的是让人看了想笑或者觉得'这是什么奇怪逻辑'而停下来看完"></textarea>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" id="saveStyleBtn">保存风格配置</button>
+        </div>
+        <div id="styleSaveMsg" class="save-msg"></div>
+      </section>
+
+      <!-- ── Tab: 知识库 ── -->
+      <section id="tab-knowledge" class="tab-panel">
+        <div class="panel-header">
+          <h2>知识库管理</h2>
+          <p>专业知识、个人经历、话术模板统一管理。设置角色后 AI 会自动路由匹配</p>
+        </div>
+        <div class="toolbar">
+          <button class="btn-primary btn-sm" id="addKbBtn">＋ 添加条目</button>
+          <button class="btn-secondary btn-sm" id="importKbBtn">📥 导入 JSON</button>
+          <button class="btn-secondary btn-sm" id="exportKbBtn">📤 导出 JSON</button>
+          <input type="text" id="kbSearch" placeholder="搜索标题/内容..." class="search-input">
+        </div>
+        <div id="kbList" class="item-list"></div>
+
+        <!-- 添加/编辑弹窗 -->
+        <div id="kbModal" class="modal" style="display:none">
+          <div class="modal-box">
+            <div class="modal-header">
+              <h3 id="kbModalTitle">添加知识库条目</h3>
+              <button class="modal-close" id="closeKbModal">✕</button>
+            </div>
+            <div class="form-group">
+              <label>标题 <span class="req">*</span></label>
+              <input type="text" id="kbTitle" placeholder="简短标题">
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <input type="text" id="kbCategory" placeholder="个人经历 / 数据资料 / 政策法规 / 通用" list="kbCategoryList">
+              <datalist id="kbCategoryList">
+                <option value="个人经历">
+                <option value="数据资料">
+                <option value="政策法规">
+                <option value="话术模板">
+                <option value="通用">
+              </datalist>
+            </div>
+            <div class="form-group">
+              <label>角色（可选）</label>
+              <input type="text" id="kbRole" placeholder="中介 / 装修顾问 / 贷款顾问 / 普通用户" list="kbRoleList">
+              <datalist id="kbRoleList">
+                <option value="中介">
+                <option value="装修顾问">
+                <option value="贷款顾问">
+                <option value="普通用户">
+              </datalist>
+              <span class="hint">设置角色后，AI 检测到对应角色时优先引用此条目</span>
+            </div>
+            <div class="form-group">
+              <label>内容 <span class="req">*</span></label>
+              <textarea id="kbContent" rows="6" placeholder="详细内容..."></textarea>
+            </div>
+            <div class="form-group">
+              <label>标签（用逗号分隔）</label>
+              <input type="text" id="kbTags" placeholder="房贷, 利率, LPR">
+            </div>
+            <div class="form-group">
+              <label class="toggle-label">
+                <label class="toggle">
+                  <input type="checkbox" id="kbIsActive" checked>
+                  <span class="slider"></span>
+                </label>
+                <span>启用此条目</span>
+              </label>
+            </div>
+            <div class="modal-footer">
+              <button class="btn-secondary" id="cancelKbModal">取消</button>
+              <button class="btn-primary" id="saveKbEntry">保存</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="kbImportFile" accept=".json" style="display:none">
+      </section>
+
+      <!-- ── Tab: 提示词管理 ── -->
+      <section id="tab-prompts" class="tab-panel">
+        <div class="panel-header">
+          <h2>提示词管理</h2>
+          <p>编辑各场景的 System Prompt 和 User Prompt 模板</p>
+        </div>
+        <div class="prompt-layout">
+          <div class="prompt-scene-list" id="promptSceneList"></div>
+          <div class="prompt-editor" id="promptEditor">
+            <div class="prompt-placeholder">← 选择左侧场景进行编辑</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Tab: 日志统计 ── -->
+      <section id="tab-logs" class="tab-panel">
+        <div class="panel-header">
+          <h2>日志统计</h2>
+          <p>查看 AI 调用记录和回复统计</p>
+        </div>
+        <div class="stats-grid" id="statsGrid">
+          <div class="stat-card"><div class="stat-num" id="statTotalCalls">-</div><div class="stat-label">AI 调用次数</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTotalTokens">-</div><div class="stat-label">总 Token 消耗</div></div>
+          <div class="stat-card"><div class="stat-num" id="statTotalReplies">-</div><div class="stat-label">已回复评论</div></div>
+          <div class="stat-card"><div class="stat-num" id="statSuccessRate">-</div><div class="stat-label">成功率</div></div>
+        </div>
+        <div class="toolbar" style="margin-top:16px">
+          <button class="btn-secondary btn-sm" id="clearLogsBtn">🗑️ 清空日志</button>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </section>
+
+      <!-- 一键灌水 -->
+      <section id="tab-autowater" class="tab-panel">
+        <div class="panel-header">
+          <h2>💧 一键灌水</h2>
+          <p>自动搜索笔记 → AI 筛选 → 批量灌水（会员功能）</p>
+        </div>
+
+        <div class="form-group">
+          <label>会员密钥</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="password" id="awLicenseKey" placeholder="请输入会员密钥" style="flex:1;">
+            <button class="btn-primary btn-sm" id="awActivateBtn">激活</button>
+            <span id="awLicenseStatus" style="font-size:12px;color:#999;">未激活</span>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="form-group">
+          <label>搜索关键词 <span style="font-size:11px;color:#999;">（回车添加）</span></label>
+          <div id="awKeywords" class="tag-input-container" style="min-height:36px;border:1px solid #ddd;border-radius:4px;padding:4px;display:flex;flex-wrap:wrap;gap:4px;">
+            <input type="text" id="awKeywordInput" placeholder="输入关键词回车添加" style="border:none;outline:none;flex:1;min-width:120px;font-size:13px;">
+          </div>
+        </div>
+
+        <hr>
+
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">调度设置</h3>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group">
+            <label>最小间隔（秒）</label>
+            <input type="number" id="awMinInterval" min="60" max="3600" value="180">
+          </div>
+          <div class="form-group">
+            <label>最大间隔（秒）</label>
+            <input type="number" id="awMaxInterval" min="60" max="3600" value="600">
+          </div>
+          <div class="form-group">
+            <label>每日上限（篇）</label>
+            <input type="number" id="awDailyMax" min="1" max="100" value="20">
+          </div>
+          <div class="form-group">
+            <label>活跃时段（开始）</label>
+            <select id="awActiveStart"></select>
+          </div>
+          <div class="form-group">
+            <label>活跃时段（结束）</label>
+            <select id="awActiveEnd"></select>
+          </div>
+        </div>
+
+        <div class="toolbar" style="margin-top:16px;">
+          <button class="btn-primary" id="awSaveScheduleBtn">保存设置</button>
+        </div>
+
+        <hr>
+
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">灌水历史</h3>
+        <div class="toolbar">
+          <button class="btn-secondary btn-sm" id="awClearHistoryBtn">清空历史</button>
+          <span id="awHistoryCount" style="font-size:12px;color:#999;margin-left:8px;"></span>
+        </div>
+        <div id="awHistoryList" style="max-height:300px;overflow-y:auto;margin-top:8px;font-size:12px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f5f5f5;text-align:left;">
+                <th style="padding:6px 8px;">笔记标题</th>
+                <th style="padding:6px 8px;">状态</th>
+                <th style="padding:6px 8px;">时间</th>
+              </tr>
+            </thead>
+            <tbody id="awHistoryBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

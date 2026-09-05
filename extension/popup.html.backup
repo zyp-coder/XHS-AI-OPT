@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 100%;
+      min-width: 620px;
+      max-width: 1200px;
+      min-height: 400px;
+      height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+      background: #f5f6f8;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      resize: both;
+    }
+
+    /* Header */
+    .header {
+      padding: 10px 14px;
+      background: #fff;
+      border-bottom: 1px solid #e8e8e8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .header h1 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .badge {
+      font-size: 11px; padding: 2px 10px; border-radius: 10px;
+      background: #e8f5e9; color: #2e7d32; white-space: nowrap;
+    }
+    .badge.offline { background: #ffebee; color: #c62828; }
+    .badge.loading { background: #fff3e0; color: #e65100; }
+
+    /* ===== Split Layout ===== */
+    .split-layout {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* ===== Left Panel (Note List) ===== */
+    .panel-left {
+      width: 360px;
+      min-width: 320px;
+      max-width: 460px;
+      border-right: 1px solid #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      background: #fafafa;
+      flex-shrink: 0;
+    }
+    .panel-left .left-header {
+      padding: 8px 10px;
+      background: #fff;
+      border-bottom: 1px solid #e8e8e8;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .panel-left .left-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 10px;
+    }
+    .panel-left .left-content::-webkit-scrollbar { width: 4px; }
+    .panel-left .left-content::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+    .panel-left .left-content::-webkit-scrollbar-track { background: transparent; }
+
+    /* ===== Right Panel (Comment Assistant) ===== */
+    .panel-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #f5f6f8;
+    }
+    .panel-right .content { flex: 1; overflow-y: auto; padding: 8px 10px; min-height: 300px; }
+    .panel-right .content::-webkit-scrollbar { width: 4px; }
+    .panel-right .content::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+    .panel-right .content::-webkit-scrollbar-track { background: transparent; }
+
+    /* ===== Left Panel - Panels (Idle / Searching / Results) ===== */
+    #leftContent .panel { display: none; }
+    #leftContent .panel.active { display: block; }
+
+    /* ===== Left Panel - Buttons ===== */
+    #leftContent .btn {
+      padding: 5px 14px; font-size: 12px; border-radius: 4px; cursor: pointer; border: 1px solid;
+      font-weight: 500; transition: all 0.15s;
+    }
+    #leftContent .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #leftContent .btn-primary { background: #059669; color: #fff; border-color: #059669; }
+    #leftContent .btn-primary:hover:not(:disabled) { background: #047857; }
+    #leftContent .btn-danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+    #leftContent .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+    #leftContent .btn-outline { background: #fff; color: #1976d2; border-color: #1976d2; }
+    #leftContent .btn-outline:hover:not(:disabled) { background: #e3f2fd; }
+    #leftContent .btn-sm { padding: 3px 8px; font-size: 11px; }
+
+    /* ===== Left Panel - Search Status ===== */
+    #leftContent .search-status {
+      background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+      padding: 16px; text-align: center; margin-bottom: 12px;
+    }
+    #leftContent .search-status .icon { font-size: 28px; margin-bottom: 8px; }
+    #leftContent .search-status .text { font-size: 13px; color: #92400e; font-weight: 500; }
+    #leftContent .search-status .detail { font-size: 11px; color: #a16207; margin-top: 6px; }
+    #leftContent .search-progress { margin-top: 10px; }
+    #leftContent .search-progress .bar-bg {
+      height: 6px; background: #fde68a; border-radius: 3px; overflow: hidden;
+    }
+    #leftContent .search-progress .bar-fill {
+      height: 100%; background: #f59e0b; border-radius: 3px; transition: width 0.3s;
+    }
+    #leftContent .search-progress .bar-label {
+      font-size: 11px; color: #92400e; margin-top: 4px; text-align: right;
+    }
+
+    /* ===== Left Panel - Spinner ===== */
+    #leftContent .spinner {
+      display: inline-block; width: 14px; height: 14px;
+      border: 2px solid #e0e0e0; border-top-color: #f59e0b;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin-right: 6px; vertical-align: middle;
+    }
+
+    /* ===== Left Panel - Results Header ===== */
+    #leftContent .results-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    #leftContent .results-header .count { font-size: 13px; color: #333; font-weight: 500; }
+    #leftContent .results-header .actions { display: flex; gap: 6px; }
+
+    /* ===== Left Panel - Note List ===== */
+    #leftContent .note-list { list-style: none; }
+    #leftContent .note-item {
+      background: #fff; border: 1px solid #e8e8e8; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 6px; transition: border-color 0.15s;
+    }
+    #leftContent .note-item:hover { border-color: #1976d2; }
+    #leftContent .note-item .note-top {
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    #leftContent .note-item .note-body { flex: 1; min-width: 0; }
+    #leftContent .note-item .note-title {
+      font-size: 13px; font-weight: 500; line-height: 1.4;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    #leftContent .note-item .note-title a { color: #1a1a1a; text-decoration: none; }
+    #leftContent .note-item .note-title a:hover { color: #1976d2; }
+    #leftContent .note-item .note-meta { font-size: 11px; color: #999; margin-top: 3px; display: flex; gap: 10px; }
+    #leftContent .note-item .note-actions { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+    #leftContent .note-item .note-status { font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+    #leftContent .note-item .note-status.watered { background: #dcfce7; color: #166534; }
+    #leftContent .note-item .note-status.opened { background: #fef3c7; color: #92400e; }
+    #leftContent .note-item .note-status.failed { background: #fef2f2; color: #991b1b; }
+    #leftContent .note-item .note-status.ai-rec { background: #eff6ff; color: #1e40af; font-weight: 500; }
+    #leftContent .note-item.watered { opacity: 0.6; }
+    #leftContent .note-item.opened { background: #fffbeb; opacity: 0.8; }
+    #leftContent .note-item .btn-locate { font-size: 11px; padding: 2px 8px; min-width: 58px; }
+    #leftContent .note-item .idx-badge { font-size: 10px; background: #f0f0f0; color: #666; padding: 0 5px; border-radius: 3px; font-family: monospace; }
+    #leftContent .btn-gray { background: #9ca3af; color: #fff; border-color: #9ca3af; cursor: not-allowed; }
+    #leftContent .btn-gray:hover { background: #9ca3af; }
+
+    /* ===== Left Panel - Empty / Error States ===== */
+    #leftContent .empty-state { text-align: center; padding: 40px 20px; color: #888; }
+    #leftContent .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+    #leftContent .empty-state .text { font-size: 13px; line-height: 1.8; }
+    #leftContent .error-box {
+      background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px;
+      padding: 12px 16px; color: #991b1b; font-size: 13px; margin-bottom: 12px;
+    }
+    #leftContent .completed-box {
+      background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px;
+      padding: 16px; text-align: center; margin-bottom: 12px;
+    }
+    #leftContent .completed-box .icon { font-size: 28px; margin-bottom: 6px; }
+    #leftContent .completed-box .text { font-size: 14px; font-weight: 500; color: #166534; }
+    #leftContent .completed-box .stats { font-size: 12px; color: #15803d; margin-top: 6px; }
+
+    /* ===== Note Info (Right Panel Top) ===== */
+    .note-info {
+      background: #fff; border-radius: 6px; padding: 8px 12px;
+      margin: 6px 10px 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      flex-shrink: 0;
+    }
+    .note-title { font-size: 12px; font-weight: 500; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .note-meta { font-size: 11px; color: #999; margin-top: 3px; display: flex; gap: 10px; }
+
+    /* Status bar */
+    .status-bar {
+      padding: 8px 10px; text-align: center; font-size: 12px; color: #666;
+      flex-shrink: 0;
+    }
+    .status-bar.error { color: #c62828; }
+    .status-bar.success { color: #2e7d32; }
+
+    /* Loading spinner */
+    .loading-spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid #e0e0e0; border-top-color: #1976d2;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      margin-right: 5px; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Card base */
+    .card {
+      background: #fff; border-radius: 8px; padding: 10px 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    /* Copy button */
+    .copy-btn {
+      padding: 3px 10px; font-size: 11px; border: 1px solid #1976d2;
+      background: #fff; color: #1976d2; border-radius: 4px;
+      cursor: pointer; transition: all 0.15s; white-space: nowrap;
+    }
+    .copy-btn:hover { background: #1976d2; color: #fff; }
+    .copy-btn.copied { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+
+    /* Send button */
+    .send-btn {
+      padding: 5px 14px; font-size: 12px; border: none;
+      background: #e65100; color: #fff; border-radius: 4px;
+      cursor: pointer; transition: all 0.15s; font-weight: 500;
+    }
+    .send-btn:hover:not(:disabled) { background: #d84315; }
+    .send-btn:disabled { background: #ccc; opacity: 0.5; cursor: not-allowed; }
+    .send-btn.sending { opacity: 0.7; }
+
+    .locate-btn {
+      padding: 5px 14px; font-size: 12px; border: none;
+      background: #1976d2; color: #fff; border-radius: 4px;
+      cursor: pointer; transition: all 0.15s; font-weight: 500;
+    }
+    .locate-btn:hover:not(:disabled) { background: #1565c0; }
+    .locate-btn:disabled { background: #ccc; opacity: 0.5; cursor: not-allowed; }
+
+    /* Interact button（前置互动：点赞+关注，不发送） */
+    .interact-btn {
+      padding: 5px 14px; font-size: 12px; border: none;
+      background: #2e7d32; color: #fff; border-radius: 4px;
+      cursor: pointer; transition: all 0.15s; font-weight: 500;
+    }
+    .interact-btn:hover:not(:disabled) { background: #388e3c; }
+    .interact-btn:disabled { background: #ccc; opacity: 0.5; cursor: not-allowed; }
+    .interact-btn.working { opacity: 0.7; }
+
+    .send-result {
+      font-size: 11px; margin-top: 4px; text-align: right;
+    }
+    .send-result.ok { color: #2e7d32; }
+    .send-result.fail { color: #c62828; }
+    .send-result.warn { color: #e65100; }
+
+    .reply-actions {
+      display: flex; gap: 6px; margin-top: 6px; justify-content: flex-end;
+    }
+
+    /* Textarea for reply */
+    .reply-box textarea {
+      width: 100%; min-height: 140px; max-height: 300px; padding: 8px 10px; font-size: 12px;
+      border: 1px solid #ddd; border-radius: 6px; resize: vertical;
+      font-family: inherit; line-height: 1.6; background: #fffdfa;
+    }
+    .reply-box textarea:focus {
+      outline: none; border-color: #e65100; box-shadow: 0 0 0 2px rgba(230,81,0,0.1);
+    }
+
+    /* Clickable comment */
+    .comment-clickable {
+      cursor: pointer; transition: background 0.15s; border-radius: 4px; padding: 2px 4px; margin: -2px -4px;
+    }
+    .comment-clickable:hover { background: #e3f2fd; }
+
+    /* Prospect card */
+    .prospect-summary {
+      font-size: 12px; color: #2e7d32; background: #e8f5e9;
+      padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .prospect-card {
+      border-left: 3px solid #2e7d32; margin-bottom: 6px;
+    }
+    .prospect-card.watered {
+      opacity: 0.5;
+      background: #f0f0f0;
+      border-left-color: #9ca3af;
+    }
+    .prospect-card.watered .prospect-reply-box {
+      opacity: 0.6;
+    }
+    .prospect-badge {
+      display: inline-block; font-size: 10px; color: #fff;
+      background: #2e7d32; border-radius: 8px; padding: 1px 8px;
+      font-weight: 500; margin-bottom: 6px;
+    }
+    .prospect-meta {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 3px;
+    }
+    .prospect-author {
+      font-size: 12px; font-weight: 500; color: #1976d2;
+    }
+    .prospect-quote {
+      font-size: 12px; color: #555; font-style: italic;
+      background: #f8f9fa; padding: 4px 8px; border-radius: 4px;
+      margin: 4px 0; line-height: 1.4;
+    }
+    .prospect-reason {
+      font-size: 12px; color: #2e7d32; margin: 3px 0;
+      font-weight: 500;
+    }
+    .prospect-reply-box {
+      background: #f0f7ff; border-radius: 6px; padding: 8px;
+      margin-top: 6px; border-left: 3px solid #1976d2;
+    }
+    .prospect-reply-label {
+      font-size: 11px; color: #1976d2; font-weight: 500;
+      margin-bottom: 4px;
+    }
+
+    /* Empty states */
+    .empty-state, .empty-prospect {
+      text-align: center; padding: 30px 20px;
+      color: #555;
+    }
+    .empty-state .emoji { font-size: 28px; margin-bottom: 6px; }
+    .empty-state p { font-size: 13px; line-height: 1.8; color: #444; }
+
+    /* Scan stats bar */
+    .scan-stats {
+      font-size: 12px; color: #555; background: #fff;
+      padding: 6px 10px; border-radius: 6px; margin-bottom: 6px;
+      text-align: center; border: 1px solid #e8e8e8;
+    }
+
+    /* Retry button */
+    .retry-btn {
+      padding: 8px 16px; background: #1976d2; color: #fff;
+      border: none; border-radius: 6px; font-size: 13px;
+      cursor: pointer; margin-top: 8px; width: 100%;
+    }
+    .retry-btn:hover { background: #1565c0; }
+
+    /* AI badge & reason */
+    .ai-badge {
+      font-size:10px; background:#2563eb; color:#fff; padding:1px 6px;
+      border-radius:8px; margin-left:6px; white-space:nowrap;
+      display:inline-block; vertical-align:middle;
+    }
+    .ai-reason {
+      font-size:11px; color:#2563eb; margin-top:2px;
+    }
+
+    /* Draggable divider */
+    .divider {
+      width: 4px;
+      cursor: col-resize;
+      background: transparent;
+      flex-shrink: 0;
+      position: relative;
+      z-index: 5;
+    }
+    .divider:hover,
+    .divider.active {
+      background: #1976d2;
+    }
+
+    /* Right panel toolbar */
+    .main-tab {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #666;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .main-tab:hover { color: #1976d2; }
+    .main-tab.active { color: #1976d2; border-bottom-color: #1976d2; }
+
+    .right-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px 0;
+      flex-shrink: 0;
+    }
+    .refresh-btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      border: 1px solid #1976d2;
+      background: #fff;
+      color: #1976d2;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .refresh-btn:hover { background: #e3f2fd; }
+    .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .batch-send-btn {
+          padding: 4px 12px;
+          font-size: 12px;
+          border: 1px solid #059669;
+          background: #fff;
+          color: #059669;
+          border-radius: 4px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+    .batch-send-btn:hover { background: #ecfdf5; }
+    .batch-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ===== Note Info - Active/Current Note (req 5) ===== */
+    .note-info.active {
+      background: #fff8e1 !important;
+      border: 1px solid #ffe082 !important;
+      padding: 12px 16px !important;
+    }
+    .note-info.active .note-title {
+      font-size: 14px !important;
+      font-weight: 600 !important;
+    }
+
+    /* ===== Note List - Opening State (req 6) ===== */
+    #leftContent .note-item.opening {
+      background: #fff8e1 !important;
+      border-color: #ffe082 !important;
+    }
+
+    /* ===== Log Panel (req 3) ===== */
+    .log-panel {
+      max-height: 130px;
+      overflow-y: auto;
+      background: #f8f9fa;
+      border-top: 1px solid #e8e8e8;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
+      flex-shrink: 0;
+    }
+    .log-panel::-webkit-scrollbar { width: 4px; }
+    .log-panel::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+    .log-panel::-webkit-scrollbar-track { background: transparent; }
+    .log-entry {
+      padding: 1px 0;
+      color: #555;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+    .log-entry .log-time { color: #aaa; margin-right: 6px; }
+    .log-entry.info { color: #1976d2; }
+    .log-entry.success { color: #2e7d32; }
+    .log-entry.warn { color: #e65100; }
+    .log-entry.error { color: #c62828; }
+
+    /* ===== 获客清单 UI ===== */
+    .pl-stats { display:flex; gap:8px; padding:8px 10px; }
+    .pl-stat-card { flex:1; background:#f8f9fa; border:1px solid #e8e8e8; border-radius:6px; padding:6px 8px; text-align:center; }
+    .pl-stat-card .num { font-size:18px; font-weight:700; color:#1976d2; }
+    .pl-stat-card .label { font-size:10px; color:#888; margin-top:2px; }
+    .pl-filter { display:flex; gap:6px; align-items:center; padding:4px 10px 8px; flex-wrap:wrap; }
+    .pl-filter select, .pl-filter input {
+      font-size:11px; padding:3px 6px; border:1px solid #d0d0d0; border-radius:4px; background:#fff; color:#333; outline:none;
+    }
+    .pl-batch { display:flex; gap:6px; align-items:center; padding:4px 10px 8px; border-bottom:1px solid #eee; }
+    .pl-card { border:1px solid #e5e5e5; border-radius:8px; margin:0 10px 8px; padding:8px 10px; background:#fff; }
+    .pl-card-top { display:flex; align-items:center; gap:8px; }
+    .pl-nick { font-weight:700; font-size:13px; color:#222; }
+    .pl-dot { width:9px; height:9px; border-radius:50%; flex:none; }
+    .pl-dot.high { background:#22c55e; } .pl-dot.medium { background:#f59e0b; } .pl-dot.low { background:#9ca3af; }
+    .pl-badge { font-size:10px; padding:1px 6px; border-radius:10px; font-weight:600; }
+    .pl-badge.pending { background:#e3f2fd; color:#1976d2; }
+    .pl-badge.sent { background:#fff3cd; color:#b45309; }
+    .pl-badge.replied { background:#d1fae5; color:#15803d; }
+    .pl-badge.converted { background:#fef3c7; color:#92400e; }
+    .pl-badge.invalid { background:#e5e7eb; color:#6b7280; }
+    .pl-tags { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+    .pl-tag { font-size:10px; background:#eef2ff; color:#4338ca; padding:1px 6px; border-radius:10px; display:inline-flex; align-items:center; gap:2px; }
+    .pl-tag .x { cursor:pointer; color:#8b5cf6; font-weight:700; padding:0 1px; }
+    .pl-tag .x:hover { color:#c62828; }
+    .pl-source { font-size:11px; color:#888; margin-top:4px; line-height:1.4; }
+    .pl-actions { display:flex; gap:4px; margin-top:6px; flex-wrap:wrap; }
+    .pl-actions button { font-size:11px; padding:2px 8px; border:1px solid #d0d0d0; border-radius:4px; background:#fff; cursor:pointer; color:#333; }
+    .pl-actions button:hover { border-color:#1976d2; color:#1976d2; }
+    .pl-actions button:disabled { opacity:0.4; cursor:not-allowed; }
+    .pl-actions button.send { border-color:#059669; color:#059669; }
+    .pl-actions button.done { border-color:#b45309; color:#b45309; }
+    .pl-actions button.sell { border-color:#92400e; color:#92400e; }
+    .pl-actions button.remove { border-color:#c62828; color:#c62828; }
+    .pl-empty { text-align:center; color:#999; font-size:12px; padding:30px 10px; }
+    /* 弹窗骨架 */
+    .modal-mask {
+      position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:2147483646;
+      display:none; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto;
+    }
+    .modal-mask.open { display:flex; }
+    .modal-box { background:#fff; border-radius:10px; width:100%; max-width:440px; padding:16px; box-shadow:0 8px 30px rgba(0,0,0,0.2); }
+    .modal-box h3 { margin:0 0 10px; font-size:14px; color:#222; }
+    .modal-box textarea { width:100%; min-height:120px; border:1px solid #d0d0d0; border-radius:6px; padding:8px; font-size:12px; box-sizing:border-box; font-family:inherit; }
+    .modal-box .profile-field { margin-bottom:8px; }
+    .modal-box .profile-field label { font-size:11px; color:#666; display:block; margin-bottom:2px; }
+    .modal-box .profile-field input, .modal-box .profile-field select {
+      width:100%; box-sizing:border-box; font-size:12px; padding:4px 8px; border:1px solid #d0d0d0; border-radius:4px; outline:none;
+    }
+    .modal-footer { display:flex; gap:6px; justify-content:flex-end; margin-top:12px; }
+    .modal-footer button { font-size:12px; padding:5px 14px; border-radius:5px; border:1px solid #d0d0d0; background:#fff; cursor:pointer; }
+    .modal-footer button.primary { background:#1976d2; color:#fff; border-color:#1976d2; }
+    .modal-footer button:disabled { opacity:0.5; cursor:not-allowed; }
+    .pl-dm-summary { font-size:11px; background:#f8f9fa; border-radius:6px; padding:8px; margin-bottom:8px; color:#444; line-height:1.5; }
+    .pl-dm-gen { width:100%; margin-bottom:8px; font-size:12px; padding:5px; border:1px solid #8b5cf6; border-radius:5px; background:#f5f3ff; color:#6d28d9; cursor:pointer; }
+    .pl-result { font-size:11px; margin-top:6px; }
+    .pl-result.ok { color:#2e7d32; } .pl-result.fail { color:#c62828; } .pl-result.warn { color:#b45309; }
+    .pl-page { display:flex; gap:6px; justify-content:center; align-items:center; padding:8px 0 12px; }
+    .pl-page button { font-size:11px; padding:2px 8px; border:1px solid #d0d0d0; border-radius:4px; background:#fff; cursor:pointer; }
+    .pl-page button:disabled { opacity:0.4; cursor:not-allowed; }
+    .pl-page span { font-size:11px; color:#666; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span>📝</span> 智慧运维</h1>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span title="当前租户/产品，切换后配置、知识库、话术、已灌水记录都会随之切换" style="font-size:14px;">🏢</span>
+      <select id="tenantSwitcher" title="切换租户/产品" style="padding:3px 6px;font-size:11px;border:1px solid #d0d0d0;border-radius:4px;background:#fff;color:#333;cursor:pointer;max-width:140px;"></select>
+      <button id="adminBtn" style="padding:3px 8px;font-size:11px;border:1px solid #e65100;background:#fff;color:#e65100;border-radius:4px;cursor:pointer;" title="打开设置">⚙️ 设置</button>
+      <span class="badge" id="statusBadge">检查中...</span>
+    </div>
+  </div>
+
+  <!-- 主功能 Tab 切换（评论跟进是独立大功能，放左上角 tab） -->
+  <div id="mainTabs" style="display:flex;gap:0;padding:0 10px;background:#fff;border-bottom:1px solid #e5e5e5;flex-shrink:0;">
+    <button id="tabCommentAssistant" class="main-tab active" title="当前笔记评论分析/商机挖掘/一键回复">📄 评论助手</button>
+    <button id="tabChatFollow" class="main-tab" title="通知页评论跟进：把时间戳通知流按用户整理成对话，AI 判断时机回复/销售（需打开 xiaohongshu.com/notification）">💬 评论跟进</button>
+    <button id="tabProspectList" class="main-tab" title="获客清单：人群筛选 + AI 画像 + 定向私信">🎯 获客清单</button>
+  </div>
+
+  <!-- Split Layout -->
+  <div class="split-layout">
+    <!-- ===== Left Panel: Note List ===== -->
+    <div class="panel-left" id="panelLeft">
+      <div class="left-header">
+        <input type="text" id="awKeywordPopup" placeholder="输入关键词，回车搜索" title="输入一个搜索关键词，按回车或点右侧搜索按钮" style="flex:1;min-width:90px;padding:4px 8px;font-size:12px;border:1px solid #d0d0d0;border-radius:4px;outline:none;">
+        <button class="btn btn-primary btn-sm" id="btnSearch">🔎 搜索</button>
+        <button class="btn btn-outline btn-sm" id="btnBackToList" title="返回列表" style="display:none;">⬅ 返回</button>
+        <button class="btn btn-outline btn-sm" id="btnCancelSearch" style="display:none;">取消搜索</button>
+        <span id="leftBotSlot"></span>
+      </div>
+      <div class="left-content" id="leftContent">
+        <!-- 初始状态：准备搜索 -->
+        <div class="panel active" id="panelIdle">
+          <div class="empty-state">
+            <div class="icon">🔍</div>
+            <div class="text">
+              在上方输入框填关键词，按回车开始搜索<br>
+              搜索完成后可在左侧列表点击笔记<br>
+              右侧将自动加载笔记内容
+            </div>
+          </div>
+        </div>
+
+        <!-- 搜索进行中 -->
+        <div class="panel" id="panelSearching">
+          <div class="search-status">
+            <div class="icon"><span class="spinner"></span></div>
+            <div class="text" id="searchText">正在搜索...</div>
+            <div class="detail" id="searchDetail"></div>
+            <div class="search-progress">
+              <div class="bar-bg"><div class="bar-fill" id="searchBar" style="width:0%"></div></div>
+              <div class="bar-label" id="searchBarLabel"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 搜索结果 -->
+        <div class="panel" id="panelResults">
+          <div class="results-header">
+            <span class="count" id="resultsCount"></span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button id="btnWaterSummary" class="btn-sm" style="font-size:10px;padding:2px 6px;cursor:pointer;background:#e8f5e9;border:1px solid #4caf50;border-radius:3px;color:#2e7d32;" title="查看灌水总结（今天灌了多少、灌了什么）">💧 灌水总结</button>
+              <button id="btnViewWateredList" class="btn-sm" style="font-size:10px;padding:2px 6px;cursor:pointer;background:#f0f0f0;border:1px solid #ddd;border-radius:3px;" title="查看已灌水笔记清单">📋 已灌水</button>
+              <label style="font-size:11px;color:#666;display:flex;align-items:center;gap:3px;cursor:pointer;">
+                <input type="checkbox" id="filterDoneCb" checked style="cursor:pointer;"> 隐藏已处理
+              </label>
+            </div>
+          </div>
+          <div id="filterStats" style="font-size:10px;color:#888;padding:2px 8px;background:#f9f9f9;border-bottom:1px solid #eee;"></div>
+          <ul class="note-list" id="noteList"></ul>
+        </div>
+
+        <!-- 搜索无结果 -->
+        <div class="panel" id="panelNoResults">
+          <div class="empty-state">
+            <div class="icon">😔</div>
+            <div class="text">未找到笔记<br>请在上方输入框换个关键词重试</div>
+          </div>
+        </div>
+
+        <!-- 搜索错误 -->
+        <div class="panel" id="panelError">
+          <div class="error-box" id="errorMessage"></div>
+          <button class="btn btn-primary" id="btnRetrySearch">重试</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Draggable Divider -->
+    <div class="divider" id="divider"></div>
+
+    <!-- ===== Right Panel: Comment Assistant ===== -->
+    <div class="panel-right">
+      <div class="right-toolbar">
+        <span style="font-size:12px;color:#888;">评论助手</span>
+        <div style="display:flex;gap:4px;">
+          <button id="batchSendBtn" class="batch-send-btn" title="自动对当前页面所有商机评论逐个一键发送">📤 自动评论</button>
+          <button id="refreshBtn" class="refresh-btn" title="刷新加载当前笔记的评论">🔄 评论刷新</button>
+        </div>
+      </div>
+      <div id="lockBanner" style="display:none;align-items:center;gap:8px;padding:8px 12px;margin:0;background:linear-gradient(90deg,#fff3cd,#ffe69c);color:#7a5b00;font-size:12px;font-weight:600;border-bottom:1px solid #ffd75e;">
+        <span class="loading-spinner" style="border-top-color:#c9930a;"></span>
+        <span id="lockBannerText">🔒 操作进行中，请稍候…（防止评论错位，正在串行发送）</span>
+      </div>
+      <div id="noteInfo" class="note-info" style="display:none"></div>
+      <div id="statusBar" class="status-bar">⏸️ 待机中（未开始扫描）</div>
+      <div id="mainContent" class="content"></div>
+      <!-- 评论跟进独立视图（Tab 切换显示，与评论助手互斥） -->
+      <div id="chatFollowContent" class="content" style="display:none;"></div>
+      <!-- 获客清单独立视图（Tab 切换显示，与评论助手/评论跟进互斥） -->
+      <div id="prospectContent" class="content" style="display:none;"></div>
+      <div id="logPanel" class="log-panel" style="display:none;">
+        <div class="log-entry info">📋 操作日志将显示在这里</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 锁定遮罩：操作进行中时铺满整个面板，拦截一切点击，彻底禁止手动操作与自动化冲突；内嵌实时日志供锁定时查看 -->
+  <div id="lockOverlay" style="display:none;position:fixed;inset:0;z-index:2147483647;background:rgba(255,251,240,0.94);cursor:not-allowed;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px 12px;box-sizing:border-box;">
+    <div style="background:linear-gradient(90deg,#fff3cd,#ffe69c);color:#7a5b00;padding:12px 20px;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,0.12);font-size:13px;font-weight:700;display:flex;align-items:center;gap:10px;max-width:90%;text-align:center;">
+      <span class="loading-spinner" style="border-top-color:#c9930a;flex:none;"></span>
+      <span id="lockOverlayText">🔒 操作进行中，请勿手动操作…</span>
+    </div>
+    <!-- 当前动作（实时）：content.js 每切一步都会刷新这里，包括等待读秒 -->
+    <div id="lockOverlayStatus" style="margin-top:14px;width:94%;max-width:520px;background:#fff;border:1px solid #ffe0a3;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:700;color:#c9530a;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.06);">⚙️ 正在准备…</div>
+    <div style="margin-top:14px;color:#a07b28;font-size:11px;font-weight:600;">📋 实时日志（最新在上方）</div>
+    <div id="lockOverlayLog" style="margin-top:6px;width:94%;max-width:520px;flex:1;min-height:0;overflow-y:auto;background:#fffdf8;border:1px solid #f0e2c4;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#5a4a2a;"></div>
+  </div>
+
+  <!-- 获客清单：私信弹窗 -->
+  <div class="modal-mask" id="dmModal">
+    <div class="modal-box">
+      <h3 id="dmModalTitle">✉️ 私信</h3>
+      <div class="pl-dm-summary" id="dmModalSummary"></div>
+      <button class="pl-dm-gen" id="dmGenBtn">🤖 AI 生成话术</button>
+      <textarea id="dmText" placeholder="私信内容..."></textarea>
+      <div id="dmResult" class="pl-result"></div>
+      <div class="modal-footer">
+        <button id="dmCancelBtn">取消</button>
+        <button class="primary" id="dmSendBtn">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 获客清单：画像编辑弹窗 -->
+  <div class="modal-mask" id="profileModal">
+    <div class="modal-box">
+      <h3>⚡ 编辑画像</h3>
+      <div class="profile-field"><label>标签（逗号分隔）</label><input id="pfTags" placeholder="首套刚需,预算敏感"></div>
+      <div class="profile-field"><label>身份</label><input id="pfIdentity" placeholder="95后打工人"></div>
+      <div class="profile-field"><label>需求</label><input id="pfNeeds" placeholder="想了解..."></div>
+      <div class="profile-field"><label>痛点</label><input id="pfPain" placeholder="怕..."></div>
+      <div class="profile-field"><label>意向等级</label>
+        <select id="pfIntent">
+          <option value="high">高</option>
+          <option value="medium">中</option>
+          <option value="low">低</option>
+        </select>
+      </div>
+      <div class="profile-field"><label>私信切入角度</label><input id="pfAngle" placeholder="对方问...，用...切入"></div>
+      <div class="modal-footer">
+        <button id="pfCancelBtn">取消</button>
+        <button class="primary" id="pfSaveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="lib/note-trend.js"></script>
+  <script src="popup.js"></script>
+  <script src="auto-water-app.js"></script>
+  <script src="auto-bot.js"></script>
+</body>
+</html>

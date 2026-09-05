@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "小红书评论助手 · 全功能版",
+  "version": "3.15.7",
+  "description": "在小红书，用AI来挖掘潜在客户，自动生成回复，运营评论互动，还带后台分析。",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting",
+    "unlimitedStorage",
+    "alarms",
+    "windows"
+  ],
+  "host_permissions": [
+    "https://*.deepseek.com/*",
+    "https://api.openai.com/*",
+    "https://*.openai.com/*",
+    "https://www.xiaohongshu.com/*",
+    "https://www.baidu.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "settings.html",
+  "action": {
+    "default_title": "小红书评论助手",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.xiaohongshu.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
