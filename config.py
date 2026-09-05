@@ -21,7 +21,9 @@ HOST = "127.0.0.1"
 PORT = 8000
 
 # 加密密钥（用于加密 API Key）
-ENCRYPTION_KEY = "xhs-ops-secret-key-2024-change-me"
+# 优先读取环境变量 XHS_OPS_ENCRYPTION_KEY；未设置时回退旧默认值（保证存量数据可解密）。
+# ⚠️ 生产/公开环境务必通过环境变量注入强随机密钥，不要用下面的占位缺省值。
+ENCRYPTION_KEY = os.environ.get("XHS_OPS_ENCRYPTION_KEY", "xhs-ops-secret-key-2024-change-me")
 
 # ==================== Android 模拟器 ====================
 # 主开关
