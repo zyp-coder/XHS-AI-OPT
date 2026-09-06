@@ -67,6 +67,14 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
   if (!apiKey) {
     throw new Error('未配置 API Key，请在设置页面填写');
   }
+  // ★ 修复：API Key 里若混入非 ASCII 字符（中文/Emoji 等，常见于误粘贴），浏览器 fetch 的
+  //   Authorization 头会直接抛 "String contains non ISO-8859-1 code point"。
+  //   这里做防御：清掉空白/控制符，并显著提示用户重填，不再给一个看不懂的崩溃。
+  const cleanKey = String(apiKey).replace(/[\s\r\n\t]/g, '').trim();
+  if (/[^\x00-\xff]/.test(cleanKey)) {
+    throw new Error('API Key 含有非英文/数字字符（可能粘贴进了中文或多余内容）。请到「设置→AI 配置」重新复制填写正确的 API Key。');
+  }
+  const key = cleanKey;
 
   const baseUrl = (apiBaseUrl || 'https://api.deepseek.com/v1').replace(/\/$/, '');
   const url = `${baseUrl}/chat/completions`;
@@ -93,7 +101,7 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${key}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
@@ -101,6 +109,10 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
   } catch (err) {
     if (err.name === 'TimeoutError') {
       throw new Error('AI 请求超时（60秒），请检查网络或稍后重试');
+    }
+    // 把“headers 含非法字符”这类底层错也转成清晰提示
+    if (/non ISO-8859-1|headers' property/i.test(String(err.message || ''))) {
+      throw new Error('AI 请求配置异常：API Key 或地址包含非法字符（多半是粘贴进了中文）。请在设置→AI 配置重新填写正确的 API Key。');
     }
     throw new Error(`网络错误：${err.message}`);
   }

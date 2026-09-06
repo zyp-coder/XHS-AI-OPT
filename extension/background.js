@@ -587,9 +587,10 @@ async function handleAiKbBuild(data) {
   const cfg = await Storage.getConfig();
   if (!cfg.ai.apiKey && !cfg.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
   const answers = (data && Array.isArray(data.answers)) ? data.answers : [];
-  const ansText = KB_QUESTIONS.map((q, i) => {
-    const a = (answers[i] && String(answers[i].answer ?? answers[i])) || '（未回答）';
-    return `Q${i + 1}. ${q}\nA${i + 1}. ${a.trim()}`;
+  const ansText = answers.map(function (a, i) {
+    const q = (a && a.q) ? String(a.q) : (KB_QUESTIONS[i] || ('Q' + (i + 1)));
+    const ans = String((a && a.answer) || '').trim() || '（未回答）';
+    return `Q${i + 1}. ${q}\nA${i + 1}. ${ans}`;
   }).join('\n\n');
   const system = `你是小红书账号的专业知识库整理师。根据用户对几个问题的回答，整理出一份可直接用于写评论/文案的知识库条目。
 要求：

@@ -6152,7 +6152,7 @@ function diagStep3(body) {
   if (!body) return;
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML = _diagCard(
-    _diagStepTitle('③', '产品与卖点') +
+    _diagStepTitle('④', '产品与卖点') +
     '<div style="font-size:12px;color:#888;margin:4px 0 8px;">你的产品/服务是什么、卖点有哪些、怎么引导用户找到你。写回「设置→产品配置」。</div>' +
     _diagLabel('产品名称') + '<input id="diagProdName" type="text" placeholder="例：贷款计算器小程序" style="width:100%;box-sizing:border-box;margin-bottom:10px;">' +
     '<div style="border-top:1px solid #eee;padding-top:10px;">' +
@@ -6262,21 +6262,17 @@ function diagStep4(body) {
   if (!body) return;
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML =
-    _diagCard(_diagStepTitle('④', '知识库 · 让回复有干货') +
-'<div style="font-size:12px;color:#888;margin:4px 0;">三种方式：答 5 问让 AI 生成；或粘贴/上传文件导入已有知识。写回「设置→知识库」。</div>' +
-      '<div style="font-size:12px;color:#333;margin:6px 0 4px;">方式一 · 答 5 问生成：</div>' +
-      '<div id="diagK_Qs"></div>' + _dBtn('diagKBuild', '✨ 用 AI 生成知识库') + '<span id="diagKMsg" style="font-size:12px;color:#0a7b5a;"></span>' +
+_diagCard(_diagStepTitle('⑤', '知识库 · 让回复有干货') +
+'<div style="font-size:12px;color:#888;margin:4px 0;">知识库的素材（产品/客户/经验/数据/干货）已在②问卷答过。点「✨ 用问卷整理成知识库」即可，或粘贴/上传文件导入已有知识。写回「设置→知识库」。</div>' +
+      '<div style="font-size:12px;color:#333;margin:6px 0 4px;">方式一 · 复用②问卷回答生成：</div>' +
+      _dBtn('diagKBuild', '✨ 用问卷回答生成知识库') + '<span id="diagKMsg" style="font-size:12px;color:#0a7b5a;"></span>' +
       '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:8px;"><div style="font-size:12px;color:#333;margin-bottom:4px;">方式二 · 导入已有知识：</div>' +
       '<textarea id="diagKImp" rows="4" placeholder="每行一条：标题：内容&#10;或直接粘一段 JSON 数组：[{\"title\":\"..\",\"content\":\"..\"}]" style="width:100%;box-sizing:border-box;margin-bottom:6px;"></textarea>' +
       _dBtn('diagKImport', '📥 导入知识库') + '<span id="diagKIMsg" style="font-size:12px;color:#0a7b5a;"></span><br>' +
       _dBtn('diagKFileBtn', '📁 导入文件') + '<input type="file" id="diagKFile" accept=".json,.txt,application/json,text/plain" style="display:none;">' +
       '<span id="diagKFMsg" style="font-size:12px;color:#999;"></span></div>') +
     '<div style="margin-top:12px;">' + _dBtn('diagStep5Btn', '下一步：⑥ 内容规划 & 封面', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过知识库', '', 'btn-outline') + '</div>';
-  document.getElementById('diagK_Qs').innerHTML = DIAG_KB_QUESTIONS.map(function (q, i) {
-    return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
-      '<textarea class="diagK_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
-  }).join('');
-document.getElementById('diagKBuild')?.addEventListener('click', diagKbBuild);
+  document.getElementById('diagKBuild')?.addEventListener('click', diagKbBuild);
   document.getElementById('diagKImport')?.addEventListener('click', diagKbImport);
   document.getElementById('diagKFileBtn')?.addEventListener('click', function () { const f = document.getElementById('diagKFile'); if (f) f.click(); });
   document.getElementById('diagKFile')?.addEventListener('change', diagKbImportFile);
@@ -6286,8 +6282,10 @@ document.getElementById('diagKBuild')?.addEventListener('click', diagKbBuild);
 async function diagKbBuild() {
   const btn = document.getElementById('diagKBuild'); const msg = document.getElementById('diagKMsg');
   if (!btn) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 生成中…'; if (msg) msg.textContent = '';
-  try {
-    const answers = Array.from((document.querySelectorAll('.diagK_Q') || [])).map(function (el) { return { answer: el.value }; });
+try {
+    // 复用②问卷回答（产品/客户/经验/数据/干货已覆盖），不再单独答 5 问
+    const unified = _diagState.unifiedAnswers || Array.from((document.querySelectorAll('.diagQuiz_Q, .diagK_Q') || [])).map(function (el) { return { answer: el.value }; });
+    const answers = unified.map(function (a, i) { return { q: (DIAG_UNIFIED_QUESTIONS[i] || ''), answer: (a && a.answer) || a.q || '' }; });
     const r = await _diagSay('aiKbBuild', { answers: answers });
     if (!r || !r.ok || !Array.isArray(r.entries) || !r.entries.length) throw new Error((r && r.error) || 'AI 未生成知识库');
     const saved = await _diagSay('aiKbSave', { entries: r.entries });
@@ -6334,7 +6332,7 @@ function diagStep5(body) {
   if (!body) return;
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML =
-    _diagCard(_diagStepTitle('⑤', '内容规划 & 封面') +
+    _diagCard(_diagStepTitle('⑥', '内容规划 & 封面') +
       '<div style="font-size:12px;color:#888;margin:4px 0;">选账号类型，AI 用②的同一套 10 问直接出笔记规划；再补封面设置。</div>' +
       _diagLabel('你的账号属于哪种？（选一个或自填）') + '<div id="diagPlanType" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' + DIAG_ACCOUNT_TYPES.map(function (ty) { return '<button type="button" class="planTypeChip" data-v="' + _dEsc(ty) + '" style="font-size:12px;padding:5px 10px;border:1px solid #dfe3ea;border-radius:14px;background:#f6f7f9;color:#555;cursor:pointer;">' + _dEsc(ty) + '</button>'; }).join('') + '</div>' +
 '<input id="diagPlanTypeCustom" type="text" placeholder="其他，自己输入…" style="width:100%;box-sizing:border-box;margin-bottom:10px;">' +
@@ -6449,7 +6447,7 @@ function diagRenderPlan() {
 function diagStep6(body) {
   if (!body) return;
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
-  body.innerHTML = _diagCard(_diagStepTitle('⑥', '深度评估报告') +
+  body.innerHTML = _diagCard(_diagStepTitle('⑦', '深度评估报告') +
     '<div style="font-size:12px;color:#888;margin:4px 0;">综合主页、人设/风格、产品卖点、知识库、内容规划与封面，产出一份带整改优先级的深度报告。</div>' +
     _dBtn('diagReportBuild', '✨ 生成深度评估报告') + '<span id="diagReportMsg" style="font-size:12px;color:#0a7b5a;"></span>') +
     '<div id="diagReportResult" style="margin-top:10px;"></div>';
