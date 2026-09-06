@@ -5902,8 +5902,8 @@ function renderDiagnosis(container) {
   _diagStep = 1;
 container.innerHTML = [
     '<div style="padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#ffffff,#fff7fa);">',
-    '  <div style="font-weight:700;font-size:15px;color:var(--ink);">🧭 账号诊断 · 6 步工作流</div>',
-    '  <div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">抓主页 → 人设/风格 → 产品卖点 → 知识库 → 内容规划&封面 → 深度报告。设置项在这里填，自动写回「设置」；最后汇总成整改方案。</div>',
+    '  <div style="font-weight:700;font-size:15px;color:var(--ink);">🧭 账号诊断 · 7 步工作流</div>',
+    '  <div style="font-size:11px;color:#888;margin-top:4px;line-height:1.7;">抓主页 → 问卷(10问)→ 人设/风格 → 产品卖点 → 知识库 → 内容规划&封面 → 深度报告。人设/卖点/规划共用同一份问卷回答，只答一次。</div>',
     '</div>',
     '<div id="diagBody" style="padding:14px;font-size:13px;color:#333;"></div>',
   ].join('');
@@ -5912,7 +5912,7 @@ container.innerHTML = [
 function diagGo(n) {
   _diagStep = n;
   const b = document.getElementById('diagBody'); if (!b) return;
-  const items = [[1, '①', '账号资料'], [2, '②', '人设/风格'], [3, '③', '产品卖点'], [4, '④', '知识库'], [5, '⑤', '规划/封面'], [6, '⑥', '深度报告']];
+  const items = [[1, '①', '账号资料'], [2, '②', '问卷'], [3, '③', '人设/风格'], [4, '④', '产品卖点'], [5, '⑤', '知识库'], [6, '⑥', '规划/封面'], [7, '⑦', '深度报告']];
   b.innerHTML = '<div style="display:flex;gap:2px;align-items:flex-start;margin-bottom:14px;">' + items.map(function (it, ix) {
     const t = it[0];
     const done = t < n, cur = t === n;
@@ -5929,10 +5929,11 @@ function diagGo(n) {
   b.querySelectorAll('[data-go]').forEach(function (el) { el.onclick = function () { diagGo(parseInt(el.getAttribute('data-go'), 10)); }; });
   const body = document.getElementById('diagStepBody');
   if (n === 1) diagStep1(body);
-  else if (n === 2) diagStep2(body);
-  else if (n === 3) diagStep3(body);
-  else if (n === 4) diagStep4(body);
-  else if (n === 5) diagStep5(body);
+  else if (n === 2) diagStepQuiz(body);
+  else if (n === 3) diagStep2(body);
+  else if (n === 4) diagStep3(body);
+  else if (n === 5) diagStep4(body);
+  else if (n === 6) diagStep5(body);
   else diagStep6(body);
 }
 function _diagNeedProfile(body) {
@@ -5948,7 +5949,7 @@ function diagStep1(body) {
 '<div style="font-weight:700;font-size:15px;color:#1f1f1f;">① 抓取你的小红书主页</div>' +
     '<div style="font-size:12px;color:#888;margin:2px 0 10px;">抓回账号昵称、简介、发过的笔记（只要标题即可）。需已在小红书网页版登录、能在本人「我的」主页采集。</div>' +
     _dBtn('diagFetchBtn', '① 抓取我的主页', '(需已登录小红书)') + '<span id="diagFetchMsg" style="font-size:12px;color:#0a7b5a;"></span>'
-  ) + '<div style="margin-top:10px;color:#999;font-size:12px;">②~⑥ 在工作流后面，抓完主页再继续。</div>';
+) + '<div style="margin-top:10px;color:#999;font-size:12px;">②~⑦ 在工作流后面，抓完主页再继续。</div>';
   document.getElementById('diagFetchBtn')?.addEventListener('click', diagFetchProfile);
 }
 async function diagFetchProfile() {
@@ -5986,23 +5987,57 @@ function diagRenderProfile(body) {
     '<div style="font-size:12px;color:#666;margin-top:2px;white-space:pre-wrap;word-break:break-word;">' + _dEsc(p.desc || '（暂无简介）') + '</div></div></div>' +
     '<div style="display:flex;margin:10px 0 4px;">' + stat(p.fans, '粉丝') + stat(p.follows, '关注') + stat(p.likes, '获赞') + '</div>'
   ) + '<div style="margin-top:12px;border:1px solid #eee;border-radius:8px;padding:10px;background:#fafbfc;"><b style="font-size:13px;">发过的笔记 (' + (p.notes || []).length + ')</b><div style="white-space:pre-wrap;font-size:12px;color:#555;margin-top:4px;">' + _dEsc(notes || '（未读到）') + '</div></div>' +
-  '<div style="margin-top:14px;">' + _dBtn('diagNextBtn', '下一步：② 人设/风格', '', 'btn-primary') + _dBtn('diagRefetchBtn', '重新抓取', '', 'btn-outline') + '</div>';
+'<div style="margin-top:14px;">' + _dBtn('diagNextBtn', '下一步：② 问卷', '', 'btn-primary') + _dBtn('diagRefetchBtn', '重新抓取', '', 'btn-outline') + '</div>';
   document.getElementById('diagNextBtn')?.addEventListener('click', function () { diagGo(2); });
   document.getElementById('diagRefetchBtn')?.addEventListener('click', function () { _diagState.profile = null; diagGo(1); });
 }
 
-/* ── ② 人设评定 + 话术风格 ── */
-function diagStep2(body) {
+/* ── ② 问卷（10问统一收集：人设/产品/内容规划只答一次，后续步骤复用） ── */
+function diagStepQuiz(body) {
   if (!body) return;
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML =
     _diagCard(
-_diagStepTitle('②', '人设评定 · 立住"你是谁"') +
-      '<div style="font-size:12px;color:#888;margin:4px 0;">下面 10 问把人设/产品/内容规划一次问清（③⑤ 会复用这份回答）。答得越具体，AI 出的越像你本人。</div>' +
-      '<div id="diagPStatus" style="font-size:12px;color:#666;margin:6px 0;"></div>' +
+      _diagStepTitle('②', '问卷 · 10 问一次问清') +
+      '<div style="font-size:12px;color:#888;margin:4px 0;">这 10 问覆盖【人设 / 产品卖点 / 内容规划】，答一次，后面③人设④卖点⑥规划都复用。答得越具体，AI 出的越像你本人。</div>' +
       '<div style="font-size:12px;color:#888;margin:6px 0 4px;">账号简介（已带入，可改）：</div>' +
-      '<textarea id="diagP_Bio" rows="2" style="width:100%;box-sizing:border-box;">' + _dEsc(_diagState.profile.desc || '') + '</textarea>' +
-      '<div id="diagP_Qs"></div>' + _dBtn('diagPBuild', '✨ 用 AI 整理成人设并保存') + '<span id="diagPMsg" style="font-size:12px;color:#0a7b5a;"></span>'
+      '<textarea id="diagQuizBio" rows="2" style="width:100%;box-sizing:border-box;">' + _dEsc(_diagState.profile.desc || '') + '</textarea>' +
+      '<div id="diagQuiz_Qs" style="margin-top:6px;"></div>' +
+      _dBtn('diagQuizNext', '✓ 保存问卷 → 去③人设') + '<span id="diagQuizMsg" style="font-size:12px;color:#0a7b5a;"></span>'
+    );
+  document.getElementById('diagQuiz_Qs').innerHTML = DIAG_UNIFIED_QUESTIONS.map(function (q, i) {
+    return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
+      '<textarea class="diagQuiz_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
+  }).join('');
+  // 预填上次已答（从②返回再来不重打）
+  const answers = _diagState.unifiedAnswers || [];
+  if (answers.length) {
+    document.querySelectorAll('.diagQuiz_Q').forEach(function (ta) {
+      const a = answers[parseInt(ta.getAttribute('data-i'), 10)];
+      if (a && a.answer) ta.value = a.answer;
+    });
+  }
+  document.getElementById('diagQuizNext')?.addEventListener('click', function () {
+    const answers2 = Array.from(document.querySelectorAll('.diagQuiz_Q')).map(function (el) { return { answer: el.value.trim() }; });
+    _diagState.unifiedAnswers = answers2;
+    _diagState.userBio = (document.getElementById('diagQuizBio') || {}).value ? document.getElementById('diagQuizBio').value.trim() : '';
+    const msg = document.getElementById('diagQuizMsg');
+    const filled = answers2.filter(function (a) { return a.answer; }).length;
+    if (msg) msg.textContent = '已保存 ' + filled + ' 题，去生成人设…';
+    diagGo(3);
+  });
+}
+
+/* ── ③ 人设评定 + 话术风格（复用②问卷回答） ── */
+function diagStep2(body) {
+  if (!body) return;
+  if (!_diagState.profile) { _diagNeedProfile(body); return; }
+body.innerHTML =
+    _diagCard(
+      _diagStepTitle('③', '人设/风格 · 立住"你是谁"') +
+      '<div id="diagPStatus" style="font-size:12px;color:#666;margin:6px 0;"></div>' +
+      '<div style="font-size:12px;color:#888;margin:4px 0;">你已在②问卷答过（身份/经历/干货/口吻等）。点「✨ 用问卷回答生成人设并保存」即可复用②的回答。</div>' +
+      _dBtn('diagPBuild', '✨ 用问卷回答生成人设并保存') + '<span id="diagPMsg" style="font-size:12px;color:#0a7b5a;"></span>'
     ) +
     '<div style="margin-top:10px;">' + _diagCard(
       '<div style="font-weight:700;font-size:14px;">说话风格 · 反 AI 味</div>' +
@@ -6019,16 +6054,12 @@ _diagStepTitle('②', '人设评定 · 立住"你是谁"') +
       '<textarea id="diagPEdit" rows="6" style="width:100%;box-sizing:border-box;white-space:pre-wrap;" placeholder="你的人设正文会出现在这里，可编辑…"></textarea>' +
       _dBtn('diagPEditSave', '💾 保存修改后的人设') + '<span id="diagPEditMsg" style="font-size:12px;color:#0a7b5a;"></span>'
     ) + '</div>' +
-    '<div style="margin-top:12px;">' + _dBtn('diagStep3Btn', '下一步：③ 产品卖点', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过人设', '', 'btn-outline') + '</div>';
-document.getElementById('diagP_Qs').innerHTML = DIAG_UNIFIED_QUESTIONS.map(function (q, i) {
-    return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
-      '<textarea class="diagP_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
-  }).join('');
+'<div style="margin-top:12px;">' + _dBtn('diagStep3Btn', '下一步：④ 产品卖点', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过人设', '', 'btn-outline') + '</div>';
 document.getElementById('diagPBuild')?.addEventListener('click', diagPersonaBuild);
   document.getElementById('diagPEditSave')?.addEventListener('click', diagPersonaEditSave);
   document.getElementById('diagStyleSave')?.addEventListener('click', diagStyleSave);
-  document.getElementById('diagStep3Btn')?.addEventListener('click', function () { diagGo(3); });
-  document.getElementById('diagSkipBtn')?.addEventListener('click', function () { diagGo(3); });
+document.getElementById('diagStep3Btn')?.addEventListener('click', function () { diagGo(4); });
+  document.getElementById('diagSkipBtn')?.addEventListener('click', function () { diagGo(4); });
   diagPersonaStatus();
   diagStylePrefill();
 }
@@ -6036,7 +6067,7 @@ async function diagPersonaStatus() {
   const st = document.getElementById('diagPStatus'); const edit = document.getElementById('diagPEdit');
   try {
     const r = await _diagSay('getPersona'); const p = (r && r.persona) || null;
-    if (!p || !p.text) { if (st) st.textContent = '⚠️ 还没有人设。答下面 10 问点生成即可。'; return; }
+    if (!p || !p.text) { if (st) st.textContent = '⚠️ 还没有人设。①先答②问卷，再在③点「用问卷回答生成」即可。'; return; }
     _diagState.persona = p.text;
     if (st) st.innerHTML = '✅ 已有保存的人设（' + (p.updatedAt ? new Date(p.updatedAt).toLocaleString('zh-CN') : '') + '）';
     if (edit && !edit.dataset.touched) edit.value = p.text;
@@ -6046,10 +6077,8 @@ async function diagPersonaBuild() {
   const btn = document.getElementById('diagPBuild'); const msg = document.getElementById('diagPMsg');
   if (!btn) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 生成中…'; if (msg) msg.textContent = '';
   try {
-    const bio = (document.getElementById('diagP_Bio') || {}).value ? document.getElementById('diagP_Bio').value.trim() : '';
-    const answers = Array.from((document.querySelectorAll('.diagP_Q') || [])).map(function (el) { return { answer: el.value }; });
-    // 保存统一答案，供③产品卖点 /⑤内容规划 复用（只答一次）
-    _diagState.unifiedAnswers = answers;
+    const bio = _diagState.userBio || ((document.getElementById('diagQuizBio') || {}).value || '').trim() || '';
+    const answers = _diagState.unifiedAnswers || Array.from((document.querySelectorAll('.diagQuiz_Q, .diagP_Q') || [])).map(function (el) { return { answer: el.value }; });
     const r = await _diagSay('aiPersonaBuild', { bio: bio, answers: answers });
     if (!r || !r.persona || !r.persona.text) throw new Error((r && r.error) || 'AI 未返回人设');
     const saved = await _diagSay('setPersona', { persona: r.persona });
@@ -6141,7 +6170,7 @@ function diagStep3(body) {
       _dBtn('diagGuideCustomBtn', '✏️ 自定义', '', 'btn-outline') +
     '</div>' +
     _dBtn('diagProdSave', '💾 保存产品配置') + '<span id="diagProdMsg" style="font-size:12px;color:#0a7b5a;"></span>'
-  ) + '<div style="margin-top:12px;">' + _dBtn('diagStep4Btn', '下一步：④ 知识库', '', 'btn-primary') + '</div>';
+  ) + '<div style="margin-top:12px;">' + _dBtn('diagStep4Btn', '下一步：⑤ 知识库', '', 'btn-primary') + '</div>';
   document.querySelectorAll('.diagGuideChip').forEach(function (b) {
     b.onclick = function () {
       document.querySelectorAll('.diagGuideChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; });
@@ -6156,7 +6185,7 @@ function diagStep3(body) {
   document.getElementById('diagSellImportDo')?.addEventListener('click', diagSellImport);
   document.getElementById('diagSellAdd')?.addEventListener('click', function () { diagSellAddRow(); });
   document.getElementById('diagProdSave')?.addEventListener('click', diagProdSave);
-  document.getElementById('diagStep4Btn')?.addEventListener('click', function () { diagGo(4); });
+  document.getElementById('diagStep4Btn')?.addEventListener('click', function () { diagGo(5); });
   diagProdPrefill();
 }
 var _diagGuide = '';
@@ -6242,7 +6271,7 @@ function diagStep4(body) {
       _dBtn('diagKImport', '📥 导入知识库') + '<span id="diagKIMsg" style="font-size:12px;color:#0a7b5a;"></span><br>' +
       _dBtn('diagKFileBtn', '📁 导入文件') + '<input type="file" id="diagKFile" accept=".json,.txt,application/json,text/plain" style="display:none;">' +
       '<span id="diagKFMsg" style="font-size:12px;color:#999;"></span></div>') +
-    '<div style="margin-top:12px;">' + _dBtn('diagStep5Btn', '下一步：⑤ 内容规划 & 封面', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过知识库', '', 'btn-outline') + '</div>';
+    '<div style="margin-top:12px;">' + _dBtn('diagStep5Btn', '下一步：⑥ 内容规划 & 封面', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过知识库', '', 'btn-outline') + '</div>';
   document.getElementById('diagK_Qs').innerHTML = DIAG_KB_QUESTIONS.map(function (q, i) {
     return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
       '<textarea class="diagK_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
@@ -6251,8 +6280,8 @@ document.getElementById('diagKBuild')?.addEventListener('click', diagKbBuild);
   document.getElementById('diagKImport')?.addEventListener('click', diagKbImport);
   document.getElementById('diagKFileBtn')?.addEventListener('click', function () { const f = document.getElementById('diagKFile'); if (f) f.click(); });
   document.getElementById('diagKFile')?.addEventListener('change', diagKbImportFile);
-  document.getElementById('diagStep5Btn')?.addEventListener('click', function () { diagGo(5); });
-  document.getElementById('diagSkipBtn')?.addEventListener('click', function () { diagGo(5); });
+  document.getElementById('diagStep5Btn')?.addEventListener('click', function () { diagGo(6); });
+  document.getElementById('diagSkipBtn')?.addEventListener('click', function () { diagGo(6); });
 }
 async function diagKbBuild() {
   const btn = document.getElementById('diagKBuild'); const msg = document.getElementById('diagKMsg');
@@ -6328,7 +6357,7 @@ function diagStep5(body) {
       '<div style="font-size:11px;color:#999;margin-bottom:8px;">3:4 竖图；导入后存为产品封底，发笔记时直接作底图。</div>' +
       _dBtn('diagCoverSave', '💾 保存封面设置') + '<span id="diagCoverMsg" style="font-size:12px;color:#0a7b5a;"></span>'
     ) + '</div>' +
-    '<div style="margin-top:12px;">' + _dBtn('diagStep6Btn', '下一步：⑥ 深度报告', '', 'btn-primary') + '</div>';
+    '<div style="margin-top:12px;">' + _dBtn('diagStep6Btn', '下一步：⑦ 深度报告', '', 'btn-primary') + '</div>';
   document.getElementById('diagPlanTypeCustom').value = '';
   document.querySelectorAll('.planTypeChip').forEach(function (b) { b.onclick = function () { document.querySelectorAll('.planTypeChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; }); b.style.background = '#c41d3c'; b.style.color = '#fff'; b.style.borderColor = '#c41d3c'; _diagState.accountType = b.getAttribute('data-v'); }; });
 document.getElementById('diagPlanTypeCustom')?.addEventListener('input', function (e) { if (e.target.value.trim()) { _diagState.accountType = e.target.value.trim(); document.querySelectorAll('.planTypeChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; }); } });
@@ -6337,7 +6366,7 @@ document.getElementById('diagPlanTypeCustom')?.addEventListener('input', functio
   document.getElementById('diagCoverImgBtn')?.addEventListener('click', function () { const f = document.getElementById('diagCoverFile'); if (f) f.click(); });
   document.getElementById('diagCoverFile')?.addEventListener('change', diagCoverImgPick);
   document.getElementById('diagCoverImgClear')?.addEventListener('click', function () { _diagCoverImg = ''; var p = document.getElementById('diagCoverPreview'); if (p) p.style.display = 'none'; });
-  document.getElementById('diagStep6Btn')?.addEventListener('click', function () { diagGo(6); });
+  document.getElementById('diagStep6Btn')?.addEventListener('click', function () { diagGo(7); });
   diagCoverPrefill();
 }
 var _diagCoverImg = '';
