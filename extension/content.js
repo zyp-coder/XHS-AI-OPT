@@ -616,6 +616,13 @@
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
+    // ── 获客·消息台：读取消息中心(/chat)会话列表 ──
+    if (request.action === 'collectChatConversations') {
+      runExclusive('collectChatConversations', () => collectChatConversations())
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
     // ── 评论跟进：通知页回复指定通知（三重定位保障，见 replyNotification 实现） ──
     if (request.action === 'replyNotification') {
       runExclusive('replyNotification', () => replyNotification(request))
@@ -2561,6 +2568,30 @@
     }
     _hideStatus();
     return { success: true, items: likers, count: likers.length, url: window.location.href };
+  }
+
+  // ── 获客·消息台：读取消息中心(/chat)的会话列表 ──
+  // 每组 `div.xhs-im-conv-item` 提供 data-conv-id（会话id）与伙伴昵称/最近消息/时间。
+  // 注意：列表不直接给 partner 的 userId；匹配获客清单靠 convId 或昵称。
+  async function collectChatConversations() {
+    if (!/\/chat/.test(location.href)) return { success: false, error: '不在消息中心(/chat)，请先打开 https://www.xiaohongshu.com/chat' };
+    const _vis = (el) => { try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; } catch (_) { return false; } };
+    const items = [];
+    const seen = new Set();
+    document.querySelectorAll('div.xhs-im-conv-item').forEach((el) => {
+      if (!_vis(el)) return;
+      const convId = el.getAttribute('data-conv-id') || '';
+      const kind = el.getAttribute('data-conv-kind') || '';
+      if (!convId || seen.has(convId)) return;
+      seen.add(convId);
+      const name = (el.querySelector('.xhs-im-conv-item__name') || { textContent: '' }).textContent.trim();
+      const time = (el.querySelector('.xhs-im-conv-item__time') || { textContent: '' }).textContent.trim();
+      const summary = (el.querySelector('.xhs-im-conv-item__summary-text, .xhs-im-conv-item__summary') || { textContent: '' }).textContent.trim();
+      const img = el.querySelector('img.xhs-im-conv-item__avatar');
+      const avatar = img ? (img.getAttribute('src') || '') : '';
+      items.push({ convId, convKind: kind, partnerName: name, time, lastMsg: summary.slice(0, 80), avatar, hasUnread: false });
+    });
+    return { success: true, items, count: items.length, url: location.href };
   }
 
   /* ── 评论跟进：回复指定通知（★ 三重定位保障，用户核心要求：绝不能回错人/回错消息） ──

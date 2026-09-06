@@ -170,6 +170,12 @@ const ACCOUNT_GUARD_TTL = 6 * 60 * 60 * 1000;   // 校验有效 6 小时（每�
 
 function _normXhsId(s) { return String(s || '').replace(/\s+/g, '').trim(); }
 
+// 从 /chat/{convId} 或任意聊天 URL 里提取会话 id（消息台按它直接跳转会话）
+function _convIdFromUrl(u) {
+  const m = String(u || '').match(/\/chat\/([a-zA-Z0-9]{8,})/);
+  return m ? m[1] : '';
+}
+
 async function _readAccountGuard() {
   try { const d = await chrome.storage.local.get(ACCOUNT_GUARD_KEY); return d[ACCOUNT_GUARD_KEY] || null; } catch (_) { return null; }
 }
@@ -332,6 +338,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getProspectList: (data) => requireProspectList(() => handleGetProspectList(data)),
     updateProspect: (data) => requireProspectList(() => handleUpdateProspect(data)),
     deleteProspect: (data) => requireProspectList(() => handleDeleteProspect(data)),
+    getChatConversations: (data) => requireProspectList(() => handleGetChatConversations(data)),
+    openChat: (data) => requireProspectList(() => handleOpenChat(data)),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -339,6 +347,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     aiScreenCapture: (data) => requireProspectList(() => handleAiScreenCapture(data)),
     generateDm: (data) => requireProspectList(() => handleGenerateDm(data)),
     judgeSaleTiming: (data) => requireProspectList(() => handleJudgeSaleTiming(data)),
+    markContacted: (data) => requireProspectList(() => handleMarkContacted(data)),
     sendDm: (data) => requireProspectList(() => handleSendDm(data)),
     enrichProspectByProfile: (data) => requireProspectList(() => handleEnrichByProfile(data)),
     openDmChat: (data) => requireProspectList(() => handleOpenDmChat(data)),
@@ -1753,6 +1762,50 @@ async function handleCollectLikers(data) {
   return { ok: true, added, already, total: items.length, ts: now };
 }
 
+/* ─── 获客·消息台：驱动 /chat 页读取会话列表 / 跳到指定会话 ─── */
+async function _chatTab() {
+  let tab = null;
+  try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
+  return { tab };
+}
+function _chatUrlFor(convId) { return 'https://www.xiaohongshu.com/chat/' + String(convId || ''); }
+
+/* 读消息中心会话列表（导航到 /chat 再采集；返回与获客清单按昵称预匹配的结果） */
+async function handleGetChatConversations(data) {
+  const { tab } = await _chatTab();
+  try { await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/chat', active: true }); await waitTabLoadBg(tab.id, 15000); } catch (_) {}
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  await _sleepBg(700);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'collectChatConversations' }, 15000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) throw new Error((res && res.error) || '读取消息中心失败');
+  // 按昵称与获客清单预匹配（精确优先）
+  const list = await Storage.getProspectList();
+  const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  const items = (res.items || []).map((c) => {
+    const byConv = list.find(p => p.convId && p.convId === c.convId);
+    const byName = byConv ? null : list.find(p => norm(p.nickname) === norm(c.partnerName));
+    const hit = byConv || byName;
+    return { ...c, matched: !!hit, personId: hit ? hit.id : '', stage: hit ? (hit.stage || 'lead') : '', status: hit ? (hit.status || '') : '' };
+  });
+  return { ok: true, items, total: items.length };
+}
+
+/* 跳到指定会话 (/chat/{convId}) */
+async function handleOpenChat(data) {
+  const convId = data && data.convId;
+  if (!convId) throw new Error('缺少会话 id');
+  const { tab } = await _chatTab();
+  try { await chrome.tabs.update(tab.id, { url: _chatUrlFor(convId), active: true }); await waitTabLoadBg(tab.id, 15000); } catch (err) { throw new Error('打开会话失败：' + (err && err.message ? err.message : err)); }
+  // 若带商机 → 记录 convId + 视为已联系(升商机)
+  if (data && data.personId) {
+    await Storage.updateProspect(data.personId, { convId }).catch(() => {});
+    await handleMarkContacted({ id: data.personId }).catch(() => {});
+  }
+  return { ok: true, opened: true, chatUrl: _chatUrlFor(convId) };
+}
+
 /* ─── 获客清单：驱动通知页收集"赞了我们内容/评论"的人，并全部写入清单 ─── */
 async function handleCollectLikersFromNotif(data) {
   let tab = null;
@@ -1934,6 +1987,18 @@ async function handleJudgeSaleTiming(data) {
   };
 }
 
+/* ─── 获客清单：标记"已联系" → 线索自动升商机（只要联系了就升格；幂等） ─── */
+async function handleMarkContacted(data) {
+  const id = data && data.id;
+  if (!id) throw new Error('缺少候选人 id');
+  const list = await Storage.getProspectList();
+  const p = list.find(x => x.id === id);
+  if (!p) throw new Error('候选人不存在');
+  if ((p.stage || 'lead') === 'prospect') return { ok: true, promoted: false };
+  await Storage.updateProspect(id, { stage: 'prospect' });
+  return { ok: true, promoted: true, personId: id };
+}
+
 /* ─── 获客清单：发送私信（驱动 content.js 打开主页→点私信→发送） ─── */
 async function handleSendDm(data) {
   const person = data.person;
@@ -2001,6 +2066,8 @@ async function handleSendDm(data) {
       // 更稳妥：先记录诊断，尽量导航
       console.log('[私信后台] 捕获聊天URL:', chatUrl);
     }
+    // ★ 记录会话 id，供消息台按 convId 直接跳转
+    if (chatUrl) await Storage.updateProspect(person.id, { convId: _convIdFromUrl(chatUrl) }).catch(() => {});
     try {
       await chrome.tabs.update(tab.id, { url: chatUrl, active: true });
       await waitTabLoadBg(tab.id, 20000);
@@ -2099,6 +2166,8 @@ async function handleOpenDmChat(data) {
     } catch (chatE) {
       throw new Error('导航到聊天窗口失败：' + (chatE && chatE.message ? chatE.message : chatE));
     }
+    // ★ 记录会话 id（/chat/{convId}）→ 存到商机，供消息台按 convId 直接跳转对应会话
+    await Storage.updateProspect(person.id, { convId: _convIdFromUrl(res.chatUrl) }).catch(() => {});
     return { ok: true, chatReady: true, chatUrl: res.chatUrl, notice: '已打开私信聊天窗' };
   }
   if (res && res.error) {

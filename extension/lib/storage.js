@@ -618,6 +618,7 @@ const entry = {
     stage: person.stage || _inferStage(person),
     lead: { signalCount: 0, signals: [], lastSignalAt: null },
     funnel: null,
+    convId: person.convId || '',   // ★ 消息中心会话 id（/chat/{convId}），用于消息台直接跳转目标会话
     affinity: { intentLevel: (person.profile && person.profile.intentLevel) || person.intentLevel || 'medium' },
     chatHistory: Array.isArray(person.chatHistory) ? person.chatHistory : null, // 评论跟进的历史对话（记录我们跟对方说过啥）
     createdAt: Date.now(),

@@ -2178,6 +2178,7 @@ let _plFilter = { keyword: '', tag: '', intent: '' };
 let _plPage = 0;
 let _plData = { list: [], allTags: [], fullList: [] };
 let _plStage = 'all'; // 子视图：all(全部) / prospect(商机池) / lead(线索池)
+let _plMsg = false;   // true = 消息台(/chat会话一览)视图
 
 // 意向色点
 function _plDot(intent) {
@@ -2341,13 +2342,23 @@ function renderProspectList(container) {
   subNav.className = 'pl-subnav';
   const STAGES = [['all', '🗂 全部'], ['prospect', '🎯 商机池'], ['lead', '🎇 线索池']];
   STAGES.forEach(([v, label]) => {
+    const on = !_plMsg && _plStage === v;
     const b = document.createElement('button');
     b.textContent = label;
-    b.style.cssText = 'padding:5px 12px;border-radius:8px;border:1px solid ' + (_plStage === v ? '#7c3aed' : 'var(--line)') + ';background:' + (_plStage === v ? '#f5f3ff' : '#fff') + ';color:' + (_plStage === v ? '#7c3aed' : 'var(--ink)') + ';font-size:12px;font-weight:600;cursor:pointer;';
-    b.addEventListener('click', () => { _plStage = v; _plPage = 0; renderProspectList(container); });
+    b.style.cssText = 'padding:5px 12px;border-radius:8px;border:1px solid ' + (on ? '#7c3aed' : 'var(--line)') + ';background:' + (on ? '#f5f3ff' : '#fff') + ';color:' + (on ? '#7c3aed' : 'var(--ink)') + ';font-size:12px;font-weight:600;cursor:pointer;';
+    b.addEventListener('click', () => { _plMsg = false; _plStage = v; _plPage = 0; renderProspectList(container); });
     subNav.appendChild(b);
   });
+  // 消息台（/chat 会话一览，销售主战场）
+  const mb = document.createElement('button');
+  mb.textContent = '💬 消息';
+  mb.style.cssText = 'padding:5px 12px;border-radius:8px;border:1px solid ' + (_plMsg ? '#7c3aed' : 'var(--line)') + ';background:' + (_plMsg ? '#f5f3ff' : '#fff') + ';color:' + (_plMsg ? '#7c3aed' : 'var(--ink)') + ';font-size:12px;font-weight:600;cursor:pointer;';
+  mb.addEventListener('click', () => { _plMsg = true; _plPage = 0; renderProspectList(container); });
+  subNav.appendChild(mb);
   container.appendChild(subNav);
+
+  // 消息台视图（/chat 会话一览）
+  if (_plMsg) { loadChatView(container); return; }
 
   // 统计条（pipeline 口径）
   const stats = document.createElement('div');
@@ -2596,7 +2607,13 @@ function renderProspectList(container) {
         loadProspectList(container); return;
       }
       else if (action === 'profile') { runProfileOne([person], container); return; }
-      else if (action === 'dm') { openDmModal(person); return; }
+      else if (action === 'dm') {
+        // 只要联系（点开私信开始触达）→ 线索自动升商机
+        if (_plGetStage(person) === 'lead') {
+          chrome.runtime.sendMessage({ action: 'markContacted', data: { id: person.id } }).catch(() => {});
+        }
+        openDmModal(person); return;
+      }
       else if (action === 'close') {
         // 成交在商机状态上作标注（不单独建客户层）
         await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { status: '已成交', funnel: Object.assign({}, _plFunnel(person), { step: 'closed' }) } } });
@@ -2635,6 +2652,65 @@ function renderProspectList(container) {
   pageNav.querySelector('#plNext').addEventListener('click', () => { _plPage++; renderProspectList(container); });
 
   }
+
+// ═══════════ 消息台：/chat 会话一览（销售主战场：和客户聊+成交） ═══════════
+const _stageLabel = (s) => s === 'prospect' ? '🎯商机' : (s === 'lead' ? '🎇线索' : '');
+async function loadChatView(container) {
+  // 清掉统计/筛选等剩余内容（消息台自绘）
+  container.querySelectorAll('.pl-stats,.pl-filter,.pl-batch,.pl-page,.pl-empty').forEach((el) => el.remove());
+  const box = document.createElement('div');
+  box.style.cssText = 'padding:4px 10px 10px;';
+  box.innerHTML = `<div style="font-size:12px;color:#0f766e;padding:2px 2px 6px;">💬 消息中心(/chat) · 和客户聊 + 成交就在这里</div>
+    <button id="plChatSync" style="font-size:12px;padding:6px 14px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:8px;cursor:pointer;font-weight:600;">🔄 同步消息</button>
+    <div id="plChatList" style="margin-top:8px;"></div>`;
+  container.appendChild(box);
+  const listEl = box.querySelector('#plChatList');
+  const syncBtn = box.querySelector('#plChatSync');
+  const doSync = async () => {
+    syncBtn.disabled = true; syncBtn.textContent = '⏳ 同步中…';
+    listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#888;font-size:12px;">正在读取 /chat 会话…</div>';
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'getChatConversations', data: {} });
+      if (!r || !r.ok) throw new Error((r && r.error) || '读取失败');
+      renderChatRows(listEl, r.items || []);
+    } catch (e) {
+      listEl.innerHTML = `<div style="padding:20px;text-align:center;color:#d33;font-size:12px;">❌ ${esc(e.message || '同步失败')}<br>请确认小红书网页版已登录并打开过消息中心。</div>`;
+    }
+    syncBtn.disabled = false; syncBtn.textContent = '🔄 同步消息';
+  };
+  syncBtn.addEventListener('click', doSync);
+  doSync();
+}
+
+function renderChatRows(listEl, items) {
+  if (!items.length) { listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#888;font-size:12px;">消息中心还没有会话。有人给你发消息、或你给商机发过私信后，这里就会出现。</div>'; return; }
+  items.forEach((c) => {
+    const card = document.createElement('div');
+    card.className = 'pl-card';
+    const matchBadge = c.matched
+      ? `<span class="pl-badge" style="background:${c.stage === 'prospect' ? '#f5f3ff;color:#7c3aed' : '#ecfdf5;color:#0f766e'}">${_stageLabel(c.stage) || '已在清单'}${c.status ? ' · ' + esc(c.status) : ''}</span>`
+      : `<span class="pl-badge" style="background:#f3f4f6;color:#6b7280;">未收录</span>`;
+    card.innerHTML = `
+      <div class="pl-card-top">
+        <span class="pl-nick">${esc(c.partnerName || '未知')}</span>
+        ${matchBadge}
+        ${c.time ? `<span style="font-size:11px;color:#8a8f99;margin-left:auto;">${esc(c.time)}</span>` : ''}
+      </div>
+      <div class="pl-source" style="font-size:12px;">${esc(c.lastMsg || '（无消息）')}</div>
+      <div class="pl-foot">
+        <button class="pl-home" data-cid="${esc(c.convId)}" data-pid="${c.personId || ''}" title="打开消息中心与该客户的会话">💬 开聊</button>
+        ${c.matched ? '' : ''}
+      </div>`;
+    card.querySelector('.pl-home')?.addEventListener('click', () => {
+      const pid = card.querySelector('.pl-home').dataset.pid;
+      chrome.runtime.sendMessage({ action: 'openChat', data: { convId: c.convId, personId: pid || undefined } }).then((r) => {
+        if (r && r.ok) addLog(`💬 已打开会话：${c.partnerName}`, 'success');
+        else addLog('❌ 打开会话失败：' + ((r && r.error) || '未知'), 'error');
+      }).catch((e) => addLog('❌ 打开会话失败：' + e.message, 'error'));
+    });
+    listEl.appendChild(card);
+  });
+}
 
 // 单个/批量画像
 async function runProfileOne(targets, container) {
