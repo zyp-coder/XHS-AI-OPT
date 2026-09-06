@@ -347,6 +347,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     importAiCsConfig: (data) => handleImportAiCsConfig(data || {}),
     aiCsRespond: (data) => handleAiCsRespond(data || {}),
     aiCsTouch: (data) => handleAiCsTouch(data || {}),
+    getPendingNotifs: (data) => requireProspectList(() => handleGetPendingNotifs(data)),
+    sendNotifReply: (data) => requireProspectList(() => handleSendNotifReply(data)),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -2195,6 +2197,66 @@ async function handleAiCsTouch(data) {
   const reply = await _chatAi(config, systemPrompt, userPrompt, (s.maxChars || 120) + 200);
   await Storage.addAiLog({ scene: 'scen_' + key, tokensIn: 0, tokensOut: 0, success: true });
   return { ok: true, draft: reply, scene: s.name, mode: 'ai', auto: s.mode === 'auto' ? 'auto' : 'draft' };
+}
+
+// ★ 自动量控：返回 { ok, left }，超限返回 ok=false（用于 auto 模式触达/回访前拦截）
+async function aiCsDailyAllowed(sceneKey, dailyMax) {
+  const key = 'ai_cs_daily';
+  const today = new Date().toISOString().slice(0, 10);
+  let data = {};
+  try { data = (await chrome.storage.local.get(key))[key] || {}; } catch (_) {}
+  const cur = (data[today] || {}) || {};
+  const used = cur[sceneKey] || 0;
+  const max = Number(dailyMax) || 0;
+  if (max > 0 && used >= max) return { ok: false, used, max };
+  return { ok: true, left: max > 0 ? max - used : Infinity, used, max };
+}
+async function aiCsBump(sceneKey) {
+  const key = 'ai_cs_daily'; const today = new Date().toISOString().slice(0, 10);
+  let data = {};
+  try { data = (await chrome.storage.local.get(key))[key] || {}; } catch (_) {}
+  data[today] = data[today] || {}; data[today][sceneKey] = (data[today][sceneKey] || 0) + 1;
+  try { await chrome.storage.local.set({ [key]: data }); } catch (_) {}
+}
+
+// ★ 通知回访：枚举通知页待回复（有人回了你评论/笔记），供「通知回访」场景草拟/发送
+async function _notifTab() {
+  let tab = null;
+  try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
+  return tab;
+}
+async function handleGetPendingNotifs(data) {
+  const tab = await _notifTab();
+  try { await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/notification', active: true }); /* 若已在此页不必强刷 */ } catch (_) {}
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  await _sleepBg(900);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'extractNotifications' }, 15000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) throw new Error((res && res.error) || '读取通知失败');
+  const items = (res.items || []).filter(it => it && String(it.incoming || '').trim());
+  return { ok: true, items, total: items.length };
+}
+// 通知回访发送：按 idx 精确定位通知楼回复（三重定位防回错，见 content.replyNotification）
+async function handleSendNotifReply(data) {
+  const tab = await _notifTab();
+  const { idx, replyText, userId, userName, latestText } = data || {};
+  if (idx == null || !replyText) throw new Error('参数不完整');
+  // 量控：按 notif_reply 场景每日上限，超限拦截
+  try {
+    const aiCs = await Storage.getAiCsConfig();
+    const sc = (aiCs.scenes && aiCs.scenes.notif_reply) || { schedule: { dailyMax: 0 } };
+    const chk = await aiCsDailyAllowed('notif_reply', (sc.schedule && sc.schedule.dailyMax) || 0);
+    if (!chk.ok) return { ok: false, error: '「通知回访」当日已达上限（' + chk.max + '），已拦截。请到 AI客服 调上限或明天再自动回访。' };
+  } catch (_) {}
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  await _sleepBg(400);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'replyNotification', data: { idx, replyText, userId, userName: userName || '', latestText: latestText || '' } }, 30000); }
+  catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) return { ok: false, error: (res && res.error) || '发送失败' };
+  await aiCsBump('notif_reply').catch(() => {});
+  return { ok: true, sent: true };
 }
 
 /* ─── 获客清单：发送私信（驱动 content.js 打开主页→点私信→发送） ─── */

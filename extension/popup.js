@@ -2511,6 +2511,7 @@ function renderProspectList(container) {
       actions =
         (pf.intentLevel ? '' : `<button class="act" data-plid="${p.id}" data-action="profile">⚡ 画像</button>`) +
         `<button class="act send" data-plid="${p.id}" data-action="dm">✉️ 私信</button>` +
+        `<button class="act" data-plid="${p.id}" data-action="maint" title="按「成交维护」场景生成维护话术">📣 维护</button>` +
         `<button class="act sell" data-plid="${p.id}" data-action="close" title="成交（此处仅标注，成交一般走线下/微信）">✔️ 成交</button>`;
     } else {
       actions =
@@ -2626,6 +2627,18 @@ function renderProspectList(container) {
           chrome.runtime.sendMessage({ action: 'markContacted', data: { id: person.id } }).catch(() => {});
         }
         openDmModal(person); return;
+      }
+      else if (action === 'maint') {
+        // 成交维护话术：按 after_sale 场景生成 → 开私信弹窗填入
+        btn.disabled = true; const _o2 = btn.textContent; btn.textContent = '⏳…';
+        try {
+          const r = await chrome.runtime.sendMessage({ action: 'aiCsTouch', data: { key: 'after_sale', person } });
+          openDmModal(person);
+          const dt = document.getElementById('dmText'); if (dt) dt.value = (r && r.ok && r.draft) || '';
+          if (r && r.ok) addLog(`📣 已按「成交维护」生成 ${person.nickname} 的话术`, 'success');
+        } catch (e) { addLog('❌ 维护话术生成失败：' + e.message, 'error'); }
+        btn.disabled = false; btn.textContent = _o2;
+        return;
       }
       else if (action === 'close') {
         // 成交在商机状态上作标注（不单独建客户层）
@@ -2882,6 +2895,10 @@ async function renderAiCs(container) {
         <button id="aiCsTestBtn" style="font-size:12px;padding:6px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;">🤖 应答</button>
       </div>
       <div id="aiCsTestOut" style="font-size:12px;color:#333;margin-top:6px;white-space:pre-wrap;"></div>
+
+      <div style="font-weight:700;font-size:13px;margin:14px 0 4px;">📬 通知回访（notif_reply · 有人回你评论时回楼）</div>
+      <button id="aiCsNotifSync" style="font-size:12px;padding:6px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;">🔄 同步待回复通知</button>
+      <div id="aiCsNotifList" style="margin-top:6px;"></div>
     </div>`;
 
   renderAiCsScenes(container);
@@ -2893,6 +2910,7 @@ async function renderAiCs(container) {
   document.getElementById('aiCsQaAdd')?.addEventListener('click', () => { _aiCs.qa.push({ id: 'qa_' + Date.now().toString(36), category: '新分类', keywords: [], mode: 'template', auto: 'draft', enabled: true, answer: '' }); renderAiCsQa(container); });
   document.getElementById('aiCsTestBtn')?.addEventListener('click', () => aiCsTest(container));
   document.getElementById('aiCsTestIn')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') aiCsTest(container); });
+  document.getElementById('aiCsNotifSync')?.addEventListener('click', () => loadNotifReplies(container));
 }
 
 function renderAiCsScenes(container) {
@@ -3016,6 +3034,65 @@ async function aiCsTest(container) {
   } catch (e) { out.innerHTML = '<div style="color:#d33;">❌ ' + esc(e.message) + '</div>'; }
 }
 
+// 通知回访：枚举待回复 → 按 notif_reply 场景草拟 → 发送（replyNotification 三重定位）
+async function loadNotifReplies(container) {
+  const box = document.getElementById('aiCsNotifList');
+  const btn = document.getElementById('aiCsNotifSync');
+  if (!box) return;
+  box.innerHTML = '<div style="font-size:12px;color:#888;">同步通知页…</div>';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 同步中…'; }
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'getPendingNotifs', data: {} });
+    if (!r || !r.ok) throw new Error((r && r.error) || '同步失败');
+    const items = r.items || [];
+    if (!items.length) { box.innerHTML = '<div style="font-size:12px;color:#888;">暂无待回复通知（你被回的新消息都在这里）。</div>'; }
+    else {
+      box.innerHTML = '';
+      items.slice(0, 25).forEach((it, i) => renderNotifCard(box, it, i));
+    }
+  } catch (e) {
+    box.innerHTML = '<div style="font-size:12px;color:#d33;">❌ ' + esc(e.message || '同步失败') + '<br>请确认小红书网页版已登录并打开。</div>';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🔄 同步待回复通知'; }
+}
+
+function renderNotifCard(box, it, i) {
+  const card = document.createElement('div');
+  card.className = 'pl-card';
+  card.innerHTML = `
+    <div class="pl-card-top"><span class="pl-nick">${esc(it.userName || '对方')}</span><span style="font-size:11px;color:#8a8f99;margin-left:auto;">${esc(it.time || '')}</span></div>
+    <div class="pl-source" style="font-size:12px;">💬 ${esc(it.incoming)}</div>
+    <textarea class="pl-draft-text" rows="2" style="width:100%;box-sizing:border-box;font-size:12px;border:1px solid #e5d9ff;border-radius:8px;padding:6px 8px;margin-top:6px;" placeholder="草拟（按 notif_reply 场景）…"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="nf-ai" style="font-size:11px;padding:4px 10px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:6px;cursor:pointer;">🤖 按场景草拟</button>
+      <button class="nf-send" style="font-size:11px;padding:4px 10px;border:1px solid #ef4444;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;">📤 发送</button>
+    </div>`;
+  const ta = card.querySelector('.pl-draft-text');
+  const aiBtn = card.querySelector('.nf-ai');
+  const sendBtn = card.querySelector('.nf-send');
+  aiBtn.addEventListener('click', async () => {
+    aiBtn.disabled = true; aiBtn.textContent = '⏳ 生成中…';
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'aiCsTouch', data: { key: 'notif_reply', context: it.incoming, person: { nickname: it.userName, source: { comment: it.incoming } } } });
+      if (r && r.ok) ta.value = r.draft;
+      else throw new Error((r && r.error) || '生成失败');
+    } catch (e) { ta.value = ''; ta.placeholder = '❌ ' + (e.message || '生成失败'); }
+    aiBtn.disabled = false; aiBtn.textContent = '🤖 按场景草拟';
+  });
+  sendBtn.addEventListener('click', async () => {
+    const text = ta.value.trim();
+    if (!text) { addLog('⚠️ 先草拟或手写内容', 'warn'); return; }
+    sendBtn.disabled = true; sendBtn.textContent = '⏳ 发送中…';
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'sendNotifReply', data: { idx: it.idx, replyText: text, userId: it.userId, userName: it.userName, latestText: it.incoming } });
+      if (r && r.ok) { addLog('✅ 已回复 ' + (it.userName || ''), 'success'); card.remove(); }
+      else addLog('❌ 回访失败：' + ((r && r.error) || '未知'), 'error');
+    } catch (e) { addLog('❌ 回访失败：' + e.message, 'error'); }
+    sendBtn.disabled = false; sendBtn.textContent = '📤 发送';
+  });
+  box.appendChild(card);
+}
+
 // 单个/批量画像
 async function runProfileOne(targets, container) {
   const candidates = targets.map(p => ({
@@ -3137,6 +3214,21 @@ function bindProspectModals() {
   if (dmMask) {
     dmMask.addEventListener('click', e => { if (e.target === dmMask) closeDmModal(); });
     document.getElementById('dmCancelBtn')?.addEventListener('click', closeDmModal);
+    const dmSceneBtn = document.getElementById('dmSceneBtn');
+    dmSceneBtn?.addEventListener('click', async () => {
+      const person = getPlPerson(dmMask.dataset.plid);
+      if (!person) return;
+      dmSceneBtn.disabled = true; dmSceneBtn.textContent = '⏳ 场景话术中…'; dmResult.textContent = '';
+      try {
+        const resp = await chrome.runtime.sendMessage({ action: 'aiCsTouch', data: { key: 'dm_first', person } });
+        if (resp && resp.ok) {
+          dmText.value = resp.draft || '';
+          dmResult.textContent = '🎧 已按「私信首触」场景生成（可改用「AI生成」走画像话术）';
+          dmResult.className = 'pl-result ok';
+        } else { dmResult.textContent = (resp && resp.error) || '生成失败'; dmResult.className = 'pl-result fail'; }
+      } catch (e) { dmResult.textContent = e.message; dmResult.className = 'pl-result fail'; }
+      dmSceneBtn.disabled = false; dmSceneBtn.textContent = '🎧 场景话术';
+    });
     dmGenBtn?.addEventListener('click', async () => {
       const person = getPlPerson(dmMask.dataset.plid);
       if (!person) return;
