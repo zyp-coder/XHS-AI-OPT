@@ -2620,27 +2620,39 @@
     _showStatus('输入消息...');
     inputEl.focus();
     await sleep(120);
-    // native setter + input 事件触发 React onChange
-    let setter = null;
-    try { setter = Object.getOwnPropertyDescriptor(window.HTMLDivElement.prototype, 'innerText').set || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; } catch (_) {}
-    if (setter) setter.call(inputEl, msg);
-    inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
-    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(200);
+    // 优先用 execCommand('insertText') 触发真实 input（React 才会启用发送按钮）
+    let filled = false;
+    try { document.execCommand('insertText', false, msg); filled = true; } catch (_) { filled = false; }
+    const check = (inputEl.innerText || inputEl.textContent || '');
+    if (!filled || !check.includes(msg.slice(0, 6))) {
+      // 兜底：native setter + input 事件
+      let setter = null;
+      try { setter = Object.getOwnPropertyDescriptor(window.HTMLDivElement.prototype, 'innerText').set || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; } catch (_) {}
+      if (setter) setter.call(inputEl, msg);
+      inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await sleep(300);
     await sleep(dwellMs('preSendGap', 400));
 
     _showStatus('发送消息...');
-    // 发送按钮优先（在输入栏附近找），Enter 兜底
-    const scope = document.querySelector('.xhs-im-input-bar') || document;
-    let sendBtn = null;
-    for (const el of scope.querySelectorAll('button,[role="button"],[type="submit"],svg')) {
-      if (!_findVisible(el)) continue;
-      const t = (el.innerText || '').trim();
-      const aria = (el.getAttribute('aria-label') || '');
-      const c = String(el.className || '');
-      const title = el.tagName === 'svg' ? ((el.querySelector('title') || { textContent: '' }).textContent || '') : '';
-      if (t === '发送' || aria.includes('发送') || /send|发送/i.test(c) || /send|发送/i.test(title)) { sendBtn = el; break; }
-    }
+    // 发送按钮优先（输入后才会出现，title/aria 含“发送”，class 含 send），否则回车兜底
+    const bar = document.querySelector('.xhs-im-input-bar');
+    const pickSend = function () {
+      const scope = bar || document;
+      const btns = [...scope.querySelectorAll('.xhs-im-input-bar-actions button, .xhs-im-input-bar-actions [role="button"], .xhs-im-input-bar-actions svg, button, [role="button"]')].filter(function (el) { return _findVisible(el); });
+      for (const el of btns) {
+        const title = el.getAttribute('title') || '';
+        const aria = el.getAttribute('aria-label') || '';
+        const c = String(el.className || '');
+        const svg = el.tagName === 'svg' ? ((el.querySelector('title') || { textContent: '' }).textContent || '') : '';
+        if (title.includes('发送') || aria.includes('发送') || svg.includes('发送') || /send|发送/i.test(c)) return el;
+      }
+      return null;
+    };
+    let sendBtn = pickSend();
+    await sleep(400); // 给发送按钮出现留时间
+    if (!sendBtn) sendBtn = pickSend(); // 文字写入后再查一次
     let sentOk = false, via = '';
     if (sendBtn) { _click(sendBtn); await sleep(700); sentOk = true; via = 'button'; }
     else {
