@@ -2394,9 +2394,16 @@ function renderProspectList(container) {
     tip.textContent = '⋯ 商机池＝已接触：画像 → 私信 → 谈单 → 成交';
     tip.style.cssText = 'font-size:11px;color:#0f766e;';
     batch.appendChild(tip);
-  } else if (_plStage === 'lead') {
+  } else if (_plStage === 'lead' || _plStage === 'all') {
+    // 从通知页拉线索：点赞/关注/评论/收藏你的人 → 全部进线索池（商机池）
+    const nb = document.createElement('button');
+    nb.textContent = '🔄 从通知同步线索';
+    nb.id = 'plSyncNotif';
+    nb.style.cssText = 'font-size:11px;padding:5px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;font-weight:600;';
+    nb.addEventListener('click', () => syncNotifToLeads(container));
+    batch.appendChild(nb);
     const tip = document.createElement('span');
-    tip.textContent = '💡 线索池＝未接触：发个私信 / 手动升格，接触过即自动进商机池';
+    tip.textContent = '💡 线索池＝未接触（点赞/关注你的人在通知页）→ 同步后点私信/升格即进商机池';
     tip.style.cssText = 'font-size:11px;color:#0f766e;';
     batch.appendChild(tip);
   }
@@ -2650,6 +2657,29 @@ function renderProspectList(container) {
 
 // ═══════════ 消息台：/chat 会话一览（销售主战场：和客户聊+成交） ═══════════
 const _stageLabel = (s) => s === 'prospect' ? '🎯商机' : (s === 'lead' ? '🎇线索' : '');
+
+// 从通知页同步线索：把 点赞/收藏/关注/回复你的人 全部拉进获客清单（线索池/商机池）
+async function syncNotifToLeads(container) {
+  const b = document.getElementById('plSyncNotif');
+  if (b) { b.disabled = true; b.textContent = '⏳ 读取通知页…'; }
+  addLog('🔄 正在读取通知页，把点赞/关注/评论/收藏你的人拉进获客清单...', 'info');
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'collectLikersFromNotif', data: {} });
+    if (r && r.ok) {
+      addLog(`✅ 通知读取完成：新增 ${r.added} · 已存在 ${r.already} 人（回你评论的→商机池，赞/关注你的→线索池）`, 'success');
+    } else {
+      const err = (r && r.error) || '未知错误';
+      addLog('❌ 通知读取失败：' + err, 'error');
+      if (b) window.alert('通知读取失败：' + err + '\n\n请确保已登录小红书网页版并打开过通知页面。');
+    }
+    if (container) loadProspectList(container);
+  } catch (e) {
+    addLog('❌ 通知读取失败：' + e.message, 'error');
+    if (b) window.alert('通知读取失败：' + e.message + '\n\n请先打开小红书网页版并登录。');
+    if (container) loadProspectList(container);
+  }
+  if (b) { b.disabled = false; b.textContent = '🔄 从通知同步线索'; }
+}
 async function loadChatView(container) {
   // 清掉统计/筛选等剩余内容（消息台自绘）
   container.querySelectorAll('.pl-stats,.pl-filter,.pl-batch,.pl-page,.pl-empty').forEach((el) => el.remove());
