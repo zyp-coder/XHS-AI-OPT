@@ -2206,6 +2206,7 @@ const PL_ENTRY_BADGE = {
   '评论': { t: '💬评论', c: '#4f46e5', bg: '#eef2ff' },
   '关键词命中': { t: '🔑关键词', c: '#b45309', bg: '#fffbeb' },
   'AI路由': { t: '🧠AI', c: '#7c3aed', bg: '#f5f3ff' },
+  '消息': { t: '💬消息', c: '#0e7490', bg: '#ecfeff' },
   '评论跟进': { t: '💬AI客服', c: '#059669', bg: '#ecfdf5' },
   '手动': { t: '✋手动', c: '#475569', bg: '#f1f5f9' },
 };
@@ -2696,7 +2697,8 @@ function renderChatRows(listEl, items) {
         <textarea class="pl-draft-text" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;font-family:inherit;border:1px solid #e5d9ff;border-radius:8px;padding:6px 8px;" placeholder="AI 草拟将出现在这里，可修改…"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;">
           <button class="pl-draft-copy" style="font-size:11px;padding:4px 10px;border:1px solid #10b981;background:#ecfdf5;color:#059669;border-radius:6px;cursor:pointer;">📋 复制</button>
-          <button class="pl-draft-open" style="font-size:11px;padding:4px 10px;border:1px solid #3b82f6;background:#eff6ff;color:#2563eb;border-radius:6px;cursor:pointer;">💬 打开会话去发</button>
+          <button class="pl-draft-open" style="font-size:11px;padding:4px 10px;border:1px solid #3b82f6;background:#eff6ff;color:#2563eb;border-radius:6px;cursor:pointer;">💬 打开会话</button>
+          <button class="pl-draft-send" style="font-size:11px;padding:4px 10px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:6px;cursor:pointer;font-weight:600;">✈️ 发送</button>
         </div>
       </div>
       <div class="pl-foot">
@@ -2742,6 +2744,20 @@ function renderChatRows(listEl, items) {
         if (r && r.ok) addLog(`💬 已打开 ${c.partnerName} 的会话，粘贴草稿即可发送`, 'success');
         else addLog('❌ 打开会话失败：' + ((r && r.error) || '未知'), 'error');
       }).catch((err) => addLog('❌ 打开会话失败：' + err.message, 'error'));
+    });
+    // ✈️ 发送（导航 /chat 会话 → 注入 → 发送；命中商机联系即升格）
+    card.querySelector('.pl-draft-send')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      const ta = card.querySelector('.pl-draft-text');
+      const msg = (ta && ta.value || '').trim();
+      if (!msg) { addLog('⚠️ 先让 AI 草拟或手写内容再发送', 'warn'); return; }
+      b.disabled = true; const _o = b.textContent; b.textContent = '⏳ 发送中…';
+      try {
+        const r = await chrome.runtime.sendMessage({ action: 'chatSend', data: { convId: c.convId, personId: c.personId || undefined, partnerName: c.partnerName, text: msg } });
+        if (r && r.ok) addLog(`✅ 已发送给 ${c.partnerName}${c.personId ? '（商机已联系·升格）' : '（已收录为商机）'}`, 'success');
+        else addLog(`❌ 发送失败${(r && r.limited) ? '（可能被私信限制，建议评论破冰）' : ''}：${(r && r.error) || '未知'}`, 'error');
+      } catch (err) { addLog('❌ 发送失败：' + err.message, 'error'); }
+      b.disabled = false; b.textContent = _o;
     });
     listEl.appendChild(card);
   });

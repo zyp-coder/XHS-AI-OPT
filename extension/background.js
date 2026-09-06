@@ -340,6 +340,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     deleteProspect: (data) => requireProspectList(() => handleDeleteProspect(data)),
     getChatConversations: (data) => requireProspectList(() => handleGetChatConversations(data)),
     openChat: (data) => requireProspectList(() => handleOpenChat(data)),
+    chatSend: (data) => requireProspectList(() => handleChatSend(data)),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -1771,6 +1772,31 @@ async function handleOpenChat(data) {
     await handleMarkContacted({ id: data.personId }).catch(() => {});
   }
   return { ok: true, opened: true, chatUrl: _chatUrlFor(convId) };
+}
+
+/* 在 /chat 会话页发送消息（导航→注入→发送），命中商机联系即升格；未收录的按昵称收录为商机 */
+async function handleChatSend(data) {
+  const convId = data && data.convId;
+  const text = data && data.text;
+  if (!convId) throw new Error('缺少会话 id');
+  if (!text) throw new Error('缺少消息内容');
+  const { tab } = await _chatTab();
+  try { await chrome.tabs.update(tab.id, { url: _chatUrlFor(convId), active: true }); await waitTabLoadBg(tab.id, 15000); } catch (err) { throw new Error('打开会话失败：' + (err && err.message ? err.message : err)); }
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  await _sleepBg(1200);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 30000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) return { ok: false, error: (res && res.error) || '发送失败', limited: !!(res && res.limited) };
+
+  // 发送成功：命中商机 → 记录 convId + 联系即升格；未收录 → 按昵称收录为商机
+  const personId = data && data.personId;
+  if (personId) {
+    await Storage.updateProspect(personId, { convId }).catch(() => {});
+    await handleMarkContacted({ id: personId }).catch(() => {});
+  } else if (data && data.partnerName) {
+    await Storage.addProspect({ userId: '', nickname: data.partnerName, source: { noteUrl: _chatUrlFor(convId), noteTitle: '消息中心', comment: '', stageEntry: '消息' }, stage: 'prospect', convId }).catch(() => {});
+  }
+  return { ok: true, via: res.via, sent: true };
 }
 
 /* ─── 获客清单：驱动通知页收集"赞了我们内容/评论"的人，并全部写入清单 ─── */

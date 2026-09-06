@@ -491,7 +491,7 @@ function _originToEntry(origin) {
 function _inferStage(person) {
   const entry = person.stageEntry || (person.source && person.source.stageEntry) || _originToEntry(person.origin);
   // 主动/对话/被主动联系 → 商机池；被动信号 → 线索池待接触
-  if (entry === 'AI路由' || entry === '评论跟进' || entry === '回复' || entry === '手动') return 'prospect';
+  if (entry === 'AI路由' || entry === '评论跟进' || entry === '回复' || entry === '消息' || entry === '手动') return 'prospect';
   if (person.dmStatus === 'converted') return 'prospect';
   if (String(person.customerStatus || '') && ['intent', 'sales', 'after_sale', 'dormant'].includes(person.customerStatus)) return 'prospect';
   return 'lead'; // 默认待接触：点赞/关注/关键词/普通评论先进线索池

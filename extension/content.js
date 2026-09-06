@@ -623,6 +623,13 @@
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
+    // ── 获客·消息台：在 /chat 会话页发送消息 ──
+    if (request.action === 'chatSendMessage') {
+      runExclusive('chatSendMessage', () => chatSendMessage(request.text || ''))
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
     // ── 评论跟进：通知页回复指定通知（三重定位保障，见 replyNotification 实现） ──
     if (request.action === 'replyNotification') {
       runExclusive('replyNotification', () => replyNotification(request))
@@ -2592,6 +2599,64 @@
       items.push({ convId, convKind: kind, partnerName: name, time, lastMsg: summary.slice(0, 80), avatar, hasUnread: false });
     });
     return { success: true, items, count: items.length, url: location.href };
+  }
+
+  // ── 获客·消息台：在 /chat 会话页发送消息（复用私信的 native setter + 发送按钮/回车 + 限制检测机制）
+  async function chatSendMessage(text) {
+    if (!/\/chat/.test(location.href)) return { success: false, error: '不在 /chat 会话页，请先打开会话' };
+    const raw = String(text || '').trim();
+    if (!raw) return { success: false, error: '内容为空' };
+    const msg = raw.length > 300 ? raw.slice(0, 300) : raw;
+
+    // 定位输入框（/chat 的编辑器 contenteditable 或通用）
+    let inputEl = null;
+    for (let i = 0; i < 12; i++) {
+      inputEl = _findVisible(document.querySelector('.xhs-im-input-bar-editor[contenteditable="true"], .xhs-im-input-bar-editor, [contenteditable="true"]'));
+      if (inputEl) break;
+      await sleep(500);
+    }
+    if (!inputEl) return { success: false, error: '未找到 /chat 输入框（可能会话没打开）' };
+
+    _showStatus('输入消息...');
+    inputEl.focus();
+    await sleep(120);
+    // native setter + input 事件触发 React onChange
+    let setter = null;
+    try { setter = Object.getOwnPropertyDescriptor(window.HTMLDivElement.prototype, 'innerText').set || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; } catch (_) {}
+    if (setter) setter.call(inputEl, msg);
+    inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+    await sleep(dwellMs('preSendGap', 400));
+
+    _showStatus('发送消息...');
+    // 发送按钮优先（在输入栏附近找），Enter 兜底
+    const scope = document.querySelector('.xhs-im-input-bar') || document;
+    let sendBtn = null;
+    for (const el of scope.querySelectorAll('button,[role="button"],[type="submit"],svg')) {
+      if (!_findVisible(el)) continue;
+      const t = (el.innerText || '').trim();
+      const aria = (el.getAttribute('aria-label') || '');
+      const c = String(el.className || '');
+      const title = el.tagName === 'svg' ? ((el.querySelector('title') || { textContent: '' }).textContent || '') : '';
+      if (t === '发送' || aria.includes('发送') || /send|发送/i.test(c) || /send|发送/i.test(title)) { sendBtn = el; break; }
+    }
+    let sentOk = false, via = '';
+    if (sendBtn) { _click(sendBtn); await sleep(700); sentOk = true; via = 'button'; }
+    else {
+      for (let a = 0; a < 3; a++) {
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
+        await sleep(600); sentOk = true; via = 'enter'; break;
+      }
+    }
+
+    const limitRe = /(关注后才能|关注后即可|无法发送|不能发送|私信限制|被限制|防骚扰|对方.*关注|暂不支持)/;
+    const limited = limitRe.test((document.body.innerText || '').slice(-800));
+    _hideStatus();
+    if (limited) return { success: false, error: '检测到发送限制提示（可能对方未关注你/防骚扰），建议先评论互动破冰', limited: true };
+    return { success: sentOk, via, error: sentOk ? '' : '发送未确认，请手动检查该会话' };
   }
 
   /* ── 评论跟进：回复指定通知（★ 三重定位保障，用户核心要求：绝不能回错人/回错消息） ──
