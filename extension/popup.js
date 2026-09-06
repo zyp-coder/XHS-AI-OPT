@@ -2829,6 +2829,11 @@ async function chatDraftFor(c) {
       if (hit) person = hit;
     } catch (_) {}
   }
+  // A 场景：消息跟单（chat_follow）优先，失败则退回 per-person 私信话术
+  try {
+    const t = await chrome.runtime.sendMessage({ action: 'aiCsTouch', data: { key: 'chat_follow', person, context: c.lastMsg || '' } });
+    if (t && t.ok && t.draft) return t.draft;
+  } catch (_) {}
   const resp = await chrome.runtime.sendMessage({ action: 'generateDm', data: { person } });
   if (resp && resp.ok && resp.dmText) return resp.dmText;
   throw new Error((resp && resp.error) || 'AI 未返回草拟');

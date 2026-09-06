@@ -346,6 +346,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     saveAiCsConfig: (data) => handleSaveAiCsConfig(data || {}),
     importAiCsConfig: (data) => handleImportAiCsConfig(data || {}),
     aiCsRespond: (data) => handleAiCsRespond(data || {}),
+    aiCsTouch: (data) => handleAiCsTouch(data || {}),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -2144,6 +2145,56 @@ async function handleAiCsRespond(data) {
     mode: entry.mode || 'template',
     auto: entry.auto === 'auto' ? 'auto' : (entry.auto === 'confirm' ? 'confirm' : (entry.auto === 'off' ? 'off' : 'draft')),
   };
+}
+
+const AI_CS_PURPOSE_TEXT = { sell: '卖货转化', brand: '品牌信任', profile: '主页涨粉', likes: '互动养数据', trend: '蹭热点', auto: '综合自动' };
+
+// 触达场景 A 话术生成（模板优先，否则 AI 按场景配置生成）
+async function handleAiCsTouch(data) {
+  const config = await Storage.getConfig();
+  const aiCs = await Storage.getAiCsConfig();
+  const key = String((data && data.key) || '');
+  if (!key || !aiCs.scenes[key]) throw new Error('未知触达场景：' + key);
+  const s = aiCs.scenes[key];
+  if (s.enabled === false) throw new Error('场景「' + s.name + '」未启用，请先在 AI客服 打开');
+  const ctx = (data && data.context) || '';
+  const nickname = String(((data && data.person) || {}).nickname || '').trim();
+  const incoming = String(((data && data.person) || {}).source && ((data && data.person).source.comment) || ctx || '').trim();
+
+  // 固定模板优先（模板模式直接填变量）
+  if (s.template) {
+    const tpl = await Storage.getPrompt('scen_touch'); // 仅占位，模板不走 AI
+    return { ok: true, draft: _fillCsVars(s.template, config, incoming), scene: s.name, mode: 'template' };
+  }
+
+  // AI 生成
+  let tpl = await Storage.getPrompt(s.promptScene) || await Storage.getPrompt('scen_touch');
+  if (!tpl) tpl = DEFAULT_PROMPTS.scen_touch;
+  let kb = '';
+  if (s.useKb !== false) {
+    try {
+      const kbBase = (await Storage.getKnowledgeBase()) || [];
+      const kbR = KnowledgeSearch.searchKnowledgeBase(kbBase, { comment_content: incoming, note_title: '', comment_author: nickname }, config.roleKeywords || {});
+      if (kbR) kb = kbR.text || '';
+    } catch (_) {}
+  }
+  const c2 = await Storage.getConfig();
+  const purp = c2.product && c2.product.promoGoal ? '' : ''; // 保留空，用场景 purpose
+  const ctxt = {
+    scene_name: s.name,
+    purpose_text: AI_CS_PURPOSE_TEXT[s.purpose] || s.purpose || '综合自动',
+    min_chars: String(s.minChars || 20),
+    max_chars: String(s.maxChars || 120),
+    tone: s.toneMannerisms || ((c2.scriptStyle && c2.scriptStyle.toneMannerisms) || '自然口语化'),
+    guidance: s.guidance || (c2.product && c2.product.guideText) || '',
+    nickname: nickname || '对方',
+    comment: incoming.slice(0, 200) || '（空）',
+    kb_context: kb || '（无）',
+  };
+  const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctxt, kb);
+  const reply = await _chatAi(config, systemPrompt, userPrompt, (s.maxChars || 120) + 200);
+  await Storage.addAiLog({ scene: 'scen_' + key, tokensIn: 0, tokensOut: 0, success: true });
+  return { ok: true, draft: reply, scene: s.name, mode: 'ai', auto: s.mode === 'auto' ? 'auto' : 'draft' };
 }
 
 /* ─── 获客清单：发送私信（驱动 content.js 打开主页→点私信→发送） ─── */
