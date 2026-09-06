@@ -2227,7 +2227,7 @@ function _plEntryBadge(p) {
 // 层内"下一步"建议（体现"接触过没 → 下一步该做啥"）
 function _plNextHint(p) {
   const s = _plGetStage(p);
-  if (s === 'lead') return '🎇 线索 · 未接触：发个私信或手动升格，接触过就算商机';
+  if (s === 'lead') return '🎇 线索 · 未接触：私信即升商机，或点「🧠 升格」让 AI 判断适不适合转商机';
   return `⏩ 商机 · 已在跟进，状态由你维护（可改状态列表）`;
 }
 
@@ -2504,7 +2504,7 @@ function renderProspectList(container) {
     } else {
       actions =
         `<button class="act send" data-plid="${p.id}" data-action="dm" title="发私信即视为接触→自动进商机池">✉️ 私信</button>` +
-        `<button class="act sell" data-plid="${p.id}" data-action="promote" title="主动升格为商机（已接触）">⚡ 升格商机</button>`;
+        `<button class="act sell" data-plid="${p.id}" data-action="promote" title="AI 判断适不适合升格为商机">🧠 升格商机</button>`;
     }
 
     card.innerHTML = `
@@ -2623,9 +2623,24 @@ function renderProspectList(container) {
         loadProspectList(container); return;
       }
       else if (action === 'promote') {
-        if (!window.confirm(`确认将线索 ${person.nickname} 升格为商机（已接触）？`)) return;
-        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { stage: 'prospect', funnel: { step: 'pending', dmCount: 0, lastDmAt: null } } } });
-        addLog(`➡️ ${person.nickname} 已升格为商机`, 'success');
+        // 线索转商机：先由 AI 判断适不适合升格
+        const _o = btn.textContent; btn.disabled = true; btn.textContent = '🧠 判断中…';
+        try {
+          const r = await chrome.runtime.sendMessage({ action: 'judgeLeadPromotion', data: { id } });
+          if (r && r.ok) {
+            if (r.promote) {
+              await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { stage: 'prospect', funnel: { step: 'pending', dmCount: 0, lastDmAt: null } } } });
+              addLog(`🧠 AI 判断适合 → 已升格 ${person.nickname} 为商机（${r.reason || ''}）`, 'success');
+            } else {
+              addLog(`⏸ AI 判断暂不适合升格：${r.reason || '需求不强'}（留在线索池，可稍后再判）`, 'warn');
+            }
+          } else {
+            throw new Error((r && r.error) || 'AI 判断失败');
+          }
+        } catch (e) {
+          addLog('❌ 升格判断失败：' + e.message, 'error');
+        }
+        btn.disabled = false; btn.textContent = _o;
         loadProspectList(container); return;
       }
     });

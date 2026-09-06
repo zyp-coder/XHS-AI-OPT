@@ -349,6 +349,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     generateDm: (data) => requireProspectList(() => handleGenerateDm(data)),
     judgeSaleTiming: (data) => requireProspectList(() => handleJudgeSaleTiming(data)),
     markContacted: (data) => requireProspectList(() => handleMarkContacted(data)),
+    judgeLeadPromotion: (data) => requireProspectList(() => handleJudgeLeadPromotion(data)),
     sendDm: (data) => requireProspectList(() => handleSendDm(data)),
     enrichProspectByProfile: (data) => requireProspectList(() => handleEnrichByProfile(data)),
     openDmChat: (data) => requireProspectList(() => handleOpenDmChat(data)),
@@ -1978,6 +1979,46 @@ async function handleJudgeSaleTiming(data) {
     hook: parsed.hook || '',
     prompts: { system: systemPrompt, user: userPrompt },
   };
+}
+
+/* ─── 获客清单：AI 判断线索是否适合升格为商机（lead_judge） ─── */
+async function handleJudgeLeadPromotion(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先在设置页面填写');
+  const id = data && data.id;
+  if (!id) throw new Error('缺少候选人 id');
+  const list = await Storage.getProspectList();
+  const p = list.find(x => x.id === id);
+  if (!p) throw new Error('候选人不存在');
+
+  let promptTemplate = await Storage.getPrompt('lead_judge');
+  if (!promptTemplate) promptTemplate = DEFAULT_PROMPTS.lead_judge;
+  const profile = p.profile || {};
+  const productHint = (config.product && config.product.name) || '我们的产品领域';
+  const context = {
+    product_hint: String(productHint).slice(0, 40),
+    nickname: p.nickname || '未知',
+    entry: (p.source && p.source.stageEntry) || '',
+    comment: String(((p.source && p.source.comment) || '')).slice(0, 200),
+    profile_hint: (profile.needs || profile.painPoints || (profile.tags || []).join('、') || '').slice(0, 120) || '（未画像）',
+  };
+  const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(promptTemplate, context, '');
+
+  const aiCfg = { ...config.ai, maxTokens: Math.max(config.ai.maxTokens || 4096, 600) };
+  let content = '', usage = {}, parsed = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await AiClient.chatCompletion(aiCfg, systemPrompt, userPrompt);
+      content = r.content; usage = r.usage || {}; parsed = Utils.extractJson(content);
+      if (parsed) break;
+    } catch (err) { if (attempt >= 2) throw err; }
+  }
+  if (!parsed) throw new Error('AI 判断返回无法解析为 JSON');
+  const promote = parsed.promote !== false;
+  // 把 AI 判断写回线索（供 UI 展示 / 下次复用）
+  await Storage.updateProspect(id, { promoJudge: { ok: promote, intent: parsed.intent || '', reason: parsed.reason || '', dmAngle: parsed.dmAngle || '', at: Date.now() } }).catch(() => {});
+  await Storage.addAiLog({ scene: 'lead_judge', tokensIn: usage.prompt_tokens || 0, tokensOut: usage.completion_tokens || 0, success: true, nickname: p.nickname });
+  return { ok: true, promote, intent: parsed.intent || 'medium', reason: parsed.reason || '', dmAngle: parsed.dmAngle || '' };
 }
 
 /* ─── 获客清单：标记"已联系" → 线索自动升商机（只要联系了就升格；幂等） ─── */
