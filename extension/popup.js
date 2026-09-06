@@ -5828,10 +5828,24 @@ var _diagState = { profile: null, persona: '', kbCount: 0, accountType: '', note
 var _diagStep = 1;
 var DIAG_PERSONA_QUESTIONS = [
   '你是谁？介绍一下你的身份、职业，或现在正在做的事。',
-  '在这个领域/产品上你有过哪些真实的经历？做了多久、帮过多少人、或亲自踩过哪些坑。',
+  '在这个领域/产品上你有过哪些真实的经历？做了多久、帮过多少人、或亲自踩过哪些坑？',
   '你最拿手、最想让别人知道的干货或专业积累是什么？',
   '你的小红书账号定位是什么？主要分享什么、写给谁看？',
-  '你希望评论区互动时的"人设感"是哪种（专业靠谱 / 接地气过来人 / 随性朋友…）？有没有特别的口吻或语气？',
+  '你希望评论区互动时的"人设"是哪种（专业靠谱 / 接地气过来人 / 随性朋友…）？有没有特别的口吻或语气？',
+];
+
+// ★ 统一问卷（10 问）：人设/产品卖点/内容规划 合并成一套，只答一次，AI 三处共用
+var DIAG_UNIFIED_QUESTIONS = [
+  '你是谁？介绍一下你的身份、职业，或现在正在做的事。',
+  '你的产品/服务是什么？主要帮人解决什么问题、给谁用？',
+  '相比竞品或以前的用法，它最大的 2-3 个优势或差异点是什么？',
+  '有没有具体数字、效果、案例，或你亲身经历/踩过的坑，能证明它的价值、建立信任？',
+  '你的目标客户是谁？他们购买/关注前最常问、最担心、最容易踩坑的点是什么？',
+  '在你的领域里，你最拿手、最想让别人记住的干货观点或结论是什么？',
+  '你的账号定位：主要分享什么内容、写给谁看？',
+  '你希望互动时的「人设」是哪种（专业靠谱 / 接地气过来人 / 随性朋友）、有没有特别口吻？',
+  '用户最可能在什么场景/需求下想起你、怎么找到你（引流方式）？',
+  '内容规划：一篇图文大概几页、多久发一篇、什么时间段发？',
 ];
 var DIAG_KB_QUESTIONS = [
   '你的产品/服务是什么？主要帮人解决什么问题、满足什么需求？',
@@ -5983,8 +5997,8 @@ function diagStep2(body) {
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML =
     _diagCard(
-      _diagStepTitle('②', '人设评定 · 立住"你是谁"') +
-      '<div style="font-size:12px;color:#888;margin:4px 0;">下面 5 大问帮你把账号人设立住；答得越具体，AI 整理出的人设越像你本人。</div>' +
+_diagStepTitle('②', '人设评定 · 立住"你是谁"') +
+      '<div style="font-size:12px;color:#888;margin:4px 0;">下面 10 问把人设/产品/内容规划一次问清（③⑤ 会复用这份回答）。答得越具体，AI 出的越像你本人。</div>' +
       '<div id="diagPStatus" style="font-size:12px;color:#666;margin:6px 0;"></div>' +
       '<div style="font-size:12px;color:#888;margin:6px 0 4px;">账号简介（已带入，可改）：</div>' +
       '<textarea id="diagP_Bio" rows="2" style="width:100%;box-sizing:border-box;">' + _dEsc(_diagState.profile.desc || '') + '</textarea>' +
@@ -6006,7 +6020,7 @@ function diagStep2(body) {
       _dBtn('diagPEditSave', '💾 保存修改后的人设') + '<span id="diagPEditMsg" style="font-size:12px;color:#0a7b5a;"></span>'
     ) + '</div>' +
     '<div style="margin-top:12px;">' + _dBtn('diagStep3Btn', '下一步：③ 产品卖点', '', 'btn-primary') + _dBtn('diagSkipBtn', '跳过人设', '', 'btn-outline') + '</div>';
-  document.getElementById('diagP_Qs').innerHTML = DIAG_PERSONA_QUESTIONS.map(function (q, i) {
+document.getElementById('diagP_Qs').innerHTML = DIAG_UNIFIED_QUESTIONS.map(function (q, i) {
     return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
       '<textarea class="diagP_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
   }).join('');
@@ -6022,7 +6036,7 @@ async function diagPersonaStatus() {
   const st = document.getElementById('diagPStatus'); const edit = document.getElementById('diagPEdit');
   try {
     const r = await _diagSay('getPersona'); const p = (r && r.persona) || null;
-    if (!p || !p.text) { if (st) st.textContent = '⚠️ 还没有人设。答下面 5 问点生成即可。'; return; }
+    if (!p || !p.text) { if (st) st.textContent = '⚠️ 还没有人设。答下面 10 问点生成即可。'; return; }
     _diagState.persona = p.text;
     if (st) st.innerHTML = '✅ 已有保存的人设（' + (p.updatedAt ? new Date(p.updatedAt).toLocaleString('zh-CN') : '') + '）';
     if (edit && !edit.dataset.touched) edit.value = p.text;
@@ -6034,6 +6048,8 @@ async function diagPersonaBuild() {
   try {
     const bio = (document.getElementById('diagP_Bio') || {}).value ? document.getElementById('diagP_Bio').value.trim() : '';
     const answers = Array.from((document.querySelectorAll('.diagP_Q') || [])).map(function (el) { return { answer: el.value }; });
+    // 保存统一答案，供③产品卖点 /⑤内容规划 复用（只答一次）
+    _diagState.unifiedAnswers = answers;
     const r = await _diagSay('aiPersonaBuild', { bio: bio, answers: answers });
     if (!r || !r.persona || !r.persona.text) throw new Error((r && r.error) || 'AI 未返回人设');
     const saved = await _diagSay('setPersona', { persona: r.persona });
@@ -6112,8 +6128,7 @@ function diagStep3(body) {
     _diagLabel('产品名称') + '<input id="diagProdName" type="text" placeholder="例：贷款计算器小程序" style="width:100%;box-sizing:border-box;margin-bottom:10px;">' +
     '<div style="border-top:1px solid #eee;padding-top:10px;">' +
       '<div style="font-weight:700;font-size:13px;color:#333;">卖点</div>' +
-      '<div style="font-size:12px;color:#888;margin:4px 0;">答下面几问让 AI 提炼，或直接手动加。</div>' +
-      '<div id="diagSell_Qs"></div>' +
+      '<div style="font-size:12px;color:#888;margin:4px 0;">已在②用同一套 10 问答过（产品/优势/客户/证据/引流）。点「✨ 用 AI 提炼卖点」直接生成，或手动加。</div>' +
       _dBtn('diagSellAi', '✨ 用 AI 提炼卖点') + '<span id="diagSellAiMsg" style="font-size:12px;color:#0a7b5a;"></span>' +
       _dBtn('diagSellImportBtn', '📥 导入卖点', '', 'btn-outline') +
       '<div id="diagSellImpBox" style="display:none;margin:6px 0;"><textarea id="diagSellImp" rows="3" placeholder="每行一条：标题：内容&#10;或粘一段 JSON 数组 [{title,content}]"></textarea>' + _dBtn('diagSellImportDo', '导入', '', 'btn-primary') + '<span id="diagSellImpMsg" style="font-size:12px;color:#0a7b5a;"></span></div>' +
@@ -6127,10 +6142,6 @@ function diagStep3(body) {
     '</div>' +
     _dBtn('diagProdSave', '💾 保存产品配置') + '<span id="diagProdMsg" style="font-size:12px;color:#0a7b5a;"></span>'
   ) + '<div style="margin-top:12px;">' + _dBtn('diagStep4Btn', '下一步：④ 知识库', '', 'btn-primary') + '</div>';
-  document.getElementById('diagSell_Qs').innerHTML = DIAG_SELL_QUESTIONS.map(function (q, i) {
-    return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div>' +
-      '<textarea class="diagSellQ" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>';
-  }).join('');
   document.querySelectorAll('.diagGuideChip').forEach(function (b) {
     b.onclick = function () {
       document.querySelectorAll('.diagGuideChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; });
@@ -6153,7 +6164,7 @@ async function diagSellAiBuild() {
   const btn = document.getElementById('diagSellAi'); const msg = document.getElementById('diagSellAiMsg');
   if (!btn) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 提炼中…'; if (msg) msg.textContent = '';
   try {
-    const answers = Array.from((document.querySelectorAll('.diagSellQ') || [])).map(function (el) { return { answer: el.value }; });
+    const answers = (_diagState.unifiedAnswers && _diagState.unifiedAnswers.length) ? _diagState.unifiedAnswers : Array.from((document.querySelectorAll('.diagSellQ') || [])).map(function (el) { return { answer: el.value }; });
     const existing = Array.from(document.querySelectorAll('.diagSellTitle, .diagSellContent') || []) ? (function () { const byI = {}; Array.from(document.querySelectorAll('.diagSellTitle')).forEach(function (el) { byI[el.getAttribute('data-i')] = byI[el.getAttribute('data-i')] || {}; byI[el.getAttribute('data-i')].title = el.value.trim(); }); Array.from(document.querySelectorAll('.diagSellContent')).forEach(function (el) { byI[el.getAttribute('data-i')] = byI[el.getAttribute('data-i')] || {}; byI[el.getAttribute('data-i')].content = el.value.trim(); }); return Object.keys(byI).map(function (k) { return byI[k]; }); })() : [];
     const r = await _diagSay('aiSellPointBuild', { answers: answers, existing: existing });
     if (!r || !r.ok || !Array.isArray(r.sellPoints) || !r.sellPoints.length) throw new Error((r && r.error) || 'AI 未提炼出卖点');
@@ -6295,10 +6306,11 @@ function diagStep5(body) {
   if (!_diagState.profile) { _diagNeedProfile(body); return; }
   body.innerHTML =
     _diagCard(_diagStepTitle('⑤', '内容规划 & 封面') +
-      '<div style="font-size:12px;color:#888;margin:4px 0;">先选账号类型、答 4 问，AI 出笔记规划；再补封面设置。</div>' +
+      '<div style="font-size:12px;color:#888;margin:4px 0;">选账号类型，AI 用②的同一套 10 问直接出笔记规划；再补封面设置。</div>' +
       _diagLabel('你的账号属于哪种？（选一个或自填）') + '<div id="diagPlanType" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' + DIAG_ACCOUNT_TYPES.map(function (ty) { return '<button type="button" class="planTypeChip" data-v="' + _dEsc(ty) + '" style="font-size:12px;padding:5px 10px;border:1px solid #dfe3ea;border-radius:14px;background:#f6f7f9;color:#555;cursor:pointer;">' + _dEsc(ty) + '</button>'; }).join('') + '</div>' +
-      '<input id="diagPlanTypeCustom" type="text" placeholder="其他，自己输入…" style="width:100%;box-sizing:border-box;margin-bottom:10px;">' +
-      '<div id="diagPlan_Qs"></div>' + _dBtn('diagPlanBuild', '✨ 生成笔记内容规划') + '<span id="diagPlanMsg" style="font-size:12px;color:#0a7b5a;"></span>') +
+'<input id="diagPlanTypeCustom" type="text" placeholder="其他，自己输入…" style="width:100%;box-sizing:border-box;margin-bottom:10px;">' +
+      '<div style="font-size:12px;color:#888;margin:2px 0 6px;">内容规划（几页/频率/人群等）已复用②的统一问答，直接生成即可。</div>' +
+      _dBtn('diagPlanBuild', '✨ 生成笔记内容规划') + '<span id="diagPlanMsg" style="font-size:12px;color:#0a7b5a;"></span>') +
 '<div id="diagPlanResult" style="margin-top:10px;"></div>' +
     '<div style="margin-top:10px;">' + _diagCard(
       '<div style="font-weight:700;font-size:14px;">封面设置</div>' +
@@ -6319,9 +6331,8 @@ function diagStep5(body) {
     '<div style="margin-top:12px;">' + _dBtn('diagStep6Btn', '下一步：⑥ 深度报告', '', 'btn-primary') + '</div>';
   document.getElementById('diagPlanTypeCustom').value = '';
   document.querySelectorAll('.planTypeChip').forEach(function (b) { b.onclick = function () { document.querySelectorAll('.planTypeChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; }); b.style.background = '#c41d3c'; b.style.color = '#fff'; b.style.borderColor = '#c41d3c'; _diagState.accountType = b.getAttribute('data-v'); }; });
-  document.getElementById('diagPlanTypeCustom')?.addEventListener('input', function (e) { if (e.target.value.trim()) { _diagState.accountType = e.target.value.trim(); document.querySelectorAll('.planTypeChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; }); } });
-  document.getElementById('diagPlan_Qs').innerHTML = DIAG_PLAN_QUESTIONS.map(function (q, i) { return '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _dEsc(q) + '</div><textarea class="diagPlan_Q" data-i="' + i + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…"></textarea></div>'; }).join('');
-document.getElementById('diagPlanBuild')?.addEventListener('click', diagPlanBuild);
+document.getElementById('diagPlanTypeCustom')?.addEventListener('input', function (e) { if (e.target.value.trim()) { _diagState.accountType = e.target.value.trim(); document.querySelectorAll('.planTypeChip').forEach(function (x) { x.style.background = '#f6f7f9'; x.style.color = '#555'; x.style.borderColor = '#dfe3ea'; }); } });
+  document.getElementById('diagPlanBuild')?.addEventListener('click', diagPlanBuild);
   document.getElementById('diagCoverSave')?.addEventListener('click', diagCoverSave);
   document.getElementById('diagCoverImgBtn')?.addEventListener('click', function () { const f = document.getElementById('diagCoverFile'); if (f) f.click(); });
   document.getElementById('diagCoverFile')?.addEventListener('change', diagCoverImgPick);
@@ -6375,8 +6386,10 @@ async function diagPlanBuild() {
   if (!btn) return; btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 生成中…'; if (msg) msg.textContent = '';
   let type = _diagState.accountType;
   const cus = document.getElementById('diagPlanTypeCustom'); if (cus && cus.value.trim()) type = cus.value.trim();
-  try {
-    const answers = Array.from((document.querySelectorAll('.diagPlan_Q') || [])).map(function (el, i) { return { q: DIAG_PLAN_QUESTIONS[i] || '', answer: el.value }; });
+try {
+    // 复用②的统一 10 问回答（含人群/内容/页数/频率），不再重复提问
+    const unified = _diagState.unifiedAnswers || Array.from((document.querySelectorAll('.diagPlan_Q, .diagP_Q') || [])).map(function (el, i) { return { answer: el.value }; });
+    const answers = unified.map(function (a, i) { return { q: (DIAG_UNIFIED_QUESTIONS[i] || ''), answer: (a && a.answer) || a.q || '' }; });
     if (!type) throw new Error('请先选择/填写账号类型');
     const r = await _diagSay('aiNotePlan', { profile: _diagState.profile, persona: _diagState.persona, accountType: type || '', answers: answers });
     if (!r || !r.ok || !r.plan) throw new Error((r && r.error) || 'AI 未生成内容规划');
