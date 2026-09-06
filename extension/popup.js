@@ -299,7 +299,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   })();
   // 主功能 Tab：一级（诊断/发笔记/获客/AI客服）+ 获客二级（获客助手/用户清单/灌水总结）
   document.getElementById('tabCommentAssistant')?.addEventListener('click', () => switchMainTab('comment'));
-  document.getElementById('tabChatFollow')?.addEventListener('click', () => switchMainTab('chatFollow'));
   document.getElementById('tabProspectList')?.addEventListener('click', () => switchMainTab('prospectList'));
   document.getElementById('tabWaterSummary')?.addEventListener('click', () => switchMainTab('waterSummary'));
   document.getElementById('tabNotePublish')?.addEventListener('click', () => switchMainTab('notePublish'));
@@ -322,7 +321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('bigWindowBtn')?.remove();
   } else {
     // 小窗 = 只读状态卡：隐藏功能 tab，把界面收敛为纯状态卡（全宽）
-    ['tabCommentAssistant', 'tabChatFollow', 'tabProspectList', 'tabWaterSummary', 'tabNotePublish', 'tabHuoke'].forEach(function (id) {
+    ['tabCommentAssistant', 'tabProspectList', 'tabWaterSummary', 'tabNotePublish', 'tabHuoke'].forEach(function (id) {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -397,11 +396,6 @@ function switchMainTab(name) {
     _setPanelLeftVisible(false);
     _setToolbarMode('waterSummary');
     if (wc && !_waterSummaryLoaded) { _waterSummaryLoaded = true; renderWaterSummary(wc); }
-  } else if (name === 'chatFollow') {
-    _markTop(tabFollow); _hideSub(); _hideAll(); if (fc) fc.style.display = '';
-    _setPanelLeftVisible(false);
-    _setToolbarMode('chatFollow');
-    if (!_chatFollowLoaded) { _chatFollowLoaded = true; if (fc) loadChatFollow(fc); }
   } else if (name === 'notePublish') {
     _markTop(tabNote); _hideSub(); _hideAll(); if (nc) nc.style.display = '';
     _setPanelLeftVisible(false);
@@ -2684,6 +2678,7 @@ async function loadChatView(container) {
 
 function renderChatRows(listEl, items) {
   if (!items.length) { listEl.innerHTML = '<div style="padding:20px;text-align:center;color:#888;font-size:12px;">消息中心还没有会话。有人给你发消息、或你给商机发过私信后，这里就会出现。</div>'; return; }
+  listEl.innerHTML = '';
   items.forEach((c) => {
     const card = document.createElement('div');
     card.className = 'pl-card';
@@ -2696,10 +2691,17 @@ function renderChatRows(listEl, items) {
         ${matchBadge}
         ${c.time ? `<span style="font-size:11px;color:#8a8f99;margin-left:auto;">${esc(c.time)}</span>` : ''}
       </div>
-      <div class="pl-source" style="font-size:12px;">${esc(c.lastMsg || '（无消息）')}</div>
+      <div class="pl-source" style="font-size:12px;">📨 ${esc(c.lastMsg || '（无消息）')}</div>
+      <div style="margin-top:8px;display:none;" class="pl-chat-draft" data-cid="${esc(c.convId)}">
+        <textarea class="pl-draft-text" rows="3" style="width:100%;box-sizing:border-box;font-size:12px;font-family:inherit;border:1px solid #e5d9ff;border-radius:8px;padding:6px 8px;" placeholder="AI 草拟将出现在这里，可修改…"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="pl-draft-copy" style="font-size:11px;padding:4px 10px;border:1px solid #10b981;background:#ecfdf5;color:#059669;border-radius:6px;cursor:pointer;">📋 复制</button>
+          <button class="pl-draft-open" style="font-size:11px;padding:4px 10px;border:1px solid #3b82f6;background:#eff6ff;color:#2563eb;border-radius:6px;cursor:pointer;">💬 打开会话去发</button>
+        </div>
+      </div>
       <div class="pl-foot">
-        <button class="pl-home" data-cid="${esc(c.convId)}" data-pid="${c.personId || ''}" title="打开消息中心与该客户的会话">💬 开聊</button>
-        ${c.matched ? '' : ''}
+        <button class="pl-ai" data-cid="${esc(c.convId)}" data-pid="${c.personId || ''}" title="AI 帮你起草一条回复">🤖 AI 草拟</button>
+        <button class="pl-home" data-cid="${esc(c.convId)}" data-pid="${c.personId || ''}" title="打开 /chat 会话">➤ 开聊</button>
       </div>`;
     card.querySelector('.pl-home')?.addEventListener('click', () => {
       const pid = card.querySelector('.pl-home').dataset.pid;
@@ -2708,8 +2710,56 @@ function renderChatRows(listEl, items) {
         else addLog('❌ 打开会话失败：' + ((r && r.error) || '未知'), 'error');
       }).catch((e) => addLog('❌ 打开会话失败：' + e.message, 'error'));
     });
+    // AI 草拟
+    card.querySelector('.pl-ai')?.addEventListener('click', async (e) => {
+      const b = e.currentTarget;
+      const draftBox = card.querySelector('.pl-chat-draft');
+      const ta = card.querySelector('.pl-draft-text');
+      if (draftBox.style.display !== 'none') { draftBox.style.display = 'none'; return; }
+      draftBox.style.display = 'block';
+      b.disabled = true; b.textContent = '⏳ 生成中…';
+      ta.value = '';
+      try {
+        const txt = await chatDraftFor(c);
+        ta.value = txt;
+        b.disabled = false; b.textContent = '🤖 AI 草拟';
+      } catch (err) {
+        ta.value = '';
+        ta.placeholder = '❌ 生成失败：' + (err.message || '未知') + '（可手动输入）';
+        b.disabled = false; b.textContent = '🤖 AI 草拟';
+      }
+    });
+    card.querySelector('.pl-draft-copy')?.addEventListener('click', () => {
+      const ta = card.querySelector('.pl-draft-text');
+      if (!ta || !ta.value) return;
+      const c1 = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(ta.value) : Promise.reject();
+      c1.catch(() => { ta.select(); document.execCommand('copy'); });
+      const btn = card.querySelector('.pl-draft-copy');
+      btn.textContent = '✅ 已复制'; setTimeout(() => { btn.textContent = '📋 复制'; }, 1200);
+    });
+    card.querySelector('.pl-draft-open')?.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ action: 'openChat', data: { convId: c.convId, personId: c.personId || undefined } }).then((r) => {
+        if (r && r.ok) addLog(`💬 已打开 ${c.partnerName} 的会话，粘贴草稿即可发送`, 'success');
+        else addLog('❌ 打开会话失败：' + ((r && r.error) || '未知'), 'error');
+      }).catch((err) => addLog('❌ 打开会话失败：' + err.message, 'error'));
+    });
     listEl.appendChild(card);
   });
+}
+
+// 为某个 /chat 会话生成一条 AI 回复草拟（有商机则用其画像，无则按对话上下文）
+async function chatDraftFor(c) {
+  let person = { nickname: c.partnerName || '对方', source: { comment: c.lastMsg || '', noteTitle: '消息中心', userUrl: '' } };
+  if (c.personId) {
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'getProspectList', data: {} });
+      const hit = ((r && r.list) || []).find(p => p.id === c.personId);
+      if (hit) person = hit;
+    } catch (_) {}
+  }
+  const resp = await chrome.runtime.sendMessage({ action: 'generateDm', data: { person } });
+  if (resp && resp.ok && resp.dmText) return resp.dmText;
+  throw new Error((resp && resp.error) || 'AI 未返回草拟');
 }
 
 // 单个/批量画像

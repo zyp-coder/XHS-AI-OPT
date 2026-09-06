@@ -976,7 +976,6 @@
     <button id="tabDiagnose" class="main-tab active" title="账号诊断：抓取本人主页，头像/简介/笔记整改建议 + 结合产品与知识库的内容规划">🔍 账号诊断</button>
     <button id="tabNotePublish" class="main-tab" title="发笔记：用知识库内容一键/定时发布小红书笔记">✍️ 发笔记</button>
     <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 用户清单 / 灌水总结">🎯 获客</button>
-    <button id="tabChatFollow" class="main-tab" title="通知页评论跟进：把时间戳通知流按用户整理成对话，AI 判断时机回复/销售（需打开 xiaohongshu.com/notification）">💬 AI客服</button>
   </div>
   <!-- 二级 Tab（获客分组下） -->
   <div id="subTabs" style="display:none;flex-shrink:0;background:#fafafb;border-bottom:1px solid var(--line);">
@@ -1094,9 +1093,7 @@
       <div id="noteInfo" class="note-info" style="display:none"></div>
       <div id="statusBar" class="status-bar">⏸️ 待机中（未开始扫描）</div>
       <div id="mainContent" class="content"></div>
-      <!-- 评论跟进独立视图（Tab 切换显示，与评论助手互斥） -->
-      <div id="chatFollowContent" class="content" style="display:none;"></div>
-      <!-- 获客清单独立视图（Tab 切换显示，与评论助手/评论跟进互斥） -->
+      <!-- 获客清单独立视图（Tab 切换显示） -->
       <div id="prospectContent" class="content" style="display:none;"></div>
       <!-- 灌水总结独立视图（Tab 切换显示） -->
       <div id="waterSummaryContent" class="content" style="display:none;"></div>

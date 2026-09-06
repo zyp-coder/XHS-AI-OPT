@@ -1313,40 +1313,7 @@ async function handleChatFollowSync(data) {
   state.lastSyncAt = Date.now();
   await Storage.setChatFollowState(state);
 
-  // ★ 评论跟进里的客户都自动进获客清单，并把对话历史当画像上下文，立即画像同步到获客清单
-  const cfToProfile = [];
-  try {
-    for (const [cfId, conv] of Object.entries(conversations)) {
-      if (!cfId) continue;
-      // 把最近几轮对话拼成"画像上下文"(source.comment)——单条最新消息信息量不够
-      const dialog = (Array.isArray(conv.history) ? conv.history.slice(-8) : [])
-        .map(function (h) { const who = h.role === 'assistant' ? '我' : '对方'; return who + '：' + String(h.content || '').slice(0, 100); })
-        .join('｜');
-      const chatHistory = Array.isArray(conv.history) ? conv.history.slice(-8) : [];
-      const r = await Storage.addProspect({
-        userId: cfId,
-        nickname: (conv.userName || conv.nickname || '未知用户'),
-        source: {
-          noteTitle: '',
-          noteUrl: '',
-          comment: dialog ? dialog.slice(0, 600) : ((conv.pendingIncoming || '') + '').slice(0, 200),
-          userUrl: 'https://www.xiaohongshu.com/user/profile/' + encodeURIComponent(String(cfId)),
-        },
-        chatHistory,
-        dmStatus: 'pending',
-        origin: '评论跟进',
-      });
-      const p = r && r.person;
-      if (p && p.id && ((r && r.added) || !p.profile)) cfToProfile.push({ id: p.id, userId: p.userId, nickname: p.nickname, source: p.source });
-    }
-  } catch (_) {}
-  // 后台非阻塞画像：把评论跟进对话里对客户的理解立即写进获客清单（不入同步主流程）
-  if (cfToProfile.length) {
-    const _cfg = await Storage.getConfig();
-    if (_cfg.ai.apiKey || _cfg.ai.fallbackApiKey) {
-      handleProfileProspects({ candidates: cfToProfile }).catch(() => {});
-    }
-  }
+  // （AI客服并入消息台后，不再自动把通知对话塞进展获客清单——通知只喂线索池，由 collectLikers 统一采集）
 
   // 返回会话列表（待回复优先，其次最近回复过的）
   const list = Object.entries(conversations)
