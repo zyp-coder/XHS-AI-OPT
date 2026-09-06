@@ -341,6 +341,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getChatConversations: (data) => requireProspectList(() => handleGetChatConversations(data)),
     openChat: (data) => requireProspectList(() => handleOpenChat(data)),
     chatSend: (data) => requireProspectList(() => handleChatSend(data)),
+    // ── AI客服：场景+问答话术体系 ──
+    getAiCsConfig: () => handleGetAiCsConfig(),
+    saveAiCsConfig: (data) => handleSaveAiCsConfig(data || {}),
+    importAiCsConfig: (data) => handleImportAiCsConfig(data || {}),
+    aiCsRespond: (data) => handleAiCsRespond(data || {}),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -2032,6 +2037,113 @@ async function handleMarkContacted(data) {
   if ((p.stage || 'lead') === 'prospect') return { ok: true, promoted: false };
   await Storage.updateProspect(id, { stage: 'prospect' });
   return { ok: true, promoted: true, personId: id };
+}
+
+/* ═══════════ AI客服：触达场景(A) + 客户问答话术库(B) 配置 + 应答 ═══════════ */
+
+// 用产品配置填充话术模板里的 {变量}
+function _fillCsVars(text, config, incoming) {
+  const p = config.product || {};
+  const sp = (Array.isArray(p.sellPoints) ? p.sellPoints.filter(s => s && (s.title || s.content)) : []).slice(0, 3);
+  const spText = (s) => (s ? ((s.title || '') + (s.content ? '：' + s.content : '')) : '');
+  const desc = String(p.description || '').trim();
+  const v = {
+    '产品': p.name || '我的产品',
+    '价格': '',
+    '购买入口': p.guideText || '主页/私信',
+    '适用人群': '',
+    '卖点1': spText(sp[0]),
+    '卖点2': spText(sp[1]),
+    '卖点3': spText(sp[2]),
+    '一句话定位': desc ? desc.split('\n')[0].slice(0, 40) : '',
+    '试用方式': '',
+    '活动': '活动',
+    '优惠': '优惠',
+    '用户原话': String(incoming || '').slice(0, 60),
+  };
+  let out = String(text || '');
+  for (const k in v) out = out.split('{' + k + '}').join(String(v[k] || ''));
+  return out.trim();
+}
+
+async function handleGetAiCsConfig() {
+  return { ok: true, config: await Storage.getAiCsConfig() };
+}
+
+async function handleSaveAiCsConfig(data) {
+  const cfg = await Storage.saveAiCsConfig((data && data.partial) || {});
+  return { ok: true, config: cfg };
+}
+
+async function handleImportAiCsConfig(data) {
+  let parsed = data && data.json;
+  if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) { throw new Error('导入内容不是合法 JSON'); } }
+  if (!parsed || typeof parsed !== 'object') throw new Error('导入内容格式不对');
+  const partial = {};
+  if (parsed.scenes && typeof parsed.scenes === 'object') partial.scenes = parsed.scenes;
+  if (Array.isArray(parsed.qa)) partial.qa = parsed.qa;
+  const cfg = await Storage.saveAiCsConfig(partial);
+  return { ok: true, config: cfg, imported: Object.keys(partial).join(',') || '(空，无有效字段)' };
+}
+
+// 客户问答应答：①本地关键词路由 ②AI路由兜底 ③模板填变量 或 AI应答
+async function handleAiCsRespond(data) {
+  const config = await Storage.getConfig();
+  const incoming = String((data && data.incoming) || '').trim();
+  if (!incoming) throw new Error('请输入客户说的话');
+  const aiCs = await Storage.getAiCsConfig();
+  const qa = (aiCs.qa || []).filter(e => e && e.enabled !== false);
+  if (!qa.length) throw new Error('话术库为空，请先在「AI客服」里配置问答话术');
+
+  const body = incoming.toLowerCase();
+  const catNames = qa.map(e => e.category).filter(Boolean);
+  let entry = null;
+  // 1) 本地关键词路由（优先非兜底分类）
+  for (const e of qa) {
+    if (e.category === '通用兜底') continue;
+    if ((e.keywords || []).some(k => body.includes(String(k).toLowerCase()))) { entry = e; break; }
+  }
+  // 2) AI 路由兜底
+  let category = entry ? entry.category : '';
+  if (!entry && (config.ai.apiKey || config.ai.fallbackApiKey)) {
+    try {
+      let tpl = await Storage.getPrompt('qa_router');
+      if (!tpl) tpl = DEFAULT_PROMPTS.qa_router;
+      const ctx = { categories: catNames.join('、'), incoming };
+      const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctx, '');
+      const raw = await _chatAi(config, systemPrompt, userPrompt, 600);
+      const parsed = Utils.extractJson(raw);
+      if (parsed && parsed.category) category = String(parsed.category).trim();
+      entry = qa.find(e => e.category === category);
+    } catch (_) {}
+  }
+  if (!entry) entry = qa.find(e => e.category === '通用兜底') || qa.find(e => e.mode === 'template');
+  if (!entry) throw new Error('未能归入任何分类，且没有「通用兜底」，请先在话术库配置兜底');
+
+  let reply = '';
+  if (entry.mode === 'template') reply = _fillCsVars(entry.answer, config, incoming);
+  else reply = await (async () => {
+    // AI 应答 + 知识库注入
+    let tpl = await Storage.getPrompt('qa_ai_responder');
+    if (!tpl) tpl = DEFAULT_PROMPTS.qa_ai_responder;
+    let kb = '';
+    try {
+      const kbBase = (await Storage.getKnowledgeBase()) || [];
+      const kbR = KnowledgeSearch.searchKnowledgeBase(kbBase, { comment_content: incoming }, config.roleKeywords || {});
+      if (kbR) kb = kbR.text || '';
+    } catch (_) {}
+    const ctx = { category: entry.category || '', incoming, kb_context: kb || '（无）' };
+    const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctx, kb);
+    return await _chatAi(config, systemPrompt, userPrompt, 900);
+  })();
+  if (!reply) throw new Error('应答生成为空，请重试');
+
+  await Storage.addAiLog({ scene: 'qa_respond', tokensIn: 0, tokensOut: 0, success: true, nickname: '' });
+  return {
+    ok: true, reply, category: entry.category || '',
+    mode: entry.mode || 'template',
+    auto: entry.auto === 'auto' ? 'auto' : (entry.auto === 'confirm' ? 'confirm' : (entry.auto === 'off' ? 'off' : 'draft')),
+  };
 }
 
 /* ─── 获客清单：发送私信（驱动 content.js 打开主页→点私信→发送） ─── */

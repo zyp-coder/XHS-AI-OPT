@@ -300,6 +300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 主功能 Tab：一级（诊断/发笔记/获客/AI客服）+ 获客二级（获客助手/用户清单/灌水总结）
   document.getElementById('tabCommentAssistant')?.addEventListener('click', () => switchMainTab('comment'));
   document.getElementById('tabProspectList')?.addEventListener('click', () => switchMainTab('prospectList'));
+  document.getElementById('tabAiCs')?.addEventListener('click', () => switchMainTab('aiCs'));
   document.getElementById('tabWaterSummary')?.addEventListener('click', () => switchMainTab('waterSummary'));
   document.getElementById('tabNotePublish')?.addEventListener('click', () => switchMainTab('notePublish'));
   document.getElementById('tabDiagnose')?.addEventListener('click', () => switchMainTab('diagnose'));
@@ -322,7 +323,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('bigWindowBtn')?.remove();
   } else {
     // 小窗 = 只读状态卡：隐藏功能 tab，把界面收敛为纯状态卡（全宽）
-    ['tabCommentAssistant', 'tabProspectList', 'tabWaterSummary', 'tabNotePublish', 'tabHuoke'].forEach(function (id) {
+    ['tabCommentAssistant', 'tabProspectList', 'tabWaterSummary', 'tabNotePublish', 'tabHuoke', 'tabAiCs'].forEach(function (id) {
       const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
@@ -362,6 +363,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 /* ─── 主功能 Tab 切换：评论助手 / 评论跟进 / 获客清单 ─── */
 let _chatFollowLoaded = false;
+let _aiCsLoaded = false;
 let _prospectListLoaded = false;
 let _autoProfiledOnce = false; // 本次 popup 生命周期内只自动画像一次
 function switchMainTab(name) {
@@ -372,6 +374,7 @@ function switchMainTab(name) {
   const tabNote = document.getElementById('tabNotePublish');
   const tabDiag = document.getElementById('tabDiagnose');
   const tabHuoke = document.getElementById('tabHuoke');
+  const tabAiCs = document.getElementById('tabAiCs');
   const subTabs = document.getElementById('subTabs');
   const mc = document.getElementById('mainContent');
   const fc = document.getElementById('chatFollowContent');
@@ -379,9 +382,10 @@ function switchMainTab(name) {
   const wc = document.getElementById('waterSummaryContent');
   const nc = document.getElementById('notePublishContent');
   const dc = document.getElementById('diagnoseContent');
-  const _hideAll = () => { if (mc) mc.style.display = 'none'; if (fc) fc.style.display = 'none'; if (pc) pc.style.display = 'none'; if (wc) wc.style.display = 'none'; if (nc) nc.style.display = 'none'; if (dc) dc.style.display = 'none'; };
+  const aic = document.getElementById('aiCsContent');
+  const _hideAll = () => { if (mc) mc.style.display = 'none'; if (fc) fc.style.display = 'none'; if (pc) pc.style.display = 'none'; if (wc) wc.style.display = 'none'; if (nc) nc.style.display = 'none'; if (dc) dc.style.display = 'none'; if (aic) aic.style.display = 'none'; };
   const _markTop = (el) => {
-    [tabComment, tabFollow, tabProspect, tabWater, tabNote, tabDiag, tabHuoke].forEach(t => { if (t) t.classList.remove('active'); });
+    [tabComment, tabFollow, tabProspect, tabWater, tabNote, tabDiag, tabHuoke, tabAiCs].forEach(t => { if (t) t.classList.remove('active'); });
     if (el) el.classList.add('active');
   };
   const _hideSub = () => { if (subTabs) subTabs.style.display = 'none'; };
@@ -397,6 +401,12 @@ function switchMainTab(name) {
     _setPanelLeftVisible(false);
     _setToolbarMode('waterSummary');
     if (wc && !_waterSummaryLoaded) { _waterSummaryLoaded = true; renderWaterSummary(wc); }
+  } else if (name === 'aiCs') {
+    _markTop(tabAiCs); _hideSub(); _hideAll(); if (aic) aic.style.display = '';
+    _setPanelLeftVisible(false);
+    _setToolbarMode('prospectList');
+    _setProspectCleanMode(true);
+    if (aic && !_aiCsLoaded) { _aiCsLoaded = true; renderAiCs(aic); }
   } else if (name === 'notePublish') {
     _markTop(tabNote); _hideSub(); _hideAll(); if (nc) nc.style.display = '';
     _setPanelLeftVisible(false);
@@ -2822,6 +2832,183 @@ async function chatDraftFor(c) {
   const resp = await chrome.runtime.sendMessage({ action: 'generateDm', data: { person } });
   if (resp && resp.ok && resp.dmText) return resp.dmText;
   throw new Error((resp && resp.error) || 'AI 未返回草拟');
+}
+
+// ═══════════ AI客服：触达场景(A) + 客户问答话术库(B) ═══════════
+let _aiCs = null;
+const AI_CS_PURPOSES = [['sell', '🛍 卖货'], ['brand', '🏷 品牌种草'], ['profile', '👤 主页涨粉'], ['likes', '👍 养数据'], ['trend', '🔥 蹭热点'], ['auto', '🧩 自动']];
+const AI_CS_ENABLED = { 'draft': '仅草拟·人工确认', 'auto': '自动发送', 'off': '关闭' };
+
+async function renderAiCs(container) {
+  container.innerHTML = '<div style="padding:20px;text-align:center;color:#888;font-size:13px;">加载 AI客服配置…</div>';
+  let cfg;
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} });
+    if (!r || !r.ok) throw new Error((r && r.error) || '读取失败');
+    cfg = r.config;
+  } catch (e) {
+    container.innerHTML = '<div style="padding:20px;color:#d33;font-size:13px;">❌ ' + esc(e.message || '加载失败') + '</div>';
+    return;
+  }
+  _aiCs = cfg;
+
+  container.innerHTML = `
+    <div style="padding:10px 12px;border-bottom:1px solid var(--line);">
+      <div style="font-weight:700;font-size:14px;">🎧 AI客服 · 触达场景 + 问答话术</div>
+      <div style="font-size:11px;color:#888;margin-top:2px;">主动触达(A) 与 客户问答(B) 统一配置；默认「草拟·确认」，自动需显式打开并套量控。</div>
+    </div>
+    <div style="padding:10px 12px;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <button id="aiCsSave" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">💾 保存全部</button>
+        <button id="aiCsExport" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;">⬇ 导出</button>
+        <button id="aiCsImport" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
+      </div>
+
+      <div style="font-weight:700;font-size:13px;margin:6px 0 4px;">A · 触达场景（按场景配，点开即用）</div>
+      <div id="aiCsScenes"></div>
+
+      <div style="font-weight:700;font-size:13px;margin:14px 0 4px;">B · 客户问答话术库（别人问、AI 答）</div>
+      <div id="aiCsQa"></div>
+      <button id="aiCsQaAdd" style="font-size:12px;padding:5px 12px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:8px;cursor:pointer;margin-top:6px;">＋ 新增分类</button>
+
+      <div style="font-weight:700;font-size:13px;margin:14px 0 4px;">🧪 试问答（验证路由与话术）</div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="aiCsTestIn" type="text" placeholder="模拟客户说一句：几号发货？/ 贵不贵 / 我零基础适合吗…" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px;">
+        <button id="aiCsTestBtn" style="font-size:12px;padding:6px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;">🤖 应答</button>
+      </div>
+      <div id="aiCsTestOut" style="font-size:12px;color:#333;margin-top:6px;white-space:pre-wrap;"></div>
+    </div>`;
+
+  renderAiCsScenes(container);
+  renderAiCsQa(container);
+
+  document.getElementById('aiCsSave')?.addEventListener('click', () => saveAiCs(container));
+  document.getElementById('aiCsExport')?.addEventListener('click', exportAiCs);
+  document.getElementById('aiCsImport')?.addEventListener('click', importAiCs);
+  document.getElementById('aiCsQaAdd')?.addEventListener('click', () => { _aiCs.qa.push({ id: 'qa_' + Date.now().toString(36), category: '新分类', keywords: [], mode: 'template', auto: 'draft', enabled: true, answer: '' }); renderAiCsQa(container); });
+  document.getElementById('aiCsTestBtn')?.addEventListener('click', () => aiCsTest(container));
+  document.getElementById('aiCsTestIn')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') aiCsTest(container); });
+}
+
+function renderAiCsScenes(container) {
+  const box = document.getElementById('aiCsScenes'); if (!box) return;
+  box.innerHTML = Object.entries(_aiCs.scenes).map(([k, s]) => {
+    const purp = AI_CS_PURPOSES.map(([v, l]) => `<option value="${v}" ${s.purpose === v ? 'selected' : ''}>${l}</option>`).join('');
+    const mode = AI_CS_ENABLED[Object.prototype.hasOwnProperty.call(AI_CS_ENABLED, s.mode) ? s.mode : 'draft'];
+    const modeOpts = ['draft', 'auto'].map(v => `<option value="${v}" ${s.mode === v ? 'selected' : ''}>${AI_CS_ENABLED[v]}</option>`).join('');
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;"><input type="checkbox" class="aic-sc-on" data-k="${k}" ${s.enabled ? 'checked' : ''}>${esc(s.name)}</label>
+        <span style="margin-left:auto;display:flex;gap:4px;align-items:center;font-size:11px;">
+          打法<select class="aic-sc-purpose" data-k="${k}">${purp}</select>
+          模式<select class="aic-sc-mode" data-k="${k}">${modeOpts}</select>
+          字数 <input class="aic-sc-min" data-k="${k}" type="number" style="width:46px" value="${s.minChars}">~<input class="aic-sc-max" data-k="${k}" type="number" style="width:46px" value="${s.maxChars}">
+        </span>
+      </div>
+      <input class="aic-sc-tpl" data-k="${k}" type="text" placeholder="固定话术模板（可选，留空则AI按该场景生成；可用 {产品}{卖点1} 等变量）" style="width:100%;box-sizing:border-box;margin-top:6px;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:6px;" value="${esc(s.template || '')}">
+    </div>`;
+  }).join('');
+}
+
+function renderAiCsQa(container) {
+  const box = document.getElementById('aiCsQa'); if (!box) return;
+  box.innerHTML = _aiCs.qa.map((e, i) => {
+    const mode = e.mode === 'ai' ? 'ai' : 'template';
+    const auto = AI_CS_ENABLED[Object.prototype.hasOwnProperty.call(AI_CS_ENABLED, e.auto) ? e.auto : 'draft'];
+    return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <input class="aic-qa-cat" data-i="${i}" type="text" value="${esc(e.category)}" style="width:84px;font-size:12px;font-weight:600;border:1px solid #eee;border-radius:6px;padding:4px;">
+        <select class="aic-qa-mode" data-i="${i}" style="font-size:11px;">
+          <option value="template" ${mode === 'template' ? 'selected' : ''}>模板</option>
+          <option value="ai" ${mode === 'ai' ? 'selected' : ''}>AI</option>
+        </select>
+        <select class="aic-qa-auto" data-i="${i}" style="font-size:11px;">
+          <option value="draft" ${e.auto === 'draft' ? 'selected' : ''}>草拟·确认</option>
+          <option value="auto" ${e.auto === 'auto' ? 'selected' : ''}>自动</option>
+          <option value="off" ${e.auto === 'off' ? 'selected' : ''}>关闭</option>
+        </select>
+        <label style="font-size:11px;display:flex;align-items:center;gap:2px;"><input type="checkbox" class="aic-qa-on" data-i="${i}" ${e.enabled !== false ? 'checked' : ''}>启用</label>
+        <button class="aic-qa-del" data-i="${i}" style="margin-left:auto;border:none;background:none;color:#d32f2f;cursor:pointer;font-size:12px;">🗑</button>
+      </div>
+      <input class="aic-qa-kw" data-i="${i}" type="text" placeholder="触发关键词（逗号分隔）" value="${esc((e.keywords || []).join('，'))}" style="width:100%;box-sizing:border-box;margin-top:6px;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:6px;">
+      <textarea class="aic-qa-ans" data-i="${i}" rows="2" placeholder="话术（模板可用 {产品}{价格} 等变量；AI 模式可写引导/要点）" style="width:100%;box-sizing:border-box;margin-top:4px;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:6px;">${esc(e.answer || '')}</textarea>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.aic-qa-del').forEach(b => b.addEventListener('click', () => { _aiCs.qa.splice(parseInt(b.dataset.i, 10), 1); renderAiCsQa(container); }));
+}
+
+function _aiCsGather(container) {
+  const scenes = {};
+  Object.keys(_aiCs.scenes).forEach(k => {
+    const s = _aiCs.scenes[k];
+    scenes[k] = {
+      ...s,
+      enabled: !!container.querySelector(`.aic-sc-on[data-k="${k}"]`)?.checked,
+      purpose: container.querySelector(`.aic-sc-purpose[data-k="${k}"]`)?.value || s.purpose,
+      mode: container.querySelector(`.aic-sc-mode[data-k="${k}"]`)?.value || 'draft',
+      minChars: parseInt(container.querySelector(`.aic-sc-min[data-k="${k}"]`)?.value, 10) || s.minChars,
+      maxChars: parseInt(container.querySelector(`.aic-sc-max[data-k="${k}"]`)?.value, 10) || s.maxChars,
+      template: container.querySelector(`.aic-sc-tpl[data-k="${k}"]`)?.value || '',
+    };
+  });
+  const qa = Array.from(container.querySelectorAll('.aic-qa-cat')).map(ta => {
+    const i = parseInt(ta.dataset.i, 10);
+    const e = _aiCs.qa[i] || { id: 'qa_' + i };
+    return {
+      id: e.id || ('qa_' + Date.now().toString(36) + i),
+      category: ta.value.trim() || '未命名',
+      keywords: (container.querySelector(`.aic-qa-kw[data-i="${i}"]`)?.value || '').split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean),
+      mode: container.querySelector(`.aic-qa-mode[data-i="${i}"]`)?.value || 'template',
+      auto: container.querySelector(`.aic-qa-auto[data-i="${i}"]`)?.value || 'draft',
+      enabled: !!container.querySelector(`.aic-qa-on[data-i="${i}"]`)?.checked,
+      answer: container.querySelector(`.aic-qa-ans[data-i="${i}"]`)?.value || '',
+    };
+  });
+  return { scenes, qa };
+}
+
+async function saveAiCs(container) {
+  const partial = _aiCsGather(container);
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'saveAiCsConfig', data: { partial } });
+    if (r && r.ok) { _aiCs = r.config; addLog('💾 AI客服配置已保存', 'success'); }
+    else addLog('❌ 保存失败：' + ((r && r.error) || '未知'), 'error');
+  } catch (e) { addLog('❌ 保存失败：' + e.message, 'error'); }
+}
+
+async function exportAiCs() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} });
+    const text = JSON.stringify((r && r.config) || {}, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); addLog('✅ AI客服配置已复制到剪贴板，可存为 JSON 文件', 'success'); }
+    else { const a = document.createElement('a'); a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(text); a.download = 'ai-cs-config.json'; a.click(); }
+  } catch (e) { addLog('❌ 导出失败：' + e.message, 'error'); }
+}
+
+function importAiCs() {
+  const val = window.prompt('粘贴要导入的 AI客服配置文件（JSON，含 scenes / qa）：');
+  if (val === null || !val.trim()) return;
+  chrome.runtime.sendMessage({ action: 'importAiCsConfig', data: { json: val } }).then((r) => {
+    if (r && r.ok) { _aiCs = r.config; const c = document.getElementById('aiCsContent'); if (c) renderAiCs(c); addLog('✅ 导入成功：' + r.imported, 'success'); }
+    else addLog('❌ 导入失败：' + ((r && r.error) || '未知'), 'error');
+  }).catch(e => addLog('❌ 导入失败：' + e.message, 'error'));
+}
+
+async function aiCsTest(container) {
+  const inn = container.querySelector('#aiCsTestIn');
+  const out = container.querySelector('#aiCsTestOut');
+  if (!inn || !out) return;
+  const q = inn.value.trim();
+  if (!q) return;
+  out.innerHTML = '<span class="loading-spinner" style="display:inline-block;width:12px;height:12px;border:2px solid;border-top-color:transparent;border-radius:50%;margin-right:6px;vertical-align:middle;"></span>路由中…';
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } });
+    if (r && r.ok) {
+      out.innerHTML = `<div style="background:#f1f5f9;border-radius:6px;padding:6px 8px;">🎯 分类 <b>${esc(r.category)}</b> · ${r.mode === 'ai' ? 'AI生成' : '模板'}<br><div style="margin-top:4px;">${esc(r.reply)}</div></div>`;
+    } else {
+      out.innerHTML = '<div style="color:#d33;">❌ ' + esc((r && r.error) || '应答失败') + '</div>';
+    }
+  } catch (e) { out.innerHTML = '<div style="color:#d33;">❌ ' + esc(e.message) + '</div>'; }
 }
 
 // 单个/批量画像

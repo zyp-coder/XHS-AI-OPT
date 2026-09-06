@@ -98,6 +98,28 @@ const DEFAULT_CONFIG = {
   customer: {
     dormantDays: 14, // 超过 N 天无有效互动视为"沉睡"（配合 AI 分类用）
   },
+  // ★ AI客服：触达场景(A) + 客户问答话术库(B) —— 小红书获客/销售统一话术体系
+  aiCustomerService: {
+    scenes: {
+      comment_first: { name: '评论首评', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_comment_first', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
+      comment_reply: { name: '评论回应', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 90, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_comment_reply', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
+      dm_first: { name: '私信首触', enabled: true, purpose: 'sell', mode: 'draft', minChars: 60, maxChars: 150, toneMannerisms: '', guidance: '私信', useKb: true, template: '', promptScene: 'scen_dm_first', schedule: { gapMin: 30, gapMax: 90, dailyMax: 20 } },
+      chat_follow: { name: '消息跟单', enabled: true, purpose: 'sell', mode: 'draft', minChars: 40, maxChars: 120, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_chat_follow', schedule: { gapMin: 30, gapMax: 90, dailyMax: 20 } },
+      after_sale: { name: '成交维护', enabled: true, purpose: 'brand', mode: 'draft', minChars: 40, maxChars: 120, toneMannerisms: '', guidance: '', useKb: true, template: '', promptScene: 'scen_after_sale', schedule: { gapMin: 60, gapMax: 180, dailyMax: 10 } },
+      notif_reply: { name: '通知回访', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_notif_reply', schedule: { gapMin: 30, gapMax: 120, dailyMax: 15 } },
+    },
+    qa: [
+      { id: 'qa_logistics', category: '物流', keywords: ['几号发', '什么时候到', '有现货', '发货', '时效', '有没有货', '多久能收到'], mode: 'template', auto: 'draft', enabled: true, answer: '{产品}一般付款后 24 小时内发货（节假日顺延），默认快递，通常 2-3 天到。您留个收货地址我这就给您安排，到了我会第一时间提醒您。如果急用跟我说，我帮您备注加急尽早发出。' },
+      { id: 'qa_detail', category: '产品细节', keywords: ['是什么', '怎么用', '几页', '多少', '包含什么', '有没有', '功能', '能不能这样'], mode: 'ai', auto: 'draft', enabled: true, answer: '按知识库+对方具体一句现场作答；骨架：关键在{卖点1}/{卖点2}/{卖点3}，需要可发成品图/案例参考。' },
+      { id: 'qa_fit', category: '适用性追问', keywords: ['零基础', '适不适合', '我是', '新手', '可以不', '不会'], mode: 'template', auto: 'draft', enabled: true, answer: '这个主要看您的{适用人群}。像您这样的情况，用它最省事——因为{卖点1}。如果拿不准，您跟我说下具体情况，我帮您看适不适合、该从哪一步开始，不合适我不怂恿您。' },
+      { id: 'qa_price', category: '比价', keywords: ['贵', '便宜', '优惠', '打折', '团购', '和xx比', '活动', '多少钱'], mode: 'template', auto: 'confirm', enabled: true, answer: '价格其实就{价格}，一次买断/长期用，不是卖完不管。如果现在需要，我可以帮您申请点小优惠或赠品，就当交个朋友。' },
+      { id: 'qa_order', category: '确认下单', keywords: ['怎么买', '怎么付款', '有货吗', '下单', '流程', '链接', '怎么购买'], mode: 'template', auto: 'confirm', enabled: true, answer: '下单很简单：确认没问题的话，我直接给到{购买入口}，您拍下即可，我全程跟进。付款后第一时间安排，后续使用有问题随时找我，不放心可以先{试用方式}。' },
+      { id: 'qa_after', category: '售后顾虑', keywords: ['怕坑', '万一', '不好用', '能退吗', '退款', '售后', '被坑过', '不靠谱'], mode: 'template', auto: 'draft', enabled: true, answer: '您担心得对，花钱前谨慎应该的。我们这边：全程{产品}售后指导，不是卖了不管；真实用了不满意，我陪您把问题解决到。有顾虑咱先把条款/效果聊透再下单，不让您踩坑。' },
+      { id: 'qa_ice', category: '破冰寒暄', keywords: ['你好', '在吗', '刚看到', '了解下', '路过', '哈喽'], mode: 'template', auto: 'auto', enabled: true, answer: '您好呀，看到您来啦～ 您是刚好刷到还是专门来问的？想了解{产品}怎么用、适合什么情况，跟我说一声，我给您讲明白。' },
+      { id: 'qa_promo', category: '促销节点', keywords: ['活动', '双十一', '优惠活动', '限时', '节日', '福利'], mode: 'template', auto: 'confirm', enabled: true, answer: '正好赶上{活动}，现在下单有{优惠}（限时）。需要的话这波别错过，我把规格和到手价跟您说清，您再决定。' },
+      { id: 'qa_fallback', category: '通用兜底', keywords: [], mode: 'ai', auto: 'off', enabled: true, answer: '您好，您问的这个我仔细看了。先跟您确认下我理解对没——{用户原话}？如果是指这方面，那{指向产品/让TA补充}；要是我会错意了，您再描述下，我重新给到参考。' },
+    ],
+  },
 };
 
 /* ─── 通用读写 ─── */
@@ -652,6 +674,23 @@ async function deleteProspect(id) {
   return { ok: true };
 }
 
+/* ─── AI客服：触达场景(A) + 客户问答话术库(B) 配置（按租户隔离，深合并默认） ─── */
+async function getAiCsConfig() {
+  const cfg = await getConfig();
+  return {
+    scenes: cfg.aiCustomerService && cfg.aiCustomerService.scenes ? cfg.aiCustomerService.scenes : DEFAULT_CONFIG.aiCustomerService.scenes,
+    qa: (cfg.aiCustomerService && Array.isArray(cfg.aiCustomerService.qa)) ? cfg.aiCustomerService.qa : DEFAULT_CONFIG.aiCustomerService.qa,
+  };
+}
+
+async function saveAiCsConfig(partial) {
+  const cfg = await getConfig();
+  const cur = cfg.aiCustomerService || {};
+  cfg.aiCustomerService = { ...cur, ...(partial || {}) };
+  await setConfig(cfg);
+  return getAiCsConfig();
+}
+
 /* ─── 获客清单：私信历史 ─── */
 async function getDmHistory() {
   return (await get(KEYS.PROSPECT_DM_HISTORY)) || [];
@@ -745,6 +784,8 @@ const Storage = {
   // prospect list (获客清单)
   getProspectList, saveProspectList, addProspect, updateProspect, deleteProspect,
   getDmHistory, addDmRecord,
+  // AI客服：场景+问答话术
+  getAiCsConfig, saveAiCsConfig,
   // 发笔记：已用选题池
   loadUsedTopics, addUsedTopic, clearUsedTopics, filterOutUsed,
 };
