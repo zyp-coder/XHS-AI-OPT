@@ -90,6 +90,10 @@ const DEFAULT_CONFIG = {
     '房贷科普博主': ['房贷', '利率', 'LPR', '月供', '贷款', '公积金', '按揭', '首付'],
     '普通用户': ['买房', '购房', '看房', '上车', '刚需', '房奴'],
   },
+  // ★ 商机池状态列表（用户可手工维护：给每个商机挂一个自定义状态）
+  prospect: {
+    statuses: ['待触达', '已回复', '谈单中', '已成交'],
+  },
   // ★ 客户管理：沉睡判定标准（用户自行定义）
   customer: {
     dormantDays: 14, // 超过 N 天无有效互动视为"沉睡"（配合 AI 分类用）
@@ -470,6 +474,8 @@ function _originWin(cur, neu) {
  * 迁移只在读到旧字段时才发生并一次性落库；已是 v2 的记录只做容器归一化（幂等）。
  */
 const _STEP_FROM_DM = { pending: 'pending', invalid: 'pending', sent: 'touched', touched: 'touched', replied: 'replied', talking: 'talking', converted: 'closed', closed: 'closed' };
+const _STATUS_FROM_STEP = { pending: '待触达', touched: '已触达', replied: '已回复', talking: '谈单中', closed: '已成交' };
+const _DEFAULT_PROSPECT_STATUS = '待触达';
 const _ORIGIN_TO_ENTRY = { '评论跟进': '评论跟进', '评论': '评论', '手动': '手动', '点赞': '点赞', 'AI筛选': 'AI路由' };
 
 function _isLikerRec(p) {
@@ -526,9 +532,10 @@ function _migrateOldProspect(p) {
 
   // ── ② 层内容器归一化（v1/v2 都执行）+ 确保无残留旧 customer/account ──
   if (m.stage === 'prospect' && !m.funnel) { m.funnel = { step: 'pending', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; changed = true; }
+  if (m.stage === 'prospect' && !m.status) { m.status = _STATUS_FROM_STEP[m.funnel.step] || _DEFAULT_PROSPECT_STATUS; changed = true; }
   if (m.stage === 'lead' && !m.lead) { m.lead = { signalCount: 0, signals: [], lastSignalAt: null }; changed = true; }
   if (m.account) { delete m.account; changed = true; }
-  if (m.stage === 'customer') { m.stage = 'prospect'; if (!m.funnel) m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; changed = true; }
+  if (m.stage === 'customer') { m.stage = 'prospect'; if (!m.funnel) m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; if (!m.status) m.status = '已成交'; changed = true; }
 
   // ── ③ affinity：意向仅作排序权重 ──
   if (!m.affinity) { m.affinity = { intentLevel: p.intentLevel || (p.profile && p.profile.intentLevel) || 'medium' }; changed = true; }
@@ -619,7 +626,7 @@ const entry = {
   // 客户层已废弃：调用方仍传 customer → 收敛到商机
   if (entry.stage === 'customer') entry.stage = 'prospect';
   // 补齐层内容器
-  if (entry.stage === 'prospect') entry.funnel = { step: _STEP_FROM_DM[person.dmStatus] || 'pending', dmCount: person.dmCount || 0, lastDmAt: person.lastDmAt || null };
+  if (entry.stage === 'prospect') { entry.funnel = { step: _STEP_FROM_DM[person.dmStatus] || 'pending', dmCount: person.dmCount || 0, lastDmAt: person.lastDmAt || null }; entry.status = person.status || _STATUS_FROM_STEP[entry.funnel.step] || _DEFAULT_PROSPECT_STATUS; }
   else entry.lead = { signalCount: person.isLiker ? 1 : 0, signals: person.isLiker ? ['liked'] : [], lastSignalAt: person.isLiker ? Date.now() : null };
   list.unshift(entry);
   await set(KEYS.PROSPECT_LIST, list);

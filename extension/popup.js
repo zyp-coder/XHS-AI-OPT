@@ -2203,6 +2203,7 @@ const PL_FUNNEL = {
   talking: { t: '谈单中', c: '#7c3aed', bg: '#f5f3ff' },
   closed: { t: '已成交', c: '#92400e', bg: '#fef3c7' },
 };
+const PL_DEFAULT_STATUSES = ['待触达', '已回复', '谈单中', '已成交'];
 const PL_ENTRY_BADGE = {
   '点赞': { t: '💗点赞', c: '#0e7490', bg: '#ecfeff' },
   '关注': { t: '👣关注', c: '#475569', bg: '#f1f5f9' },
@@ -2214,10 +2215,11 @@ const PL_ENTRY_BADGE = {
   '手动': { t: '✋手动', c: '#475569', bg: '#f1f5f9' },
 };
 
-// 层徽章：商机池显示跟进阶段，线索池显示层级
+// 层徽章：商机池显示用户维护的状态，线索池显示层级
+const _plStatusColor = (s) => ({ '待触达': '#2563eb', '已触达': '#b45309', '已回复': '#059669', '谈单中': '#7c3aed', '已成交': '#92400e' }[s] || '#6b7280');
 function _plStageBadge(p) {
   const s = _plGetStage(p);
-  if (s === 'prospect') { const m = PL_FUNNEL[_plFunnel(p).step] || PL_FUNNEL.pending; return `<span class="pl-badge" style="background:${m.bg};color:${m.c};">${m.t}</span>`; }
+  if (s === 'prospect') { const st = p.status || '待触达'; return `<span class="pl-badge" style="background:#eef2ff;color:${_plStatusColor(st)};">${esc(st)}</span>`; }
   const m = PL_STAGE_META.lead; return `<span class="pl-badge" style="background:${m.bg};color:${m.c};">${m.t}</span>`;
 }
 // 来源徽章
@@ -2230,15 +2232,7 @@ function _plEntryBadge(p) {
 function _plNextHint(p) {
   const s = _plGetStage(p);
   if (s === 'lead') return '🎇 线索 · 未接触：发个私信或手动升格，接触过就算商机';
-  const st = _plFunnel(p).step;
-  const hint = {
-    pending: '➡️ 下一步：✉️ 私信触达',
-    touched: '➡️ 下一步：等回复 / 真人跟进',
-    replied: '➡️ 下一步：谈单推进',
-    talking: '➡️ 下一步：促成成交',
-    closed: '💰 已成交（此处仅标注，成交一般走线下/微信）',
-  };
-  return hint[st] || hint.pending;
+  return `⏩ 商机 · 已在跟进，状态由你维护（可改状态列表）`;
 }
 
 // 收录关键词设置（弹窗编辑 config.product.targetKeywords）
@@ -2251,6 +2245,19 @@ async function editTargetKeywords() {
   const list = val.split(/[,，、\s]+/).map(s => s.trim()).filter(Boolean);
   await updateConfig({ product: { targetKeywords: list } });
   addLog(`⚙️ 收录关键词已更新：${list.join('、') || '（空）'}`, 'info');
+  const pc = document.getElementById('prospectContent');
+  if (pc && pc.style.display !== 'none') loadProspectList(pc);
+}
+
+// 商机池状态列表管理（用户手工维护：状态可增删改，每个商机挂一个）
+async function editProspectStatus() {
+  const config = await getConfigSafe();
+  const cur = (config.prospect && config.prospect.statuses) || PL_DEFAULT_STATUSES;
+  const val = window.prompt('商机状态列表（每个商机可选一个状态，逗号分隔）：\n例：待触达，已回复，谈单中，已成交', cur.join('，'));
+  if (val === null) return;
+  const list = val.split(/[,，、\n]+/).map(s => s.trim()).filter(Boolean);
+  await updateConfig({ prospect: { statuses: list } });
+  addLog(`⚙️ 商机状态已更新：${list.join('、') || '（空）'}`, 'info');
   const pc = document.getElementById('prospectContent');
   if (pc && pc.style.display !== 'none') loadProspectList(pc);
 }
@@ -2284,7 +2291,13 @@ async function loadProspectList(container) {
     const full = await chrome.runtime.sendMessage({ action: 'getProspectList', data: {} });
     if (full && full.ok) fullList = full.list || [];
   } catch (_) {}
-  _plData = { list: resp.list || [], allTags: resp.allTags || [], fullList };
+  // 商机状态列表（用户可手工维护）——从配置读取
+  let statuses = [];
+  try {
+    const cfg = await getConfigSafe();
+    statuses = (cfg.prospect && cfg.prospect.statuses) || [];
+  } catch (_) {}
+  _plData = { list: resp.list || [], allTags: resp.allTags || [], fullList, statuses };
   renderProspectList(container);
 
   // ★ 打开获客清单即自动补全"未画像"的客户（本次 popup 生命周期只跑一次，完成后刷新显示）
@@ -2365,6 +2378,12 @@ function renderProspectList(container) {
     bBtn.disabled = unpro.length === 0;
     bBtn.addEventListener('click', () => runProfileOne(unpro, container));
     batch.appendChild(bBtn);
+    // 状态管理：用户可增删改商机状态列表
+    const stBtn = document.createElement('button');
+    stBtn.textContent = '⚙️ 管理状态';
+    stBtn.style.cssText = 'font-size:11px;padding:5px 12px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;cursor:pointer;font-weight:600;';
+    stBtn.addEventListener('click', editProspectStatus);
+    batch.appendChild(stBtn);
     const tip = document.createElement('span');
     tip.textContent = '⋯ 商机池＝已接触：画像 → 私信 → 谈单 → 成交';
     tip.style.cssText = 'font-size:11px;color:#0f766e;';
@@ -2458,7 +2477,8 @@ function renderProspectList(container) {
     // 层内"状态/下一步"下拉（v2：一个下拉按层绑到对应子状态）
     let statusSel = '';
     if (s === 'prospect') {
-      statusSel = `<select class="pl-status" data-plid="${p.id}" data-kind="funnel" title="跟进阶段（你维护）">${Object.entries(PL_FUNNEL).map(([k, v]) => `<option value="${k}" ${_plFunnel(p).step === k ? 'selected' : ''}>${v.t}</option>`).join('')}</select>`;
+      const stList = (_plData.statuses && _plData.statuses.length) ? _plData.statuses : PL_DEFAULT_STATUSES;
+      statusSel = `<select class="pl-status" data-plid="${p.id}" data-kind="status" title="商机状态（你维护，可改状态列表）">${stList.map(st => `<option value="${esc(st)}" ${(p.status || stList[0]) === st ? 'selected' : ''}>${esc(st)}</option>`).join('')}</select>`;
     }
 
     // 层内动作（按出ロ绑定）：商机=画像/私信/成交；线索=私信(接触即转商机)/手动升格
@@ -2537,13 +2557,13 @@ function renderProspectList(container) {
     sel.addEventListener('change', async () => {
       const id = sel.dataset.plid;
       const v = sel.value || '';
-      const kind = sel.dataset.kind || 'funnel'; // funnel
+      const kind = sel.dataset.kind || 'status'; // status
       const person = list.find(p => p.id === id);
       if (!person) return;
       try {
-        const updates = { funnel: Object.assign({}, _plFunnel(person), { step: v }) };
+        const updates = { status: v };
         await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates } });
-        addLog(`✅ ${person.nickname} → 跟进阶段 ${(PL_FUNNEL[v] ? PL_FUNNEL[v].t : v)}`, 'success');
+        addLog(`✅ ${person.nickname} 商机状态 → ${v}`, 'success');
         loadProspectList(container);
       } catch (e) {
         addLog(`❌ 更新状态失败：${e.message}`, 'error');
@@ -2578,8 +2598,8 @@ function renderProspectList(container) {
       else if (action === 'profile') { runProfileOne([person], container); return; }
       else if (action === 'dm') { openDmModal(person); return; }
       else if (action === 'close') {
-        // 成交仅在商机上做标注（不单独建客户层）
-        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { funnel: Object.assign({}, _plFunnel(person), { step: 'closed' }) } } });
+        // 成交在商机状态上作标注（不单独建客户层）
+        await chrome.runtime.sendMessage({ action: 'updateProspect', data: { id, updates: { status: '已成交', funnel: Object.assign({}, _plFunnel(person), { step: 'closed' }) } } });
         addLog(`💰 ${person.nickname} 已成交标注（成交一般走线下/微信）`, 'success');
         loadProspectList(container); return;
       }
