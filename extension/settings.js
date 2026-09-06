@@ -1544,6 +1544,18 @@ document.getElementById('delayPreset')?.addEventListener('input', async (e) => {
 async function init() {
   await applyEditionToSettings();
   await applyAccountVerifyToSettings();
+  // ★ 其它入口(弹窗/向导)验证通过后，本设置页立即解锁，无需重开
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes['_acct_guard']) return;
+      const v = changes['_acct_guard'].newValue;
+      if (v && v.matched && !_accountVerifiedInSession) {
+        _accountVerifiedInSession = true;
+        const m = document.getElementById('accountVerifyMask'); if (m) m.remove();
+        const msg = document.getElementById('acctVerifyMsg'); if (msg) { msg.textContent = '✅ 已在其它入口验证通过，已解锁'; msg.style.color = '#7bd88f'; }
+      }
+    });
+  } catch (_) {}
   await Promise.all([
     loadTenants(),
     loadProductConfig(),

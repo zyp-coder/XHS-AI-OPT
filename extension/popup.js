@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('refreshBtn')?.addEventListener('click', refreshData);
   document.getElementById('rescanBtn')?.addEventListener('click', refreshData);
   document.getElementById('batchSendBtn')?.addEventListener('click', batchSendAll);
-  // ★ 首次使用引导：还没配过 AI Key → 顶部提示去走 3 步向导
+  // ★ 首次使用引导：还没配过 AI Key → 顶部提示去走首次设置（2 步向导）
   (async function firstRunHint() {
     try {
       const got = await chrome.storage.local.get('config');
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       bar.style.cssText = 'z-index:99980;display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1a1a1f;color:#f2f2f4;font-size:12.5px;border-bottom:1px solid #33333a;';
       bar.innerHTML = '<span>🎯 还没配置 AI，功能用不了。</span>';
       const b = document.createElement('button');
-      b.textContent = '去完成首次设置（5 步）';
+      b.textContent = '去完成首次设置（2 步）';
       b.style.cssText = 'margin-left:auto;padding:6px 12px;border:none;border-radius:8px;background:#ff274b;color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;';
       b.onclick = () => chrome.tabs.create({ url: chrome.runtime.getURL('wizard.html') });
       bar.appendChild(b);
@@ -307,6 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ★ 默认落到「账号诊断」Tab（与按钮高亮一致；小窗模式后续仍强制收敛为状态卡）
   switchMainTab('diagnose');
   bindProspectModals();
+  wireAccountGuardWatcher();
   document.getElementById('adminBtn')?.addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
@@ -3161,6 +3162,22 @@ async function applyAccountBindToPopup() {
         </style>`;
       document.body.appendChild(b);
     }
+  } catch (_) {}
+}
+
+/** 监听账号校验缓存变化：在其它入口(设置/向导)验证通过后，本弹窗立即解锁，无需重开 */
+function wireAccountGuardWatcher() {
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes['_acct_guard']) return;
+      const v = changes['_acct_guard'].newValue;
+      if (v && v.matched) {
+        _acctVerifiedInSession = true;
+        const b = document.getElementById('accountLockBanner'); if (b) b.remove();
+        const msg = document.getElementById('acctPopVerifyMsg'); if (msg) msg.textContent = '';
+        if (typeof applyAccountBindToPopup === 'function') applyAccountBindToPopup();
+      }
+    });
   } catch (_) {}
 }
 
