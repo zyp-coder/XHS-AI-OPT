@@ -1977,6 +1977,54 @@ const _ae = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</
 const _AICS_PURP = [['sell', '卖货'], ['brand', '品牌'], ['profile', '涨粉'], ['likes', '养数'], ['trend', '热点'], ['auto', '自动']];
 document.querySelector('[data-tab="aics"]')?.addEventListener('click', renderAiCsSettings);
 
+// ═══════════ 备份 / 恢复（导出全部租户 + 运行数据 / 合并导入） ═══════════
+document.querySelector('[data-tab="backup"]')?.addEventListener('click', renderBackup);
+
+function renderBackup() {
+  const box = document.getElementById('backupBody'); if (!box) return;
+  box.innerHTML = `
+    <div style="background:#fff7fa;border:1px solid #f6dde3;border-radius:8px;padding:10px 12px;font-size:12px;color:#8a3a4e;line-height:1.7;margin-bottom:12px;">
+      ⚠️ 备份文件包含你的 <b>API Key、账号绑定信息、获客清单/私信历史</b> 等敏感数据。请<b>本地保存、不要外传或提交到公开仓库</b>。
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button id="backupExport" style="font-size:13px;padding:10px 18px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">⬇ 导出全部数据</button>
+      <button id="backupImport" style="font-size:13px;padding:10px 18px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;font-weight:600;">⬆ 从备份文件导入（合并）</button>
+      <input type="file" id="backupFile" accept=".json,application/json" style="display:none;">
+    </div>
+    <div id="backupMsg" style="font-size:12px;color:#0a7b5a;margin-top:10px;"></div>
+    <div style="font-size:12px;color:#888;margin-top:10px;line-height:1.8;">导出：把<b>所有产品(租户)</b>的完整配置 + 获客清单/私信历史/已灌水/内容规划 打成一份 JSON。<br>导入（合并保留）：备份数据<b>并入</b>本地——备份里的配置会覆盖本地同名 key，本地独有的产品保留，备份里的新产品追加进来，不会清空现有配置。适合换版本/换机后还原。</div>`;
+  document.getElementById('backupExport')?.addEventListener('click', backupExport);
+  document.getElementById('backupImport')?.addEventListener('click', () => { document.getElementById('backupFile')?.click(); });
+  document.getElementById('backupFile')?.addEventListener('change', backupImportFile);
+}
+
+async function backupExport() {
+  const msg = document.getElementById('backupMsg'); if (msg) msg.textContent = '正在打包全部数据…';
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'exportAllData', data: {} });
+    if (!r || !r.ok) throw new Error((r && r.error) || '导出失败');
+    const blob = new Blob([JSON.stringify(r.backup, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'xhs-ai-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+    if (msg) msg.textContent = '✅ 已导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份（' + (a.download || '') + '）。请本地妥善保存。';
+  } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导出失败：' + (e.message || e); } }
+}
+
+async function backupImportFile(e) {
+  const file = e.target.files && e.target.files[0]; if (!file) return;
+  const msg = document.getElementById('backupMsg'); if (msg) msg.textContent = '读取备份文件…';
+  const raw = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result || '')); r.onerror = () => reject(new Error('读取失败')); r.readAsText(file, 'utf-8'); });
+  let backup;
+  try { backup = JSON.parse(raw); } catch (_) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 文件不是合法的 JSON 备份'; } return; }
+  if (!backup || !backup.tenants || !backup.data) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 不是有效的备份文件（缺 tenants/data）'; } return; }
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'importAllData', data: { backup } });
+    if (r && r.ok) { if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 导入完成：合并 ' + r.importedTenants + ' 个备份产品，本地现有 ' + r.tenants + ' 个产品已保留。'; } }
+    else if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + ((r && r.error) || '未知'); }
+  } catch (err) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + (err.message || err); } }
+}
+
 async function renderAiCsSettings() {
   const box = document.getElementById('aicsBody'); if (!box) return;
   box.innerHTML = '<div style="padding:20px;color:#888;">加载 AI客服配置…</div>';

@@ -350,6 +350,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getPendingNotifs: (data) => requireProspectList(() => handleGetPendingNotifs(data)),
     sendNotifReply: (data) => requireProspectList(() => handleSendNotifReply(data)),
     qaToKb: (data) => handleQaToKb(data || {}),
+    exportAllData: () => handleExportAllData(),
+    importAllData: (data) => handleImportAllData(data || {}),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -2164,6 +2166,59 @@ async function handleQaToKb(data) {
     added++;
   }
   return { ok: true, added, total: qa.length };
+}
+
+/* ═══════════ 全量备份 / 恢复（合并保留）：所有租户 + 运行数据 ═══════════ */
+
+// 导出：全部租户快照（含 config/知识库/提示词/获客清单等），当前租户用活动 key 覆盖（确保最新）
+async function handleExportAllData() {
+  const list = await TenantManager.list();
+  const cur = await TenantManager.getCurrentId();
+  const pref = TenantManager.TENANT_KEYS.DATA_PREFIX;
+  const data = {};
+  const stored = await chrome.storage.local.get(list.map(t => pref + t.id));
+  for (const t of list) { data[t.id] = stored[pref + t.id] || {}; }
+  // 当前租户：用活动 key 覆盖（含未暂存的最新值）
+  const active = await chrome.storage.local.get(TenantManager.TENANT_SCOPED_KEYS);
+  const curSnap = data[cur] = data[cur] || {};
+  for (const k of TenantManager.TENANT_SCOPED_KEYS) if (active[k] !== undefined) curSnap[k] = active[k];
+  return { ok: true, backup: { version: 1, exportedAt: Date.now(), tenants: list, currentId: cur, data } };
+}
+
+// 导入（合并保留）：备份里的租户数据"并入"本地（备份覆盖同 key、本地独有保留、新租户追加）
+async function handleImportAllData(data) {
+  const b = data && data.backup;
+  if (!b || !b.tenants || !b.data) throw new Error('备份文件格式不对');
+  const pref = TenantManager.TENANT_KEYS.DATA_PREFIX;
+  const writes = {};
+  // 1) 合并每个备份租户的快照（备份覆盖、保留本地独有）
+  for (const bt of b.tenants) {
+    const id = bt.id; if (!id) continue;
+    const snap = b.data[id] || {};
+    if (!Object.keys(snap).length) continue;
+    const curSnap = (await chrome.storage.local.get(pref + id))[pref + id] || {};
+    for (const k of Object.keys(snap)) curSnap[k] = snap[k];
+    writes[pref + id] = curSnap;
+  }
+  // 2) 租户列表：保留本地 + 追加备份里没有的新租户
+  const exist = await TenantManager.list();
+  const merged = exist.slice();
+  for (const bt of b.tenants) {
+    if (bt.id && !merged.some(t => t.id === bt.id)) merged.push({ id: bt.id, name: bt.name || '导入产品', createdAt: Date.now() });
+  }
+  writes[TenantManager.TENANT_KEYS.LIST] = merged;
+  // 3) 当前租户：优先备份的 currentId（若合并后存在），否则保留本地当前
+  let targetCur = await TenantManager.getCurrentId();
+  if (b.currentId && merged.some(t => t.id === b.currentId)) targetCur = b.currentId;
+  writes[TenantManager.TENANT_KEYS.CURRENT] = targetCur;
+  await chrome.storage.local.set(writes);
+  // 4) 物化目标租户的活动 key（不触 runtime key / 不做切换，避免把刚合并的当前快照洗掉）
+  const tSnap = (await chrome.storage.local.get(pref + targetCur))[pref + targetCur] || {};
+  const toWrite = {}; const toRemove = [];
+  for (const k of TenantManager.TENANT_SCOPED_KEYS) { if (tSnap[k] !== undefined) toWrite[k] = tSnap[k]; else toRemove.push(k); }
+  if (toRemove.length) await chrome.storage.local.remove(toRemove);
+  if (Object.keys(toWrite).length) await chrome.storage.local.set(toWrite);
+  return { ok: true, tenants: merged.length, currentId: targetCur, importedTenants: b.tenants.length };
 }
 
 const AI_CS_PURPOSE_TEXT = { sell: '卖货转化', brand: '品牌信任', profile: '主页涨粉', likes: '互动养数据', trend: '蹭热点', auto: '综合自动' };

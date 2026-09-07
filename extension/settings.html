@@ -29,6 +29,7 @@
         <li class="tab-item" data-tab="logs">📊 日志统计</li>
         <li class="tab-item" data-tab="prompts">🧩 提示词</li>
         <li class="tab-item" data-tab="aics">🎧 AI客服·场景话术</li>
+        <li class="tab-item" data-tab="backup">💾 备份/恢复</li>
       </ul>
     </nav>
 
@@ -427,6 +428,12 @@
       </section>
 
       <!-- ── Tab: 日志统计 ── -->
+      <section id="tab-backup" class="tab-panel">
+        <div class="panel-header"><div><div class="panel-title">💾 备份 / 恢复（全部产品 + 运行数据）</div><div class="panel-sub">一键导出所有产品(租户)的完整配置（产品/人设/话术风格/AI 密钥/知识库/提示词/AI客服/获客清单/私信历史/已灌水…）为 JSON，换版本或换机后一键合并还原。导入采用「合并保留」：备份并入本地，不覆盖本地已有产品。</div></div></div>
+        <div id="backupBody" style="padding:12px;"></div>
+      </section>
+
+      <!-- ── Tab: AI客服 ── -->
       <section id="tab-aics" class="tab-panel">
         <div class="panel-header"><div><div class="panel-title">🎧 AI客服 · 触达场景 + 客户问答话术</div><div class="panel-sub">主动触达(A) 与客户问答(B) 统一配置（完整编辑器在插件弹窗「🎧 AI客服」，这里提供导入/导出/试问答）。</div></div></div>
         <div id="aicsBody" style="padding:12px;"></div>
