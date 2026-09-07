@@ -349,6 +349,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     aiCsTouch: (data) => handleAiCsTouch(data || {}),
     getPendingNotifs: (data) => requireProspectList(() => handleGetPendingNotifs(data)),
     sendNotifReply: (data) => requireProspectList(() => handleSendNotifReply(data)),
+    qaToKb: (data) => handleQaToKb(data || {}),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
     classifyCustomers: (data) => requireProspectList(() => handleClassifyCustomers(data)),
     collectLikers: (data) => requireProspectList(() => handleCollectLikers(data)),
@@ -2126,27 +2127,43 @@ async function handleAiCsRespond(data) {
   let reply = '';
   if (entry.mode === 'template') reply = _fillCsVars(entry.answer, config, incoming);
   else reply = await (async () => {
-    // AI 应答 + 知识库注入
+    // AI 应答 + 分类知识库（只读「客服·{分类}」这一类，不混其它）
     let tpl = await Storage.getPrompt('qa_ai_responder');
     if (!tpl) tpl = DEFAULT_PROMPTS.qa_ai_responder;
     let kb = '';
     try {
       const kbBase = (await Storage.getKnowledgeBase()) || [];
-      const kbR = KnowledgeSearch.searchKnowledgeBase(kbBase, { comment_content: incoming }, config.roleKeywords || {});
-      if (kbR) kb = kbR.text || '';
+      const wantCat = '客服·' + (entry.kbCategory || entry.category || '');
+      const scoped = kbBase.filter(el => el.isActive !== false && el.category === wantCat);
+      if (scoped.length) kb = scoped.slice(0, 12).map(el => ((el.title || '') + '：' + String(el.content || '').slice(0, 200))).join('\n');
     } catch (_) {}
-    const ctx = { category: entry.category || '', incoming, kb_context: kb || '（无）' };
+    const ctx = { category: entry.category || '', incoming, kb_context: kb || '（该分类暂无知识库，只可依据你已有信息/如实说明）' };
     const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctx, kb);
     return await _chatAi(config, systemPrompt, userPrompt, 900);
   })();
   if (!reply) throw new Error('应答生成为空，请重试');
-
-  await Storage.addAiLog({ scene: 'qa_respond', tokensIn: 0, tokensOut: 0, success: true, nickname: '' });
   return {
     ok: true, reply, category: entry.category || '',
     mode: entry.mode || 'template',
     auto: entry.auto === 'auto' ? 'auto' : (entry.auto === 'confirm' ? 'confirm' : (entry.auto === 'off' ? 'off' : 'draft')),
   };
+}
+
+// 把 AI客服 问答话术库按「客服·{分类}」同步进知识库（去重；AI 应答只读对应分类）
+async function handleQaToKb(data) {
+  const aiCs = await Storage.getAiCsConfig();
+  const kb = await Storage.getKnowledgeBase();
+  const qa = (aiCs.qa || []).filter(e => String(e.answer || '').trim());
+  let added = 0;
+  for (const e of qa) {
+    const cat = '客服·' + (e.category || '通用');
+    const title = cat + '·' + (e.category || '') + '话术';
+    const dup = kb.some(k => k.category === cat && String(k.title || '') === title);
+    if (dup) continue;
+    await Storage.addKnowledgeEntry({ title, category: cat, content: String(e.answer || '').trim(), role: '', tags: [], isActive: true });
+    added++;
+  }
+  return { ok: true, added, total: qa.length };
 }
 
 const AI_CS_PURPOSE_TEXT = { sell: '卖货转化', brand: '品牌信任', profile: '主页涨粉', likes: '互动养数据', trend: '蹭热点', auto: '综合自动' };

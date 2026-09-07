@@ -1989,6 +1989,7 @@ async function renderAiCsSettings() {
       <button id="aicsSave" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">💾 保存全部</button>
       <button id="aicsExport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬇ 导出</button>
       <button id="aicsImport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
+      <button id="aicsKb" style="font-size:12px;padding:6px 12px;border:1px solid #059669;background:#ecfdf5;color:#059669;border-radius:8px;cursor:pointer;">📥 话术→知识库</button>
     </div>
     <div style="font-weight:600;font-size:13px;margin:4px 0;">A · 触达场景</div>
     <div id="aicsScenes"></div>
@@ -2001,6 +2002,7 @@ async function renderAiCsSettings() {
   document.getElementById('aicsSave')?.addEventListener('click', saveAicsSettings);
   document.getElementById('aicsExport')?.addEventListener('click', () => exportAicsSettings());
   document.getElementById('aicsImport')?.addEventListener('click', () => importAicsSettings());
+  document.getElementById('aicsKb')?.addEventListener('click', async () => { try { const r = await chrome.runtime.sendMessage({ action: 'qaToKb', data: {} }); alert(r && r.ok ? ('📥 已同步 ' + r.added + '/' + r.total + ' 条话术进知识库（客服·XX 分类）') : ('❌ ' + ((r && r.error) || '失败'))); } catch (e) { alert('❌ ' + e.message); } });
   document.getElementById('aicsTest')?.addEventListener('click', () => testAics());
 }
 

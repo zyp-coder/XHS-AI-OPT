@@ -2880,6 +2880,7 @@ async function renderAiCs(container) {
         <button id="aiCsSave" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">💾 保存全部</button>
         <button id="aiCsExport" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;">⬇ 导出</button>
         <button id="aiCsImport" style="font-size:12px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
+        <button id="aiCsKb" style="font-size:12px;padding:6px 12px;border:1px solid #059669;background:#ecfdf5;color:#059669;border-radius:8px;cursor:pointer;">📥 话术→知识库</button>
       </div>
 
       <div style="font-weight:700;font-size:13px;margin:6px 0 4px;">A · 触达场景（按场景配，点开即用）</div>
@@ -2907,6 +2908,12 @@ async function renderAiCs(container) {
   document.getElementById('aiCsSave')?.addEventListener('click', () => saveAiCs(container));
   document.getElementById('aiCsExport')?.addEventListener('click', exportAiCs);
   document.getElementById('aiCsImport')?.addEventListener('click', importAiCs);
+  document.getElementById('aiCsKb')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ action: 'qaToKb', data: {} }).then((r) => {
+      if (r && r.ok) addLog(`📥 已将 ${r.added}/${r.total} 条话术同步进知识库（分类 客服·XX）`, 'success');
+      else addLog('❌ 同步失败：' + ((r && r.error) || '未知'), 'error');
+    }).catch(e => addLog('❌ 同步失败：' + e.message, 'error'));
+  });
   document.getElementById('aiCsQaAdd')?.addEventListener('click', () => { _aiCs.qa.push({ id: 'qa_' + Date.now().toString(36), category: '新分类', keywords: [], mode: 'template', auto: 'draft', enabled: true, answer: '' }); renderAiCsQa(container); });
   document.getElementById('aiCsTestBtn')?.addEventListener('click', () => aiCsTest(container));
   document.getElementById('aiCsTestIn')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') aiCsTest(container); });
