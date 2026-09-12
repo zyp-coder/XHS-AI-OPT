@@ -233,6 +233,23 @@ const AutoWater = {
       const keywords = state.searchState?.keywords || [];
       if (keywords.length === 0) return;
 
+      // ★ 筛选配置：按 activePlan 选（cold 默认开·三项轮换，cycle 默认关），sort 为 rotate 时逐词轮换
+      let cfg0 = {};
+      try { cfg0 = await Storage.getAutoWaterConfig(); } catch (_) { cfg0 = {}; }
+      const activePlan = cfg0.activePlan === 'cycle' ? 'cycle' : 'cold';
+      const filterCfg = activePlan === 'cycle' ? (cfg0.cycleFilter || {}) : (cfg0.coldFilter || {});
+      const sortSeq = ['likes', 'collects', 'comments'];
+      let rotIdx = parseInt(cfg0.sortRotateIdx, 10) || 0;
+      const sortPerKw = {};
+      for (let i = 0; i < keywords.length; i++) {
+        if (filterCfg.enabled && filterCfg.sort) {
+          if (filterCfg.sort === 'rotate') { sortPerKw[i] = sortSeq[rotIdx % 3]; rotIdx++; }
+          else sortPerKw[i] = filterCfg.sort;
+        }
+      }
+      try { cfg0.sortRotateIdx = rotIdx; await Storage.setAutoWaterConfig(cfg0); } catch (_) {}
+      const scope = (filterCfg.enabled && filterCfg.scope === 'unseen') ? 'unseen' : '';
+
       for (let i = 0; i < keywords.length; i++) {
         state = await Storage.getAutoWaterState();
         if (!state.searchState?.searching || gen !== this._searchGen) {
@@ -261,6 +278,17 @@ const AutoWater = {
           // 标签页被关闭等导航异常：跳过该关键词（外层 finally 保证状态收尾）
           console.error('[一键灌水] 导航到搜索页失败，跳过关键词:', navErr.message);
           continue;
+        }
+
+        // ★ 按当前计划应用小红书排序/范围筛选（冷启动开 / 循环默认关），失败只降级不阻塞
+        const sortKey = sortPerKw[i] || '';
+        if (sortKey || scope) {
+          try {
+            await this._send(tab.id, { action: 'applySearchFilter', sortKey, scope }, 8000);
+            await this._sleep(900);
+          } catch (fe) {
+            console.warn('[一键灌水] 应用搜索筛选失败(忽略): sort=' + sortKey + ' scope=' + scope, fe && fe.message || fe);
+          }
         }
 
         let results;
@@ -369,6 +397,11 @@ const AutoWater = {
   },
 
   async _getXhsTab() {
+    // ★ 双引擎方案：优先用已绑定的「💧 灌水工作台」专属 tab，避免与客服 tab 抢同一个页面
+    try {
+      const t = await getEngineTab('water');
+      if (t && t.id) { console.log('[一键灌水] 使用绑定的灌水工作台标签页:', t.id); return t; }
+    } catch (_) {}
     const activeTabs = await chrome.tabs.query({ url: '*://www.xiaohongshu.com/*', active: true });
     if (activeTabs.length > 0) {
       console.log('[一键灌水] 使用当前活跃标签页:', activeTabs[0].id);

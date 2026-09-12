@@ -72,6 +72,55 @@
     return Math.max(floor || 0, v);
   }
 
+  // ★ 拟人化填字助手：往输入框填入文本。
+  //   fast=true 或 delay_config.typingCharDelay=0 → 一次性填入（手动/最快通道）；
+  //   否则逐字输入 + 随机停顿（批量自动通道，受拟人挡位控制）。与评论发送共用同一套节奏。
+  async function _typeInto(inputEl, text, fast) {
+    if (!inputEl) return;
+    const txt = String(text || '');
+    const isEditable = inputEl.contentEditable === 'true' || inputEl.contentEditable === 'plaintext-only';
+    // 清空现有内容
+    try {
+      if (isEditable) { inputEl.innerHTML = ''; inputEl.dispatchEvent(new Event('input', { bubbles: true })); }
+      else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+        const ns = Object.getOwnPropertyDescriptor(inputEl.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value').set;
+        ns.call(inputEl, ''); inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      } else { inputEl.textContent = ''; inputEl.dispatchEvent(new Event('input', { bubbles: true })); }
+    } catch (_) {}
+    await sleep(80);
+    const typingCfg = Math.max(0, Number(_delayCfg.typingCharDelay) || 0);
+    if (fast || typingCfg <= 0) {
+      // 快速通道：一次性填入全部文本，不逐字磨蹭
+      if (isEditable) {
+        document.execCommand('insertText', false, txt);
+        inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: txt }));
+      } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+        const ns = Object.getOwnPropertyDescriptor(inputEl.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype, 'value').set;
+        ns.call(inputEl, txt); inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      } else { inputEl.textContent = txt; inputEl.dispatchEvent(new Event('input', { bubbles: true })); }
+      await sleep(50);
+      return;
+    }
+    // 模仿真人通道：逐字输入 + 随机停顿（节奏基于拟人挡位的 typingCharDelay）
+    const perCharMs = typingCfg;
+    for (let i = 0; i < txt.length; i++) {
+      const ch = txt[i];
+      if (i > 0 && i % (8 + Math.floor(Math.random() * 6)) === 0) await sleep(perCharMs * 2 + Math.random() * perCharMs * 2);
+      if ('，。！？；、,.!?;'.includes(ch)) await sleep(perCharMs + Math.random() * perCharMs);
+      const delay = perCharMs * (0.5 + Math.random() * 0.5);
+      try {
+        if (isEditable) {
+          document.execCommand('insertText', false, ch);
+          inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ch }));
+        } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+          inputEl.value += ch; inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        } else { inputEl.textContent += ch; inputEl.dispatchEvent(new Event('input', { bubbles: true })); }
+      } catch (_) {}
+      await sleep(delay);
+    }
+    await sleep(perCharMs + Math.random() * perCharMs);
+  }
+
   // ===== 全局操作锁：防止上一条评论没发完，第二条就开始定位/输入，导致“评论自己”/错位 =====
   let _operationLock = false;      // 当前是否有操作正在进行
   let _operationLockTime = 0;      // 上锁时间戳（用于死锁自愈）
@@ -611,14 +660,21 @@
     }
     // ── 获客：收集"赞了我们内容/评论"的人（点赞页通知 → 全部进获客清单） ──
     if (request.action === 'collectLikers') {
-      runExclusive('collectLikers', () => collectLikers())
+      runExclusive('collectLikers', () => collectLikers(request))
         .then(r => sendResponse(r))
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
     // ── 获客·消息台：读取消息中心(/chat)会话列表 ──
     if (request.action === 'collectChatConversations') {
-      runExclusive('collectChatConversations', () => collectChatConversations())
+      runExclusive('collectChatConversations', () => collectChatConversations(request))
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
+    // ── 消息中心：采集当前会话完整消息时间线 ──
+    if (request.action === 'collectChatMessages') {
+      runExclusive('collectChatMessages', () => collectChatMessages())
         .then(r => sendResponse(r))
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
@@ -626,6 +682,13 @@
     // ── 获客·消息台：在 /chat 会话页发送消息 ──
     if (request.action === 'chatSendMessage') {
       runExclusive('chatSendMessage', () => chatSendMessage(request.text || ''))
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ success: false, error: e.message }));
+      return true;
+    }
+    // ── 获客：手工逐条归因——读当前 /chat 会话线程，判断对方是否回过你 ──
+    if (request.action === 'scanChatConversation') {
+      runExclusive('scanChatConversation', () => scanChatConversation())
         .then(r => sendResponse(r))
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
@@ -740,6 +803,13 @@
     }
     if (request.action === 'extractSearchResults') {
       sendResponse(extractSearchResults());
+      return true;
+    }
+    // ── 一键灌水：驱动搜索页排序/范围筛选（冷启动用；循环默认不开） ──
+    if (request.action === 'applySearchFilter') {
+      applySearchFilter(request.sortKey || '', request.scope || '')
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
     if (request.action === 'scrollLoadMore') {
@@ -2449,17 +2519,64 @@
   /* ── 评论跟进：通知项容器（与 extractNotifications 的 idx 编号规则完全一致） ──
    * 通知页每个通知项是 div.container（勘探验证），用 .interaction-hint / .user-avatar 过滤掉页面其它同名节点。
    * 点击回复后输入框行内展开在通知项内部，不增加 container 数量 → idx 不漂移。
+   * v2.0：XHS 时常改 class —— 主策略命中不了时，用"结构兜底"（按 用户主页链接 + 互动文本 找回通知项），
+   *   并对无任何结果的场景做快照诊断，避免"无通知项"死角。
    */
   function _getNotificationContainers() {
-    return Array.from(document.querySelectorAll('div.container'))
+    const main = Array.from(document.querySelectorAll('div.container'))
       .filter(el => el.querySelector('.interaction-hint') || el.querySelector('.user-avatar'));
+    if (main.length) return main;
+    // 兜底：每个"用户主页链接"向上取最小"含互动文本"的祖先 = 通知项
+    const out = [];
+    const seen = new Set();
+    const actRe = /(赞了|关注了|收藏了|回复了|评论了|点赞|收藏|关注|你的评论|评论你的|回你)/;
+    document.querySelectorAll('a[href*="/user/"]').forEach((a) => {
+      let el = a;
+      for (let i = 0; i < 6 && el; i++) {
+        el = el.parentElement;
+        if (!el || seen.has(el)) break;
+        const t = (el.textContent || '').replace(/\s+/g, ' ');
+        if (t.length >= 4 && t.length < 400 && actRe.test(t)) { seen.add(el); out.push(el); break; }
+      }
+    });
+    if (out.length) return out;
+    // 终极兜底：直接按可见用户链接个数生成占位（正常通知页至少有头像链接）
+    document.querySelectorAll('a[href*="/user/"]').forEach((a) => {
+      const i = a.parentElement || a;
+      const t = (i.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t.length >= 2 && !seen.has(i)) { seen.add(i); out.push(i); }
+    });
+    return out;
+  }
+
+  // 通知页为 0 时做诊断快照（存到 storage + 采样本），便于定位"读不到"的真正原因
+  async function _notifDiag() {
+    const sample = [];
+    document.querySelectorAll('a[href*="/user/"]').slice(0, 10).forEach((a) => {
+      let el = a;
+      for (let i = 0; i < 4 && el; i++) { el = el.parentElement; if (!el) break; }
+      const t = (el ? el.textContent : a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      sample.push({ href: (a.getAttribute('href') || '').slice(0, 80), text: t });
+    });
+    const report = {
+      at: new Date().toISOString(),
+      url: location.href,
+      containerCount: Array.from(document.querySelectorAll('div.container')).length,
+      hintCount: document.querySelectorAll('.interaction-hint').length,
+      avatarCount: document.querySelectorAll('.user-avatar').length,
+      userLinkCount: document.querySelectorAll('a[href*="/user/"]').length,
+      bodySnippet: (document.body ? document.body.innerText : '').replace(/\s+/g, ' ').slice(0, 400),
+      sample,
+    };
+    try { await new Promise((r) => chrome.storage.local.set({ '_prospect_notif_diag': report }, r)); } catch (_) {}
+    return report;
   }
 
   /* ── 评论跟进：从通知项提取 user_id（用户主页链接里的稳定 ID） ── */
   function _extractNotificationUserId(container) {
-    const link = container.querySelector('a[href*="/user/profile/"]');
+    const link = container.querySelector('a[href*="/user/"]');
     if (!link) return '';
-    const m = (link.getAttribute('href') || '').match(/\/user\/profile\/([0-9a-f]+)/i);
+    const m = (link.getAttribute('href') || '').match(/\/user\/(?:profile\/)?([0-9a-f]{6,})/i);
     return m ? m[1] : '';
   }
 
@@ -2476,13 +2593,13 @@
       let prevCount = -1;
       for (let round = 0; round < 6; round++) {
         scroller.scrollTop = scroller.scrollHeight;
-        await sleep(1500);
+        await sleep(dwellMs('lazyLoadWait', 700)); // 拟人：每轮加载间隔受挡位控制
         const count = _getNotificationContainers().length;
         if (count === prevCount) break; // 滚动后数量没变 → 已加载到底
         prevCount = count;
       }
       window.scrollTo(0, 0); // 回到顶部，保持页面状态干净
-      await sleep(300);
+      await sleep(dwellMs('browseDwell', 300)); // 拟人：读取前浏览停顿
     } catch (_) {}
 
     const containers = _getNotificationContainers();
@@ -2492,6 +2609,7 @@
       const userId = _extractNotificationUserId(container);
       // 昵称（多级回退：新版页面昵称可能不在头像链接里）
       const userLink = container.querySelector('a[href*="/user/profile/"]');
+      if (!userLink) { const _alt = container.querySelector('a[href*="/user/"]'); if (_alt && _alt.getAttribute('href')) userLink = _alt; }
       let userName = userLink ? userLink.textContent.trim() : '';
       if (!userName) {
         const nameEl = container.querySelector('.user-info .name, .user-info .nickname, .user-info .user-name, .interaction-user, .user-name, .nickname, .name');
@@ -2522,83 +2640,409 @@
     return { success: true, items, count: items.length, url: window.location.href };
   }
 
+  // 解析小红书通知相对时间（分钟前/小时前/昨天/n天前/月-日/年月日）→ {ts: 绝对时间戳, str: 原始片段}
+  function _notifTime(txt) {
+    const t = String(txt || '').replace(/\s+/g, ' ');
+    const now = Date.now();
+    let ts = 0, str = '';
+    let m;
+    if ((m = t.match(/(刚刚|刚才)/))) { ts = now; str = m[1]; }
+    else if ((m = t.match(/(\d+)\s*分钟前/))) { ts = now - (+m[1]) * 60e3; str = m[0]; }
+    else if ((m = t.match(/(\d+)\s*小时前/))) { ts = now - (+m[1]) * 3600e3; str = m[0]; }
+    else if ((m = t.match(/昨天/))) { ts = now - 24 * 3600e3; str = m[0]; }
+    else if ((m = t.match(/(\d+)\s*天前/))) { ts = now - (+m[1]) * 24 * 3600e3; str = m[0]; }
+    else if ((m = t.match(/(\d{4})[年./-]\s*(\d{1,2})\s*[月./-]\s*(\d{1,2})/))) {
+      const d = new Date(+m[1], +m[2] - 1, +m[3]); ts = d.getTime(); str = m[0];
+    }
+    else if ((m = t.match(/(\d{1,2})-(\d{1,2})/))) {
+      const y = new Date().getFullYear(); ts = new Date(y, +m[1] - 1, +m[2]).getTime(); str = m[0];
+    }
+    return { ts, str };
+  }
+
+  // 从单个通知容器构造线索项：昵称多级兜底（头像链接无文本 / class 改名 / 从互动文本解析作者名）
+  // + 被互动对象的笔记/评论标题多选择器适配（赞/藏 tab 的标题 class 与回复 tab 不同）。
+  function _likerFromContainer(container, tabType) {
+    // ★ 干净副本：每条通知项里都内嵌一个隐藏的删除/取消确认弹窗(.reds-alert，display:none 一直在 DOM，
+    //   标题如「取消评论」，正文「将会清空已经输入的内容」)。若直接读 container.textContent 或宽泛匹配
+    //   [class*="title"]，会把「取消评论」误当成对方消息正文。先克隆并剔掉所有 .reds-alert。
+    let clean = container;
+    try {
+      clean = container.cloneNode(true);
+      clean.querySelectorAll('.reds-alert').forEach((n) => n.remove());
+    } catch (_) {}
+    const txt = (clean.textContent || '').replace(/\s+/g, ' ');
+    const userId = _extractNotificationUserId(container);
+    // ★ 取昵称：通知项里可能同时有"头像链接(无文本)"和"昵称链接(有文本)"。
+    //   优先挑带可见文本的 /user/ 锚点（昵称），头像链接只在没得选时兜底。
+    const _userLinks = Array.from(container.querySelectorAll('a[href*="/user/"]'));
+    const _named = _userLinks.find(a => (a.getAttribute('href') || '').match(/\/user\/(?:profile\/)?[0-9a-f]+/i) && (a.textContent || '').trim());
+    const _ul = _named || _userLinks[0] || null;
+    const userLink = _ul ? _ul.getAttribute('href') : '';
+    // 昵称：优先 .user-info 里的昵称链接（主位置），再逐级兜底
+    let userName = '';
+    { const _uiA = container.querySelector('.user-info a[href*="/user/"]') || container.querySelector('.user-info a'); if (_uiA) userName = (_uiA.textContent || '').trim(); }
+    if (!userName) userName = _ul && _ul.textContent ? _ul.textContent.trim() : '';
+    if (!userName) {
+      const _ne = container.querySelector('.user-info .name, .user-info .nickname, .interaction-user, .user-name, .nickname, .name, [class*="name"], [class*="nick"]');
+      if (_ne) userName = _ne.textContent.trim();
+    }
+    if (!userName) {
+      const m = txt.match(/^\s*([\u4e00-\u9fa5A-Za-z0-9_\-·]{2,16})\s*(?:赞了|收藏了|关注了|回复了|评论了|回复你的|关注你|回你)/);
+      if (m) userName = m[1].trim();
+    }
+    // 昵称兜底3：链接文本是头像(图片无文本)时，从 /user/ 链接里挑最短非空 text（避免把时间/动词带进来）
+    if (!userName) {
+      for (const a of _userLinks) {
+        const t = (a.textContent || '').trim();
+        if (t && t.length <= 12) { userName = t; break; }
+      }
+    }
+    // 昵称兜底4：头像 img 的 alt 常就是昵称；或链接 title 属性带着昵称
+    if (!userName) {
+      const _img = container.querySelector('a[href*="/user/"] img[alt]');
+      const _alt = _img && (_img.getAttribute('alt') || '').trim();
+      if (_alt && _alt.length <= 20) userName = _alt;
+    }
+    if (!userName) {
+      for (const a of _userLinks) {
+        const _t = (a.getAttribute('title') || '').trim();
+        if (_t && _t.length <= 20) { userName = _t; break; }
+      }
+    }
+    // 商机信号分类：★ tabType 优先（正在爬的通知 tab 就是真相，别靠文字猜，尤其"新增关注"绝不会变成点赞）
+    let signalType = '';
+    if (tabType === '新增关注') signalType = '关注';
+    else if (tabType === '评论和@') signalType = '回复';
+    else {
+      // 其余（赞和收藏/兜底）才靠文字区分 回复/关注/收藏/点赞
+      if (/(回复了你的|回复你的评论|评论了你的|评论你的|回复了你|回复你)/.test(txt)) signalType = '回复';
+      else if (/(关注了你|关注了你的)/.test(txt)) signalType = '关注';
+      else if (/(收藏了你的|收藏了你)/.test(txt)) signalType = '收藏';
+      else if (/(赞了你的|赞了你|赞了)/.test(txt)) signalType = '点赞';
+    }
+    if (!signalType && txt.length > 0) signalType = '互动';
+    if (!signalType) return null;
+    // 被互动对象：点赞/收藏→笔记或评论标题；回复→对方回复的话
+    const quoteEl = clean.querySelector('.quote-info');
+    const likedComment = quoteEl ? quoteEl.textContent.trim() : '';
+    // 对方消息正文（评论/回复内容）最直观——优先取它，兜底才回退到笔记标题链接。
+    // ★ 不要用宽泛 [class*="title"]：会命中隐藏弹窗 .reds-alert-title「取消评论」。
+    let likedNote = '';
+    const _ic = clean.querySelector('.interaction-content');
+    if (_ic && _ic.textContent.trim()) likedNote = _ic.textContent.trim();
+    if (!likedNote) {
+      const nLink = clean.querySelector('a[href*="/explore/"], a[href*="/discovery/"], .note-title, [class*="noteTitle"], [class*="note-title"], [class*="source-title"], [class*="interaction-note"]');
+      if (nLink) likedNote = nLink.textContent.trim();
+    }
+    if (!likedNote) {
+      const tEl = clean.querySelector('.note-title, [class*="note"], [class*="comment-title"]');
+      if (tEl) likedNote = tEl.textContent.trim();
+    }
+    const ntv = _notifTime(txt);
+    // 时间兜底：整块文本没解析出时，单独读时间行再解析
+    if (!ntv.ts) {
+      const _ti = clean.querySelector('.interaction-time, [class*="time"]');
+      if (_ti) { const _tt = _notifTime(_ti.textContent.trim()); if (_tt.ts) { ntv.ts = _tt.ts; ntv.str = _tt.str; } }
+    }
+    if (!userName) _logMiss(container, '昵称缺失', userId);
+    if (!ntv.ts) _logMiss(container, '时间缺失', userName || userId);
+    return { userId, userName, userLink, signalType, likedComment, likedNote: likedNote.slice(0, 60), signalText: (txt.slice(0, 160) || ''), ts: ntv.ts, timeStr: ntv.str, time: ntv.str };
+  }
+
+  // 抓取诊断：昵称/时间没抓到时，把整条通知的原始 HTML 打上控制台，便于定位不同 DOM 变体
+  function _logMiss(c, label, who) {
+    try { console.warn('[抓取诊断] ' + label + '「' + (who || '?') + '」: ', c.outerHTML); } catch (_) {}
+  }
+
   // ── 获客：收集"赞了我们内容/评论"的人。点赞的人意愿低但能直接发销售资料；
   //    每个点赞通知记录它赞的是我们的哪条评论（quote-info 即我们写的那条）。
-  async function collectLikers() {
-    if (_getNotificationContainers().length === 0) {
-      return { success: false, error: '通知页无通知项，请先打开设置→评论跟进→通知页 (xiaohongshu.com/notification)' };
+  async function collectLikers(request) {
+    if (!/\/notification/.test(location.href)) return { success: false, error: '不在通知页(/notification)，请先打开通知页' };
+    // 已知用户集合（已在清单里的人，用于"滚到有重复即停"的增量）
+    const known = new Set((request && request.existingIds) || []);
+    const _knownUid = (c) => { const id = _extractNotificationUserId(c); return id ? String(id).toLowerCase() : ''; };
+    // ★ 通知页顶部分类 tab：默认「评论和@」只展示回复；「赞和收藏」「新增关注」在别的 tab，必须逐个切过去才能收全。
+    //   顺序：回复/关注类在前（高价值，且避免被单次 cap 窗口里的"赞"挤掉），赞和收藏最后。
+    const NOTIF_TABS = ['评论和@', '新增关注', '赞和收藏'];
+    const DEFAULT_TAB = '评论和@';
+    const _tabs = () => [...document.querySelectorAll('.reds-tab-item')].filter(el => {
+      const t = (el.textContent || '').trim();
+      return NOTIF_TABS.includes(t);
+    });
+    // 轮询等待顶部 tab 出现（懒加载/慢网络/页面刚跳转兜底）
+    let tabs = _tabs();
+    for (let i = 0; i < 8 && tabs.length === 0; i++) {
+      _showStatus('等待通知页 tab...');
+      await sleep(1400 + Math.round(Math.random() * 900));
+      tabs = _tabs();
     }
-    // 滚动加载更多
+    if (tabs.length === 0) {
+      // 顶tab都找不到但页面有通知项（结构大改）→ 退回到"当前 tab 直接收"的老逻辑
+      const fallback = await _collectNotifTabAll();
+      return fallback;
+    }
+    // 切到指定 tab 并强校验"真的切过去了"：
+    //   ① 点后等它带上 active；② 等可见内容出现该 tab 的关键词（或确认 active 且内容加载稳定）
+    const switchTab = async (name, kwRe) => {
+      const isActive = () => {
+        const t = _tabs().find(el => (el.textContent || '').trim() === name);
+        return !!(t && /\bactive\b/.test(String(t.className || '')));
+      };
+      if (!isActive()) {
+        const tab = _tabs().find(el => (el.textContent || '').trim() === name);
+        if (!tab) return false;
+        try { tab.click(); } catch (_) { try { tab.dispatchEvent(new MouseEvent('click', { bubbles: true, view: window })); } catch (__) { return false; } }
+      }
+      // 等 active 出现（最多 ~2s）
+      for (let i = 0; i < 6; i++) { if (isActive()) break; await sleep(500 + Math.round(Math.random() * 500)); }
+      // 等该 tab 内容出现关键词，避免"还没渲染就仍停留在上一个 tab 的内容"（→ 重复 0 收）
+      for (let i = 0; i < 6; i++) {
+        const cs = _getNotificationContainers();
+        if (cs.length && cs.some(c => kwRe.test(c.textContent || ''))) return true;
+        await sleep(700 + Math.round(Math.random() * 600));
+      }
+      // 内容没关键词：若已确认 active 但恰好是空 tab，也允许收集（空则自然 0）
+      return isActive();
+    };
+    const TAB_KW = {
+      '赞和收藏': /(赞了|收藏了)/,
+      '新增关注': /(关注了|关注了你|新增关注|关注你)/,
+      '评论和@': /(回复了你的|评论了你的|评论你的|回复你的)/,
+    };
+    // 展开"历史/查看更多"按钮：XHS 通知各 tab 常用"查看历史/展开"收起旧记录，点一下再滚才能拉全
+    const _clickExpand = async () => {
+      const re = /(历史|查看全部|查看更多|展开|查看记录|往期)/;
+      const cands = [...document.querySelectorAll('div,span,button,a,li')].filter(el => {
+        const t = (el.textContent || '').trim();
+        if (!t || t.length > 14) return false;
+        if (el.children.length > 8) return false;
+        if (!re.test(t)) return false;
+        let r = { width: 0, height: 0 }; try { r = el.getBoundingClientRect(); } catch (_) {}
+        return r.width > 30 && r.height > 18;
+      });
+      let clicked = 0;
+      for (const el of cands.slice(0, 4)) {
+        try { el.click(); clicked++; await sleep(900 + Math.round(Math.random() * 700)); } catch (_) { try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, view: window })); clicked++; await sleep(900 + Math.round(Math.random() * 700)); } catch (__) {} }
+      }
+      return clicked;
+    };
+    const output = [];
+    const seen = new Set();
+    const tabCounts = {};
+    for (const name of NOTIF_TABS) {
+      const ok = await switchTab(name, TAB_KW[name]);
+      if (!ok) continue; // 切不过去/找不到该 tab → 跳过，避免收错 tab
+      await _clickExpand(); // 点开"历史/更多"，再滚才见全
+      // 增量滚动：每滚 1 屏检查是否已撞上"已在清单里的人"；命中或到底则停
+      //   → 前面全新不重复的数据会继续一路拉，保证又全又可控。
+      // ★ 关键：有的 tab（如"新增关注"）列表在内层可滚动容器，用"从通知项向上找最近的滚容器"去滚，别只滚外层页面
+      try {
+        const MAX_SCR = 20;
+        const _hasKnown = (cs) => Array.from(cs).some(c => _knownUid(c) && known.has(_knownUid(c)));
+        const _realScroller = () => {
+          const hints = Array.from(document.querySelectorAll('.interaction-hint')).map(e => e.closest('div')).filter(Boolean);
+          for (let n of hints) {
+            let el = n;
+            for (let i = 0; i < 10 && el; i++) {
+              if (el.scrollHeight > el.clientHeight + 40 && /auto|scroll/.test((window.getComputedStyle(el).overflowY || ''))) return el;
+              el = el.parentElement;
+            }
+          }
+          return document.scrollingElement || document.documentElement;
+        };
+        let prevCount = _getNotificationContainers().length;
+        let hitKnown = _hasKnown(_getNotificationContainers());
+        let rounds = 0;
+        while (!hitKnown && rounds < MAX_SCR) {
+          const sc = _realScroller();
+          sc.scrollTop = sc.scrollHeight;
+          await sleep(1000 + Math.round(Math.random() * 900)); // 拟人：慢一点 + 随机
+          const cs = _getNotificationContainers();
+          if (cs.length === prevCount) break; // 已到底
+          prevCount = cs.length;
+          hitKnown = _hasKnown(cs);
+          rounds++;
+        }
+        try { (document.scrollingElement || document.documentElement).scrollTop = 0; } catch (_) {}
+        await sleep(300 + Math.round(Math.random() * 400));
+      } catch (_) {}
+      let tabAdded = 0;
+      for (const container of _getNotificationContainers()) {
+const it = _likerFromContainer(container, name);
+        if (!it || !it.signalType) continue;
+        const seenKey = (it.userId || ('nick::' + it.userName)) + '::' + it.signalType;
+        if (!seenKey || seen.has(seenKey)) continue;
+        seen.add(seenKey);
+        tabAdded++;
+        output.push({ ...it, cursorKey: seenKey });
+      }
+      tabCounts[name] = tabAdded;
+      // 诊断：新增关注 tab 若极少量，存快照便于定位（为什么只收到几条）
+      if (name === '新增关注' && tabAdded <= 4) {
+        try {
+          const cs = _getNotificationContainers();
+          const sc = (document.scrollingElement || document.documentElement);
+          const diag = {
+            at: new Date().toISOString(),
+            tab: name,
+            containers: cs.length,
+            scrollables: [...document.querySelectorAll('*')].filter(el => { try { return el.scrollHeight > el.clientHeight + 40 && /auto|scroll/.test(window.getComputedStyle(el).overflowY); } catch (_) { return false; } }).slice(0, 8).map(el => ({ tag: el.tagName, cls: String(el.className || '').slice(0, 60), sh: el.scrollHeight, ch: el.clientHeight })),
+            samples: cs.slice(0, 5).map(c => (c.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80)),
+            htmlSample: cs[0] ? String(cs[0].innerHTML || '').slice(0, 500) : '',
+            bodySnip: ((document.body || {}).innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+          };
+          new Promise(r => chrome.storage.local.set({ '_prospect_follow_diag': diag }, r)).catch(() => {});
+        } catch (_) {}
+      }
+      await sleep(1500 + Math.round(Math.random() * 1000)); // 切下一个 tab 前随机停顿，拟人
+    }
+    // ★ 还原到默认「评论和@」tab：不污染"评论跟进/通知回访"共用本页面读取的流程
+    try { if (_tabs().some(t => (t.textContent || '').trim() === DEFAULT_TAB)) await switchTab(DEFAULT_TAB, TAB_KW[DEFAULT_TAB]); } catch (_) {}
+    _hideStatus();
+    _logNotifResult(output, tabCounts, known.size);
+    return { success: true, items: output, count: output.length, url: location.href, tabCounts };
+  }
+
+  // 抓取诊断：每次刷新通知，把各 tab 采集到谁列到控制台，便于核对"最新的人有没有进来"
+  function _logNotifResult(items, tabCounts, knownSize) {
+    try {
+      const names = (items || []).map(o => (o.userName || '?') + '@' + (o.signalType || '') + (o.userId ? '' : '(无id)')).slice(0, 40);
+      console.warn('[抓取诊断·通知刷新] 已知=' + knownSize + ' tab计数=' + JSON.stringify(tabCounts || {}) + ' 采集=' + (items || []).length + ' 名单=' + JSON.stringify(names) + ' 地址=' + location.href);
+    } catch (_) {}
+  }
+
+  // 获客搜集的兜底：顶部 tab 识别不到时的"当前可见 tab 直接收"（老逻辑，保留防回归）
+  async function _collectNotifTabAll() {
+    let containers = _getNotificationContainers();
+    for (let i = 0; i < 6 && containers.length === 0; i++) {
+      _showStatus('等待通知加载...');
+      await sleep(1600 + Math.round(Math.random() * 900));
+      containers = _getNotificationContainers();
+    }
+    if (containers.length === 0) {
+      const diag = await _notifDiag();
+      return {
+        success: false,
+        error: '通知页识别不到通知项（可能新版页面改了结构），已保存诊断快照：' + JSON.stringify({
+          userLinks: diag.userLinkCount, containers: diag.containerCount, hint: diag.hintCount, avatar: diag.avatarCount,
+        }),
+        diag,
+      };
+    }
     _showStatus('加载通知...');
     try {
       const scroller = document.scrollingElement || document.documentElement;
       let prevCount = -1;
-      for (let round = 0; round < 6; round++) {
+      for (let round = 0; round < 3; round++) {
         scroller.scrollTop = scroller.scrollHeight;
-        await sleep(1200);
+        await sleep(1600 + Math.round(Math.random() * 900));
         const c = _getNotificationContainers().length;
         if (c === prevCount) break;
         prevCount = c;
       }
       window.scrollTo(0, 0);
-      await sleep(200);
+      await sleep(300 + Math.round(Math.random() * 400));
     } catch (_) {}
     const seen = new Set();
     const likers = [];
     for (const container of _getNotificationContainers()) {
-      const userId = _extractNotificationUserId(container);
-      if (!userId || seen.has(userId)) continue;
-      const txt = (container.textContent || '');
-      // ★ 商机信号分类（获客清单收录）：点赞/收藏我们的内容或评论 → 点赞；回复我们的评论 → 回复；关注我们 → 关注
-      let signalType = '';
-      if (/(关注了你|关注了你的)/.test(txt)) signalType = '关注';
-      else if (/(回复了你的|回复你的评论|评论了你的|评论你的)/.test(txt)) signalType = '回复';
-      else if (/(赞了你的|收藏了你的|赞了你的评论|赞了你的笔记|收藏了你的笔记|赞了你的分享|收藏了你的分享|赞了你的)|(赞了|收藏了)/.test(txt)) signalType = '点赞';
-      // 兜底：确实有"你的"且有互动词，但难归类 → 归点赞
-      if (!signalType && /(你的)/.test(txt)) signalType = '点赞';
-      if (!signalType) continue;
-      seen.add(userId);
-      // 昵称
-      const ul = container.querySelector('a[href*="/user/profile/"]');
-      const userLink = ul ? ul.getAttribute('href') : '';
-      let userName = ul ? ul.textContent.trim() : '';
-      if (!userName) {
-        const ne = container.querySelector('.user-info .name, .user-info .nickname, .interaction-user, .user-name, .nickname, .name');
-        userName = ne ? ne.textContent.trim() : '';
-      }
-      // 互动对象内容（点赞→我们写的评论/笔记原文；回复→对方回复的话）
-      const quote = container.querySelector('.quote-info');
-      const likedComment = quote ? quote.textContent.trim() : '';
-      const other = container.querySelector('.interaction-content');
-      const likedNote = container.querySelector('.note-title, .content, [class*="title"]');
-      likers.push({ userId, userName, userLink, signalType, likedComment, likedNote: (likedNote ? likedNote.textContent.trim() : (other ? other.textContent.trim() : '')).slice(0, 60), time: '' });
+      const it = _likerFromContainer(container);
+      if (!it || !it.signalType) continue;
+      const seenKey = (it.userId || ('nick::' + it.userName)) + '::' + it.signalType;
+      if (!seenKey || seen.has(seenKey)) continue;
+      seen.add(seenKey);
+      likers.push({ ...it, cursorKey: seenKey });
     }
     _hideStatus();
-    return { success: true, items: likers, count: likers.length, url: window.location.href };
+    _logNotifResult(likers, {}, 0);
+    return { success: true, items: likers, count: likers.length, url: location.href };
   }
 
   // ── 获客·消息台：读取消息中心(/chat)的会话列表 ──
   // 每组 `div.xhs-im-conv-item` 提供 data-conv-id（会话id）与伙伴昵称/最近消息/时间。
   // 注意：列表不直接给 partner 的 userId；匹配获客清单靠 convId 或昵称。
-  async function collectChatConversations() {
+  // 解析 /chat 会话"最后消息时间"（相对/绝对 → 时间戳；失败=0）
+  function _chatTimeTs(txt, now) {
+    const t = String(txt || '').trim();
+    if (!t) return 0;
+    let m;
+    if (/(刚刚|刚才)/.test(t)) return now;
+    if ((m = t.match(/(\d+)\s*分钟前/))) return now - (+m[1]) * 60e3;
+    if ((m = t.match(/(\d+)\s*小时前/))) return now - (+m[1]) * 3600e3;
+    if (/昨天/.test(t)) return now - 24 * 3600e3;
+    if ((m = t.match(/(\d+)\s*天前/))) return now - (+m[1]) * 24 * 3600e3;
+    if ((m = t.match(/(\d{4})[-年./]\s*(\d{1,2})[-月./]\s*(\d{1,2})/))) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+    if ((m = t.match(/(\d{1,2})-(\d{1,2})/))) return new Date(new Date().getFullYear(), +m[1] - 1, +m[2]).getTime();
+    if ((m = t.match(/(\d{1,2})月(\d{1,2})日/))) return new Date(new Date().getFullYear(), +m[1] - 1, +m[2]).getTime();
+    return 0;
+  }
+
+  async function collectChatConversations(request) {
     if (!/\/chat/.test(location.href)) return { success: false, error: '不在消息中心(/chat)，请先打开 https://www.xiaohongshu.com/chat' };
-    const _vis = (el) => { try { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; } catch (_) { return false; } };
-    const items = [];
-    const seen = new Set();
-    document.querySelectorAll('div.xhs-im-conv-item').forEach((el) => {
-      if (!_vis(el)) return;
-      const convId = el.getAttribute('data-conv-id') || '';
-      const kind = el.getAttribute('data-conv-kind') || '';
-      if (!convId || seen.has(convId)) return;
-      seen.add(convId);
-      const name = (el.querySelector('.xhs-im-conv-item__name') || { textContent: '' }).textContent.trim();
-      const time = (el.querySelector('.xhs-im-conv-item__time') || { textContent: '' }).textContent.trim();
-      const summary = (el.querySelector('.xhs-im-conv-item__summary-text, .xhs-im-conv-item__summary') || { textContent: '' }).textContent.trim();
-      const img = el.querySelector('img.xhs-im-conv-item__avatar');
-      const avatar = img ? (img.getAttribute('src') || '') : '';
-      items.push({ convId, convKind: kind, partnerName: name, time, lastMsg: summary.slice(0, 80), avatar, hasUnread: false });
-    });
-    return { success: true, items, count: items.length, url: location.href };
+    // ★ 已入库 convId 集合：本地方已有=早知道；只要"撞上第一条已知会话"就停（下面是更旧的已入库，无需再滚）
+    const known = new Set(Array.isArray(request && request.knownConvIds) ? request.knownConvIds : []);
+    const now = Date.now();
+    // 真实内层滚动容器（会话列表是懒加载/虚拟化，只滚外层页面没用的）
+    const _cScroller = () => {
+      for (const n of Array.from(document.querySelectorAll('div.xhs-im-conv-item'))) {
+        let el = n;
+        for (let i = 0; i < 12 && el; i++) {
+          if (el.scrollHeight > el.clientHeight + 40 && /auto|scroll/.test((window.getComputedStyle(el).overflowY || ''))) return el;
+          el = el.parentElement;
+        }
+      }
+      return document.scrollingElement || document.documentElement;
+    };
+    // ★ 逐屏快照去重：每滚一屏把所有已渲染会话读进 Map（虚拟化替换节点也不丢）；发现序号=最新在前
+    const found = new Map();
+    let order = 0;
+    let stable = 0;
+    let reachedBase = false; // 撞到第一条"已入库"会话 → 其下都是更旧已入库，停
+    for (let rnd = 0; rnd < 40 && !reachedBase; rnd++) {
+      let hadNew = false;
+      document.querySelectorAll('div.xhs-im-conv-item').forEach((el) => {
+        const convId = el.getAttribute('data-conv-id') || '';
+        if (!convId || found.has(convId)) return;
+        if (known.size && known.has(convId)) { reachedBase = true; return; } // 遇到已知 → 停止后再往下（不回滚已入库）
+        const kind = el.getAttribute('data-conv-kind') || '';
+        const name = (el.querySelector('.xhs-im-conv-item__name') || { textContent: '' }).textContent.trim();
+        const time = (el.querySelector('.xhs-im-conv-item__time') || { textContent: '' }).textContent.trim();
+        const timeTs = _chatTimeTs(time, now);
+        const summary = (el.querySelector('.xhs-im-conv-item__summary-text, .xhs-im-conv-item__summary') || { textContent: '' }).textContent.trim();
+        const img = el.querySelector('img.xhs-im-conv-item__avatar');
+        const avatar = img ? (img.getAttribute('src') || '') : '';
+        let hasUnread = false, unreadCount = 0;
+        try {
+          const badgeEl = el.querySelector('[class*="badge"], [class*="unread"], [class*="count"], [class*="dot"], [class*="notice"]');
+          if (badgeEl) {
+            const bt = (badgeEl.textContent || '').trim();
+            hasUnread = !!bt && (/^\d+$/.test(bt) || bt === '●' || bt === 'NEW');
+            const n = parseInt(bt, 10);
+            if (!isNaN(n)) unreadCount = n;
+          }
+        } catch (_) {}
+        const lastMsg = summary.slice(0, 300);
+        const lastFrom = hasUnread ? 'them' : '';
+        found.set(convId, { convId, convKind: kind, partnerName: name, time, timeTs, lastMsg, fullMsg: lastMsg, avatar, hasUnread, unreadCount, lastFrom, order: order++ });
+        hadNew = true;
+      });
+      if (reachedBase) break;
+      // 滚动加载下一屏
+      const sc = _cScroller();
+      sc.scrollTop = sc.scrollHeight;
+      await sleep(800 + Math.round(Math.random() * 600)); // 拟人随机
+      if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 2) break; // 已滚到底（首装/清库→全量回填）
+      if (hadNew) stable = 0; else { stable++; if (stable >= 2) break; }
+    }
+    // ★ 抓取诊断：实际抓到条数 + 样本，方便与 XHS 后台核对
+    try {
+      const dNames = Array.from(found.values()).slice(0, 10).map(x => x.partnerName);
+      console.warn('[抓取诊断] /chat 会话条数=' + found.size + ' 已知=' + known.size + ' 撞到已知=' + reachedBase + ' 样本=' + JSON.stringify(dNames) + ' 地址=' + location.href);
+    } catch (_) {}
+    try { (_cScroller()).scrollTop = 0; } catch (_) {} // 回顶部，别让用户以为内容没了
+    const items = Array.from(found.values()).sort((a, b) => a.order - b.order); // 有序（最新在前）
+    return { success: true, items, count: items.length, url: location.href, reachedBase };
   }
 
   // ── 获客·消息台：在 /chat 会话页发送消息（复用私信的 native setter + 发送按钮/回车 + 限制检测机制）
@@ -2619,24 +3063,12 @@
 
     _showStatus('输入消息...');
     inputEl.focus();
-    await sleep(120);
-    // 优先用 execCommand('insertText') 触发真实 input（React 才会启用发送按钮）
-    let filled = false;
-    try { document.execCommand('insertText', false, msg); filled = true; } catch (_) { filled = false; }
-    const check = (inputEl.innerText || inputEl.textContent || '');
-    if (!filled || !check.includes(msg.slice(0, 6))) {
-      // 兜底：native setter + input 事件
-      let setter = null;
-      try { setter = Object.getOwnPropertyDescriptor(window.HTMLDivElement.prototype, 'innerText').set || Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set; } catch (_) {}
-      if (setter) setter.call(inputEl, msg);
-      inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: msg }));
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    await sleep(dwellMs('noteOpenBuffer', 200)); // 拟人：聚焦后先停顿再输入
+    await _typeInto(inputEl, msg);
     await sleep(300);
     await sleep(dwellMs('preSendGap', 400));
 
     _showStatus('发送消息...');
-    // 发送按钮优先（输入后才会出现，title/aria 含“发送”，class 含 send），否则回车兜底
     const bar = document.querySelector('.xhs-im-input-bar');
     const pickSend = function () {
       const scope = bar || document;
@@ -2648,27 +3080,96 @@
         const svg = el.tagName === 'svg' ? ((el.querySelector('title') || { textContent: '' }).textContent || '') : '';
         if (title.includes('发送') || aria.includes('发送') || svg.includes('发送') || /send|发送/i.test(c)) return el;
       }
+      // ★ /chat 的发送按钮是纯图标 `button.xhs-im-input-bar-action-btn`（无文字/aria/send 类，仅图标），真机勘探确认
+      try { const ab = bar ? bar.querySelector('.xhs-im-input-bar-action-btn') : document.querySelector('.xhs-im-input-bar-action-btn'); if (ab && _findVisible(ab)) return ab; } catch (_) {}
       return null;
     };
+    // 发送：按钮优先 → Enter 兜底，每次验证内容是否清空，未发成功就换下一法；发现"隐私限制"立即停手
     let sendBtn = pickSend();
     await sleep(400); // 给发送按钮出现留时间
     if (!sendBtn) sendBtn = pickSend(); // 文字写入后再查一次
     let sentOk = false, via = '';
-    if (sendBtn) { _click(sendBtn); await sleep(700); sentOk = true; via = 'button'; }
-    else {
-      for (let a = 0; a < 3; a++) {
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        await sleep(600); sentOk = true; via = 'enter'; break;
+    for (let attempt = 0; attempt < 4 && !sentOk; attempt++) {
+      if (attempt === 0 && sendBtn) { _click(sendBtn); await sleep(700); via = 'button'; }
+      else { _pressEnterDm(inputEl); await sleep(750); via = 'enter'; }
+      if (_dmSent(inputEl)) { sentOk = true; break; }
+      if (_detectPrivacy()) {
+        _hideStatus();
+        return { success: false, privacy: true, limited: true, error: '对方设置了隐私设置（或未关注你），暂时无法私信回复。建议① 评论区互动破冰后再试；② 或先关注对方待通过。此用户已标记"私信受限"。' };
       }
     }
 
-    const limitRe = /(关注后才能|关注后即可|无法发送|不能发送|私信限制|被限制|防骚扰|对方.*关注|暂不支持)/;
-    const limited = limitRe.test((document.body.innerText || '').slice(-800));
+    const limitRe = /(关注后才能|关注后即可|无法发送|不能发送|私信限制|被限制|防骚扰|对方.*关注|暂不支持|隐私设置|不能回复|回复不了)/;
+    const limited = limitRe.test((document.body.innerText || '').slice(-1000));
     _hideStatus();
-    if (limited) return { success: false, error: '检测到发送限制提示（可能对方未关注你/防骚扰），建议先评论互动破冰', limited: true };
+    if (limited && !sentOk) return { success: false, error: '检测到发送限制提示（可能对方未关注你/防骚扰），建议先评论互动破冰', limited: true };
     return { success: sentOk, via, error: sentOk ? '' : '发送未确认，请手动检查该会话' };
+  }
+
+  // ── 获客·逐条归因：读当前 /chat 会话的消息线程，判断"对方是否回过你" ──
+  //   DOM 启发式：按消息条目的类名/归属区分 对方(left/other/peer) vs 我方(right/self/mine)。
+  //   归不出类但存在消息时 → 保守视为"已接触过"(hasAny)。升级主判据=theirsCount>0。
+  async function scanChatConversation() {
+    if (!/\/chat/.test(location.href)) return { success: false, error: '不在 /chat 会话页，请先打开会话' };
+    _showStatus('读取会话线程…');
+    await sleep(dwellMs('browseDwell', 300)); // 拟人：读取会话前浏览停顿
+    const rows = Array.from(document.querySelectorAll('[class*="message"], [class*="msg-item"], [class*="bubble"], [class*="im-msg"], [class*="conv-msg"], [class*="message-item"], [class*="item-container"]'));
+    let theirs = 0, mine = 0, lastTheirs = '', lastMine = '';
+    for (const el of rows) {
+      const cls = String(el.className || '');
+      const text = (el.innerText || '').trim();
+      if (!text || text.length < 2) continue;
+      const left = /left|other|peer|friend|receiver|receive|对方|they/i.test(cls);
+      const right = /right|self|mine|own|sender|send|me\b|我方/i.test(cls);
+      if (left || (!right && /left|other|peer|receiver/.test(cls))) { theirs++; lastTheirs = text; }
+      else if (right) { mine++; lastMine = text; }
+      // 类名无法归属的（无 left/right 特征）→ 跳过，不作为判断依据
+    }
+    // 兜底：挑不到归属类，但页面确实存在消息体 → 记 hasAny（不强推 theirs）
+    const hasAny = !!document.querySelector('[class*="message"], [class*="msg"], [class*="bubble"]');
+    _hideStatus();
+    return {
+      success: true,
+      theirs,
+      mine,
+      hasTheirs: theirs > 0,
+      theirsCount: theirs,
+      mineCount: mine,
+      hasAny,
+      lastMsg: lastTheirs || lastMine,
+      lastFrom: theirs > 0 ? 'them' : (mine > 0 ? 'me' : ''),
+    };
+  }
+
+  // ── 消息中心：结构化采集当前 /chat 会话页内的完整消息时间线（供后端回显 + AI理解） ──
+  //   DOM 启发式：与 scanChatConversation 相同，但逐条产出 {direction, text}，
+  //              只采集能明确归属 left/right 的气泡，外层容器去重。
+  async function collectChatMessages() {
+    if (!/\/chat/.test(location.href)) return { success: false, error: '不在会话页(/chat)，请先打开会话' };
+    _showStatus('采集完整会话…');
+    await sleep(dwellMs('browseDwell', 300)); // 拟人：读取会话前浏览停顿
+    const convId = location.pathname.split('/').filter(Boolean).pop() || '';
+    const rows = Array.from(document.querySelectorAll('[class*="message"], [class*="msg-item"], [class*="bubble"], [class*="im-msg"], [class*="conv-msg"], [class*="message-item"], [class*="item-container"], [class*="im-msg-block"]'));
+    const seen = new Set();
+    const messages = [];
+    for (const el of rows) {
+      const cls = String(el.className || '');
+      const text = (el.innerText || '').trim();
+      if (!text || text.length < 2) continue;
+      const left = /left|other|peer|friend|receiver|receive|对方|他们|they/i.test(cls);
+      const right = /right|self|mine|own|sender|send|me\b|我方|我们|朋友/i.test(cls);
+      let direction = '';
+      if (left || (!right && /left|other|peer|receiver/.test(cls))) direction = 'them';
+      else if (right) direction = 'me';
+      if (!direction) continue;
+      const key = direction + '|' + text;
+      if (seen.has(key)) continue;      // 外层容器含子气泡文本 → 精确去重
+      seen.add(key);
+      messages.push({ direction, author: direction === 'them' ? '' : '我', text, ai_generated: false });
+      if (messages.length >= 500) break;
+    }
+    _hideStatus();
+    return { success: true, convId, messages };
   }
 
   /* ── 评论跟进：回复指定通知（★ 三重定位保障，用户核心要求：绝不能回错人/回错消息） ──
@@ -2729,7 +3230,7 @@
 
     // ===== 3. 滚动到可视区并点击回复按钮 =====
     container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await sleep(400);
+    await sleep(dwellMs('noteOpenBuffer', 300)); // 拟人：定位到通知项后停留再交互
     const replyBtn = container.querySelector('.action-reply');
     if (!replyBtn) {
       _hideStatus();
@@ -2772,14 +3273,15 @@
       return { success: false, error: '交叉验证未通过：打开的是“回复 ' + wrongName + '”的输入框（应为 ' + userName + '），已放弃以防回错人' };
     }
 
-    // ===== 6. 填值（native setter + input 事件，触发 React onChange） =====
+    // ===== 6. 填值（拟人：逐字输入，0 则一次性填入；触发 React onChange） =====
     _showStatus('输入回复内容...');
     inputEl.focus();
     await sleep(100);
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-    nativeSetter.call(inputEl, replyText);
-    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(150);
+    await _typeInto(inputEl, replyText);
+    await sleep(80);
+
+    // ===== 6.5 拟人：发送前先停留，避免秒发被判机器 =====
+    await sleep(dwellMs('preSendGap', 400));
 
     // ===== 7. 发送（按钮优先，Enter 兜底；发送成功三重信号防重复提交） =====
     _showStatus('发送回复...');
@@ -3030,7 +3532,59 @@
   }
 
   // Step2：发私信（假设已在用户主页）。仅点私信→聊天窗→输入→发送，不再导航。
-  async function sendDmOnProfile(userLink, text) {
+  function _findDmSendBtn() {
+  const all = document.querySelectorAll('button, [role="button"]');
+  for (const el of all) {
+    if (!_findVisible(el)) continue;
+    const t = (el.innerText || '').trim();
+    const aria = (el.getAttribute('aria-label') || '');
+    const c = String(el.className || '');
+    if (t === '发送' || aria.includes('发送') || /(^|[\s_-])(send|submit)([\s_-]|$)/i.test(c) || t === 'Send') return el;
+  }
+  return null;
+}
+function _pressEnterDm(inputEl) {
+  if (!inputEl) return;
+  ['keydown', 'keypress', 'keyup'].forEach(function (type) {
+    try {
+      inputEl.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    } catch (_) {}
+  });
+}
+// 是否已发出：输入框内容被清空（小红书发送成功后清空输入区）
+function _dmSent(inputEl) {
+  try {
+    if (!inputEl) return true;
+    let v = '';
+    if (inputEl.tagName === 'TEXTAREA') v = inputEl.value || '';
+    else v = inputEl.innerText || inputEl.textContent || '';
+    return !String(v).replace(/\s/g, '').length;
+  } catch (_) { return false; }
+}
+// 检测"对方隐私设置/未关注无法私信"类提示
+const _PRIVACY_RE = /(隐私设置|对方.*隐私|隐私.*(拒绝|关闭|禁止)|好友验证|开启.*验证|拒绝接收|拒收|无法私信|不能私信|不可以私信|不能给他|不能回复你|暂时.*回复不了|回复不了你|需要你关注|未关注.*私信|对方.*设置)/;
+function _detectPrivacy() {
+  try {
+    const toast = document.querySelector('[class*="toast"], [class*="notice"], [class*="tip"], [role="alert"], [class*="modal"]');
+    if (toast && toast.innerText) return _PRIVACY_RE.test(toast.innerText);
+    const t = document.body ? document.body.innerText : '';
+    return _PRIVACY_RE.test(t.slice(-1500));
+  } catch (_) { return false; }
+}
+// ★ 私信发送：按钮优先 → Enter 兜底，每次发送后验证内容是否清空，未发成功就换下一法；发现"隐私限制"立即停手
+async function _dmTrySend(inputEl) {
+  const sendBtn = _findDmSendBtn();
+  let sent = false;
+  for (let attempt = 0; attempt < 4 && !sent; attempt++) {
+    if (attempt === 0 && sendBtn) { _click(sendBtn); await sleep(650); }
+    else { _pressEnterDm(inputEl); await sleep(750); }
+    if (_dmSent(inputEl)) { sent = true; break; }
+    if (_detectPrivacy()) return { sent: false, privacy: true };
+  }
+  return { sent: sent, privacy: false };
+}
+
+async function sendDmOnProfile(userLink, text) {
     // 0) 前提校验：必须在用户主页，否则拒绝并提示先定位
     if (userLink && !isOnUserProfile(userLink)) {
       return { success: false, error: '还未在目标用户主页，请先「📎 定位」打开该用户主页后再发送私信', needLocate: true };
@@ -3162,43 +3716,14 @@
     await sleep(200);
     await sleep(dwellMs('preSendGap', 400)); // 拟人挡位：发送私信前先停留，避免即时跳发
 
-    // 5) 发送（发送按钮优先，Enter 兜底）
+    // 5) 发送（按钮优先，Enter 兜底，带验证重试；检测隐私限制则停手）
     _showStatus('发送私信...');
-    let sendBtn = null;
-    const allSends = document.querySelectorAll('button, [role="button"]');
-    for (const el of allSends) {
-      if (!_findVisible(el)) continue;
-      const t = (el.innerText || '').trim();
-      const aria = (el.getAttribute('aria-label') || '');
-      const c = String(el.className || '');
-      if (t === '发送' || aria.includes('发送') || /send/i.test(c)) { sendBtn = el; break; }
-    }
-    let sentOk = false;
-    if (sendBtn) {
-      _click(sendBtn);
-      await sleep(700);
-      sentOk = true;
-    } else {
-      for (let a = 0; a < 3; a++) {
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        await sleep(600);
-        sentOk = true;
-        break;
-      }
-    }
-
-    // 6) 检测限制提示
-    const limitRe = /(关注后才能|关注后即可|无法发送|不能发送|私信限制|被限制|防骚扰|对方.*关注|暂不支持)/;
-    const bodyText = (document.body.innerText || '');
-    const limited = limitRe.test(bodyText.slice(-800));
-
+    const res = await _dmTrySend(inputEl);
     _hideStatus();
-    if (limited) {
-      return { success: false, error: '检测到私信限制提示（对方可能未关注你或开启防骚扰），建议改为评论互动破冰。', limited: true };
+    if (res.privacy) {
+      return { success: false, privacy: true, limited: true, error: '对方设置了隐私设置（或未关注你），暂时无法私信回复。建议：① 评论区互动破冰后再试；② 或去「消息台」用 /chat 直接开聊；③ 或先关注对方待通过。此用户已标记为"私信受限"，可在清单管理。' };
     }
-    return { success: sentOk, error: sentOk ? '' : '发送未确认，请手动检查', verified: sentOk };
+    return { success: res.sent, error: res.sent ? '' : '发送未确认，请手动检查', verified: res.sent };
   }
 
   // 兼容入口入口：Step1(开主页，非主页时) + Step2(发私信)。导航会卸载脚本 → 优先返回 navigating 由前端再驱动一次
@@ -3278,30 +3803,14 @@
     inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(200);
-    // 发送（按钮优先，Enter 兜底）
+    // 发送（按钮优先，Enter 兜底，带验证重试；检测隐私限制则停手）
     _showStatus('发送私信...');
-    let sendBtn = null;
-    const allSends = document.querySelectorAll('button, [role="button"]');
-    for (const el of allSends) {
-      if (!_findVisible(el)) continue;
-      const t = (el.innerText || '').trim();
-      const aria = (el.getAttribute('aria-label') || '');
-      const c = String(el.className || '');
-      if (t === '发送' || aria.includes('发送') || /send/i.test(c)) { sendBtn = el; break; }
-    }
-    let sentOk = false;
-    if (sendBtn) { _click(sendBtn); await sleep(700); sentOk = true; }
-    else {
-      for (let a = 0; a < 3; a++) {
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true, cancelable: true }));
-        await sleep(600);
-        sentOk = true; break;
-      }
-    }
+    const res = await _dmTrySend(inputEl);
     _hideStatus();
-    return { success: sentOk, error: sentOk ? '' : '发送未确认，请手动检查', verified: sentOk };
+    if (res.privacy) {
+      return { success: false, privacy: true, limited: true, error: '对方设置了隐私设置（或未关注你），暂时无法私信回复。建议：① 评论区互动破冰后再试；② 或去「消息台」用 /chat 直接开聊；③ 或先关注对方待通过。此用户已标记为"私信受限"。' };
+    }
+    return { success: res.sent, error: res.sent ? '' : '发送未确认，请手动检查', verified: res.sent };
   }
 
   // ── 在用户主页抓取公开「小红书号」+ 主页昵称（抓不到静默返回 {}，绝不报错/不加重反爬） ──
@@ -4194,6 +4703,63 @@
     }
 
     return { success: true, method: 'searchInput', selector: searchInput.className || searchInput.tagName };
+  }
+
+  // ═══════════ 一键灌水 · 驱动小红书搜索页的排序/范围筛选 ═══════════
+  // sortKey: likes|collects|comments  → 点赞最多/收藏最多/评论最多
+  // scope:   unseen → 范围选「未看过」；其余忽略
+  const _XHS_SORT_LABEL = { likes: '点赞最多', collects: '收藏最多', comments: '评论最多' };
+
+  // 收集文本恰好等于 q 的“叶子元素”（无子元素的最终文本节点宿主）
+  function _xfsExactEls(q) {
+    const out = [];
+    try {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+        acceptNode(n) {
+          if (out.length >= 300) return NodeFilter.FILTER_REJECT;
+          if (n.childElementCount === 0 && String(n.textContent || '').trim() === q) out.push(n);
+          return NodeFilter.FILTER_SKIP;
+        },
+      });
+      while (walker.nextNode()) {}
+    } catch (_) {}
+    return out;
+  }
+
+  async function _xfsClickExact(q, tries, gap) {
+    for (let i = 0; i < (tries || 10); i++) {
+      const els = _xfsExactEls(q);
+      if (els.length) { const el = els[els.length - 1]; try { el.click(); } catch (_) {} return true; }
+      await new Promise(r => setTimeout(r, gap || 350));
+    }
+    return false;
+  }
+
+  // 在搜索页应用排序 + 范围筛选（宽松按文字匹配，失败只降级不卡死）
+  async function applySearchFilter(sortKey, scope) {
+    const applied = [];
+    try {
+      if (sortKey && _XHS_SORT_LABEL[sortKey]) {
+        const target = _XHS_SORT_LABEL[sortKey];
+        // 1) 点开排序下拉（默认显示 综合/最新）
+        let opened = await _xfsClickExact('综合', 3, 250);
+        if (!opened) opened = await _xfsClickExact('最新', 3, 250);
+        await new Promise(r => setTimeout(r, 450));
+        // 2) 点目标选项；若下拉未开，退化为直接点目标文本
+        let ok = await _xfsClickExact(target, 8, 400);
+        if (!ok) ok = await _xfsClickExact(target, 3, 300);
+        if (ok) applied.push('sort:' + sortKey);
+      }
+      if (scope === 'unseen') {
+        // 打开筛选面板 → 勾选“未看过”
+        const openedFilter = await _xfsClickExact('筛选', 5, 350);
+        await new Promise(r => setTimeout(r, 450));
+        const okUn = await _xfsClickExact('未看过', 8, 400);
+        if (okUn) applied.push('scope:unseen');
+        else if (!openedFilter) { const direct = await _xfsClickExact('未看过', 3, 300); if (direct) applied.push('scope:unseen'); }
+      }
+    } catch (_) {}
+    return { ok: applied.length > 0, applied };
   }
 
   // ── 在搜索页找到并点击指定笔记的链接（模拟用户点击） ──

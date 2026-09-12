@@ -2,8 +2,9 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-family: "Microsoft YaHei", "PingFang SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
   font-size: 13px;
+  line-height: 1.6;
   color: #1a1a1a;
   background: #f0f2f5;
   min-height: 100vh;
@@ -74,7 +75,7 @@ body {
   white-space: nowrap;
 }
 .tab-item:hover { background: #2a2a3e; color: #fff; }
-.tab-item.active { background: #e65100; color: #fff; font-weight: 500; }
+.tab-item.active { background: #ff2442; color: #fff; font-weight: 500; }
 
 /* ── 主内容 ── */
 .main { flex: 1; padding: 24px; max-width: 780px; min-width: 0; overflow-y: auto; }
@@ -109,12 +110,12 @@ body {
 .form-group textarea:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #e65100;
-  box-shadow: 0 0 0 2px rgba(230,81,0,0.12);
+  border-color: #ff2442;
+  box-shadow: 0 0 0 2px rgba(255,36,66,0.12);
 }
 .form-group textarea { resize: vertical; }
 .hint { font-size: 11px; color: #aaa; margin-top: 3px; display: block; }
-.req { color: #e65100; }
+.req { color: #ff2442; }
 .badge-req{display:inline-block;background:#ff274b;color:#fff;border-radius:4px;font-size:11px;padding:0 7px;vertical-align:1px;line-height:18px}
 .badge-opt{display:inline-block;background:#e5e7eb;color:#6b7280;border-radius:4px;font-size:11px;padding:0 7px;vertical-align:1px;line-height:18px}
 .field-opt .req{color:#9ca3af}
@@ -143,17 +144,17 @@ body {
   left: 3px; top: 3px;
   background: #fff; border-radius: 50%; transition: 0.2s;
 }
-.toggle input:checked + .slider { background: #e65100; }
+.toggle input:checked + .slider { background: #ff2442; }
 .toggle input:checked + .slider::before { transform: translateX(16px); }
 .toggle-label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 
 /* ── 按钮 ── */
 .btn-primary {
-  padding: 8px 18px; background: #e65100; color: #fff;
+  padding: 8px 18px; background: #ff2442; color: #fff;
   border: none; border-radius: 6px; font-size: 13px;
   cursor: pointer; font-weight: 500; transition: background 0.15s;
 }
-.btn-primary:hover { background: #d84315; }
+.btn-primary:hover { background: #e61c36; }
 .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
 .btn-secondary {
   padding: 8px 16px; background: #fff; color: #444;
@@ -217,7 +218,7 @@ body {
 .tag-container { display: flex; flex-wrap: wrap; gap: 4px; }
 .tag-item {
   display: inline-flex; align-items: center; gap: 3px;
-  background: #e65100; color: #fff; border-radius: 3px;
+  background: #ff2442; color: #fff; border-radius: 3px;
   font-size: 11px; padding: 2px 6px; white-space: nowrap;
 }
 .tag-item .remove-tag { cursor: pointer; font-size: 12px; line-height: 1; }
@@ -232,7 +233,7 @@ body {
   border-radius: 4px; padding: 3px 6px; background: transparent;
   flex: 1; color: #1a1a1a;
 }
-.role-name-input:focus { border-color: #e65100; outline: none; background: #fff; }
+.role-name-input:focus { border-color: #ff2442; outline: none; background: #fff; }
 .role-keywords-wrap { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .role-keyword {
   display: inline-flex; align-items: center; gap: 3px;
@@ -244,7 +245,7 @@ body {
   border: 1px dashed #ccc; border-radius: 3px; padding: 2px 6px;
   font-size: 11px; min-width: 60px; outline: none; color: #555;
 }
-.role-kw-input:focus { border-color: #e65100; }
+.role-kw-input:focus { border-color: #ff2442; }
 
 /* ── 提示词编辑器布局 ── */
 .prompt-layout { display: flex; gap: 16px; align-items: flex-start; }
@@ -262,9 +263,9 @@ body {
   content: '›'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
   font-size: 18px; color: #bbb; line-height: 1;
 }
-.prompt-scene-item:hover { background: #fff; border-color: #e65100; box-shadow: 0 2px 6px rgba(230,81,0,0.08); }
-.prompt-scene-item.active { background: #fff3e0; border-color: #e65100; color: #e65100; }
-.prompt-scene-item.active::after { color: #e65100; }
+.prompt-scene-item:hover { background: #fff; border-color: #ff2442; box-shadow: 0 2px 6px rgba(255,36,66,0.08); }
+.prompt-scene-item.active { background: #fff0f3; border-color: #ff2442; color: #ff2442; }
+.prompt-scene-item.active::after { color: #ff2442; }
 .prompt-editor { flex: 1; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .prompt-placeholder {
   color: #999; text-align: center; padding: 60px 20px; font-size: 14px;
@@ -277,7 +278,7 @@ body {
   border-radius: 6px; font-size: 13px; font-family: 'Courier New', monospace;
   line-height: 1.7; color: #1a1a1a; background: #fdfdfd; min-height: 160px;
 }
-.prompt-field textarea:focus { outline: none; border-color: #e65100; }
+.prompt-field textarea:focus { outline: none; border-color: #ff2442; }
 .prompt-actions { display: flex; gap: 8px; flex-shrink: 0; padding-top: 6px; }
 
 /* ── 统计卡片 ── */
@@ -286,7 +287,7 @@ body {
   background: #fff; border-radius: 8px; padding: 14px 12px;
   border: 1px solid #eee; text-align: center;
 }
-.stat-num { font-size: 22px; font-weight: 700; color: #e65100; }
+.stat-num { font-size: 22px; font-weight: 700; color: #ff2442; }
 .stat-label { font-size: 11px; color: #999; margin-top: 4px; }
 
 /* ── 日志列表 ── */
@@ -319,6 +320,57 @@ body {
 
 /* ── 空状态 ── */
 .empty-tip { text-align: center; padding: 32px; color: #aaa; font-size: 13px; }
+
+/* ── 卖点卡片（sp-*）── */
+.sp-card .sp-title,
+.sp-card .sp-content {
+  transition: border-color .15s, box-shadow .15s;
+}
+.sp-card .sp-title:focus,
+.sp-card .sp-content:focus {
+  outline: none;
+  border-color: #ff2442 !important;
+  box-shadow: 0 0 0 2px rgba(255,36,66,0.12);
+}
+.sp-remove, .sp-img-clear { transition: border-color .15s, background .15s, color .15s; }
+.sp-remove:hover:not(:disabled) { background: #fde7e9; }
+.sp-img-clear:hover:not(:disabled) { background: #fde7e9; }
+label.sp-img-add { transition: border-color .15s, color .15s, background .15s; }
+label.sp-img-add:hover { border-color: #ff2442; color: #ff2442; }
+
+/* ── 人设问答（personaQ）── */
+.personaQ {
+  border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px;
+  font-size: 13px; font-family: inherit; color: #1a1a1a; resize: vertical;
+  transition: border-color .15s, box-shadow .15s; line-height: 1.5;
+}
+.personaQ:focus { outline: none; border-color: #ff2442; box-shadow: 0 0 0 2px rgba(255,36,66,0.12); }
+
+/* ── AI客服（aics-*）：内联样式带固定边框色，这里补全尺寸/焦点态，聚焦覆盖为品牌橙 ── */
+.aics-sc-mode, .aics-sc-purpose,
+.aics-qa-cat, .aics-qa-mode, .aics-qa-auto,
+.aics-qa-kw, .aics-qa-ans {
+  border: 1px solid #dfe3ea; border-radius: 6px; background: #fff; color: #1a1a1a;
+  transition: border-color .15s, box-shadow .15s;
+}
+.aics-sc-mode:focus, .aics-sc-purpose:focus,
+.aics-qa-cat:focus, .aics-qa-mode:focus, .aics-qa-auto:focus,
+.aics-qa-kw:focus, .aics-qa-ans:focus {
+  outline: none;
+  border-color: #ff2442 !important;
+  box-shadow: 0 0 0 2px rgba(255,36,66,0.12);
+}
+.aics-qa-ans { resize: vertical; line-height: 1.5; }
+#aicsIn:focus { outline: none; border-color: #ff2442 !important; box-shadow: 0 0 0 2px rgba(255,36,66,0.12); }
+
+/* ── 封面候选按钮（cover-*）── */
+.cover-gen-one, .cover-copy-one { transition: border-color .15s, background .15s, color .15s; }
+.cover-gen-one:hover { background: #eef2ff; }
+.cover-copy-one:hover { background: #f5f5f5; }
+
+/* ── AI客服 内联按钮 hover（与品牌橙协调）── */
+#aicsKb:hover:not(:disabled), #aicsTest:hover:not(:disabled) { filter: brightness(.95); }
+#aicsExport:hover:not(:disabled), #aicsImport:hover:not(:disabled) { background: #f5f5f5; }
 
 /* ── 滚动条 ── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }

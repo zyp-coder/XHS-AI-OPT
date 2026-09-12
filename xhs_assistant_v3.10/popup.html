@@ -10,8 +10,9 @@
       max-width: 1000px;
       min-height: 400px;
       height: 100vh;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-family: "Microsoft YaHei", "PingFang SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
       font-size: 13px;
+      line-height: 1.6;
       color: #1a1a1a;
       background: #f5f6f8;
       overflow: hidden auto;
@@ -202,14 +203,30 @@
     .aw-log div { padding:2px 0; border-bottom:1px solid #fef3c7; }
     .aw-queue { font-size:11px; margin-top:6px; }
     .aw-queue-item { padding:3px 6px; background:#fff; border:1px solid #fde68a; border-radius:3px; margin:2px 0; display:flex; justify-content:space-between; }
+
+    /* ===== 字体/排版统一优化层（提级小字号、消除毛边锯齿） ===== */
+    :root { --font-ui: "Microsoft YaHei","PingFang SC","Microsoft YaHei UI",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif; }
+    html, body, button, input, select, textarea, label { font-family: var(--font-ui); }
+    .header h1 { font-size: 15px; }
+    .badge { font-size: 11.5px; }
+    .note-title { font-size: 12.5px; }
+    .note-meta, .status-bar, .send-result, .prospect-reply-label, .aw-status { font-size: 11.5px; }
+    .copy-btn, .send-btn { font-size: 12px; }
+    .reply-box textarea { font-size: 12.5px; }
+    .prospect-summary, .prospect-author, .prospect-quote, .prospect-reason, .scan-stats { font-size: 12.5px; }
+    .prospect-badge, .aw-log, .aw-queue { font-size: 11.5px; }
+    .aw-controls button { font-size: 12px; }
+    .empty-state p { font-size: 14px; }
+    .aw-header h3 { font-size: 15px; }
+    .retry-btn { font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1><span>📝</span> 智慧运维</h1>
     <div style="display:flex;align-items:center;gap:6px;">
-      <button id="adminBtn" style="padding:3px 8px;font-size:11px;border:1px solid #e65100;background:#fff;color:#e65100;border-radius:4px;cursor:pointer;" title="打开设置">⚙️ 设置</button>
-      <button id="autoWaterToggle" style="padding:3px 8px;font-size:11px;border:1px solid #059669;background:#fff;color:#059669;border-radius:4px;cursor:pointer;" title="一键灌水">💧 灌水</button>
+      <button id="adminBtn" style="padding:3px 8px;font-size:12px;border:1px solid #e65100;background:#fff;color:#e65100;border-radius:4px;cursor:pointer;" title="打开设置">⚙️ 设置</button>
+      <button id="autoWaterToggle" style="padding:3px 8px;font-size:12px;border:1px solid #059669;background:#fff;color:#059669;border-radius:4px;cursor:pointer;" title="一键灌水">💧 灌水</button>
       <button id="refreshBtn" style="padding:6px 14px;font-size:16px;border:1px solid #ccc;background:#fff;color:#666;border-radius:4px;cursor:pointer;" title="重新提取并扫描">🔄</button>
       <span class="badge" id="statusBadge">检查中...</span>
     </div>

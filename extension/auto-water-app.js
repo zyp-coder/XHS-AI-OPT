@@ -750,39 +750,6 @@ window.AutoWaterApp = (function () {
       }
     });
     $('#btnBackToList')?.addEventListener('click', goBack);
-    // 筛选复选框
-    $('#filterDoneCb')?.addEventListener('change', function() {
-      applyFilter();
-    });
-    // 查看已灌水清单按钮
-    $('#btnViewWateredList')?.addEventListener('click', showWateredList);
-    // ── 严格流水线：自动灌水按钮 & 判据下拉 ──
-    $('#btnAutoAdvance')?.addEventListener('click', startAutoAdvance);
-    var stopSel = document.getElementById('autoStopSel');
-    if (stopSel) stopSel.addEventListener('change', (function (el) {
-      return async function () {
-        try {
-          var rw = await chrome.storage.local.get('auto_water_config');
-          var cw = rw['auto_water_config'] || {};
-          cw.schedule = cw.schedule || {};
-          cw.schedule.autoStopWhen = el.value;
-          await chrome.storage.local.set({ auto_water_config: cw });
-          if (typeof addLog === 'function') { try { addLog('自动灌水判据已设为：' + (el.value === 'all' ? '当前词全部' : '每词≤每轮篇数'), 'info'); } catch (_) {} }
-        } catch (_) {}
-      };
-    })(stopSel));
-  }
-
-  /* 初始化自动灌水界面（同步下拉当前判据） */
-  async function initAutoFlowUI() {
-    var stopSel = document.getElementById('autoStopSel');
-    if (stopSel) {
-      try {
-        var raw = await chrome.storage.local.get('auto_water_config');
-        var sc = (raw['auto_water_config'] && raw['auto_water_config'].schedule) || {};
-        stopSel.value = (sc.autoStopWhen === 'all') ? 'all' : 'perRound';
-      } catch (_) {}
-    }
   }
 
   /* ─── 显示已灌水笔记清单 ─── */
@@ -908,164 +875,13 @@ window.AutoWaterApp = (function () {
     }
   }
 
-  /* ═══ 严格流水线：自动逐篇 → 逐词推进 ═══
- * 点「开始自动灌水」后：按顺序打开当前关键词的笔记 → 等 popup.js 广播"本篇处理完"
- *（xhsNoteDone：成功发评 / 已灌水 / 扫描完成无商机）→ 才开下一篇；当前词处理完自动切下一个关键词再搜。
- * 判据 autoStopWhen：perRound=处理满每轮篇数算本词灌完；all=当前词全部未灌都处理完才算。 */
-var _flowCtrl = null;
-
-function _flowStop() { if (_flowCtrl) _flowCtrl.stopped = true; }
-/** 自动灌水按钮的运行/停止视觉切换（同一按钮=控制器） */
-function _flowBtn(running) {
-  var b = $('#btnAutoAdvance');
-  if (!b) return;
-  if (running) {
-    b.textContent = '⏹ 停止自动灌水';
-    b.style.background = '#dc2626'; b.style.borderColor = '#dc2626';
-    b.title = '正在自动灌水，再点一次=立即停止';
-  } else {
-    b.textContent = '▶ 自动灌水';
-    b.style.background = '#16a34a'; b.style.borderColor = '#16a34a';
-    b.title = '严格流水线：自动逐篇处理当前关键词（等每篇处理完才下一篇），当前词灌完自动切下一个关键词，全部完成自动停。运行中再点=停止';
-  }
-}
-function _flowSleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-function _flowLog(msg, type) { if (typeof addLog === 'function') { try { addLog(msg, type || 'info'); } catch (_) {} } }
-
-async function _flowCurrentNotes() {
-  try {
-    var st = await sendMsg('getAutoWaterStatus');
-    var ss = (st && st.searchState) || {};
-    return (ss.foundNotes || []).slice();
-  } catch (_) { return []; }
-}
-
-// 打开这一篇，并等到 xhsNoteDone 才 resolve（严格：发出/已灌/无商机都算结单）。
-// ★ 收到"停止"也立即结单放行，绝不干等 90s 超时——否则界面上"再点一次自动灌水=停止"会感觉停不下来。
-function _flowOpenNote(note) {
-  return new Promise(function (resolve) {
-    var ctrl = _flowCtrl;
-    var done = false;
-    function finish() { if (done) return; done = true; window.removeEventListener('xhsNoteDone', handler); clearInterval(scanWatch); clearTimeout(timer); window.__scanLastBeat = 0; }
-    function settle(r) { finish(); resolve(r); }
-    var handler = function () { settle({ ok: true }); };
-    window.addEventListener('xhsNoteDone', handler);
-
-    // ★ 心跳感知等待上限：在本篇开始前清空扫描心跳，只认这篇的扫描（与 auto-bot 同款防呆）。
-    //   【这正是日志≠页面的根因】空评论/图文笔记的扫描常常到 90s 都不发"处理完"信号，
-    //   旧代码死等 90s，页面就停在这篇空笔记上、日志却一直停在"提取页面评论"——到 22:17:32 才被硬超时推去下一篇。
-    var _t0 = Date.now();
-    window.__scanLastBeat = 0;
-    var scanWatch = setInterval(function () {
-      if (ctrl && ctrl.stopped) { settle({ ok: true, stopped: true }); return; }
-      var beat = window.__scanLastBeat || 0;
-      var now = Date.now();
-      // 扫描一直没起来（20s 心跳仍 0）→ 空评论/根本没开扫，提前放行，别白等 90s
-      if (beat === 0 && now - _t0 > 20000) { _flowLog('⏭ 等待扫描超时（笔记未开始扫描/空评论无商机），继续下一篇', 'warn'); settle({ ok: true, timedOut: true }); return; }
-      // 扫描中途心跳停滞 70s（疑似卡住）→ 提前放行
-      if (beat > 0 && now - beat > 70000) { _flowLog('⏭ 等待扫描超时（扫描疑似卡住），继续下一篇', 'warn'); settle({ ok: true, timedOut: true }); return; }
-    }, 500);
-    // 绝对兜底：最长 90s 无论扫描是否结束都结单，绝不卡死整批
-    var timer = setTimeout(function () { settle({ ok: true, timedOut: true }); }, 90000);
-
-    (async function () {
-      disableOpenButtons();
-      var resp = null;
-      try { resp = await sendMsg('openNote', { note: note }); } catch (_) { resp = null; }
-      if (!resp || !resp.ok) { settle({ ok: false, skipped: true }); enableOpenButtons(); return; }
-      // ★ 自动批量：置一次性标志，popup 据此把"本篇单篇异常"识别为自动跳过（不弹红色打断界面）
-      window.__forceRescan = true;
-      if (typeof window.refreshCommentAssistant === 'function') { try { window.refreshCommentAssistant(); } catch (_) {} }
-    })();
-  });
-}
-
-async function _flowWaitResult() {
-  // ★ 心跳/状态双保险：搜索由 background 异步跑（不 await），这里轮询等“非搜索中 + 有结果”。
-  //   仍无结果就最多等 300s 收尾，绝不无限等。
-  var maxT = Date.now() + 300000;
-  while (_flowCtrl && !_flowCtrl.stopped && Date.now() < maxT) {
-    var st = null; try { st = await sendMsg('getAutoWaterStatus'); } catch (_) {}
-    var ss = st && st.searchState;
-    if (ss && !ss.searching && st && st.searchResults && st.searchResults.length > 0) return true;
-    await _flowSleep(2000);
-  }
-  return false;
-}
-
-async function _flowNextKeyword() {
-  var l = await loadKwList();
-  if (!l || l.length === 0) return false;
-  var ni = _kwIdx + 1;
-  if (ni >= l.length) return false;
-  await useKeyword(ni);            // 设当前词 + 立即只搜它
-  return await _flowWaitResult();
-}
-
-async function startAutoAdvance() {
-  if (_flowCtrl && !_flowCtrl.stopped) { _flowStop(); _flowBtn(false); _flowLog('⏹ 已请求停止自动灌水'); return; }
-  // ★ 跨引擎互斥：与 auto-bot 机器人不能同时跑，否则两会抢同一个 xhsNoteDone 信号、互相吞
-  if (window.__botEngineBusy === 'bot') {
-    _flowLog('⏳ 机器人(冷启动/循环)正在运行，请先停止它再开始自动灌水', 'warn');
-    return;
-  }
-  window.__botEngineBusy = 'autoAdvance';
-  var mode = 'perRound', perRound = 10;
-  try {
-    var raw = await chrome.storage.local.get('auto_water_config');
-    var sched = (raw['auto_water_config'] && raw['auto_water_config'].schedule) || {};
-    mode = (sched.autoStopWhen === 'all') ? 'all' : 'perRound';
-    perRound = Math.max(0, parseInt(sched.perRound, 10) || 0);   // 0 = 不限 = 以每日评论上限为准
-  } catch (_) {}
-
-  _flowCtrl = { stopped: false };
-  _flowBtn(true);
-  _flowLog('▶ 开始自动灌水（严格 · ' + (mode === 'all' ? '当前词全部' : (perRound > 0 ? '每词≤' + perRound + '篇' : '每词不限·以每日上限为准')) + '），先搜当前关键词…');
-  try {
-    // 先确保"当前词"有一条结果（若无则搜出来）；等结果后再逐篇跑
-    await useKeyword(_kwIdx);
-    var has = await _flowWaitResult();
-    if (!has) { _flowLog('⚠ 当前关键词无搜索结果，已结束'); _flowCtrl = null; window.__botEngineBusy = ''; return; }
-
-    while (_flowCtrl && !_flowCtrl.stopped) {
-      var notes = await _flowCurrentNotes();
-      var todo = notes.filter(function (n) { return !n.watered; });
-      if (mode === 'perRound' && perRound > 0) todo = todo.slice(0, perRound); // 0=不限
-      if (todo.length === 0) {
-        if (!(await _flowNextKeyword())) break;   // 当前词已处理完，无下一个词 → 结束
-        continue;
-      }
-      for (var i = 0; i < todo.length; i++) {
-        if (_flowCtrl && _flowCtrl.stopped) break;
-        var note = todo[i];
-        _flowLog('· 自动 ' + (mode === 'all' ? '' : (i + 1) + '/' + todo.length + ' ') + String(note.title || note.noteId || '').slice(0, 24));
-        var r = await _flowOpenNote(note);
-        if (!r.ok) _flowLog('⏭ 打开失败/跳过: ' + String(note.title || note.noteId || '').slice(0, 20), 'warn');
-        if (_flowCtrl && _flowCtrl.stopped) break;
-        await _flowSleep(1200);
-      }
-      if (!(_flowCtrl && _flowCtrl.stopped) && !(await _flowNextKeyword())) break;   // 切下一词
-    }
-  } catch (e) { console.error('[自动灌水] 异常:', e); }
-  window.__botEngineBusy = '';
-  var wasStopped = _flowCtrl && _flowCtrl.stopped;
-  _flowCtrl = null;
-  _flowBtn(false);
-  enableOpenButtons();
-  _flowLog(wasStopped ? '⏹ 自动灌水已停止' : '✅ 自动灌水全部完成（关键词处理完）');
-}
-
-window.startAutoAdvance = startAutoAdvance;
-window.stopAutoAdvance = _flowStop;
-
-/* ─── 公共 API ─── */
+  /* ─── 公共 API ─── */
   return {
     activate: function () {
       bindEvents();
       restoreKeyword();
       startPolling();
       refreshStatus();
-      initAutoFlowUI();
     },
     deactivate: function () {
       stopPolling();

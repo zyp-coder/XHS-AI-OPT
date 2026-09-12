@@ -220,7 +220,7 @@ function sellPointCardHtml(s, i, locked) {
     '<div class="sp-img" data-idx="' + i + '" style="flex:none;width:104px;">' +
     (img
       ? '<img src="' + img + '" data-idx="' + i + '" style="width:104px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #eee;display:block;cursor:pointer;" title="点击更换" class="sp-img-pick">' +
-        '<button type="button" class="sp-img-clear" data-idx="' + i + '" ' + (locked ? 'disabled style="opacity:.4"' : '') + ' style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3bbb;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>'
+        '<button type="button" class="sp-img-clear" data-idx="' + i + '" ' + (locked ? 'disabled style="opacity:.4"' : '') + ' style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3e3e3;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>'
       : '<label class="sp-img-add" data-idx="' + i + '" style="display:flex;align-items:center;justify-content:center;width:104px;height:72px;border:1px dashed #bbb;border-radius:6px;font-size:10px;color:#999;cursor:pointer;background:#fff;">＋ 配图<input type="file" accept="image/*" class="sp-file" data-idx="' + i + '" style="display:none;"' + (locked ? ' disabled' : '') + '></label>') +
     '</div></div></div>';
 }
@@ -264,7 +264,7 @@ function wireSellPointListEvents(count) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       col.innerHTML = '<img src="' + ev.target.result + '" data-idx="' + idx + '" style="width:104px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #eee;display:block;cursor:pointer;" title="点击更换">' +
-        '<button type="button" class="sp-img-clear" data-idx="' + idx + '" style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3bbb;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>';
+        '<button type="button" class="sp-img-clear" data-idx="' + idx + '" style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3e3e3;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>';
       wireSellPointListEvents(count);
     };
     reader.readAsDataURL(file);
@@ -381,8 +381,8 @@ const PROVIDER_CONFIG = {
   deepseek: {
     baseUrl: 'https://api.deepseek.com/v1',
     models: [
-      { value: 'deepseek-chat', label: 'Chat 模型（非推理，快、省，推荐）' },
-      { value: 'deepseek-v4-flash', label: '推理模型（思考深、慢、费 token）' },
+      { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（新，快、省，推荐）' },
+      { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（新，更强，费 token）' },
     ],
   },
   openai: {
@@ -425,6 +425,39 @@ const PROVIDER_CONFIG = {
       { value: 'deepseek-v3.2', label: 'DeepSeek-V3.2（千帆平台）' },
     ],
   },
+  gemini: {
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    models: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（免费档，推荐）' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash（免费档）' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro（强，费额度）' },
+    ],
+  },
+  openrouter: {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      { value: 'deepseek/deepseek-chat-v3.2:free', label: 'DeepSeek V3.2（free）' },
+      { value: 'qwen/qwen-2.5-72b-instruct:free', label: 'Qwen 2.5 72B（free）' },
+      { value: 'meta-llama/llama-3.3-70b-versatile:free', label: 'Llama 3.3 70B（free）' },
+      { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+    ],
+  },
+  groq: {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    models: [
+      { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B（免费快）' },
+      { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B（最快）' },
+      { value: 'qwen/qwen2.5-32b', label: 'Qwen2.5 32B' },
+    ],
+  },
+  zhipu: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    models: [
+      { value: 'glm-4-flash', label: 'GLM-4-Flash（免费模型）' },
+      { value: 'glm-4-air', label: 'GLM-4-Air（便宜）' },
+      { value: 'glm-4-plus', label: 'GLM-4-Plus' },
+    ],
+  },
   custom: {
     baseUrl: '',
     models: [],
@@ -434,17 +467,18 @@ const PROVIDER_CONFIG = {
 /* 自定义模式下可快速选用的常用模型（选完即用，无需手敲），按“非推理/推理”两组展示 */
 const QUICK_MODELS = {
   normal: [
-    { value: 'deepseek-chat', label: 'deepseek-chat（DeepSeek 官方）' },
-    { value: 'deepseek-v3', label: 'deepseek-v3' },
-    { value: 'deepseek-ai/DeepSeek-V3.2', label: 'DeepSeek-V3.2（硅基流动）' },
+    { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（DeepSeek 新）' },
+    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（免费）' },
     { value: 'Qwen/Qwen3.5-397B-A17B', label: 'Qwen3.5 397B（硅基流动）' },
+    { value: 'Qwen/Qwen2.5-7B-Instruct', label: 'Qwen2.5 7B（硅基流动 free）' },
+    { value: 'glm-4-flash', label: 'GLM-4-Flash（智谱免费）' },
+    { value: 'gpt-4o-mini', label: 'gpt-4o-mini（OpenAI）' },
     { value: 'ernie-4.5-turbo-32k', label: 'ernie-4.5-turbo-32k（千帆最便宜）' },
-    { value: 'ernie-3.5-128k', label: 'ernie-3.5-128k（千帆便宜）' },
   ],
   reasoning: [
-    { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash' },
     { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
     { value: 'deepseek-ai/DeepSeek-V4-Flash', label: 'DeepSeek-V4-Flash（硅基流动）' },
+    { value: 'quiet-star/glm-4.6', label: 'GLM-4.6' },
   ],
 };
 
@@ -545,7 +579,7 @@ async function loadAiConfig() {
 
   // 确定 provider
   const savedBaseUrl = cfg.ai.apiBaseUrl || 'https://api.deepseek.com/v1';
-  const savedModel = cfg.ai.model || 'deepseek-chat';
+  const savedModel = cfg.ai.model || 'deepseek-v4-flash';
   let detectedProvider = 'custom';
   for (const [key, pCfg] of Object.entries(PROVIDER_CONFIG)) {
     if (key !== 'custom' && pCfg.baseUrl === savedBaseUrl) {
@@ -605,7 +639,7 @@ document.getElementById('saveAiBtn')?.addEventListener('click', async () => {
   } else {
     cfg.ai.apiBaseUrl = PROVIDER_CONFIG[provider]?.baseUrl || 'https://api.deepseek.com/v1';
   }
-  cfg.ai.model = document.getElementById('apiModel').value.trim() || 'deepseek-chat';
+  cfg.ai.model = document.getElementById('apiModel').value.trim() || 'deepseek-v4-flash';
   // ★ 用户显式保存过模型：自动迁移不再覆盖（尊重手动选择），也不再自动回退旧模型
   cfg.ai._modelLocked = true;
   delete cfg.ai._prevModel;
@@ -775,7 +809,6 @@ function personaBind() {
       }
       if (desc) {
         const b = document.getElementById('personaBio'); if (b) b.value = desc;
-        const n = document.getElementById('personaSelectAllPaste');
         personaSetStatus((name ? '读到账号：' + _esc(name) + '；' : '') + '✅ 已读取简介，可以继续答题或直接建人设。', 'ok');
       } else {
         personaSetStatus('⚠️ 没抓到简介。请先打开【你自己小红书的主页】（能显示简介的那页）再点一次；或直接粘贴到下面输入框。', 'err');
@@ -1283,8 +1316,46 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 一键灌水（只保留灌水历史；搜索关键词已移到 popup 左上方输入框，调度功能早已下线）
 // ══════════════════════════════════════════════════════════════
 async function loadAutoWaterConfig() {
-  await Promise.all([loadAutoWaterHistory(), loadNoteTrendConfig()]);
+  await Promise.all([loadAutoWaterHistory(), loadNoteTrendConfig(), loadSearchFilterConfig()]);
 }
+
+/* ─── 搜索排序/范围筛选（coldFilter / cycleFilter，写入 auto_water_config） ─── */
+async function loadSearchFilterConfig() {
+  try {
+    const aw = (await getStorage('auto_water_config')) || {};
+    const cold = aw.coldFilter || { enabled: true, sort: 'rotate', scope: 'unseen' };
+    const cyc  = aw.cycleFilter || { enabled: false, sort: 'likes', scope: '' };
+    const setBool = (id, val) => { const e = document.getElementById(id); if (e) e.checked = !!val; };
+    const setSel = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
+    setBool('awColdOn', cold.enabled);
+    setSel('awColdSort', cold.sort || 'rotate');
+    setSel('awColdScope', cold.scope || 'unseen');
+    setBool('awCycOn', cyc.enabled);
+    setSel('awCycSort', cyc.sort || 'likes');
+    setSel('awCycScope', cyc.scope || '');
+  } catch (_) {}
+}
+
+document.getElementById('awFilterSaveBtn')?.addEventListener('click', async () => {
+  const g = id => document.getElementById(id);
+  const aw = (await getStorage('auto_water_config')) || {};
+  aw.coldFilter = {
+    enabled: !!(g('awColdOn') && g('awColdOn').checked),
+    sort: (g('awColdSort') && g('awColdSort').value) || 'rotate',
+    scope: (g('awColdScope') && g('awColdScope').value) || 'unseen',
+  };
+  aw.cycleFilter = {
+    enabled: !!(g('awCycOn') && g('awCycOn').checked),
+    sort: (g('awCycSort') && g('awCycSort').value) || 'likes',
+    scope: (g('awCycScope') && g('awCycScope').value) || '',
+  };
+  await setStorage('auto_water_config', aw);
+  const msg = document.getElementById('awFilterSaveMsg');
+  if (msg) {
+    msg.textContent = '✅ 已保存：冷启动' + (aw.coldFilter.enabled ? '开（' + (aw.coldFilter.sort === 'rotate' ? '轮换' : ({ likes: '点赞最多', collects: '收藏最多', comments: '评论最多' }[aw.coldFilter.sort])) + (aw.coldFilter.scope ? '·未看过' : '') + ')' : '关') + '；循环' + (aw.cycleFilter.enabled ? '开' : '关');
+    setTimeout(() => { msg.textContent = ''; }, 4000);
+  }
+});
 
 /* ─── 循环计划设置（note_trend_config，与 popup 侧 lib/note-trend.js 共用同一 key 与默认值） ─── */
 const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, scanIntervalMin: 2 };
@@ -1327,6 +1398,10 @@ async function loadAutoWaterHistory() {
   if (countEl) countEl.textContent = `共 ${entries.length} 条记录`;
   if (body) {
     body.innerHTML = '';
+    if (entries.length === 0) {
+      body.innerHTML = '<tr><td colspan="3" style="padding:18px;text-align:center;color:#999;">暂无灌水历史</td></tr>';
+      return;
+    }
     for (const [noteId, rec] of entries.slice(0, 100)) {
       const tr = document.createElement('tr');
       tr.style.borderBottom = '1px solid #f0f0f0';
@@ -1398,6 +1473,8 @@ async function loadDelayConfig() {
   if (followChk) followChk.checked = bh.autoFollow !== false;
   const everyInput = document.getElementById('bhFollowEvery');
   if (everyInput) everyInput.value = Math.max(1, parseInt(bh.followEvery, 10) || 1);
+  const scanChk = document.getElementById('bhAutoScanChat');
+  if (scanChk) { const psa = (await getStorage('prospect_scan_auto')); scanChk.checked = psa === true; }
   await presetOnLoad();
 }
 
@@ -1427,17 +1504,23 @@ document.getElementById('delaySaveBtn')?.addEventListener('click', async () => {
     autoFollow: !!document.getElementById('bhAutoFollow')?.checked,
     followEvery: Math.max(1, parseInt(document.getElementById('bhFollowEvery')?.value, 10) || 1),
   });
-  showMsg('delaySaveMsg', '✅ 已保存（区间随机，立即生效）', 'success');
+  // 后台定时扫描 /chat 开关
+  const scanChk = document.getElementById('bhAutoScanChat');
+  const scanOn = !!(scanChk && scanChk.checked);
+  const _curMin = parseInt((await getStorage('prospect_scan_interval_min')) || '10', 10) || 10;
+  await chrome.storage.local.set({ prospect_scan_auto: scanOn }).catch(() => {});
+  chrome.runtime.sendMessage({ action: 'setAutoScanChat', data: { enabled: scanOn, intervalMin: scanOn ? Math.max(1, _curMin) : 0 } }).catch(() => {});
+  showMsg('delaySaveMsg', '✅ 已保存（区间随机，立即生效）', 'ok');
 });
 
 document.getElementById('delayRecommendBtn')?.addEventListener('click', () => {
   fillDelayInputs(DELAY_RECOMMEND);
-  showMsg('delaySaveMsg', '已填入拟人推荐区间，点「保存」生效', 'success');
+  showMsg('delaySaveMsg', '已填入拟人推荐区间，点「保存」生效', 'ok');
 });
 
 document.getElementById('delayZeroBtn')?.addEventListener('click', () => {
   fillDelayInputs(DELAY_DEFAULT);
-  showMsg('delaySaveMsg', '已恢复默认（技术下限，最快），点「保存」生效', 'success');
+  showMsg('delaySaveMsg', '已恢复默认（技术下限，最快），点「保存」生效', 'ok');
 });
 
 /* ─── 拟人化挡位（一键套用 + 预计灌完时间） ─── */
@@ -1521,7 +1604,7 @@ document.getElementById('delayPreset')?.addEventListener('input', async (e) => {
     aw.schedule.perRound = pr;
     await setStorage('auto_water_config', aw);
   } catch (_) {}
-  showMsg('delaySaveMsg', '已套用 挡位' + lvl + '（' + p.name + '），确定后点「保存」生效', 'success');
+  showMsg('delaySaveMsg', '已套用 挡位' + lvl + '（' + p.name + '），确定后点「保存」生效', 'ok');
 });
 ['delayPreset', 'dl_estimateRound'].forEach(id => {
   document.getElementById(id)?.addEventListener('input', async () => {
@@ -1607,7 +1690,7 @@ async function applyEditionToSettings() {
       if (label && !label.querySelector('.edition-lock-badge')) {
         const badge = document.createElement('span');
         badge.className = 'edition-lock-badge';
-        badge.style.cssText = 'font-size:11px;color:#e65100;background:#fff3e0;border:1px solid #ffe0b2;padding:1px 6px;border-radius:3px;margin-left:6px;';
+        badge.style.cssText = 'font-size:11px;color:#ff2442;background:#fff0f3;border:1px solid #ffd9e0;padding:1px 6px;border-radius:3px;margin-left:6px;';
         badge.textContent = '🔒 产品卖点为企业版功能（当前版本 ' + (ed.label || '') + ' 不可用）';
         label.appendChild(badge);
       }
@@ -1859,7 +1942,7 @@ async function loadTenants() {
   renderTenantList();
 }
 
-function renderTenantList() {
+async function renderTenantList() {
   const box = document.getElementById('tenantList');
   if (!box) return;
   box.innerHTML = '';
@@ -1867,15 +1950,48 @@ function renderTenantList() {
     box.innerHTML = '<div style="color:#999;font-size:12px;">暂无租户</div>';
     return;
   }
+  // 预取每个租户的数据量：卖点 / 知识库 / 获客清单（当前租户读活动数据，其余读快照）
+  const snapKey = t => 'tenant_data__' + t.id;
+  const stats = {};
+  for (const t of _tenants) {
+    let cfg, kb, pl;
+    if (t.id === _currentTenantId) {
+      cfg = (await getStorage('config')) || {};
+      kb = await getStorage('knowledge_base');
+      pl = await getStorage('prospect_list');
+    } else {
+      const snap = (await getStorage(snapKey(t))) || {};
+      const inner = snap[snapKey(t)] || {};
+      cfg = inner.config || {};
+      kb = inner.knowledge_base;
+      pl = inner.prospect_list;
+    }
+    stats[t.id] = {
+      sell: (cfg.product && Array.isArray(cfg.product.sellPoints)) ? cfg.product.sellPoints.length : 0,
+      kb: Array.isArray(kb) ? kb.length : 0,
+      pl: Array.isArray(pl) ? pl.length : 0,
+    };
+  }
   _tenants.forEach(t => {
     const isCur = t.id === _currentTenantId;
+    const s = stats[t.id];
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border:1px solid ' +
-      (isCur ? '#e65100' : '#e0e0e0') + ';border-radius:6px;background:' + (isCur ? '#fff8f2' : '#fff') + ';';
-    const name = document.createElement('span');
-    name.style.cssText = 'flex:1;font-size:13px;font-weight:500;';
+      (isCur ? '#ff2442' : '#e0e0e0') + ';border-radius:6px;background:' + (isCur ? '#fff0f3' : '#fff') + ';';
+    const left = document.createElement('div');
+    left.style.cssText = 'flex:1;min-width:0;';
+    const name = document.createElement('div');
+    name.style.cssText = 'font-size:13px;font-weight:500;';
     name.textContent = t.name + (isCur ? '  ✅ 当前' : '');
-    row.appendChild(name);
+    left.appendChild(name);
+    const stat = document.createElement('div');
+    stat.style.cssText = 'font-size:11px;color:#888;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;';
+    stat.innerHTML =
+      '<span title="产品卖点数">🏷️ <b style="color:' + (s.sell > 0 ? '#ff2442' : '#bbb') + '">' + s.sell + '</b> 卖点</span>' +
+      '<span title="知识库条目数">📚 <b style="color:' + (s.kb > 0 ? '#ff2442' : '#bbb') + '">' + s.kb + '</b> 知识库</span>' +
+      '<span title="获客清单人数">👥 <b style="color:' + (s.pl > 0 ? '#ff2442' : '#bbb') + '">' + s.pl + '</b> 获客</span>';
+    left.appendChild(stat);
+    row.appendChild(left);
 
     if (!isCur) {
       const useBtn = document.createElement('button');
@@ -1975,6 +2091,7 @@ document.querySelector('[data-tab="persona"]')?.addEventListener('click', () => 
 let _aics = null;
 const _ae = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const _AICS_PURP = [['sell', '卖货'], ['brand', '品牌'], ['profile', '涨粉'], ['likes', '养数'], ['trend', '热点'], ['auto', '自动']];
+const _AICS_GUIDE = [['', '跟随产品承接（默认）'], ['私信我', '私信我'], ['私信我留个邮箱，我把资料发你', '引导留邮箱（成交）'], ['看我主页置顶笔记', '引导看主页置顶'], ['看我主页简介', '引导看主页简介']];
 document.querySelector('[data-tab="aics"]')?.addEventListener('click', renderAiCsSettings);
 
 // ═══════════ 备份 / 恢复（导出全部租户 + 运行数据 / 合并导入） ═══════════
@@ -2007,7 +2124,14 @@ async function backupExport() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = 'xhs-ai-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     a.click(); URL.revokeObjectURL(a.href);
-    if (msg) msg.textContent = '✅ 已导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份（' + (a.download || '') + '）。请本地妥善保存。';
+    if (msg) {
+      const sm = (r.backup && r.backup.summary) || {};
+      const lines = Object.entries(sm).map(([name, s]) =>
+        `${name}：卖点${s.卖点数} · 话术库${s.话术库条数} · 知识库${s.知识库条数} · 获客${s.获客清单数}`).join('；');
+      msg.textContent = '✅ 已导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份' +
+        (lines ? '　（' + lines + '）' : '') + '，请本地妥善保存。';
+      msg.style.color = '#0a7b5a';
+    }
   } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导出失败：' + (e.message || e); } }
 }
 
@@ -2020,7 +2144,7 @@ async function backupImportFile(e) {
   if (!backup || !backup.tenants || !backup.data) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 不是有效的备份文件（缺 tenants/data）'; } return; }
   try {
     const r = await chrome.runtime.sendMessage({ action: 'importAllData', data: { backup } });
-    if (r && r.ok) { if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 导入完成：合并 ' + r.importedTenants + ' 个备份产品，本地现有 ' + r.tenants + ' 个产品已保留。'; } }
+    if (r && r.ok) { if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 导入完成：合并 ' + r.importedTenants + ' 个备份产品，本地现有 ' + r.tenants + ' 个产品已保留。'; } if (msg) msg.textContent += ' 刷新页面以加载全部数据…'; setTimeout(function () { location.reload(); }, 900); }
     else if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + ((r && r.error) || '未知'); }
   } catch (err) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + (err.message || err); } }
 }
@@ -2039,14 +2163,15 @@ async function renderAiCsSettings() {
       <button id="aicsImport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
       <button id="aicsKb" style="font-size:12px;padding:6px 12px;border:1px solid #059669;background:#ecfdf5;color:#059669;border-radius:8px;cursor:pointer;">📥 话术→知识库</button>
     </div>
-    <div style="font-weight:600;font-size:13px;margin:4px 0;">A · 触达场景</div>
-    <div id="aicsScenes"></div>
-    <div style="font-weight:600;font-size:13px;margin:12px 0 4px;">B · 客户问答话术库</div>
+    <div style="font-weight:600;font-size:13px;margin:4px 0;">⚙️ 配置-通知 · 渠道基调 + 成交引导</div>
+    <div id="aicsChannels"></div>
+    <div id="aicsGuide" style="margin:7px 0 4px;"></div>
+    <div style="font-weight:600;font-size:13px;margin:12px 0 4px;">📖 配置-消息 · 客户问答话术库</div>
     <div id="aicsQa"></div>
     <div style="font-weight:600;font-size:13px;margin:12px 0 4px;">🧪 试问答</div>
     <div style="display:flex;gap:6px;"><input id="aicsIn" type="text" placeholder="模拟客户说一句，如：几号发货" style="flex:1;padding:6px 8px;border:1px solid #dfe3ea;border-radius:8px;font-size:12px;"><button id="aicsTest" style="font-size:12px;padding:6px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;">应答</button></div>
     <div id="aicsOut" style="font-size:12px;color:#333;margin-top:6px;white-space:pre-wrap;"></div>`;
-  paintAicsScenes(); paintAicsQa();
+  paintAicsChannels(); paintAicsQa();
   document.getElementById('aicsSave')?.addEventListener('click', saveAicsSettings);
   document.getElementById('aicsExport')?.addEventListener('click', () => exportAicsSettings());
   document.getElementById('aicsImport')?.addEventListener('click', () => importAicsSettings());
@@ -2054,20 +2179,43 @@ async function renderAiCsSettings() {
   document.getElementById('aicsTest')?.addEventListener('click', () => testAics());
 }
 
-function paintAicsScenes() {
-  const box = document.getElementById('aicsScenes'); if (!box) return;
-  box.innerHTML = Object.keys(_aics.scenes).map(k => {
-    const s = _aics.scenes[k];
-    const purp = _AICS_PURP.map(([v, l]) => `<option value="${v}" ${s.purpose === v ? 'selected' : ''}>${l}</option>`).join('');
-    const mode = `<select class="aics-sc-mode" data-k="${k}"><option value="draft" ${s.mode === 'draft' ? 'selected' : ''}>草拟</option><option value="auto" ${s.mode === 'auto' ? 'selected' : ''}>自动</option></select>`;
-    return `<div style="display:flex;gap:6px;align-items:center;border:1px solid #eee;border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:12px;background:#fff;">
-      <label style="display:flex;align-items:center;gap:3px;min-width:70px;"><input type="checkbox" class="aics-sc-on" data-k="${k}" ${s.enabled ? 'checked' : ''}>${_ae(s.name)}</label>
-      <select class="aics-sc-purpose" data-k="${k}" style="font-size:11px;">${purp}</select>${mode}
+function paintAicsChannels() {
+  const box = document.getElementById('aicsChannels'); if (!box) return;
+  box.innerHTML = '';
+  const CH_KEYS = ['comment', 'like', 'follow', 'ai'];
+  const CH_META = { comment: '💬 评论/回复', like: '👍 点赞/收藏', follow: '👣 关注', ai: '🧠 AI抓回' };
+  const CH_DESC = { comment: '先接住对方评论原话话题，再带一句产品/引导', like: '顺着TA赞的话题续下去，再带销售/引导', follow: '破冰自我介绍 + 价值预告 + 引导', ai: '破冰呼应需求 + 引导' };
+  CH_KEYS.forEach((k) => {
+    const c = (_aics.channels && _aics.channels[k]) || { minChars: 30, maxChars: 90 };
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid #eee;border-radius:6px;padding:5px 8px;margin-bottom:4px;background:#fff;';
+    card.innerHTML = `
+      <div style="font-size:12px;font-weight:600;">${CH_META[k]} <span style="font-weight:400;color:#888;">${CH_DESC[k]}</span></div>
+      <div style="margin-top:4px;font-size:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+        字数<input class="aics-ch-min" data-k="${k}" type="number" style="width:48px" value="${c.minChars}">~<input class="aics-ch-max" data-k="${k}" type="number" style="width:48px" value="${c.maxChars}">
+      </div>`;
+    box.appendChild(card);
+  });
+  // 成交/引导
+  const g = _aics.guide || {};
+  const GUIDE_PRESETS = [['私信我留个邮箱，我把资料发你', '留邮箱发资料'], ['看我主页置顶笔记', '看主页置顶'], ['私信我', '私信我'], ['看我主页简介', '看主页简介'], ['小程序下单', '小程序下单']];
+  const guideOpts = `<option value="" ${!g.deliver ? 'selected' : ''}>跟随产品/自定义…</option>` + GUIDE_PRESETS.map(([v, l]) => `<option value="${_ae(v)}" ${g.deliver === v ? 'selected' : ''}>${l}</option>`).join('');
+  const gb = document.getElementById('aicsGuide');
+  if (gb) gb.innerHTML = `<div style="font-weight:600;font-size:12px;">💰 成交/引导（4渠道共用）</div>
+    <div style="border:1px solid #eee;border-radius:6px;padding:6px 8px;background:#fff;font-size:11px;">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">引导方式<select id="aicsGuidePre" style="font-size:11px;">${guideOpts}</select></div>
+      <input id="aicsGuideDeliver" placeholder="或自定义：私信我留个邮箱，我把资料发你" style="width:100%;box-sizing:border-box;margin-top:5px;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:5px;" value="${_ae(g.deliver || '')}">
+      <div style="margin-top:5px;display:flex;align-items:center;gap:6px;font-size:11px;">优惠活动<input id="aicsGuideTips" placeholder="可选：报体验价/送赠品/强调售后" style="flex:1;min-width:0;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:5px;" value="${_ae(g.tips || '')}"></div>
     </div>`;
-  }).join('');
+  const pre = document.getElementById('aicsGuidePre');
+  if (pre) pre.addEventListener('change', (e) => { const d = document.getElementById('aicsGuideDeliver'); if (d) d.value = e.target.value; });
 }
 function paintAicsQa() {
   const box = document.getElementById('aicsQa'); if (!box) return;
+  if (!_aics.qa || _aics.qa.length === 0) {
+    box.innerHTML = '<div style="border:1px dashed #dfe3ea;border-radius:6px;padding:18px;text-align:center;color:#999;font-size:12px;">暂无客户问答话术<br><span style="font-size:11px;color:#bbb;">可点击插件弹窗「📖 B·客服问答话术库」添加，或在此下方手动添加</span></div>';
+    return;
+  }
   box.innerHTML = _aics.qa.map((e, i) => `<div style="border:1px solid #eee;border-radius:6px;padding:5px 8px;margin-bottom:4px;background:#fff;">
     <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
       <input class="aics-qa-cat" data-i="${i}" value="${_ae(e.category)}" style="width:80px;font-size:12px;font-weight:600;border:1px solid #eee;border-radius:5px;padding:3px;">
@@ -2082,18 +2230,64 @@ function paintAicsQa() {
   box.querySelectorAll('.aics-qa-del').forEach(b => b.addEventListener('click', () => { _aics.qa.splice(parseInt(b.dataset.i, 10), 1); paintAicsQa(); }));
 }
 function gatherAicsSettings() {
-  const scenes = {}; Object.keys(_aics.scenes).forEach(k => {
-    const s = _aics.scenes[k];
-    const q = (sel) => document.querySelector(sel + '[data-k="' + k + '"]');
-    scenes[k] = { ...s, enabled: !!document.querySelector('.aics-sc-on[data-k="' + k + '"]')?.checked, purpose: document.querySelector('.aics-sc-purpose[data-k="' + k + '"]')?.value || s.purpose, mode: document.querySelector('.aics-sc-mode[data-k="' + k + '"]')?.value || 'draft' };
+  const CH_KEYS = ['comment', 'like', 'follow', 'ai'];
+  const channels = {};
+  CH_KEYS.forEach((k) => {
+    const base = (_aics.channels && _aics.channels[k]) || {};
+    const val = (sel) => parseInt(document.querySelector(sel + '[data-k="' + k + '"]') && document.querySelector(sel + '[data-k="' + k + '"]').value, 10);
+    channels[k] = { ...base, minChars: val('.aics-ch-min') || base.minChars || 30, maxChars: val('.aics-ch-max') || base.maxChars || 90 };
   });
+  const guide = { deliver: (document.getElementById('aicsGuideDeliver') && document.getElementById('aicsGuideDeliver').value.trim()) || '', tips: (document.getElementById('aicsGuideTips') && document.getElementById('aicsGuideTips').value.trim()) || '' };
+  const scenes = _aics.scenes || {};
   const qa = Array.from(document.querySelectorAll('.aics-qa-cat')).map(ta => { const i = parseInt(ta.dataset.i, 10); const e = _aics.qa[i] || {}; return { id: e.id || ('qa_' + i), category: ta.value.trim() || '未命名', keywords: (document.querySelector('.aics-qa-kw[data-i="' + i + '"]')?.value || '').split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean), mode: document.querySelector('.aics-qa-mode[data-i="' + i + '"]')?.value || 'template', auto: document.querySelector('.aics-qa-auto[data-i="' + i + '"]')?.value || 'draft', enabled: !!document.querySelector('.aics-qa-on[data-i="' + i + '"]')?.checked, answer: document.querySelector('.aics-qa-ans[data-i="' + i + '"]')?.value || '' }; });
-  return { scenes, qa };
+  return { channels, guide, scenes, qa };
 }
 async function saveAicsSettings() {
   try { const r = await chrome.runtime.sendMessage({ action: 'saveAiCsConfig', data: { partial: gatherAicsSettings() } }); if (r && r.ok) { _aics = r.config; alert('✅ AI客服配置已保存'); } else alert('❌ 保存失败：' + ((r && r.error) || '未知')); }
   catch (e) { alert('❌ 保存失败：' + e.message); }
 }
-async function exportAicsSettings() { try { const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} }); const t = JSON.stringify((r && r.config) || {}, null, 2); await navigator.clipboard.writeText(t); alert('✅ 已复制 AI客服配置到剪贴板'); } catch (e) { alert('❌ ' + e.message); } }
-function importAicsSettings() { const v = window.prompt('粘贴 AI客服配置 JSON（scenes / qa）'); if (!v || !v.trim()) return; chrome.runtime.sendMessage({ action: 'importAiCsConfig', data: { json: v } }).then(r => { if (r && r.ok) { _aics = r.config; renderAiCsSettings(); alert('✅ 导入成功：' + r.imported); } else alert('❌ 导入失败：' + ((r && r.error) || '未知')); }).catch(e => alert('❌ ' + e.message)); }
+async function exportAicsSettings() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} });
+    const t = JSON.stringify((r && r.config) || {}, null, 2);
+    const blob = new Blob([t], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'aics_config_' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    alert('✅ 已下载 AI客服配置为 JSON 文件（导入时可直接粘贴该文件内容，或到后台「提示词/知识库」用文件导入）');
+  } catch (e) { alert('❌ ' + e.message); }
+}
+function importAicsSettings() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json,application/json';
+  input.style.display = 'none'; document.body.appendChild(input);
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    input.remove();
+    if (!file) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const val = String(rd.result || '');
+        JSON.parse(val);
+        chrome.runtime.sendMessage({ action: 'importAiCsConfig', data: { json: val } }).then(r => { if (r && r.ok) { _aics = r.config; renderAiCsSettings(); alert('✅ 导入成功：' + r.imported); } else alert('❌ 导入失败：' + ((r && r.error) || '未知')); }).catch(e => alert('❌ ' + e.message));
+      } catch (_) { alert('❌ 导入失败：不是合法的 JSON 文件'); }
+    };
+    rd.onerror = () => alert('❌ 导入失败：文件读取错误');
+    rd.readAsText(file, 'utf-8');
+  });
+  input.click();
+}
+async function genAicsDefaults() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'genDefaultAiCS', data: { sceneKeys: Object.keys(_aics.scenes || {}), qa: (_aics.qa || []).map(q => ({ category: q.category })) } });
+    if (!r || !r.ok) throw new Error((r && r.error) || '生成失败');
+    let sc = 0, qaF = 0;
+    for (const k of Object.keys(r.scenes || {})) if (_aics.scenes[k] && r.scenes[k]) { _aics.scenes[k].template = r.scenes[k]; _aics.scenes[k].templates = [r.scenes[k]]; sc++; }
+    for (const g of (r.qa || [])) { const e = (_aics.qa || []).find(x => x && x.category === g.category); if (e && g.answer) { e.answer = g.answer; if (!e.mode) e.mode = 'template'; qaF++; } }
+    paintAicsScenes(); paintAicsQa();
+    alert(`✨ AI 已按人设/卖点生成默认话术：场景 ${sc} 条 · 问答 ${qaF} 条。预览后可改，记得点「💾 保存全部」。`);
+  } catch (e) { alert('❌ 生成失败：' + e.message); }
+}
 async function testAics() { const inn = document.getElementById('aicsIn'); const out = document.getElementById('aicsOut'); if (!inn || !out) return; const q = inn.value.trim(); if (!q) return; out.textContent = '路由中…'; try { const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } }); out.innerHTML = r && r.ok ? ('🎯 ' + _ae(r.category) + ' · ' + (r.mode === 'ai' ? 'AI' : '模板') + '\n' + _ae(r.reply)) : ('❌ ' + _ae((r && r.error) || '失败')); } catch (e) { out.textContent = '❌ ' + e.message; } }

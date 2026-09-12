@@ -80,7 +80,7 @@ _BOOT_TS = str(int(time.time()))
 
 
 # ====== API 路由注册 ======
-from app.api import accounts, notes, comments, drain, analytics, ai, materials, extension, knowledge_base, comment_logs, script_library, schedule, diagnosis
+from app.api import accounts, notes, comments, drain, analytics, ai, materials, extension, knowledge_base, comment_logs, script_library, schedule, diagnosis, customers, messages
 
 app.include_router(accounts.router, prefix="/api/accounts", tags=["账号管理"])
 app.include_router(notes.router, prefix="/api/notes", tags=["笔记管理"])
@@ -96,6 +96,8 @@ app.include_router(script_library.router, prefix="/api/scripts", tags=["话术�
 app.include_router(schedule.router, prefix="/api/schedule", tags=["定时发布"])
 
 app.include_router(diagnosis.router, prefix="/api/diagnosis", tags=["账号诊断"])
+app.include_router(customers.router, prefix="/api/customers", tags=["客户邮箱"])
+app.include_router(messages.router, prefix="/api/messages", tags=["消息中心"])
 
 
 @app.get("/")

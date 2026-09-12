@@ -231,6 +231,18 @@
   var bot = {
     running: false,
     stopped: false,
+    waterTabId: null,    // ★ 双引擎：本引擎绑定的「💧 灌水工作台」标签页 id
+
+    /** 解析/绑定水 tab：引擎只在它上面驱动页面，绝不碰客服 tab */
+    _ensureWaterTab: async function () {
+      var self = this;
+      if (self.waterTabId) { try { await chrome.tabs.get(self.waterTabId); return self.waterTabId; } catch (_) { self.waterTabId = null; } }
+      try {
+        var r = await sendMsg('getEngineTab', { kind: 'water' });
+        if (r && r.tabId) { self.waterTabId = r.tabId; return self.waterTabId; }
+      } catch (_) {}
+      return null;
+    },
 
     /** 启动 */
     start: async function (mode) {
@@ -238,16 +250,12 @@
         botLog('⏳ 机器人已在运行中', 'warn');
         return;
       }
-      // ★ 跨引擎互斥：auto-bot 与左侧"▶ 自动灌水"(startAutoAdvance) 不能同时跑，
-      //   否则两会抢同一个 xhsNoteDone 信号、互相吞、可能双发/串篇
-      if (window.__botEngineBusy === 'autoAdvance') {
-        botLog('⏳ 左侧「▶ 自动灌水」正在运行，请先停止它再启动本机器人', 'warn');
-        return;
-      }
       window.__botEngineBusy = 'bot';
       this.running = true;
       this.stopped = false;
       this.mode = mode === 'cycle' ? 'cycle' : 'cold';
+      // ★ 双引擎：启动即绑定水 tab（只在它上面驱动页面，客服走客服 tab，二者互不抢页）
+      try { await this._ensureWaterTab(); } catch (_) {}
       botLog('🤖 ===== 自动灌水机器人启动（' + (this.mode === 'cycle' ? '🔄 循环计划' : '🧊 冷启动') + '） =====', 'info');
       this._updateUI(true);
 
@@ -298,6 +306,10 @@
       if (backBtn) {
         backBtn.click();
         botLog('  ⬅ 返回列表...', 'info');
+      } else if (self.waterTabId) {
+        try {
+          chrome.tabs.sendMessage(self.waterTabId, { action: 'goBack' }).catch(function () {});
+        } catch (_) {}
       } else {
         try {
           var tabs0 = await chrome.tabs.query({ url: '*://www.xiaohongshu.com/*' });
@@ -309,21 +321,25 @@
 
       // ★ 等待 tab 回到“搜索页”且该页笔记已渲染（countSearchNotes>0）才继续，
       //   避免在刚 reload / 还没渲染的搜索页上立刻开下一篇 → “未定位到笔记”
-      var tab = null, reloaded = false;
+      var tabId = self.waterTabId || null;
+      var reloaded = false;
       var deadline = Date.now() + 12000;
       var ready = false;
       while (Date.now() < deadline) {
-        var q = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }).catch(function () { return []; });
-        tab = q && q[0];
-        var curl = tab ? (tab.url || '') : '';
-        if (tab && /\/search_result/.test(curl)) {
+        var curl = '';
+        if (tabId) { try { curl = (await chrome.tabs.get(tabId)).url || ''; } catch (_) {} }
+        else {
+          var q = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }).catch(function () { return []; });
+          if (q && q[0]) { tabId = q[0].id; curl = (q[0].url || ''); }
+        }
+        if (tabId && /\/search_result/.test(curl)) {
           // 已在搜索页：确认笔记卡片已渲染
-          var cnt = await chrome.tabs.sendMessage(tab.id, { action: 'countSearchNotes' }).catch(function () { return { count: 0 }; });
+          var cnt = await chrome.tabs.sendMessage(tabId, { action: 'countSearchNotes' }).catch(function () { return { count: 0 }; });
           if (cnt && cnt.count > 0) { ready = true; break; }
-        } else if (!reloaded && tab) {
+        } else if (!reloaded && tabId) {
           // 未在搜索页（可能退回首页）→ 兜底 reload 到搜索结果页，并置标记等待渲染
           reloaded = true;
-          try { chrome.tabs.update(tab.id, { url: '/search_result?keyword=' + encodeURIComponent(kw) + '&source=web_search_result_note' }); } catch (_) {}
+          try { chrome.tabs.update(tabId, { url: '/search_result?keyword=' + encodeURIComponent(kw) + '&source=web_search_result_note' }); } catch (_) {}
         }
         await sleep(500);
       }
@@ -356,9 +372,20 @@
       return true;
     },
 
+    /* ─── 标记当前运行的计划（cold/cycle），供搜索引擎按计划应用排序/范围筛选 ─── */
+    _setActivePlan: async function (plan) {
+      try {
+        var r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
+        var cfg = (r && r['auto_water_config']) || {};
+        cfg.activePlan = plan;
+        await new Promise(function (res) { chrome.storage.local.set({ auto_water_config: cfg }, res); });
+      } catch (_) {}
+    },
+
     /* ─── 主循环（纯串行） ─── */
     _mainLoop: async function () {
       var self = this;
+      await self._setActivePlan('cold');
       // ★ 入口硬门禁：冷启动/循环必须先用关键词列表做过搜索，绝不灌旧列表。
       //   列表为空时，把输入框里还没添加的词先加进去。
       var kwFirst = '';
@@ -501,6 +528,7 @@
        ============================================================ */
     _cycleMain: async function () {
       var self = this;
+      await self._setActivePlan('cycle');
       var round = 0;
       var config = { scanIntervalMin: 2, maxPerRound: 3 };
       try {
@@ -714,14 +742,13 @@
       var nudgeStopped = false;
       var nudgeTimer = setInterval(function () {
         if (nudgeStopped) return;
-        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-          var t = tabs && tabs[0];
-          if (!t || !/xiaohongshu\.com/.test(t.url || '')) return;
-          try {
-            var p = chrome.tabs.sendMessage(t.id, { action: 'nudgeScroll' });
-            if (p && typeof p.catch === 'function') p.catch(function () {});
-          } catch (_) {}
-        });
+        // ★ 双引擎：只对绑定的水 tab 划动，绝不碰客服 tab / 其它页面
+        var tId = self.waterTabId || 0;
+        if (!tId) return;
+        try {
+          var p = chrome.tabs.sendMessage(tId, { action: 'nudgeScroll' });
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+        } catch (_) {}
       }, 4000);
       function stopNudge() {
         nudgeStopped = true;

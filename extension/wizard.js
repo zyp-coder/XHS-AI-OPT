@@ -1,14 +1,109 @@
 ﻿/* 首次设置向导：2 步——① 填 AI 配置 ② 绑定账号验证；产品/人设/知识库在「账号诊断」里配 */
 (function () {
   'use strict';
-  const PROVIDERS = {
-    deepseek:  { baseUrl: 'https://api.deepseek.com/v1',         models: [{ v: 'deepseek-chat', l: 'deepseek-chat（非推理·快·推荐）' }, { v: 'deepseek-v4-flash', l: 'deepseek-v4-flash（推理）' }] },
-    openai:    { baseUrl: 'https://api.openai.com/v1',           models: [{ v: 'gpt-4.1', l: 'gpt-4.1（旗舰）' }, { v: 'gpt-4.1-mini', l: 'gpt-4.1-mini（性价比）' }, { v: 'gpt-4o-mini', l: 'gpt-4o-mini' }] },
-    qwen:      { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: [{ v: 'qwen-plus', l: 'Qwen Plus（均衡·推荐）' }, { v: 'qwen-turbo', l: 'Qwen Turbo（快·便宜）' }, { v: 'qwen-max', l: 'Qwen Max（最强）' }] },
-    qianfan:   { baseUrl: 'https://qianfan.baidubce.com/v2',      models: [{ v: 'ernie-4.5-turbo-32k', l: 'ERNIE 4.5 Turbo 32K（便宜·推荐）' }, { v: 'ernie-4.5-turbo-128k', l: 'ERNIE 4.5 Turbo 128K' }] },
-    siliconflow:{ baseUrl: 'https://api.siliconflow.cn/v1',      models: [{ v: 'deepseek-ai/DeepSeek-V4-Flash', l: 'DeepSeek V4 Flash' }, { v: 'Qwen/Qwen3.5-397B-A17B', l: 'Qwen3.5 397B（旗舰）' }] },
-    custom:    { baseUrl: '', models: [{ v: 'deepseek-chat', l: 'deepseek-chat' }] },
+/* 提供商 → 自动匹配 BaseURL + 模型清单（与设置页同口径，用户无需手敲 URL） */
+const PROVIDER_CONFIG = {
+  deepseek:  { baseUrl: 'https://api.deepseek.com/v1',              models: [{ v: 'deepseek-v4-flash', l: 'deepseek-v4-flash（新，快、省，推荐）' }, { v: 'deepseek-v4-pro', l: 'deepseek-v4-pro（新，更强，费 token）' }] },
+  openai:    { baseUrl: 'https://api.openai.com/v1',                models: [{ v: 'gpt-4.1', l: 'GPT-4.1（最新旗舰，推荐）' }, { v: 'gpt-4.1-mini', l: 'GPT-4.1 Mini（性价比）' }, { v: 'gpt-4.1-nano', l: 'GPT-4.1 Nano（最快）' }, { v: 'gpt-4o-mini', l: 'GPT-4o Mini' }] },
+  qwen:      { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: [{ v: 'qwen-turbo', l: 'Qwen Turbo（快速便宜）' }, { v: 'qwen-plus', l: 'Qwen Plus（均衡，推荐）' }, { v: 'qwen-max', l: 'Qwen Max（最强）' }, { v: 'qwen3.7-plus', l: 'Qwen3.7 Plus（最新版均衡）' }, { v: 'qwen3.7-max', l: 'Qwen3.7 Max（最新版旗舰）' }] },
+  qianfan:   { baseUrl: 'https://qianfan.baidubce.com/v2',          models: [{ v: 'ernie-4.5-turbo-32k', l: 'ERNIE 4.5 Turbo 32K（最便宜、推荐）' }, { v: 'ernie-4.5-turbo-128k', l: 'ERNIE 4.5 Turbo 128K（长上下文）' }, { v: 'ernie-3.5-128k', l: 'ERNIE 3.5 128K（便宜）' }, { v: 'deepseek-v3.2', l: 'DeepSeek-V3.2（千帆平台）' }] },
+  siliconflow:{ baseUrl: 'https://api.siliconflow.cn/v1',           models: [{ v: 'deepseek-ai/DeepSeek-V4-Flash', l: 'DeepSeek V4 Flash' }, { v: 'deepseek-ai/DeepSeek-V4-Pro', l: 'DeepSeek V4 Pro' }, { v: 'Qwen/Qwen3.5-397B-A17B', l: 'Qwen3.5 397B（旗舰）' }, { v: 'Qwen/Qwen3.6-27B', l: 'Qwen3.6 27B' }, { v: 'zai-org/GLM-5.2', l: 'GLM-5.2（智谱）' }, { v: 'deepseek-ai/DeepSeek-V3.2', l: 'DeepSeek V3.2' }] },
+  gemini:    { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: [{ v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash（免费档，推荐）' }, { v: 'gemini-2.0-flash', l: 'Gemini 2.0 Flash（免费档）' }, { v: 'gemini-2.5-pro', l: 'Gemini 2.5 Pro（强，费额度）' }] },
+  openrouter:{ baseUrl: 'https://openrouter.ai/api/v1',             models: [{ v: 'deepseek/deepseek-chat-v3.2:free', l: 'DeepSeek V3.2（free）' }, { v: 'qwen/qwen-2.5-72b-instruct:free', l: 'Qwen 2.5 72B（free）' }, { v: 'meta-llama/llama-3.3-70b-versatile:free', l: 'Llama 3.3 70B（free）' }, { v: 'google/gemini-2.0-flash-001', l: 'Gemini 2.0 Flash' }] },
+  groq:      { baseUrl: 'https://api.groq.com/openai/v1',           models: [{ v: 'llama-3.3-70b-versatile', l: 'Llama 3.3 70B（免费快）' }, { v: 'llama-3.1-8b-instant', l: 'Llama 3.1 8B（最快）' }, { v: 'qwen/qwen2.5-32b', l: 'Qwen2.5 32B' }] },
+  zhipu:     { baseUrl: 'https://open.bigmodel.cn/api/paas/v4',     models: [{ v: 'glm-4-flash', l: 'GLM-4-Flash（免费模型）' }, { v: 'glm-4-air', l: 'GLM-4-Air（便宜）' }, { v: 'glm-4-plus', l: 'GLM-4-Plus' }] },
+  custom:    { baseUrl: '', models: [] },
+};
+const QUICK_MODELS = {
+  normal: [
+    { v: 'deepseek-v4-flash', l: 'deepseek-v4-flash（DeepSeek 新）' },
+    { v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash（免费）' },
+    { v: 'Qwen/Qwen3.5-397B-A17B', l: 'Qwen3.5 397B（硅基流动）' },
+    { v: 'glm-4-flash', l: 'GLM-4-Flash（智谱免费）' },
+    { v: 'gpt-4o-mini', l: 'gpt-4o-mini（OpenAI）' },
+    { v: 'ernie-4.5-turbo-32k', l: 'ernie-4.5-turbo-32k（千帆最便宜）' },
+  ],
+  reasoning: [
+    { v: 'deepseek-v4-pro', l: 'deepseek-v4-pro' },
+    { v: 'deepseek-ai/DeepSeek-V4-Flash', l: 'DeepSeek-V4-Flash（硅基流动）' },
+    { v: 'quiet-star/glm-4.6', l: 'GLM-4.6' },
+  ],
+};
+function detectProviderByBaseUrl(baseUrl) {
+  for (const k of Object.keys(PROVIDER_CONFIG)) { if (k !== 'custom' && PROVIDER_CONFIG[k].baseUrl === baseUrl) return k; }
+  return 'custom';
+}
+function fillModelSelect(selId, provider, selectedModel) {
+  const sel = document.getElementById(selId); if (!sel) return;
+  sel.innerHTML = '';
+  const cfg = PROVIDER_CONFIG[provider];
+  if (!cfg || provider === 'custom') { // 自定义模式：当前 + 常用模型快捷选
+    if (selectedModel) {
+      const opt = document.createElement('option'); opt.value = selectedModel; opt.textContent = '当前：' + selectedModel; opt.selected = true; sel.appendChild(opt);
+    }
+    const mk = (val, label, group) => {
+      const o = document.createElement('option'); o.value = val; o.textContent = (group ? '[非推理] ' : '') + label; if (val === selectedModel) o.selected = true; sel.appendChild(o);
+    };
+    QUICK_MODELS.normal.forEach(m => mk(m.v, m.l, false));
+    QUICK_MODELS.reasoning.forEach(m => mk(m.v, m.l, true));
+    return;
+  }
+  let hasSelected = !selectedModel;
+  cfg.models.forEach(m => {
+    if (m.v === selectedModel) hasSelected = true;
+    const opt = document.createElement('option'); opt.value = m.v; opt.textContent = m.l;
+    if (m.v === selectedModel) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (!hasSelected && selectedModel) {
+    const opt = document.createElement('option'); opt.value = selectedModel; opt.textContent = '当前：' + selectedModel; opt.selected = true; sel.insertBefore(opt, sel.firstChild);
+  }
+}
+function wireProviderSelects() {
+  const sync = () => {
+    const p = document.getElementById('apiProvider') && document.getElementById('apiProvider').value;
+    const pcfg = PROVIDER_CONFIG[p];
+    const cust = document.getElementById('customBaseUrlGroup');
+    if (cust) cust.style.display = p === 'custom' ? '' : 'none';
+    if (pcfg && p !== 'custom') { const cb = document.getElementById('customBaseUrl'); if (cb) cb.value = pcfg.baseUrl || ''; }
+    const curModel = document.getElementById('apiModel') ? document.getElementById('apiModel').value : '';
+    fillModelSelect('apiModel', p, curModel);
   };
+  document.getElementById('apiProvider')?.addEventListener('change', sync);
+  sync();
+  const msync = () => {
+    const p = document.getElementById('mmApiProvider') && document.getElementById('mmApiProvider').value;
+    const pcfg = PROVIDER_CONFIG[p];
+    const cust = document.getElementById('mmCustomBaseUrlGroup');
+    if (cust) cust.style.display = p === 'custom' ? '' : 'none';
+    if (pcfg && p !== 'custom') { const cb = document.getElementById('mmCustomBaseUrl'); if (cb) cb.value = pcfg.baseUrl || ''; }
+    const curModel = document.getElementById('mmApiModel') ? document.getElementById('mmApiModel').value : '';
+    fillModelSelect('mmApiModel', p, curModel);
+  };
+  document.getElementById('mmApiProvider')?.addEventListener('change', msync);
+  msync();
+}
+function providerOfSelect(providerVal, customBaseUrlId) {
+  if (providerVal === 'custom') return (document.getElementById(customBaseUrlId)?.value || '').trim();
+  return (PROVIDER_CONFIG[providerVal] && PROVIDER_CONFIG[providerVal].baseUrl) || '';
+}
+function prefillAiSelects(ai) {
+  ai = ai || {};
+  if (ai.apiKey) { const el = document.getElementById('apiKey'); if (el) el.value = ai.apiKey; }
+  const prov = detectProviderByBaseUrl(ai.apiBaseUrl || '');
+  const pSel = document.getElementById('apiProvider'); if (pSel) pSel.value = prov;
+  const custGroup = document.getElementById('customBaseUrlGroup'); if (custGroup) custGroup.style.display = prov === 'custom' ? '' : 'none';
+  if (prov === 'custom') { const cb = document.getElementById('customBaseUrl'); if (cb) cb.value = ai.apiBaseUrl || ''; }
+  fillModelSelect('apiModel', prov, ai.model || '');
+  // 多模态
+  const fbBase = ai.fallbackApiBaseUrl || '';
+  const fbProv = detectProviderByBaseUrl(fbBase);
+  const fbSel = document.getElementById('mmApiProvider'); if (fbSel) fbSel.value = fbProv;
+  const fbCustGroup = document.getElementById('mmCustomBaseUrlGroup'); if (fbCustGroup) fbCustGroup.style.display = fbProv === 'custom' ? '' : 'none';
+  if (fbProv === 'custom') { const cb = document.getElementById('mmCustomBaseUrl'); if (cb) cb.value = fbBase; }
+  if (ai.fallbackApiKey) { const el = document.getElementById('mmApiKey'); if (el) el.value = ai.fallbackApiKey; }
+  fillModelSelect('mmApiModel', fbProv, ai.fallbackModel || '');
+}
   const GOALS = [
     { key: 'tool',    name: '精准获客 · 卖产品', desc: '盯着有需求的人回，话术引导去用你的产品/扫码/点我头像。', guide: '打开小红书搜「{PRODUCT}」，或点我头像进主页看详细介绍' },
     { key: 'brand',   name: '品牌口碑 · 种草',   desc: '广撒网做口碑互动，把品牌可信度立住，不硬拉人去买。', guide: '' },
@@ -27,16 +122,10 @@
     '你有哪些亲身经验或案例（做过的事、帮过谁、踩过的坑），能用来建立信任和给建议？',
     '有没有具体的数字、价格、政策或行业数据，客户需要知道的？',
     '你最想让大家记住你的 2-3 个专业观点或干货结论是什么？',
-  ];
-  // 多模态模型（选配）：默认通义千问 Qwen3.7 Plus
-  const MM_PROVIDERS = {
-    qwen:    { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: [{ v: 'qwen3.7-plus', l: 'Qwen3.7 Plus（默认·均衡）' }, { v: 'qwen3.7-max', l: 'Qwen3.7 Max（旗舰）' }, { v: 'qwen-vl-max-latest', l: 'Qwen-VL Max（图像理解）' }, { v: 'qwen-plus', l: 'Qwen Plus' }, { v: 'qwen-max', l: 'Qwen Max' }] },
-    openai:  { baseUrl: 'https://api.openai.com/v1', models: [{ v: 'gpt-4.1', l: 'GPT-4.1' }, { v: 'gpt-4o', l: 'GPT-4o' }] },
-    custom:  { baseUrl: '', models: [{ v: '', l: '自定义（在下方地址填）' }] },
-  };
+];
   const DEFAULT = {
     product: { name: '我的产品', promoGoal: '', guideText: '', description: '', sellPoints: [] },
-    ai: { apiKey: '', apiBaseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', temperature: 0.8, maxTokens: 2000 },
+    ai: { apiKey: '', apiBaseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-v4-flash', temperature: 0.8, maxTokens: 2000 },
   };
 
   const $ = (s) => document.getElementById(s);
@@ -54,13 +143,11 @@
     return r;
   }
 
-  let step = 1;
+let step = 1;
+  let restored = false; // 已从备份恢复 → 跳过 AI 配置填写
   let cfg = null;
-  let selProvider = 'deepseek';
   let selGoal = 'tool';
-  let selMM = 'qwen';
   let mmOpen = false;
-  let mmModel = 'qwen3.7-plus';
   let spItems = [];
   let wizPersonaText = '';
   let wizKbItems = [];
@@ -245,54 +332,11 @@ function paintSteps() {
     $('nextB').innerHTML = n === 1 ? '下一步：验证账号' : '下一步';
   }
 
-  function paintProviders() {
-    const box = $('providers'); box.innerHTML = '';
-    Object.keys(PROVIDERS).forEach(key => {
-      const el = document.createElement('div');
-      el.className = 'provider' + (key === selProvider ? ' on' : '');
-      el.textContent = { deepseek: 'DeepSeek', openai: 'OpenAI', qwen: '通义千问', qianfan: '百度千帆', siliconflow: '硅基流动', custom: '自定义' }[key];
-      el.onclick = () => { selProvider = key; paintProviders(); paintModels(); };
-      box.appendChild(el);
-    });
-    paintModels();
-  }
-  function paintModels() {
-    const m = $('model');
-    const prov = PROVIDERS[selProvider] || PROVIDERS.custom;
-    m.innerHTML = '';
-    prov.models.forEach(x => { const o = document.createElement('option'); o.value = x.v; o.textContent = x.l; m.appendChild(o); });
-    if (cfg && cfg.ai.apiKey && !cfg.ai.model) { /* keep default */ }
-    $('baseUrl').placeholder = prov.baseUrl || 'https://…/v1';
-  }
-  function paintMMProviders() {
-    const box = $('mmProviders'); if (!box) return; box.innerHTML = '';
-    Object.keys(MM_PROVIDERS).forEach(key => {
-      const el = document.createElement('div');
-      el.className = 'provider' + (key === selMM ? ' on' : '');
-      el.textContent = { qwen: '通义千问', openai: 'OpenAI', custom: '自定义' }[key];
-      el.onclick = () => { selMM = key; paintMMProviders(); paintMMModel(); };
-      box.appendChild(el);
-    });
-    paintMMModel();
-  }
-  function paintMMModel() {
-    const m = $('mmModel'); if (!m) return;
-    const prov = MM_PROVIDERS[selMM] || MM_PROVIDERS.custom;
-    m.innerHTML = '';
-    prov.models.forEach(x => {
-      const o = document.createElement('option'); o.value = x.v; o.textContent = x.l;
-      if (x.v === mmModel) o.selected = true;
-      m.appendChild(o);
-    });
-    const b = $('mmBaseUrl'); if (b) b.placeholder = prov.baseUrl || 'https://…/v1';
-    if (b && !b.dataset.touched) b.value = prov.baseUrl || '';
-  }
-  function toggleMM() {
+function toggleMM() {
     mmOpen = !mmOpen;
     const body = $('mmBody'); const caret = $('mmCaret');
     if (body) body.classList.toggle('hidden', !mmOpen);
     if (caret) caret.textContent = mmOpen ? '－' : '＋';
-    if (mmOpen) paintMMProviders();
   }
   function paintGoals() {
     const box = $('goals'); box.innerHTML = '';
@@ -307,10 +351,12 @@ function paintSteps() {
 
 function validStep(n) {
     if (n === 1) {
-      const prov = PROVIDERS[selProvider] || PROVIDERS.custom;
-      const baseUrl = $('baseUrl').value.trim() || prov.baseUrl;
-      if (!/^https?:\/\//i.test(baseUrl)) { alert('请填一个正确的 API 地址（以 http:// 开头）'); return false; }
-      if (selProvider !== 'custom' && !baseUrl) { alert('请填 API 地址'); return false; }
+      if (restored) return true; // 已从备份恢复 → AI 配置已存在，无需再填
+      const prov = $('apiProvider').value;
+      if (prov === 'custom') {
+        const cu = $('customBaseUrl').value.trim();
+        if (!/^https?:\/\//i.test(cu)) { alert('请填一个正确的自定义 API 地址（以 http:// 开头），或改选上方服务商'); return false; }
+      }
       if (!$('apiKey').value.trim()) { alert('请填 API Key'); return false; }
     }
     return true;
@@ -333,19 +379,21 @@ async function next() {
   }
 
 async function saveAll() {
-    const prov = PROVIDERS[selProvider] || PROVIDERS.custom;
     // 快捷设置只保存 AI 配置；产品/人设/知识库/内容规划在「账号诊断」工作流里配置
     const merged = deepMerge(cfg, {
-      ai: { apiKey: $('apiKey').value.trim(), apiBaseUrl: $('baseUrl').value.trim() || prov.baseUrl, model: $('model').value },
+      ai: {
+        apiKey: $('apiKey').value.trim(),
+        apiBaseUrl: providerOfSelect($('apiProvider').value, 'customBaseUrl') || 'https://api.deepseek.com/v1',
+        model: $('apiModel').value.trim() || 'deepseek-v4-flash',
+      },
     });
-    // 多模态模型（选配）：填了 key 才启用，默认 qwen3.7-plus
+    // 多模态模型（选配）：填了 key 才启用
     const mmKey = $('mmApiKey') ? $('mmApiKey').value.trim() : '';
     if (mmKey) {
-      const mmProv = MM_PROVIDERS[selMM] || MM_PROVIDERS.custom;
-      const mmBase = ($('mmBaseUrl') ? $('mmBaseUrl').value.trim() : '') || mmProv.baseUrl;
-      const mmM = $('mmModel') ? $('mmModel').value.trim() : '';
+      const mmBase = providerOfSelect($('mmApiProvider').value, 'mmCustomBaseUrl');
+      const mmM = $('mmApiModel') ? $('mmApiModel').value.trim() : '';
       if (mmBase && mmM) { merged.ai.fallbackApiKey = mmKey; merged.ai.fallbackApiBaseUrl = mmBase; merged.ai.fallbackModel = mmM; }
-    }
+    } else { merged.ai.fallbackApiKey = merged.ai.fallbackApiBaseUrl = merged.ai.fallbackModel = ''; }
     await setCfg(merged);
     await setSt('wizard_done', Date.now());
     cfg = merged;
@@ -372,32 +420,59 @@ btn.innerHTML = '✓ 已通过'; btn.disabled = true;
     }
   }
 
-  async function prefillVerify() {
+async function prefillVerify() {
     await saveAll();
     await loadBound();
     $('nextB').style.display = 'none';
     $('verifyBtn').textContent = '验证并完成';
   }
 
-  async function init() {
+  // 从备份文件一键恢复：成功后带出 AI 配置，本步免填
+  function wireRestore() {
+    const btn = $('restoreBtn');
+    const file = $('restoreFile');
+    const msg = $('restoreMsg');
+    if (!btn || !file || !msg) return;
+    btn.onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      msg.classList.remove('ok', 'err', 'info', 'hidden');
+      msg.style.display = ''; msg.style.color = 'var(--sub)';
+      msg.textContent = '正在读取备份文件…';
+      let backup = null;
+      try { backup = JSON.parse(await f.text()); }
+      catch (_) { msg.style.color = '#c62828'; msg.textContent = '❌ 文件不是合法的 JSON 备份'; return; }
+      if (!backup || !backup.tenants || !backup.data) { msg.style.color = '#c62828'; msg.textContent = '❌ 不是有效的备份文件（缺 tenants/data）'; return; }
+      msg.textContent = '正在合并导入备份数据…';
+      let r = null;
+      try { r = await chrome.runtime.sendMessage({ action: 'importAllData', data: { backup } }); } catch (e) { r = null; }
+      if (!r || !r.ok) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + ((r && r.error) || '后台未响应'); return; }
+      // 重新读取已被恢复的配置，预填 AI 字段
+      cfg = await getCfg();
+      restored = !!(cfg.ai && (cfg.ai.apiKey || cfg.ai.fallbackApiKey));
+      prefillAiSelects(cfg.ai);
+      const n = r.importedTenants || 0;
+      msg.classList.add('ok'); msg.style.color = '#3dd68c';
+      msg.textContent = restored
+        ? '✅ 已导入 ' + n + ' 个产品，AI 配置已就绪，本步可跳过 AI 填写，直接点「下一步：验证账号」。'
+        : '✅ 已导入 ' + n + ' 个产品，但备份里没有 AI Key，请继续在下方填写 AI 配置。';
+      setSt('wizard_done', Date.now()); // 恢复即视为配置已就绪
+    };
+    file.addEventListener('change', () => { file.value = ''; });
+  }
+
+async function init() {
     cfg = await getCfg();
-    // 预填
-    if (cfg.ai.apiKey) { $('apiKey').value = cfg.ai.apiKey; }
-if (cfg.ai.apiBaseUrl) $('baseUrl').value = cfg.ai.apiBaseUrl;
-    for (const k of Object.keys(PROVIDERS)) { if (PROVIDERS[k].baseUrl && cfg.ai.apiBaseUrl === PROVIDERS[k].baseUrl) selProvider = k; }
-    // 多模态预填：已有 fallback 配置则对齐
-    if (cfg.ai.fallbackModel) mmModel = cfg.ai.fallbackModel;
-    const fbBase = cfg.ai.fallbackApiBaseUrl || '';
-    for (const k of Object.keys(MM_PROVIDERS)) { if (MM_PROVIDERS[k].baseUrl && fbBase === MM_PROVIDERS[k].baseUrl) selMM = k; }
-    if (cfg.ai.fallbackApiKey) { $('mmApiKey').value = cfg.ai.fallbackApiKey; $('mmBaseUrl').value = fbBase; $('mmBaseUrl').dataset.touched = '1'; }
-    paintProviders(); paintSteps(); showPage(1);
-    // 事件
+    // 事件优先绑定，即使预填出错也不影响按钮/下拉可用
+    try { wireRestore(); } catch (e) { console.error('[向导] wireRestore:', e); }
+    try { wireProviderSelects(); } catch (e) { console.error('[向导] wireProviderSelects:', e); }
+    try { prefillAiSelects(cfg.ai); } catch (e) { console.error('[向导] prefill:', e); }
+    try { paintSteps(); showPage(1); } catch (e) { console.error('[向导] 步骤渲染:', e); }
     $('nextB').onclick = next;
     $('prevB').onclick = prev;
     $('verifyBtn').onclick = doVerify;
     const mmToggle = $('mmToggle'); if (mmToggle) mmToggle.onclick = toggleMM;
-    const mmInputBase = $('mmBaseUrl'); if (mmInputBase) mmInputBase.addEventListener('input', () => { mmInputBase.dataset.touched = '1'; });
-    if (cfg.ai.apiKey) { $('model').value = cfg.ai.model || PROVIDERS[selProvider].models[0].v; }
   }
   init();
 })();

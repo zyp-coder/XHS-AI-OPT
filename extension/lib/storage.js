@@ -51,7 +51,7 @@ const DEFAULT_CONFIG = {
   ai: {
     apiKey: '',
     apiBaseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     temperature: 0.8,
     maxTokens: 4096,
     // 备用模型（主模型失败时自动切换，可选）
@@ -101,13 +101,23 @@ const DEFAULT_CONFIG = {
   // ★ AI客服：触达场景(A) + 客户问答话术库(B) —— 小红书获客/销售统一话术体系
   aiCustomerService: {
     scenes: {
-      comment_first: { name: '评论首评', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_comment_first', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
+      comment_first: { name: '评论首评', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '这条说得太实在了，我也曾是这么过来的。关键别闷头试，{卖点1}。想少走弯路的可以看看{购买入口}，我把它整理成能直接用的了。', promptScene: 'scen_comment_first', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
       comment_reply: { name: '评论回应', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 90, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_comment_reply', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
       dm_first: { name: '私信首触', enabled: true, purpose: 'sell', mode: 'draft', minChars: 60, maxChars: 150, toneMannerisms: '', guidance: '私信', useKb: true, template: '', promptScene: 'scen_dm_first', schedule: { gapMin: 30, gapMax: 90, dailyMax: 20 } },
       chat_follow: { name: '消息跟单', enabled: true, purpose: 'sell', mode: 'draft', minChars: 40, maxChars: 120, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_chat_follow', schedule: { gapMin: 30, gapMax: 90, dailyMax: 20 } },
-      after_sale: { name: '成交维护', enabled: true, purpose: 'brand', mode: 'draft', minChars: 40, maxChars: 120, toneMannerisms: '', guidance: '', useKb: true, template: '', promptScene: 'scen_after_sale', schedule: { gapMin: 60, gapMax: 180, dailyMax: 10 } },
+      after_sale: { name: '成交维护', enabled: true, purpose: 'brand', mode: 'draft', minChars: 40, maxChars: 120, toneMannerisms: '', guidance: '', useKb: true, template: '用到现在还顺手吗？有卡壳的地方别客气，直接跟我说，我帮你拆到能跑动。等跑顺了，把效果截图丢我看看，我再给你指指还能优化的点。', promptScene: 'scen_after_sale', schedule: { gapMin: 60, gapMax: 180, dailyMax: 10 } },
       notif_reply: { name: '通知回访', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '', promptScene: 'scen_notif_reply', schedule: { gapMin: 30, gapMax: 120, dailyMax: 15 } },
+      sales_close: { name: '销售促成', enabled: true, purpose: 'sell', mode: 'draft', minChars: 30, maxChars: 90, toneMannerisms: '', guidance: '私信', useKb: true, template: '', promptScene: 'scen_sales_close', schedule: { gapMin: 30, gapMax: 120, dailyMax: 15 } },
     },
+    // ★ 渠道基调（配置-通知）：按线索来源渠道定首触策略，话术一律 AI 生成，不手写固定话术
+    channels: {
+      comment: { name: '评论/回复', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_comment' },
+      like: { name: '点赞', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_like' },
+      follow: { name: '关注', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_follow' },
+      ai: { name: 'AI抓回', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_ai' },
+    },
+    // ★ 成交/引导（产品级一份，4 渠道共用）：怎么引导成交
+    guide: { deliver: '', tips: '' },
     qa: [
       { id: 'qa_logistics', category: '物流', keywords: ['几号发', '什么时候到', '有现货', '发货', '时效', '有没有货', '多久能收到'], mode: 'template', auto: 'draft', enabled: true, answer: '{产品}一般付款后 24 小时内发货（节假日顺延），默认快递，通常 2-3 天到。您留个收货地址我这就给您安排，到了我会第一时间提醒您。如果急用跟我说，我帮您备注加急尽早发出。' },
       { id: 'qa_detail', category: '产品细节', keywords: ['是什么', '怎么用', '几页', '多少', '包含什么', '有没有', '功能', '能不能这样'], mode: 'ai', auto: 'draft', enabled: true, answer: '按知识库+对方具体一句现场作答；骨架：关键在{卖点1}/{卖点2}/{卖点3}，需要可发成品图/案例参考。' },
@@ -161,12 +171,12 @@ async function initializeDefaults(defaultPrompts) {
 async function getConfig() {
   let cfg = await get(KEYS.CONFIG);
   cfg = deepMerge(DEFAULT_CONFIG, cfg || {});
-  // ★ 默认模型自动迁移：推理模型（v4-flash/v4-pro 等）思考过程常占满输出上限导致正文为空、
-  //   又慢又贵；本项目任务均为常规文本生成，非推理模型（deepseek-chat 等）更快更稳。
-  //   老配置里若仍是推理模型 → 自动切换并记住旧模型名（中转站不认新模型名时由 ai-client 自动回退）
+  // ★ 默认模型自动迁移：老版还在用已下线的 deepseek-chat → 自动切到新 deepseek-v4-flash；
+  //   不要再把 v4 模型改回聊天模型（deepseek-chat 已下线）。_modelLocked 时尊重手动。
   const MODEL_OVERRIDE = {
-    'deepseek-v4-flash': 'deepseek-chat',
-    'deepseek-v4-pro': 'deepseek-chat',
+    'deepseek-chat': 'deepseek-v4-flash',
+    'deepseek-reasoner': 'deepseek-v4-pro',
+    'deepseek-ai/DeepSeek-V3.2': 'deepseek-ai/DeepSeek-V3.2',
     'deepseek-ai/DeepSeek-V4-Flash': 'deepseek-ai/DeepSeek-V3.2',
     'deepseek-ai/DeepSeek-V4-Pro': 'deepseek-ai/DeepSeek-V3.2',
   };
@@ -358,8 +368,6 @@ const DEFAULT_AUTO_WATER_CONFIG = {
     dailyMax: 20,
     perRound: 10,          // 每轮灌水建议处理笔记篇数（随拟人挡位联动）
     kwIdx: 0,              // 当前要搜索的关键词下标（逐词推进：灌完一个点下一个，不批量刷新）
-    autoAdvance: false,    // 自动推进总开关（严格流水线）
-    autoStopWhen: 'perRound', // 判据：perRound=处理满每轮篇数算一词灌完；all=处理完当前词全部未灌才算
     activeHoursStart: 9,
     activeHoursEnd: 22,
   },
@@ -453,7 +461,7 @@ async function clearWaterLogs() {
 }
 
 /* ─── 获客清单 ─── */
-async function getProspectList() {
+async function getProspectList(includeDiscarded) {
   const raw = (await get(KEYS.PROSPECT_LIST)) || [];
   if (!Array.isArray(raw)) return [];
   // v2 䞩时迁移：命中旧结构则转换，一次性落库（幂等）
@@ -464,6 +472,7 @@ async function getProspectList() {
     return person;
   });
   if (anyChanged) await set(KEYS.PROSPECT_LIST, list);
+  // ★ 返回全部记录（含标废）；"隐藏标废"由前端渲染决定，避免底层读把数据滤没导致清单空
   return list;
 }
 
@@ -509,14 +518,28 @@ function _originToEntry(origin) {
   return _ORIGIN_TO_ENTRY[origin] || '';
 }
 
-// 无显式 stage 时，依据入口口径 + 旧状态推断所在层（二级：lead / prospect）
+// 是否"已接触"：有会话 / 私信已实质推进（非 pending）# / 客户状态在经营中
+// 是否已建立"双向对话"（对方回过你 / 主动找你 / 回你评论）→ 才是真商机。
+// 仅"我发出私信 / 我打开会话 / 我触达过"对方还没回 → 不算（留在线索池待回复）。
+function _isTwoWay(person) {
+  if (!person || typeof person !== 'object') return false;
+  if (person.themReplied) return true;                        // 对方回过
+  if (person.inbound) return true;                            // 对方主动私信你（进线）
+  if (person.convId && (person.unread || person.themReplied)) return true; // 有会话且对方来过消息
+  const fu = person.funnel && person.funnel.step;
+  if (fu && (fu === 'replied' || fu === 'talking' || fu === 'closed')) return true; // 进入已回复之后的阶段
+  const cs = String(person.customerStatus || '');
+  if (cs && ['intent', 'sales', 'after_sale', 'dormant'].includes(cs)) return true;
+  // ★ 双向只认"真·进消息里说过话"（inbound / themReplied / convId+对方来消息）。
+  //   通知页的"回评/回复/关注/点赞"即使对方回应过，只要还没进私信就算线索（lead），
+  //   推进靠"我方用话术回复→进入消息→对方再回"才升商机。
+  return false;
+}
+
+// 层判定：由【是否已建立双向对话】决定。
+// 未双向（仅被触达/有意愿）→ 线索池(lead)；对方回过/主动 → 商机池(prospect)。
 function _inferStage(person) {
-  const entry = person.stageEntry || (person.source && person.source.stageEntry) || _originToEntry(person.origin);
-  // 主动/对话/被主动联系 → 商机池；被动信号 → 线索池待接触
-  if (entry === 'AI路由' || entry === '评论跟进' || entry === '回复' || entry === '消息' || entry === '手动') return 'prospect';
-  if (person.dmStatus === 'converted') return 'prospect';
-  if (String(person.customerStatus || '') && ['intent', 'sales', 'after_sale', 'dormant'].includes(person.customerStatus)) return 'prospect';
-  return 'lead'; // 默认待接触：点赞/关注/关键词/普通评论先进线索池
+  return _isTwoWay(person) ? 'prospect' : 'lead';
 }
 
 /**
@@ -559,6 +582,17 @@ function _migrateOldProspect(p) {
   if (m.account) { delete m.account; changed = true; }
   if (m.stage === 'customer') { m.stage = 'prospect'; if (!m.funnel) m.funnel = { step: 'closed', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null }; if (!m.status) m.status = '已成交'; changed = true; }
 
+  // ── ②b 新规则：非双向（对方未回过/未主动）的商机 → 降回线索池，标"已触达·待回复" ──
+  if (m.stage === 'prospect' && !_isTwoWay(m)) {
+    const wasTouched = !!(String(m.dmStatus || '') && _STEP_FROM_DM[String(m.dmStatus)]) || !!(m.funnel && (m.funnel.step === 'touched' || m.funnel.step === 'pending'));
+    m.stage = 'lead';
+    if (m.funnel) { delete m.funnel; changed = true; }
+    delete m.status; changed = true;
+    if (wasTouched) m.awaitingReply = true;
+    if (m.themReplied) { m.themReplied = false; changed = true; }
+    if (!m.lead) { m.lead = { signalCount: 0, signals: [], lastSignalAt: null }; changed = true; }
+  }
+
   // ── ③ affinity：意向仅作排序权重 ──
   if (!m.affinity) { m.affinity = { intentLevel: p.intentLevel || (p.profile && p.profile.intentLevel) || 'medium' }; changed = true; }
 
@@ -566,6 +600,18 @@ function _migrateOldProspect(p) {
   const src = (m.source && typeof m.source === 'object') ? m.source : {};
   if (!src.stageEntry) { src.stageEntry = _originToEntry(p.origin) || (isLiker ? '点赞' : (m.stage === 'prospect' ? 'AI路由' : '评论')); changed = true; }
   m.source = src;
+
+  // ── ④b 会话方向（direction）：老记录兜底推导。真进线→inbound；我发过/有过会话→outbound；否则空(通知/评论未进线) ──
+  if (!m.direction) {
+    const sent = String(m.dmStatus || '') && _STEP_FROM_DM[String(m.dmStatus)];
+    if (m.inbound || m.stageEntry === '消息' || src.stageEntry === '消息') m.direction = 'inbound';
+    else if (m.convId || sent || (m.funnel && m.funnel.step && m.funnel.step !== 'pending')) m.direction = 'outbound';
+    else m.direction = '';
+    changed = true;
+  } else if (m.direction !== 'inbound' && m.direction !== 'outbound') {
+    m.direction = (m.inbound || src.stageEntry === '消息') ? 'inbound' : '';
+    changed = true;
+  }
 
   // ── ⑤ 清 v1 旧字段 ──
   if (!p.stage) {
@@ -602,6 +648,59 @@ function _coerceUpdateStages(updates) {
   return out;
 }
 
+/* ─── 多来源渠道(channels[])：每条记录保留历次渠道，供「用户清单」一人多来源展示 ─── */
+function _chEntryOf(person) {
+  return (person && (person.stageEntry || (person.source && person.source.stageEntry))) || (person && person.origin ? _originToEntry(person.origin) : '') || '';
+}
+function _channelOfEntry(e) {
+  if (e === '关注') return '关注';
+  if (e === '点赞' || e === '收藏') return '点赞&收藏';
+  if (e === '回复' || e === '评论' || e === '互动') return '评论';
+  if (e === 'AI路由' || e === '关键词命中' || e === '评论跟进') return 'AI';
+  return '';
+}
+function _makeChannelObj(person) {
+  const src = (person && person.source) || {};
+  const entry = _chEntryOf(person);
+  return {
+    type: _channelOfEntry(entry) || '评论',
+    entry: entry || '评论',
+    comment: src.comment || (person && person.likedComment) || '',
+    noteTitle: src.noteTitle || '',
+    userUrl: src.userUrl || '',
+    nTime: (person && person.nTime) || null,
+    nTimeStr: (person && person.nTimeStr) || '',
+    signalText: src.signalText || (person && person.likedComment) || '',
+  };
+}
+function _legacyChannel(prev) {
+  const e = (prev && (prev.source && prev.source.stageEntry)) || (prev && prev.origin ? _originToEntry(prev.origin) : '');
+  if (!e) return [];
+  return [{ type: _channelOfEntry(e) || '评论', entry: e, comment: (prev.source && prev.source.comment) || prev.likedComment || '', noteTitle: (prev.source && prev.source.noteTitle) || '', userUrl: (prev.source && prev.source.userUrl) || '', nTime: prev.nTime || null, nTimeStr: prev.nTimeStr || '', signalText: (prev.source && prev.source.signalText) || '' }];
+}
+function _mergeChannels(existing, ch) {
+  const out = Array.isArray(existing) ? existing.slice() : [];
+  const has = (c) => c && c.type && String(c.type) === String(ch.type);
+  const i = out.findIndex(has);
+  if (i >= 0) out[i] = { ...out[i], ...ch, type: out[i].type };
+  else out.push(ch);
+  return out;
+}
+
+// 给已有记录追加一个渠道（已存在在触发场景：通知采集时同一个人第二次/更多次渠道命中）
+async function appendChannel(id, person) {
+  if (!id || !person) return { ok: false };
+  const list = await getProspectList();
+  const idx = list.findIndex(p => p && p.id === id);
+  if (idx < 0) return { ok: false };
+  const rec = list[idx];
+  const merged = { ...rec };
+  merged.channels = _mergeChannels(Array.isArray(rec.channels) ? rec.channels : _legacyChannel(rec), _makeChannelObj(person));
+  list[idx] = merged;
+  await set(KEYS.PROSPECT_LIST, list);
+  return { ok: true };
+}
+
 async function addProspect(person) {
   const list = await getProspectList();
   // ★ 去重：稳定主键 = userId（或从 source.userUrl 里的 /user/profile/{id} 提取），
@@ -625,6 +724,11 @@ async function addProspect(person) {
     merged.origin = _originWin(prev.origin || '', person.origin || prev.origin || '');
     merged.isLiker = !!(prev.isLiker || person.isLiker);
     merged.likedComment = merged.likedComment || prev.likedComment || '';
+    // 多来源：合并历次渠道（同渠道更新，跨渠道追加）
+    merged.channels = _mergeChannels(
+      Array.isArray(prev.channels) ? prev.channels : _legacyChannel(prev),
+      _makeChannelObj(person)
+    );
     list[idx] = merged;
     await set(KEYS.PROSPECT_LIST, list);
     return { added: false, person: list[idx] };
@@ -643,13 +747,36 @@ const entry = {
     convId: person.convId || '',   // ★ 消息中心会话 id（/chat/{convId}），用于消息台直接跳转目标会话
     affinity: { intentLevel: (person.profile && person.profile.intentLevel) || person.intentLevel || 'medium' },
     chatHistory: Array.isArray(person.chatHistory) ? person.chatHistory : null, // 评论跟进的历史对话（记录我们跟对方说过啥）
+    // ★ 私信进线：对方主动私信你（inbound）+ 未读标记 + 最近一条消息
+    inbound: !!person.inbound,
+    direction: (person.direction === 'inbound' || person.direction === 'outbound') ? person.direction : (person.inbound ? 'inbound' : ''),
+    unread: person.unread === true,
+    lastMsg: person.lastMsg || '',
+    lastConvFp: (person.lastConvFp && typeof person.lastConvFp === 'object') ? person.lastConvFp : null, // 最近见过会话最后消息 {msg,at}
+    // ★ 双向对话：对方回过你（themReplied）/ 已触达待回复（awaitingReply）
+    themReplied: !!(person.themReplied || person.inbound),
+    themRepliedAt: person.themRepliedAt || null,
+    promotedHow: person.promotedHow || '',
+    awaitingReply: person.awaitingReply === true,
+    // ★ 通知：AI 产品相关性标记 + 通知真实时间（新建条目必须显式保存，否则丢失）
+    aiTag: person.aiTag || null,
+    nTime: person.nTime || null,
+    nTimeStr: person.nTimeStr || '',
+    // 多来源渠道（历次信号）
+    channels: Array.isArray(person.channels) ? person.channels : [_makeChannelObj(person)],
+    order: person.order !== undefined ? person.order : null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
   // 客户层已废弃：调用方仍传 customer → 收敛到商机
   if (entry.stage === 'customer') entry.stage = 'prospect';
   // 补齐层内容器
-  if (entry.stage === 'prospect') { entry.funnel = { step: _STEP_FROM_DM[person.dmStatus] || 'pending', dmCount: person.dmCount || 0, lastDmAt: person.lastDmAt || null }; entry.status = person.status || _STATUS_FROM_STEP[entry.funnel.step] || _DEFAULT_PROSPECT_STATUS; }
+  if (entry.stage === 'prospect') {
+    const twoWay = person.themReplied || person.inbound || entry.inbound || entry.themReplied;
+    const step = twoWay ? 'replied' : (_STEP_FROM_DM[person.dmStatus] || 'pending');
+    entry.funnel = { step, dmCount: person.dmCount || 0, lastDmAt: person.lastDmAt || null };
+    entry.status = person.status || _STATUS_FROM_STEP[step] || _DEFAULT_PROSPECT_STATUS;
+  }
   else entry.lead = { signalCount: person.isLiker ? 1 : 0, signals: person.isLiker ? ['liked'] : [], lastSignalAt: person.isLiker ? Date.now() : null };
   list.unshift(entry);
   await set(KEYS.PROSPECT_LIST, list);
@@ -668,10 +795,38 @@ async function updateProspect(id, updates) {
   return list[idx];
 }
 
-async function deleteProspect(id) {
-  const list = await getProspectList();
-  await set(KEYS.PROSPECT_LIST, list.filter(p => p.id !== id));
+async function deleteProspect(id, opts) {
+  const hard = !!(opts && opts.hard);
+  const list = await getProspectList(true); // 含已废弃，标废的不因换视图丢失
+  const next = [];
+  for (const p of list) {
+    if (p.id !== id) { next.push(p); continue; }
+    if (hard) continue; // 彻底删除：直接丢弃该记录
+    next.push({ ...p, status: '已废弃' }); // 软标废 = 把状态改成"已废弃"（进回收站，可恢复）
+  }
+  await set(KEYS.PROSPECT_LIST, next);
   return { ok: true };
+}
+
+// 清空获客清单（一键全清）
+async function clearProspectList() {
+  await set(KEYS.PROSPECT_LIST, []);
+  return { ok: true, cleared: true };
+}
+
+// 按桶清空（msg=消息/进线；notif=通知）：只删该桶记录，其它桶保留
+async function clearProspectBucket(bucket) {
+  const list = await getProspectList(true); // 含已废弃，删不依赖视图
+  const isMsg = p => !!(p && (p.inbound || p.direction === 'inbound' || (p.source && p.source.stageEntry === '消息')));
+  const next = [];
+  let removed = 0;
+  for (const p of list) {
+    const inBuck = bucket === 'msg' ? isMsg(p) : !isMsg(p);
+    if (inBuck) { removed++; continue; }
+    next.push(p);
+  }
+  await set(KEYS.PROSPECT_LIST, next);
+  return { ok: true, bucket, removed };
 }
 
 /* ─── AI客服：触达场景(A) + 客户问答话术库(B) 配置（按租户隔离，深合并默认） ─── */
@@ -679,6 +834,8 @@ async function getAiCsConfig() {
   const cfg = await getConfig();
   return {
     scenes: cfg.aiCustomerService && cfg.aiCustomerService.scenes ? cfg.aiCustomerService.scenes : DEFAULT_CONFIG.aiCustomerService.scenes,
+    channels: cfg.aiCustomerService && cfg.aiCustomerService.channels ? cfg.aiCustomerService.channels : DEFAULT_CONFIG.aiCustomerService.channels,
+    guide: cfg.aiCustomerService && cfg.aiCustomerService.guide ? cfg.aiCustomerService.guide : DEFAULT_CONFIG.aiCustomerService.guide,
     qa: (cfg.aiCustomerService && Array.isArray(cfg.aiCustomerService.qa)) ? cfg.aiCustomerService.qa : DEFAULT_CONFIG.aiCustomerService.qa,
   };
 }
@@ -782,7 +939,7 @@ const Storage = {
   getChatFollowState, setChatFollowState,
   getChatFollowReplyHistory, addChatFollowReplyHistory,
   // prospect list (获客清单)
-  getProspectList, saveProspectList, addProspect, updateProspect, deleteProspect,
+  getProspectList, saveProspectList, addProspect, updateProspect, deleteProspect, clearProspectList, clearProspectBucket, appendChannel,
   getDmHistory, addDmRecord,
   // AI客服：场景+问答话术
   getAiCsConfig, saveAiCsConfig,

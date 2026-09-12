@@ -140,6 +140,103 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   } catch (_) {}
 })();
 
+/* ═══════════════ 双引擎专用标签页管理（water / touch） ═══════════════
+ * 目的：灌水引擎的「水 tab」与 客服/触达引擎的「触达 tab」各自独立、自动创建、自动分组着色，
+ *       彻底避免两个引擎抢同一个 XHS 标签页（双发/串号/导航错乱）。
+ * 绑定存 chrome.storage.session（SW 休眠恢复后仍在，关 popup 不丢）。
+ */
+const ENGINE_TABS_KEY = '_engine_tabs';   // { water: tabId, touch: tabId }
+
+async function _etRead() {
+  try { const d = await chrome.storage.session.get(ENGINE_TABS_KEY); return d[ENGINE_TABS_KEY] || {}; } catch (_) { return {}; }
+}
+async function _etWrite(bindings) {
+  try { await chrome.storage.session.set({ [ENGINE_TABS_KEY]: bindings }); } catch (_) {}
+}
+
+const ENGINE_TAB_META = {
+  water: { label: '灌水', color: 'green', url: 'https://www.xiaohongshu.com/explore' },
+  touch: { label: '客服', color: 'purple', url: 'https://www.xiaohongshu.com/notification' },
+  msg: { label: '消息', color: 'blue', url: 'https://www.xiaohongshu.com/chat' },
+};
+
+async function _etValid(tabId) {
+  if (!tabId) return null;
+  try { const t = await chrome.tabs.get(tabId); if (t && /xiaohongshu\.com/.test(t.url || '')) return t; return null; } catch (_) { return null; }
+}
+
+async function _etGroup(tabId, kind) {
+  const meta = ENGINE_TAB_META[kind] || {};
+  const groupTitle = meta.label === '灌水' ? '💧 灌水工作台' : '🎧 客服工作台';
+  try {
+    let gid = null;
+    try { gid = await chrome.tabs.group({ tabIds: [tabId] }); } catch (_e) { gid = null; }
+    if (gid != null && gid !== undefined && typeof chrome.tabGroups !== 'undefined' && chrome.tabGroups.update) {
+      try { await chrome.tabGroups.update(gid, { title: groupTitle, color: meta.color || 'grey' }); } catch (_) {}
+    }
+    try { await chrome.tabs.update(tabId, { title: groupTitle }); } catch (_) {}
+  } catch (_) {}
+}
+
+/* 取指定引擎的标签页；不存在/失效则用「没被另一引擎占用的 xhs 页」或新建，并绑定+分组着色 */
+async function getEngineTab(kind, preferredUrl) {
+  const bindings = await _etRead();
+  const other = kind === 'water' ? 'touch' : 'water';
+  const bound = await _etValid(bindings[kind]);
+  if (bound) return bound;
+  let tab = null;
+  try {
+    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+    const otherId = bindings[other] || 0;
+    // 消息引擎：绝不抢占用户的任何一个现存 xhs 标签页（否则会劫持通知/灌水/手头页面），永远自建专属页
+    if (kind === 'msg') {
+      tab = await chrome.tabs.create({ url: preferredUrl || ENGINE_TAB_META[kind].url, active: false });
+      if (tab) { try { await waitTabLoadBg(tab.id, 15000); } catch (_) {} }
+    } else {
+      tab = tabs.find(t => t.id !== otherId) || tabs[0] || null;
+    }
+  } catch (_) {}
+  if (!tab) {
+    try { tab = await chrome.tabs.create({ url: preferredUrl || ENGINE_TAB_META[kind].url, active: false }); }
+    catch (_) { throw new Error('无法创建' + ENGINE_TAB_META[kind].label + '标签页，请确认已授予标签页权限'); }
+    try { await waitTabLoadBg(tab.id, 15000); } catch (_) {}
+  }
+  bindings[kind] = tab.id;
+  await _etWrite(bindings);
+  await _etGroup(tab.id, kind);
+  return tab;
+}
+
+/* 显式把某个 tab 绑定为某引擎（引擎启动时确认自己用的 tab） */
+async function bindEngineTab(kind, tabId) {
+  if (!tabId) return { ok: false, error: '缺少 tabId' };
+  const bindings = await _etRead();
+  bindings[kind] = tabId;
+  await _etWrite(bindings);
+  await _etGroup(tabId, kind);
+  return { ok: true, tabId };
+}
+async function getEngineTabsStatus() {
+  const bindings = await _etRead();
+  const out = {};
+  for (const k of ['water', 'touch']) {
+    const t = await _etValid(bindings[k]);
+    out[k] = t ? { tabId: t.id, url: t.url } : null;
+  }
+  return out;
+}
+
+/* tab 关闭时清掉对应绑定，避免拿到失效 id */
+chrome.tabs.onRemoved.addListener(function (tabId) {
+  _etRead().then(function (b) {
+    let changed = false;
+    if (b.water === tabId) { delete b.water; changed = true; }
+    if (b.touch === tabId) { delete b.touch; changed = true; }
+    if (b.msg === tabId) { delete b.msg; changed = true; }
+    if (changed) _etWrite(b);
+  });
+});
+
 /* ─── 消息路由 ─── */
 // autoWater 版本闸门：当前版本无一键灌水功能时直接抦截，不执行真正逻辑
 async function requireAutoWater(fn) {
@@ -213,8 +310,8 @@ async function accountBindStatus() {
 async function _probeVerifyInTabs() {
   const sleep = (ms) => new Promise(res => setTimeout(res, ms));
   let tabs = [];
-  try { tabs = await chrome.tabs.query({ url: ['*://www.xiaohongshu.com/*', '*://xiaohongshu.com/*'] }); } catch (_) { return { status: 'noTab', titles: [] }; }
-  if (!tabs.length) return { status: 'noTab', titles: [] };
+  try { tabs = await chrome.tabs.query({ url: ['*://www.xiaohongshu.com/*', '*://xiaohongshu.com/*'] }); } catch (_) { return { status: 'noTab', titles: [], tabs: [] }; }
+  if (!tabs.length) return { status: 'noTab', titles: [], tabs: [] };
   const titles = tabs.slice(0, 6).map(t => t.title || t.url || '').filter(Boolean);
 
   // ★ 关键修复：content 脚本可能刚注入/在 document_idle 还没就绪，导致第一次发消息无人接收。
@@ -230,15 +327,15 @@ async function _probeVerifyInTabs() {
       responded = true;
       if (r.matched) {
         // 已写入缓存（content 内 _verifyOwnProfile 成功时自动写 _acct_guard）
-        return { status: 'ok', titles, verified: true, matched: true, checkedXhsId: r.checkedXhsId, name: r.name || '', reason: r.reason || '' };
+        return { status: 'ok', titles, tabs, verified: true, matched: true, checkedXhsId: r.checkedXhsId, name: r.name || '', reason: r.reason || '' };
       }
       // 脚本能回、但确实没匹配 = 结果已确定，无需干等重试
-      return { status: 'notOwn', titles, verified: false, matched: false, checkedXhsId: r.checkedXhsId, name: r.name || '', reason: r.reason || '' };
+      return { status: 'notOwn', titles, tabs, verified: false, matched: false, checkedXhsId: r.checkedXhsId, name: r.name || '', reason: r.reason || '' };
     }
     if (!responded && attempt < ATTEMPTS - 1) await sleep(350); // 页面还没就绪，稍等再试
   }
   // 几轮都没响应 → 还是旧页面/未注入
-  return { status: 'stale', titles, verified: false, matched: false };
+  return { status: 'stale', titles, tabs, verified: false, matched: false };
 }
 
 /**
@@ -266,7 +363,21 @@ async function guaranteeBoundAccount(forceNow) {
     return { ok: false, bound: true, verified: false, xhsId: st.xhsId, name: st.name, code: 'needOwnProfile', reason: '没找到任何打开的小红书页面' + tabTxt + '。请先打开一个小红书网页标签，登录该号并进入自己的「我的」主页（保持网页打开），再回来点「验证」。' };
   }
   if (res.status === 'stale') {
-    return { ok: false, bound: true, verified: false, xhsId: st.xhsId, name: st.name, code: 'needOwnProfile', reason: '检测到你打开了小红书页面' + tabTxt + '，但它还是旧页面，无法识别。请在那个小红书网页里按一次 F5 刷新，再回来点「验证」。' };
+    // ★ 已打开小红书页但 content 未注入（旧页面）→ 自动 Ctrl+F5（强制刷缓存重载）+ 重新注入 + 再探测，免用户手按 F5
+    const reloadTabs = (res.tabs || []).filter(t => typeof t.id === 'number');
+    if (reloadTabs.length) {
+      try {
+        for (const t of reloadTabs) { try { await chrome.tabs.reload(t.id, { bypassCache: true }); } catch (_) {} }
+        await _sleepBg(1600); // 等重载完成
+        for (const t of reloadTabs) { try { await chrome.scripting.executeScript({ target: { tabId: t.id }, files: ['content.js'] }); } catch (_) {} }
+        const r2 = await _probeVerifyInTabs();
+        if (r2.status === 'ok') {
+          const fresh = await accountBindStatus();
+          return { ok: true, bound: true, verified: true, xhsId: fresh.xhsId, name: fresh.name, autoReloaded: true };
+        }
+      } catch (_) {}
+    }
+    return { ok: false, bound: true, verified: false, xhsId: st.xhsId, name: st.name, code: 'needOwnProfile', reason: '检测到你打开了小红书页面' + tabTxt + '，已自动刷新一次仍未识别。请确认切到你自己的小红书「我的」主页（不是首页、不是别人的主页），保持该页面打开，再点一次「验证」。' };
   }
   // notOwn：有页面、脚本也能回，但不是本人的「我的」主页
   return { ok: false, bound: true, verified: false, xhsId: st.xhsId, name: res.name || st.name, code: 'needOwnProfile', reason: (res.reason || '当前打开的不是本人「我的」主页') + tabTxt + '。请把浏览器切到你自己的小红书「我的」主页（不是首页、不是别人的主页），并保持这个页面打开再重新验证。' };
@@ -338,9 +449,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getProspectList: (data) => requireProspectList(() => handleGetProspectList(data)),
     updateProspect: (data) => requireProspectList(() => handleUpdateProspect(data)),
     deleteProspect: (data) => requireProspectList(() => handleDeleteProspect(data)),
+    clearProspects: () => requireProspectList(() => Storage.clearProspectList()),
+    clearProspectBucket: (data) => requireProspectList(() => Storage.clearProspectBucket(data && data.bucket)),
     getChatConversations: (data) => requireProspectList(() => handleGetChatConversations(data)),
+    syncChatInbound: (data) => requireProspectList(() => handleSyncChatInbound(data || {})),
     openChat: (data) => requireProspectList(() => handleOpenChat(data)),
     chatSend: (data) => requireProspectList(() => handleChatSend(data)),
+    scanChatReply: (data) => requireProspectList(() => handleScanChatReply(data || {})),
+    setAutoScanChat: (data) => handleSetAutoScanChat(data || {}),
+    // ── 消息中心：同步会话 与 出站发送 ──
+    messageCenterSync: (data) => handleMessageCenterSync(data || {}),
+    messageCenterFlushOutbox: (data) => handleMessageCenterFlushOutbox(data || {}),
     // ── AI客服：场景+问答话术体系 ──
     getAiCsConfig: () => handleGetAiCsConfig(),
     saveAiCsConfig: (data) => handleSaveAiCsConfig(data || {}),
@@ -365,14 +484,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     enrichProspectByProfile: (data) => requireProspectList(() => handleEnrichByProfile(data)),
     openDmChat: (data) => requireProspectList(() => handleOpenDmChat(data)),
     locateDmButton: (data) => requireProspectList(() => handleLocateDmButton(data)),
+    // ── 双引擎专用标签页管理（water / touch）──
+    getEngineTab: async (data) => { const kind = (data && data.kind) === 'touch' ? 'touch' : 'water'; const t = await getEngineTab(kind); return { tabId: t.id }; },
+    bindEngineTab: async (data) => await bindEngineTab((data && data.kind) || 'water', data && data.tabId),
+    getEngineTabs: async () => await getEngineTabsStatus(),
     // ── 窗口形态：小窗(浮动) → 大窗(总览) 切换 ──
     openBigWindow: (data) => openBigWindow(data.senderTab),
     // ── ✍️ 发笔记（受 knowledge 版本闸门控制）──
     aiRewriteNote: (data) => requireKnowledge(() => aiRewriteNoteBg(data)),
     aiGenerateSellPoints: (data) => requireKnowledge(() => aiGenerateSellPointsBg(data)),
+    genDefaultAiCS: (data) => handleGenDefaultAiCS(data || {}),
+    optimizeDm: (data) => handleOptimizeDm(data || {}),
+    batchGenDmDrafts: (data) => handleBatchGenDmDrafts(data || {}),
     aiGenerateConcept: (data) => requireKnowledge(() => aiGenerateConceptBg(data)),
     aiGenerateSelfComment: (data) => requireKnowledge(() => aiGenerateSelfCommentBg(data)),
     generateNoteImage: (data) => requireKnowledge(() => generateNoteImageBg(data)),
+    aiCoverLayout: (data) => requireKnowledge(() => aiCoverLayoutBg(data || {})),
+    aiKbTree: (data) => requireKnowledge(() => aiKbTreeBg(data || {})),
+    genPromptPack: (data) => requireKnowledge(() => genPromptPackBg(data || {})),
     genCoverTemplate: (data) => requireKnowledge(() => genCoverTemplateBg(data)),
   };
 
@@ -1286,6 +1415,66 @@ function buildChatFollowConversations(items) {
   return conversations;
 }
 
+/* ─── 客户留邮箱检测 + 上报后端（供后续打包资料给客户 / 通知客户） ─── */
+const CUSTOMER_EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
+const CUSTOMER_API_BASE = 'http://127.0.0.1:8000/api/customers';
+const MESSAGE_API_BASE = 'http://127.0.0.1:8000/api/messages';
+
+// ── 消息中心：通用 POST 到本地后端（失败静默，不阻塞核心链路）──
+function postMsgBackend(path, body, timeoutMs) {
+  return new Promise((resolve) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
+    fetch(MESSAGE_API_BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+      signal: ctrl.signal,
+    }).then(r => r.json()).then(resolve).catch(() => resolve(null)).finally(() => clearTimeout(t));
+  });
+}
+function getMsgBackend(path, timeoutMs) {
+  return new Promise((resolve) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
+    fetch(MESSAGE_API_BASE + path, { signal: ctrl.signal })
+      .then(r => r.json()).then(resolve).catch(() => resolve(null)).finally(() => clearTimeout(t));
+  });
+}
+
+// 扫描 AI客服会话里「对方(user)发送的消息」，发现含邮箱 → 上报本地后端（去重；失败静默）
+function reportCustomerEmails(config, conversations) {
+  const product = (config && config.product && config.product.name) || '';
+  const seen = new Set();
+  for (const [userId, conv] of Object.entries(conversations || {})) {
+    const texts = [];
+    for (const m of (conv.history || [])) {
+      if (m && m.role === 'user' && m.content) texts.push(m.content);
+    }
+    if (conv.pendingIncoming) texts.push(conv.pendingIncoming);
+    for (const t of texts) {
+      const m = (String(t) || '').match(CUSTOMER_EMAIL_RE);
+      if (!m) continue;
+      const email = m[0].toLowerCase();
+      if (seen.has(email)) continue;
+      seen.add(email);
+      const body = {
+        email,
+        xhs_user_id: userId || '',
+        nickname: (conv && conv.userName) || '',
+        text: String(t).slice(0, 200),
+        scene: 'chat_follow',
+        product,
+      };
+      fetch(CUSTOMER_API_BASE + '/report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json()).catch(() => {});
+    }
+  }
+}
+
 /* ─── 评论跟进：同步通知页 → 重建会话并落库 ─── */
 async function handleChatFollowSync(data) {
   const rebuilt = buildChatFollowConversations((data && data.items) || []);
@@ -1326,6 +1515,12 @@ async function handleChatFollowSync(data) {
   state.conversations = conversations;
   state.lastSyncAt = Date.now();
   await Storage.setChatFollowState(state);
+
+  // ★ 检测客户是否已留邮箱 → 上报本地后端（供后续打包资料/通知客户；失败静默不阻塞）
+  try {
+    const cfg = await Storage.getConfig();
+    reportCustomerEmails(cfg, conversations);
+  } catch (_) {}
 
   // （AI客服并入消息台后，不再自动把通知对话塞进展获客清单——通知只喂线索池，由 collectLikers 统一采集）
 
@@ -1541,7 +1736,7 @@ async function handleAddProspect(data) {
 
 /* ─── 获客清单：获取列表（支持筛选） ─── */
 async function handleGetProspectList(data) {
-  let list = await Storage.getProspectList();
+  let list = await Storage.getProspectList(!!(data && data.includeDiscarded));
   const f = (data && data.filter) || {};
   if (f.keyword) {
     const kw = String(f.keyword).toLowerCase();
@@ -1565,7 +1760,15 @@ async function handleGetProspectList(data) {
       if (!tagSet.has(t)) { tagSet.add(t); allTags.push(t); }
     }
   }
-  return { ok: true, list, allTags, total: (await Storage.getProspectList()).length };
+  // 【诊断】同时量"活动 key 原始 / 当前租户快照 / 返回 list"，定位数据到底在哪
+  let rawActive = 0, snapCount = 0, curId = '';
+  try {
+    rawActive = (Array.isArray((await chrome.storage.local.get('prospect_list'))['prospect_list']) ? (await chrome.storage.local.get('prospect_list'))['prospect_list'].length : 0);
+    curId = await TenantManager.getCurrentId();
+    const snap = (await chrome.storage.local.get(TenantManager.TENANT_KEYS.DATA_PREFIX + curId))[TenantManager.TENANT_KEYS.DATA_PREFIX + curId] || {};
+    snapCount = Array.isArray(snap.prospect_list) ? snap.prospect_list.length : 0;
+  } catch (_) {}
+  return { ok: true, list, allTags, total: (await Storage.getProspectList()).length, _rawActive: rawActive, _snapCount: snapCount, _cur: curId };
 }
 
 /* ─── 获客清单：更新候选人 ─── */
@@ -1576,22 +1779,22 @@ async function handleUpdateProspect(data) {
   return { ok: true, person };
 }
 
-/* ─── 获客清单：删除候选人 ─── */
+/* ─── 获客清单：标废/删除候选人（软标废可恢复；hard=true 彻底删） ─── */
 async function handleDeleteProspect(data) {
-  return await Storage.deleteProspect(data.id);
+  return await Storage.deleteProspect(data.id, data);
 }
 
 /* ─── 获客清单：批量画像（prospect_profiler） ─── */
 async function handleProfileProspects(data) {
   const config = await Storage.getConfig();
   if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先在设置页面填写');
-  const candidates = (data.candidates || []).filter(c => c && c.userId && c.nickname);
+  const candidates = (data.candidates || []).filter(c => c && (c.userId || c.id) && c.nickname);
   if (candidates.length === 0) throw new Error('没有待画像的候选人');
 
   let promptTemplate = await Storage.getPrompt('prospect_profiler');
   if (!promptTemplate) promptTemplate = DEFAULT_PROMPTS.prospect_profiler;
 
-  const commentsText = candidates.map(c => `${c.userId}｜昵称：${c.nickname}｜评论：${(c.source && c.source.comment) || ''}`).join('\n');
+  const commentsText = candidates.map(c => `${c.userId || c.id}｜昵称：${c.nickname}｜评论：${(c.source && c.source.comment) || ''}`).join('\n');
   const context = {
     note_title: (candidates[0].source && candidates[0].source.noteTitle) || '来源笔记',
     comments_text: commentsText,
@@ -1717,49 +1920,284 @@ async function handleClassifyCustomers(data) {
 }
 
 /* ─── 获客清单：批量收集通知页互动人群（点赞/收藏/回复/关注），按信号类型打标入库 ─── */
+const SCREEN_CURSOR_KEY = 'prospect_sync_cursor';
+const NOTIF_SCREEN_CAP = 300;   // 单次 AI 标记新增候选上限（一批几千人也够，一次处理完；仅开 AI 时用于分批标记）
+const NOTIF_SCREEN_CHUNK = 12; // 每块送去 AI 的人数
+
+// 新增候选 AI 筛选：只收与产品相关的互动；返回 { screened, decisions:{userId:{include,intent,reason}}, capped }
+async function handleScreenNotifLikers(candidates, cap) {
+  const config = await Storage.getConfig();
+  const hasAi = !!(config.ai && (config.ai.apiKey || config.ai.fallbackApiKey));
+  if (!hasAi) return { screened: false, decisions: {}, capped: 0 };
+  const product = config.product || {};
+  const sellPoints = (Array.isArray(product.sellPoints)
+    ? product.sellPoints.map(s => (s && (s.title || s.content)) ? ((s.title || '') + (s.content ? '：' + s.content : '')) : '').filter(Boolean)
+    : []).slice(0, 3).join('\n');
+  const context = {
+    product_name: product.name || '我的产品',
+    product_desc: String(product.description || '').slice(0, 120) || '（未填）',
+    sell_points: sellPoints || '（未填卖点）',
+    persona: getPersonaText(config) || '（未填人设，就按产品/卖点判断）',
+    deliver: String(product.guideText || product.cta || '私信我').trim().slice(0, 30),
+  };
+  let promptTemplate = await Storage.getPrompt('prospect_notif_screen');
+  if (!promptTemplate) promptTemplate = DEFAULT_PROMPTS.prospect_notif_screen;
+  const capN = Math.max(1, Math.min(cap || NOTIF_SCREEN_CAP, candidates.length));
+  const toJudge = candidates.slice(0, capN);
+  const decisions = {};
+  let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  for (let i = 0; i < toJudge.length; i += NOTIF_SCREEN_CHUNK) {
+    const chunk = toJudge.slice(i, i + NOTIF_SCREEN_CHUNK);
+    const lines = chunk.map(c => {
+      const content = String(c.signalText || c.likedNote || c.likedComment || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      return `${c.userId} ｜ ${c.nickname || '?'} ｜ ${c.signalType || '点赞'} ｜ 最近/来源内容：${content}`;
+    }).join('\n');
+    const ui = { candidates_text: lines };
+    const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(promptTemplate, { ...context, ...ui }, '');
+    const aiCfg = { ...config.ai, maxTokens: Math.max(config.ai.maxTokens || 4096, 1500) };
+    let parsed = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { const r = await AiClient.chatCompletion(aiCfg, systemPrompt, userPrompt); usage.prompt_tokens += (r.usage && r.usage.prompt_tokens) || 0; usage.completion_tokens += (r.usage && r.usage.completion_tokens) || 0; parsed = Utils.extractJson(r.content); if (parsed) break; }
+      catch (err) { if (attempt >= 2) throw err; }
+    }
+    if (!parsed) throw new Error('通知筛选 AI 返回无法解析');
+    const arr = Array.isArray(parsed) ? parsed : (parsed.results || []);
+    for (const d of arr) {
+      if (d && d.userId !== undefined) decisions[String(d.userId)] = { include: d.include !== false, intent: ['high', 'medium', 'low'].includes(d.intent) ? d.intent : 'medium', reason: d.reason || '', draft: String(d.draft || '').trim() };
+    }
+  }
+  await Storage.addAiLog({ scene: 'prospect_notif_screen', tokensIn: usage.prompt_tokens || 0, tokensOut: usage.completion_tokens || 0, success: true, candidateCount: toJudge.length });
+  return { screened: true, decisions, capped: candidates.length > capN ? (candidates.length - capN) : 0 };
+}
+
+// 私信进线 AI 筛选：只收"问产品/有实质需求"的人；刷号玩/寒暄/无关 → include=false（不落库）
+async function handleScreenChatInbound(candidates) {
+  const config = await Storage.getConfig();
+  const hasAi = !!(config.ai && (config.ai.apiKey || config.ai.fallbackApiKey));
+  if (!hasAi) return { screened: false, decisions: {} };
+  const product = config.product || {};
+  const sellPoints = (Array.isArray(product.sellPoints)
+    ? product.sellPoints.map(s => (s && (s.title || s.content)) ? ((s.title || '') + (s.content ? '：' + s.content : '')) : '').filter(Boolean)
+    : []).slice(0, 3).join('\n');
+  const context = {
+    product_name: product.name || '我的产品',
+    product_desc: String(product.description || '').slice(0, 120) || '（未填）',
+    sell_points: sellPoints || '（未填卖点）',
+  };
+  let promptTemplate = await Storage.getPrompt('prospect_inbound_screen');
+  if (!promptTemplate) promptTemplate = DEFAULT_PROMPTS.prospect_inbound_screen;
+  const decisions = {};
+  let usage = { prompt_tokens: 0, completion_tokens: 0 };
+  const CH = 12;
+  for (let i = 0; i < candidates.length; i += CH) {
+    const chunk = candidates.slice(i, i + CH);
+    const lines = chunk.map(c => `${c.convId} ｜ ${c.partnerName || '?'} ｜ 最近消息：${String(c.lastMsg || c.fullMsg || '').slice(0, 120)}`).join('\n');
+    const ui = { candidates_text: lines };
+    const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(promptTemplate, { ...context, ...ui }, '');
+    const aiCfg = { ...config.ai, maxTokens: Math.max(config.ai.maxTokens || 4096, 1500) };
+    let parsed = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { const r = await AiClient.chatCompletion(aiCfg, systemPrompt, userPrompt); usage.prompt_tokens += (r.usage && r.usage.prompt_tokens) || 0; usage.completion_tokens += (r.usage && r.usage.completion_tokens) || 0; parsed = Utils.extractJson(r.content); if (parsed) break; }
+      catch (err) { if (attempt >= 2) throw err; }
+    }
+    if (!parsed) throw new Error('进线筛选 AI 返回无法解析');
+    const arr = Array.isArray(parsed) ? parsed : (parsed.results || []);
+    for (const d of arr) {
+      if (d && d.convId !== undefined) decisions[String(d.convId)] = { include: d.include !== false, intent: ['high', 'medium', 'low'].includes(d.intent) ? d.intent : 'medium', reason: d.reason || '' };
+    }
+  }
+  await Storage.addAiLog({ scene: 'prospect_inbound_screen', tokensIn: usage.prompt_tokens || 0, tokensOut: usage.completion_tokens || 0, success: true, candidateCount: candidates.length });
+  return { screened: true, decisions };
+}
+
 async function handleCollectLikers(data) {
   const items = (data && data.items) || [];
-  if (!items.length) return { ok: true, added: 0, already: 0, total: 0 };
+  if (!items.length) return { ok: true, added: 0, already: 0, screened: 0, skipped: 0, total: 0 };
   const now = Date.now();
+  const wantScreen = (data && data.screen !== false);
+  const screenCap = (data && Number(data.cap)) || NOTIF_SCREEN_CAP;
+
+  // ── 现有清单索引：userId(lower) → 记录（判定新增/已存在；只在缺标记时补 aiTag，避免每轮刷新时间戳） ──
+  const existingById = new Map();
+  try { for (const p of await Storage.getProspectList()) if (p && p.userId) existingById.set(String(p.userId).toLowerCase(), p); } catch (_) {}
+  const _isReply = (it) => String(it.signalType || '') === '回复';
+  const _isJunkNoteText = (s) => /^(取消评论|删除评论|取消回复|撤回评论|将会清空|原评论已删除|原评论已删除，本条已被移除)$/.test(String(s || '').trim());
+
+  // ── AI"是否产品相关"标记：对整批重新 AI 判定，纠正历史错标（不只看没打标的）；
+  //    每次刷新都对涉及的 userId 重判，打标结论以最新抽样/最新提示词为准 ──
+  let decisions = {};
+  let capped = 0;
+  let aiError = '';
+  if (wantScreen) {
+    const pending = items.filter(it => it && (it.userId || it.userName));
+    const batch = pending.slice(0, screenCap);
+    capped = Math.max(0, pending.length - screenCap);
+    if (batch.length) {
+      try {
+        const scr = await handleScreenNotifLikers(batch, screenCap);
+        decisions = scr.decisions || {};
+        capped = Math.max(capped, scr.capped || 0);
+      } catch (e) {
+        aiError = (e && e.message) ? e.message : String(e);
+        console.warn('[产品相关标记] AI 失败:', aiError);
+      }
+    }
+  }
+  const screened = wantScreen ? Object.keys(decisions).length : 0;
+
+  // ── 写库：统一处理全部 item（新增走 addProspect；已存在只在缺/不同标记时补 aiTag）——一人一行靠 userId 去重；
+  //    回复仍=高意向直商机，但同样打"是否产品相关"标记，不剔除任何人 ──
   let added = 0, already = 0;
+  const intents = { high: 0, medium: 0, low: 0 };
   for (const it of items) {
-    if (!it.userId && !it.userName) continue;
-    // ★ 信号类型：点赞/收藏 → 线索；回复我们的评论 → 积极互动→商机；关注 → 线索
+    if (!it || (!it.userId && !it.userName)) continue;
+    const uidStr = String(it.userId || '');
+    const dec = decisions[uidStr];
     const type = it.signalType || '点赞';
-    const isReply = type === '回复';
-    const stageEntry = isReply ? '回复' : (type === '关注' ? '关注' : '点赞');
+    const isReply = (type === '回复');
+    const stageEntry = isReply ? '回复' : (type === '关注' ? '关注' : (type === '收藏' ? '收藏' : '点赞'));
+    const aiTag = dec ? { intent: dec.intent || 'medium', reason: (dec.reason || '').slice(0, 120) } : null;
+    const dmDraft = (dec && dec.draft) || '';
+    const ex = it.userId ? existingById.get(String(it.userId).toLowerCase()) : null;
+    if (ex) {
+      // 已存在：只在"尚无该 intent 标记"时才补 aiTag；缺时间则补 nTime（避免每轮刷 updatedAt）
+      const upd = {};
+      if (aiTag && (!ex.aiTag || ex.aiTag.intent !== aiTag.intent)) upd.aiTag = aiTag;
+      // ★ 刷新时已生成话术 → 存下来，批量触达直接用（避免再让 AI 写一次）；有更新就覆盖
+      if (dmDraft && (!ex.dmDraft || ex.dmDraft !== dmDraft)) upd.dmDraft = dmDraft;
+      // 自救：旧版误存过隐藏弹窗文案（ex: noteTitle「取消评论」）→ 新抓到真实正文时覆盖，修复历史脏数据
+      if (it.likedNote && _isJunkNoteText(ex.source && ex.source.noteTitle) && ex.source && ex.source.noteTitle !== it.likedNote) {
+        upd.source = { ...(ex.source || {}), noteTitle: it.likedNote };
+      }
+      if (it.ts && !ex.nTime) upd.nTime = it.ts;
+      if (it.timeStr && !ex.nTimeStr) upd.nTimeStr = it.timeStr;
+      if (Object.keys(upd).length) { try { await Storage.updateProspect(ex.id, upd); } catch (_) {} }
+      // ★ 多来源：同一个人第二次/更多次渠道命中 → 追加渠道（保留多来源）
+      try { await Storage.appendChannel(ex.id, { source: { stageEntry, signalType: type, comment: it.likedComment || '', noteTitle: it.likedNote || '', userUrl: it.userLink || '', signalText: it.signalText || it.likedComment || '' }, nTime: it.ts || null, nTimeStr: it.timeStr || '', likedComment: it.likedComment || '' }); } catch (_) {}
+      already++;
+      continue;
+    }
     const r = await Storage.addProspect({
       userId: it.userId || '',
       nickname: it.userName || '未知用户',
-      source: { noteTitle: it.likedNote || '', noteUrl: it.userLink || '', comment: it.likedComment || '', userUrl: it.userLink || '', stageEntry, signalType: type, signalText: it.likedComment || '' },
+      source: { noteTitle: it.likedNote || '', noteUrl: it.userLink || '', comment: it.likedComment || '', userUrl: it.userLink || '', stageEntry, signalType: type, signalText: it.signalText || it.likedComment || '' },
       dmStatus: 'pending',
-      isLiker: !isReply,            // 回复算积极互动（非"点赞户"）；其余互动仍标线索户
+      isLiker: !isReply,
       likedComment: it.likedComment || '',
       origin: '互动',
       keywordHit: '__' + type + '__',
-    });
-    if (r.added) added++; else already++;
+      intentLevel: (isReply ? 'high' : ((dec && dec.intent) || undefined)),
+      affinity: isReply ? { intentLevel: 'high' } : (dec ? { intentLevel: dec.intent } : undefined),
+      nTime: it.ts || null,
+      nTimeStr: it.timeStr || '',
+      aiTag,
+      dmDraft,
+    }).catch(() => ({ added: false }));
+    if (r && r.added) { added++; if (isReply) intents.high = (intents.high || 0) + 1; else if (dec && dec.intent) intents[dec.intent] = (intents[dec.intent] || 0) + 1; }
+    else already++;
   }
-  return { ok: true, added, already, total: items.length, ts: now };
+
+  // ── 回填昵称：把本轮采到的真实昵称，修正清单里"未知用户"占位（历史脏数据） ──
+  try {
+    const got = {};
+    for (const it of items) { if (it.userId && it.userName && it.userName !== '未知用户') got[String(it.userId).toLowerCase()] = it.userName; }
+    if (Object.keys(got).length) {
+      const plist = await Storage.getProspectList();
+      let fixed = 0;
+      for (const p of plist) {
+        if (!p || !p.userId) continue;
+        const nm = got[String(p.userId).toLowerCase()];
+        if (nm && (!p.nickname || p.nickname === '未知用户' || /^未知用户/.test(p.nickname))) {
+          try { await Storage.updateProspect(p.id, { nickname: nm }); fixed++; } catch (_) {}
+        }
+      }
+      if (fixed) console.log('[通知] 回填昵称 ' + fixed + ' 条');
+    }
+  } catch (_) {}
+
+  // ── 推进游标：不再使用（AI 标记已改为"只标未标记的人"，无需游标） —— 清掉旧游标避免干扰 ──
+  try { await chrome.storage.local.remove('prospect_sync_cursor'); } catch (_) {}
+  // ★ 立即把活动清单写回当前租户快照（防止后续快照重载把本次新增盖掉）
+  try { await TenantManager.snapshotCurrent(); } catch (_) {}
+  // ★ 抓取诊断：本次通知采集后，写入新增/已存在 + 清单总条数（判断是不是"采集到了但被覆盖/清空/租户隔离"）
+  try {
+    let total = -1;
+    try { total = (await Storage.getProspectList()).length; } catch (_) {}
+    console.warn('[抓取诊断·通知刷新] 收到=' + items.length + ' 新增=' + added + ' 已存在=' + already + ' 写后清单总条数=' + total);
+  } catch (_) {}
+  return { ok: true, added, already, screened, skipped: 0, intents, capped, aiError, total: items.length, ts: now, tabCounts: (data && data.tabCounts) || {} };
 }
 
 /* ─── 获客·消息台：驱动 /chat 页读取会话列表 / 跳到指定会话 ─── */
 async function _chatTab() {
   let tab = null;
-  try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  try {
+    // ★ 客服/触达优先落到「客服工作台」（专属 tab），避免和灌水共用一个页面
+    tab = await getEngineTab('touch');
+  } catch (_) { tab = null; }
+  if (!tab) {
+    try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  }
   if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
   return { tab };
 }
 function _chatUrlFor(convId) { return 'https://www.xiaohongshu.com/chat/' + String(convId || ''); }
 
+/* ─── 消息中心：专属「消息」标签页（独立于 灌水 water / 客服 touch）───
+ * 消息中心的 读会话/读明细/发私信 全部走这个专属 tab，
+ * 绝不占用「客服/触达」tab（否则会自动把通知页导航到 /chat，
+ * 导致用户刷新通知时被劫持跳转、并触发 bfcache 的 port 关闭报错）。
+ */
+async function _msgTab() {
+  let tab = null;
+  try { tab = await getEngineTab('msg'); } catch (_) { tab = null; }
+  if (!tab) {
+    try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  }
+  if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
+  return tab;
+}
+
+/* 在专属消息 tab 里导航到目标 URL 并注入 content.js
+ * activate=true 用于主动发送(需要 tab 可见焦点利于 contenteditable 输入)；
+ * 后台同步/采集默认 activate=false，静默导航，不打断用户当前操作。 */
+async function _msgNav(url, delayMs, activate) {
+  const tab = await _msgTab();
+  try { await chrome.tabs.update(tab.id, { url, active: !!activate }); await waitTabLoadBg(tab.id, 15000); } catch (_) {}
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  if (activate) await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
+  await _sleepBg(delayMs || 900);
+  return tab;
+}
+
 /* 读消息中心会话列表（导航到 /chat 再采集；返回与获客清单按昵称预匹配的结果） */
 async function handleGetChatConversations(data) {
-  const { tab } = await _chatTab();
-  try { await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/chat', active: true }); await waitTabLoadBg(tab.id, 15000); } catch (_) {}
+  const silent = !!(data && data.silent);
+  let tab;
+  if (silent) {
+    // ★ 后台自动扫描：绝不触碰用户正在看/正在刷的 tab，避免把通知页导航去 /chat 导致 bfcache 断端口。
+    //   资源只挑「后台聊天tab→后台任意xhs tab」，都没有就静默跳过本轮。
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs.find(t => !t.active && /\/chat/i.test(t.url || '')) || tabs.find(t => !t.active) || null;
+    } catch (_) { tab = null; }
+    if (!tab) { const e = new Error('无后台聊天tab，本轮自动扫描跳过（不影响正在用的页面）'); e.skip = true; throw e; }
+  } else {
+    const { tab: t } = await _chatTab();
+    tab = t;
+  }
+  const stealFocus = !silent;
+  try { await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/chat', active: stealFocus }); await waitTabLoadBg(tab.id, 15000); } catch (_) {}
   try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
   await _sleepBg(700);
+  // ★ 已入库 convId 集合：传给 content，让它"撞到已知即停"（增量；首装/清库时集合为空 → 全量回填基线）
+  //   全量模式(full=true，用户手动刷新消息)：集合置空 → 一路扫到底，把"有 /chat 会话却在通知桶"的人捞进消息桶
+  let knownConvIds = [];
+  if (!(data && data.full)) {
+    try { knownConvIds = (await Storage.getProspectList()).filter(p => p && p.convId).map(p => String(p.convId)).filter(Boolean); } catch (_) {}
+  }
   let res = null;
-  try { res = await sendTabMsg(tab.id, { action: 'collectChatConversations' }, 15000); } catch (e) { res = { success: false, error: e.message }; }
+  try { res = await sendTabMsg(tab.id, { action: 'collectChatConversations', knownConvIds }, 60000); } catch (e) { res = { success: false, error: e.message }; }
   if (!res || !res.success) throw new Error((res && res.error) || '读取消息中心失败');
   // 按昵称与获客清单预匹配（精确优先）
   const list = await Storage.getProspectList();
@@ -1770,7 +2208,8 @@ async function handleGetChatConversations(data) {
     const hit = byConv || byName;
     return { ...c, matched: !!hit, personId: hit ? hit.id : '', stage: hit ? (hit.stage || 'lead') : '', status: hit ? (hit.status || '') : '' };
   });
-  return { ok: true, items, total: items.length };
+  const targetInChat = (items || []).some(c => /星期|Crazy/i.test(String((c && c.partnerName) || '')));
+  return { ok: true, items, total: items.length, reachedBase: !!(res && res.reachedBase), targetInChat };
 }
 
 /* 跳到指定会话 (/chat/{convId}) */
@@ -1779,10 +2218,9 @@ async function handleOpenChat(data) {
   if (!convId) throw new Error('缺少会话 id');
   const { tab } = await _chatTab();
   try { await chrome.tabs.update(tab.id, { url: _chatUrlFor(convId), active: true }); await waitTabLoadBg(tab.id, 15000); } catch (err) { throw new Error('打开会话失败：' + (err && err.message ? err.message : err)); }
-  // 若带商机 → 记录 convId + 视为已联系(升商机)
+  // 若带商机 → 记录 convId + 清除未读（不再"打开即升商机"；升级由"对方回复"触发）
   if (data && data.personId) {
-    await Storage.updateProspect(data.personId, { convId }).catch(() => {});
-    await handleMarkContacted({ id: data.personId }).catch(() => {});
+    await Storage.updateProspect(data.personId, { convId, unread: false }).catch(() => {});
   }
   return { ok: true, opened: true, chatUrl: _chatUrlFor(convId) };
 }
@@ -1801,45 +2239,349 @@ async function handleChatSend(data) {
   try { res = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 30000); } catch (e) { res = { success: false, error: e.message }; }
   if (!res || !res.success) return { ok: false, error: (res && res.error) || '发送失败', limited: !!(res && res.limited) };
 
-  // 发送成功：命中商机 → 记录 convId + 联系即升格；未收录 → 按昵称收录为商机
+  // 发送成功：命中商机 → 记录 convId + 清除未读 + 标"已触达待回复"（不再自动升商机）；未收录 → 按昵称收录为线索(已触达)
   const personId = data && data.personId;
+  const fp = { msg: String(text || '').slice(0, 300), at: Date.now() };
   if (personId) {
-    await Storage.updateProspect(personId, { convId }).catch(() => {});
-    await handleMarkContacted({ id: personId }).catch(() => {});
+    await Storage.updateProspect(personId, { convId, unread: false, awaitingReply: true, lastDmAt: Date.now(), lastMsg: text, lastConvFp: fp, direction: 'outbound' }).catch(() => {});
   } else if (data && data.partnerName) {
-    await Storage.addProspect({ userId: '', nickname: data.partnerName, source: { noteUrl: _chatUrlFor(convId), noteTitle: '消息中心', comment: '', stageEntry: '消息' }, stage: 'prospect', convId }).catch(() => {});
+    await Storage.addProspect({ userId: '', nickname: data.partnerName, source: { noteUrl: _chatUrlFor(convId), noteTitle: '消息中心', comment: '', stageEntry: '消息' }, convId, awaitingReply: true, lastMsg: text, lastConvFp: fp, direction: 'outbound' }).catch(() => {});
   }
   return { ok: true, via: res.via, sent: true };
 }
 
+/* ─── 消息中心：增量同步 小红书 /chat 会话 → 本地后端 ───
+ * 轻量只读会话列表(不点开任何人) POST /sync → 后端 diff 返回需要完整同步的 convId(通常很少)，
+ * 只对这些会话点开采集完整消息时间线上报 POST /messages。
+ */
+// 远程落地：把"已读回的 /chat 会话摘要"上报到后端 /sync；后端要完整时间线的（need_full）才展开单条
+async function _syncChatRemote(items, productHint) {
+  const cfg = await Storage.getConfig();
+  const product = String(productHint || (cfg && cfg.product && cfg.product.name) || '');
+  const payload = (items || []).map((c) => ({
+    conv_id: c.convId || '',
+    partner_id: '',
+    partner_name: c.partnerName || '',
+    avatar: c.avatar || '',
+    last_msg: c.lastMsg || '',
+    last_from: c.lastFrom || '',
+    last_at: c.time ? String(c.time) : '',
+    unread_count: c.unreadCount || 0,
+    source: '消息',
+    fp: String(c.lastMsg || '') + (c.time || '') + (c.unreadCount || 0) + (c.lastFrom || ''),
+  }));
+  const synced = await postMsgBackend('/sync', { product, items: payload }, 8000);
+  const needFull = (synced && Array.isArray(synced.need_full)) ? synced.need_full : [];
+  let full = 0;
+  for (const convId of needFull) {
+    try {
+      const col = await collectFullConversation(convId, product);
+      if (col && col.added !== undefined) full++;
+    } catch (_) {}
+  }
+  return { items: payload.length, needFull: needFull.length, full, created: (synced && synced.created) || 0, updated: (synced && synced.updated) || 0 };
+}
+
+async function handleMessageCenterSync(data) {
+  let collectRes = [];
+  try { collectRes = await collectConversationListBg(); } catch (_) {}
+  const r = await _syncChatRemote(collectRes, data && data.product);
+  console.log('[消息中心] 同步完成 上报=' + r.items + ' 需展开=' + r.needFull + ' 已见消息=' + r.full);
+  return { ok: true, list: r.items, synced: r.updated, newly: r.created, needFull: r.needFull, full: r.full };
+}
+
+// 在专属消息 tab 里读 /chat 会话列表（背景侧，不碰其他工作台 tab）
+async function collectConversationListBg() {
+  const tab = await _msgNav('https://www.xiaohongshu.com/chat', 800, false);
+  let knownConvIds = [];
+  try { knownConvIds = (await Storage.getProspectList()).filter(p => p && p.convId).map(p => String(p.convId)).filter(Boolean); } catch (_) {}
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'collectChatConversations', knownConvIds }, 60000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) return [];
+  return res.items || [];
+}
+
+// 打开专属消息 tab 的指定会话 → 采集完整消息时间线 → 上报
+async function collectFullConversation(convId, product) {
+  const tab = await _msgNav(_chatUrlFor(convId), 900, false);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'collectChatMessages' }, 16000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success || !res.messages) return null;
+  return postMsgBackend('/' + encodeURIComponent(convId) + '/messages', { product, messages: res.messages }, 8000);
+}
+
+// ★ 合并周期（prospect-scan 每次触发它）：读 /chat 列表一次（撞到已知即停）→ 同一份摘要「本地消息桶」+「远程后端 /sync(含 need_full 展开)」双落地。
+async function runMsgCenterCycle() {
+  // 出站发送（仅在有待发送指令时才去 /chat 发）
+  try { await handleMessageCenterFlushOutbox({ limit: 10 }); } catch (_) {}
+  let items = [];
+  try {
+    const g = await handleGetChatConversations({ silent: true }); // 单次列表扫描（后台 tab，不抢焦点/不碰你正在看的页）
+    items = g.items || [];
+  } catch (_) { items = []; }
+  let local = { added: 0, updated: 0, unread: 0 };
+  try { local = await _mergeChatListLocal(items); } catch (_) {}   // 本地落地（只增/改，不删）
+  try { await _syncChatRemote(items); } catch (_) {}                // 远程落地
+  console.log('[消息中心] 合并周期：读列表=' + items.length + ' 本地：新增=' + local.added + ' 更新=' + local.updated + ' 未读=' + local.unread);
+}
+
+// ★ 统一自动周期（prospect-scan 每次触发）：先静默刷新通知，再跑消息+消息中心合并周期
+async function runAutoCycle() {
+  try { await handleCollectLikersFromNotif({ silent: true }); } catch (_) {} // 通知刷新（后台 tab，不抢前台）
+  try { await runMsgCenterCycle(); } catch (_) {}                            // 消息 + 消息中心
+  try { await runAutoTouchCycle(); } catch (_) {}                            // 写：对清单里合适的人自动 AI 触达（并入同一周期）
+}
+
+// ★ 自动跟单（写步骤）：并入 prospect-scan 合并周期 —— 读扫新的顺手对清单里合适的人自动 AI 触达。
+//   复用原 auto-touch 引擎的过滤条件与每日上限（默认 10/天），避免一次轰太多触发风控。
+const AUTO_TOUCH_MAX = 10;
+async function _touchDailyStat() {
+  try {
+    const d = await chrome.storage.local.get('_auto_touch_daily');
+    const v = (d && d['_auto_touch_daily']) || {};
+    return v.date === new Date().toDateString() ? (v.count || 0) : 0;
+  } catch (_) { return 0; }
+}
+async function _touchBumpDaily(n) {
+  try { await chrome.storage.local.set({ '_auto_touch_daily': { date: new Date().toDateString(), count: n } }); } catch (_) {}
+}
+async function runAutoTouchCycle() {
+  let list = [];
+  try { const r = await handleGetProspectList({}); list = (r && Array.isArray(r.list)) ? r.list : []; } catch (_) { list = []; }
+  let prodKws = [];
+  try {
+    const cfg = await Storage.getConfig();
+    prodKws = (cfg && cfg.product && Array.isArray(cfg.product.targetKeywords)) ? cfg.product.targetKeywords.filter(Boolean) : [];
+  } catch (_) {}
+  const now = Date.now();
+  const relevant = (p) => {
+    if ((p.stage || 'lead') === 'prospect') return true;                      // 商机（对方回过/主动）→ 直接可跟单
+    if (p.intentLevel === 'high' || p.intentLevel === 'medium') return true; // AI 通知筛选已判相关
+    if (p.profile && (p.profile.needs || p.profile.painPoints)) return true; // 有画像=有意向
+    if (!prodKws.length) return true;                                         // 未配关键词 → 不拦截路人
+    const src = p.source || {};
+    const hay = [src.noteTitle || '', src.comment || '', src.signalText || '', p.nickname || ''].join(' ').toLowerCase();
+    return prodKws.some((k) => String(k || '').toLowerCase() && hay.indexOf(String(k).toLowerCase()) !== -1);
+  };
+  const eligibles = list.filter((p) => {
+    if (!p || !p.id) return false;
+    if (p.dmBlocked) return false;
+    if (!relevant(p)) return false;                                           // 刷号玩/与产品无关的点赞 → 不发
+    const dmCount = (p.dmCount || (p.funnel && p.funnel.dmCount) || 0);
+    if (dmCount >= 3) return false;
+    if ((p.stage || 'lead') === 'customer') return false;
+    if (p.lastDmAt && dmCount > 0 && now - p.lastDmAt < 2 * 24 * 3600000) return false; // 两日内刚跟单过的不重复打扰
+    return true;
+  });
+  const daily = await _touchDailyStat();
+  const budget = Math.max(0, AUTO_TOUCH_MAX - daily);
+  if (budget <= 0) return;
+  const queue = eligibles.slice(0, budget);
+  if (!queue.length) return;
+  console.log('[自动跟单] 本轮 ' + queue.length + ' 人开始触达（今日已用 ' + daily + '/' + AUTO_TOUCH_MAX + '）');
+  let sent = 0;
+  for (const to of queue) {
+    let text = '';
+    try { const g = await handleGenerateDm({ person: to }); text = (g && g.dmText) || ''; } catch (_) { text = ''; }
+    if (!text) { console.log('[自动跟单] 跳过一次（未生成话术）'); continue; }
+    try {
+      const dr = await handleSendDm({ person: to, text, aiGenerated: true });
+      if (dr && dr.ok !== false) sent++;
+    } catch (_) {}
+    await _sleepBg(2500 + Math.floor(Math.random() * 6000));
+  }
+  await _touchBumpDaily(daily + sent);
+  console.log('[自动跟单] 本轮完成，实际发送 ' + sent + ' 条（今日累计 ' + (daily + sent) + '/' + AUTO_TOUCH_MAX + '）');
+}
+
+// 在专属消息 tab 里打开会话并真实发送一条私信（发送需要激活 focus 利于 contenteditable 输入）
+async function _msgSend(convId, text) {
+  const tab = await _msgNav(_chatUrlFor(convId), 1100, true);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 30000); } catch (e) { res = { success: false, error: e.message }; }
+  const limited = !!(res && res.limited);
+  return { ok: !!(res && res.success), sent: !!(res && res.success), limited, error: (res && res.error) || '' };
+}
+
+/* ─── 消息中心：出站发送队列 —— 从后端拉取 Web 端"一键发送"指令，真实发出并回写 ─── */
+async function handleMessageCenterFlushOutbox(data) {
+  const out = await getMsgBackend('/outbox?limit=' + ((data && data.limit) || 10), 6000);
+  const tasks = (out && Array.isArray(out.tasks)) ? out.tasks : [];
+  let sent = 0, failed = 0;
+  for (const t of tasks) {
+    if (!t.conv_id) { await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: '缺conv_id' }); failed++; continue; }
+    try {
+      const r = await _msgSend(t.conv_id, t.text);       // 走专属消息 tab，不碰客服/通知 tab
+      if (r.ok && r.sent) {
+        await postMsgBackend('/outbox/' + t.id + '/done', { success: true });
+        sent++;
+      } else {
+        await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: r.error || '发送失败' });
+        failed++;
+      }
+    } catch (e) {
+      await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: String((e && e.message) || e) });
+      failed++;
+    }
+    await _sleepBg(1200);
+  }
+  return { ok: true, sent, failed };
+}
+
+// ★ 私信进线同步：拉 /chat 会话，未收录的人自动收进商机池(对方主动找你=已接触)，已匹配的更新未读/最近消息 ───
+// ★ 增量边界：上次同步时间(游标)；首用今天零点
+// 本地落地：把"已读回的 /chat 会话摘要"增量合并进本机消息桶（只增/改，永不删除）
+async function _mergeChatListLocal(items) {
+  const list = await Storage.getProspectList();
+  const norm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+  let added = 0, updated = 0, unreadTotal = 0;
+  const unmatched = [];
+  const _isMsg = p => !!(p && (p.inbound || p.direction === 'inbound' || (p.source && p.source.stageEntry === '消息')));
+  for (const c of (items || [])) {
+    if (!c || !c.convId) continue;
+    let rec = null;
+    if (c.personId) rec = list.find(x => x.id === c.personId);
+    if (!rec) rec = list.find(x => x.convId && x.convId === c.convId);
+    if (!rec) { const byName = list.filter(x => norm(x.nickname) === norm(c.partnerName)); if (byName.length) rec = byName[0]; }
+    if (rec && !_isMsg(rec)) {
+      // ★ 命中「通知桶」记录（点赞/评论等线索）：不要把它翻成消息桶 —— 让对方在【通知】和【消息】两处都可见，状态双向同步。
+      //   若该会话已有一条消息桶记录则复用更新；否则新建一条消息桶记录，原通知桶记录保持不动。
+      const msgSib = list.find(x => _isMsg(x) && x.id !== rec.id && (
+        (x.convId && c.convId && x.convId === c.convId) ||
+        norm(x.nickname) === norm(c.partnerName) ||
+        (rec.userId && x.userId === rec.userId)
+      ));
+      if (msgSib) {
+        rec = msgSib;
+      } else {
+        unmatched.push(Object.assign({}, c, { userId: rec.userId || '' }));
+        if (c.hasUnread) unreadTotal++;
+        continue;
+      }
+    }
+    if (rec) {
+      const curMsg = String(c.fullMsg != null && c.fullMsg ? c.fullMsg : (c.lastMsg || '')).trim();
+      const base = rec.lastConvFp || null;
+      const baseMsg = (base && base.msg) ? String(base.msg).trim() : '';
+      const hasBaseline = baseMsg !== '';
+      const theirsNew = hasBaseline && curMsg !== '' && curMsg !== baseMsg;
+      const updates = { lastMsg: c.lastMsg || '', unread: !!(c.hasUnread) };
+      updates.lastFrom = c.hasUnread ? 'them' : 'me'; // 收发方：未读=对方最新；否则=我方最新
+      if ('order' in c) updates.order = c.order;
+      if (!rec.convId && c.convId) updates.convId = c.convId;
+      if (curMsg !== '') updates.lastConvFp = { msg: curMsg, at: (c.timeTs || c.time || '') };
+      if (rec.stage !== 'prospect' && (c.hasUnread || theirsNew)) {
+        await promoteToProspect(rec.id, 'inbound', theirsNew ? '对方 /chat 新消息（已读也识别）' : '对方在 /chat 回了你').catch(() => {});
+      }
+      await Storage.updateProspect(rec.id, updates).catch(() => {});
+      updated++;
+    } else {
+      unmatched.push(c);
+    }
+    if (c.hasUnread) unreadTotal++;
+  }
+  // ★ 未收录：一律收进消息桶（增量累积，不按 AI 筛、不删历史）
+  for (const c of unmatched) {
+    const r = await Storage.addProspect({
+      userId: c.userId || '',
+      nickname: c.partnerName || '未知用户',
+      source: { noteTitle: '私信触达', noteUrl: _chatUrlFor(c.convId), comment: c.lastMsg || '', userUrl: '', stageEntry: '消息', signalType: '私信' },
+      inbound: !!(c.hasUnread),
+      direction: (c.hasUnread ? 'inbound' : 'outbound'),
+      unread: !!(c.hasUnread),
+      lastFrom: c.hasUnread ? 'them' : 'me',
+      awaitingReply: true,
+      stage: undefined,
+      convId: c.convId,
+      lastMsg: c.lastMsg || '',
+      order: ('order' in c) ? c.order : undefined,
+      lastConvFp: { msg: String(c.fullMsg != null && c.fullMsg ? c.fullMsg : (c.lastMsg || '')).slice(0, 300), at: (c.timeTs || c.time || '') },
+    }).catch(() => ({ added: false }));
+    if (r && r.added) added++;
+    else updated++;
+  }
+  // ★ 入库即触达：凡在消息桶出现（有 /chat 会话）→ 同一个人（按 userId/昵称）的通知渠道记录 待触达/空 → 已触达
+  //   用"合并后清单里的消息桶人员"判定，不依赖本次 /chat 是否读 0，保证稳定生效。
+  try {
+    const fresh = await Storage.getProspectList();
+    const _nm = (s) => String(s || '').replace(/\s+/g, '').toLowerCase();
+    const msgKeys = new Set();
+    for (const q of fresh) {
+      if (!q || !q.id) continue;
+      if (!(q.inbound || q.direction === 'inbound' || (q.source && q.source.stageEntry === '消息') || q.convId)) continue; // 只收集消息桶人员
+      if (q.userId) msgKeys.add('id:' + String(q.userId).toLowerCase());
+      const kn = _nm(q.nickname);
+      if (kn && kn !== '未知用户') msgKeys.add('nick:' + kn);
+    }
+    for (const q of fresh) {
+      if (!q || !q.id) continue;
+      if (q.inbound || q.direction === 'inbound' || (q.source && q.source.stageEntry === '消息')) continue; // 消息桶本身不用管
+      const kId = q.userId ? 'id:' + String(q.userId).toLowerCase() : '';
+      const kn = _nm(q.nickname);
+      const kNi = (kn && kn !== '未知用户') ? 'nick:' + kn : '';
+      if ((kId && msgKeys.has(kId)) || (kNi && msgKeys.has(kNi))) {
+        const s = (q.status === '已回复') ? '谈单中' : (q.status || '');
+        if (s === '' || s === '待触达' || q.stage === 'lead') {
+          await Storage.updateProspect(q.id, { status: '已触达' }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) {}
+  // ★ 立即把活动清单写回当前租户快照，防止"本段新增"在后续快照重载时被旧快照盖掉
+  try { await TenantManager.snapshotCurrent(); } catch (_) {}
+  return { added, updated, unread: unreadTotal };
+}
+
+async function handleSyncChatInbound(data) {
+  const g = await handleGetChatConversations({ ...data });
+  const r = await _mergeChatListLocal(g.items || []);
+  return { ok: true, convs: (g.items || []).length, ignored: 0, screened: false, items: (g.items || []), targetInChat: g.targetInChat, reachedBase: g.reachedBase, ...r };
+}
+
 /* ─── 获客清单：驱动通知页收集"赞了我们内容/评论"的人，并全部写入清单 ─── */
 async function handleCollectLikersFromNotif(data) {
+  const silent = !!(data && data.silent); // 后台自动周期：尽量用非前台 tab、不抢焦点
   let tab = null;
-  try {
-    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
-    tab = tabs[0];
-  } catch (_) {}
+  if (silent) {
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs.find(t => !t.active && /\/notification/.test(t.url || '')) || tabs.find(t => !t.active) || null;
+    } catch (_) { tab = null; }
+    if (!tab) { const e = new Error('无后台通知tab，本轮自动刷新通知跳过'); e.skip = true; throw e; }
+  } else {
+    try { tab = await getEngineTab('touch'); } catch (_) { tab = null; }
+    if (!tab) {
+      try {
+        const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+        tab = tabs[0];
+      } catch (_) {}
+    }
+  }
   if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
-  // 若非通知页，先导航到通知页
+  // 若非通知页，先导航到通知页（silent 不抢前台）
   try {
     const cur = (await chrome.tabs.get(tab.id)).url || '';
     if (!/\/notification/.test(cur)) {
-      await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/notification', active: true });
+      await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/notification', active: !silent });
       await waitTabLoadBg(tab.id, 15000);
-    } else {
+    } else if (!silent) {
       await chrome.tabs.update(tab.id, { active: true });
     }
   } catch (_) {}
   try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
   await _sleepBg(800);
 
+  // 把已在清单里的人传给 content，用于"滚到有重复即停"的增量
+  let existingIds = [];
+  try { existingIds = (await Storage.getProspectList()).filter(p => p && p.userId).map(p => String(p.userId).toLowerCase()); } catch (_) {}
   let res = null;
-  try { res = await sendTabMsg(tab.id, { action: 'collectLikers' }, 20000); } catch (e) { res = { success: false, error: e.message }; }
+  try { res = await sendTabMsg(tab.id, { action: 'collectLikers', existingIds }, 180000); } catch (e) { res = { success: false, error: e.message }; }
   if (!res || !res.success) {
     throw new Error((res && res.error) || '通知页未返回点赞数据');
   }
-  // 复用 handleCollectLikers 把点赞户写入清单
-  return await handleCollectLikers({ items: res.items || [] });
+  // 增量+AI 标记写入清单（screen/cap 由前端决定）
+  // 写入清单（已按用户要求去掉 AI「相关/不相关」筛选：一律全收、不做 relevance 判定）
+  return await handleCollectLikers({ items: res.items || [], tabCounts: (res && res.tabCounts) || {}, screen: false, cap: (data && Number(data.cap)) || 0 });
 }
 
 /* ─── 获客清单：AI 筛选入库（不靠关键词，从评论区筛出值得跟进的人） ─── */
@@ -1868,6 +2610,19 @@ async function handleAiScreenCapture(data) {
   arr.forEach(x => { const v = parseInt(x && (x.index !== undefined ? x.index : x.idx), 10); if (!isNaN(v)) { idxSet[v] = { index: v, why: (x && x.why) || '' }; } });
   const picked = comments.filter(c => idxSet[c.idx]).map(c => ({ ...c, why: (idxSet[c.idx] && idxSet[c.idx].why) || '' }));
   return { ok: true, picked, total: picked.length, prompts: { system: systemPrompt, user: userPrompt } };
+}
+
+/* ─── 保底话术：AI 生成为空/失败时兜底（方向A：自然问候+提产品+给承接引导），绝不返回空 ─── */
+function _fallbackDraft(config, person, deliver) {
+  const product = (config && config.product) || {};
+  const pName = String(product.name || '').trim() || '我们的产品';
+  const pDesc = String(product.description || '').trim();
+  const nick = String((person && person.nickname) || '').trim() || '您好';
+  const ctx = String((person && person.source && person.source.comment) || '').replace(/\s+/g, ' ').slice(0, 60);
+  const del = String((deliver || '').trim() || (product.guideText || '').trim() || '私信我');
+  let t = `${nick}，看到你${ctx ? '说「' + ctx + '」，' : '关注到你的留言，'}我们对${pName}${pDesc ? '（' + pDesc.slice(0, 24) + '）' : ''}正好熟悉，应该能帮上忙。方便的话${del}，我把整理好的资料发你～`;
+  if (t.length > 300) t = t.slice(0, 297) + '…';
+  return t;
 }
 
 /* ─── 获客清单：生成私信话术（prospect_dm） ─── */
@@ -1910,6 +2665,7 @@ async function handleGenerateDm(data) {
   const aiCfg = { ...config.ai, maxTokens: Math.max(config.ai.maxTokens || 4096, 1024) };
   let content = '';
   let usage = {};
+  let dmText = '';
   let parsed = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -1919,12 +2675,11 @@ async function handleGenerateDm(data) {
       parsed = Utils.extractJson(content);
       if (parsed) break;
     } catch (err) {
-      if (attempt >= 2) throw err;
+      if (attempt >= 2) break;
     }
   }
-  if (!parsed) throw new Error('AI 话术返回无法解析为 JSON');
-  const dmText = String(parsed.dm_text || parsed.text || '').trim();
-  if (!dmText) throw new Error('AI 未生成话术内容');
+  if (parsed) { const t = String(parsed.dm_text || parsed.text || '').trim(); if (t) dmText = t; }
+  if (!dmText) dmText = _fallbackDraft(config, person); // AI 空/解析失败 → 保底话术，不再留空/报错
 
   await Storage.addAiLog({
     scene: 'prospect_dm',
@@ -2034,15 +2789,59 @@ async function handleJudgeLeadPromotion(data) {
 }
 
 /* ─── 获客清单：标记"已联系" → 线索自动升商机（只要联系了就升格；幂等） ─── */
+// ★ 升商机统一入口：只有"对方回过/主动"（双向）才调用。初始状态=已回复。
+async function promoteToProspect(id, how, reason) {
+  if (!id) return false;
+  const list = await Storage.getProspectList();
+  const p = list.find(x => x.id === id);
+  if (!p) return false;
+  if ((p.stage || 'lead') === 'prospect' && p.themReplied) return false; // 已是商机且对方已回过
+  await Storage.updateProspect(id, {
+    stage: 'prospect',
+    themReplied: true,
+    themRepliedAt: Date.now(),
+    promotedHow: how || 'reply',
+    promotingNote: reason || '',
+    awaitingReply: false,
+    funnel: { step: 'replied', dmCount: p.dmCount || 0, lastDmAt: p.lastDmAt || null },
+    status: '已回复',
+  });
+  return true;
+}
+
+// （兼容旧调用，但已不再有任何"点开即升"路径调用它）
 async function handleMarkContacted(data) {
   const id = data && data.id;
   if (!id) throw new Error('缺少候选人 id');
   const list = await Storage.getProspectList();
   const p = list.find(x => x.id === id);
   if (!p) throw new Error('候选人不存在');
-  if ((p.stage || 'lead') === 'prospect') return { ok: true, promoted: false };
-  await Storage.updateProspect(id, { stage: 'prospect' });
-  return { ok: true, promoted: true, personId: id };
+  return { ok: true, promoted: false, personId: id };
+}
+
+// ★ 手工逐条归因：打开该客户 /chat 会话，读线程判断"对方是否回过"，是则升商机
+async function handleScanChatReply(data) {
+  const convId = data && data.convId;
+  const personId = data && data.personId;
+  if (!convId) throw new Error('缺少会话 id');
+  const { tab } = await _chatTab();
+  try { await chrome.tabs.update(tab.id, { url: _chatUrlFor(convId), active: true }); await waitTabLoadBg(tab.id, 15000); } catch (err) { throw new Error('打开会话失败：' + (err && err.message ? err.message : err)); }
+  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  await _sleepBg(900);
+  let res = null;
+  try { res = await sendTabMsg(tab.id, { action: 'scanChatConversation' }, 15000); } catch (e) { res = { success: false, error: e.message }; }
+  if (!res || !res.success) throw new Error((res && res.error) || '扫描会话失败');
+  const theirs = !!(res.hasTheirs || res.theirsCount > 0);
+  let promoted = false;
+  if (personId) {
+    if (theirs) {
+      promoted = await promoteToProspect(personId, 'reply', '对方在 /chat 回复了你');
+      try { await Storage.updateProspect(personId, { lastMsg: res.lastMsg || '', unread: false }); } catch (_) {}
+    } else {
+      try { await Storage.updateProspect(personId, { lastMsg: res.lastMsg || '', awaitingReply: true }); } catch (_) {}
+    }
+  }
+  return { ok: true, theirs, hasTheirs: theirs, theirsCount: res.theirsCount || 0, lastFrom: res.lastFrom || '', lastMsg: res.lastMsg || '', promoted, nickname: (data && data.nickname) || '' };
 }
 
 /* ═══════════ AI客服：触达场景(A) + 客户问答话术库(B) 配置 + 应答 ═══════════ */
@@ -2090,6 +2889,64 @@ async function handleImportAiCsConfig(data) {
   if (Array.isArray(parsed.qa)) partial.qa = parsed.qa;
   const cfg = await Storage.saveAiCsConfig(partial);
   return { ok: true, config: cfg, imported: Object.keys(partial).join(',') || '(空，无有效字段)' };
+}
+
+// ★ AI 生成默认话术：按 人设 + 产品卖点/描述 + 知识库 起草 A场景固定模板 和 B问答答案
+//   （只返回到 UI 供预览，不自动落库；用户浏览满意后再点"保存"）
+const AICS_SCENE_ROLE = {
+  comment_first: '评论首评（在对方笔记/评论下首发一条评论，先给价值再轻带入产品）',
+  comment_reply: '评论回应（回应一条评论，先接话接情绪再自然给干货/卖点）',
+  dm_first: '私信首触（给新用户发第一条私信，先破冰呼应对方原话，再邀对方来承接方式继续聊）',
+  chat_follow: '消息跟单（跟进已私信过的潜在客户，推进转化；对方若在要试用/索取就直接要联系方式）',
+  after_sale: '成交维护（对已成交客户做回访/售后关怀，维护关系不推销）',
+  notif_reply: '通知回访（有人回复了你的笔记/评论后回楼；对方若在要试用就推进成交收邮箱，否则续讲一个价值点）',
+  sales_close: '销售促成（对方已经很强烈的索取/要试用/想买了——直接推进成交，明确请对方留邮箱/联系方式，不再介绍功能）',
+};
+async function handleGenDefaultAiCS(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const { name, desc, kbText } = await _npProductContext(config);
+  const persona = getPersonaText(config);
+  const guide = String(config.product.guideText || config.product.cta || '私信我').trim().slice(0, 20);
+  const sceneKeys = (Array.isArray(data && data.sceneKeys) && data.sceneKeys.length) ? data.sceneKeys : Object.keys(AICS_SCENE_ROLE);
+  const qaList = Array.isArray(data && data.qa) ? data.qa : []; // [{category}]
+  const qaCats = qaList.map(q => String((q && q.category) || '').trim()).filter(Boolean);
+
+  const system = [
+    '你是小红书博主的"话术库文案"生成器。你要按我的【账号人设】【产品卖点/描述】【知识库】写一套能直接用的默认话术（用于 AI客服 触达通信与问答），语气贴合人设、内容落到产品卖点。',
+    persona ? '说话语气、用词、称呼、叙事都要贴合【人设】，杜绝客服腔/广告腔：' + persona : '',
+    '模板/话术里可用 {产品} {价格} {购买入口} {卖点1} {卖点2} {卖点3} {试用方式} {适用人群} 等占位符（运行时会自动替换成真实值），但不要一整句全是变量。',
+    '承接/交付一律用「' + guide + '/私信我」，绝不写微信/小程序/公众号/加V/链接/二维码。',
+    '每个场景/分类的话术都要：先接住对方（用短语点一下对方处境/情绪），再给出一个真实可用的价值点（引用卖点/知识库），最后自然指向承接/下一步。',
+    '只输出严格 JSON，不要任何其它文字。',
+  ].filter(Boolean).join('\n');
+  const user = [
+    '【产品】' + (name || '（未填）'),
+    '【卖点/描述】' + (desc || '（未填）'),
+    persona ? '【人设】' + persona : '',
+    kbText ? '【知识库】' + kbText : '',
+    '【承接/交付方式】' + guide,
+    '',
+    '步骤1 · 为下列每个 A 场景各写一条固定话术模板（30~100字，模板模式会按场景被触发）：',
+    ...sceneKeys.map((k, i) => `${i + 1}. ${k}：${AICS_SCENE_ROLE[k] || k}`),
+    '',
+    '步骤2 · 为客户问答话术库按下面的【问答分类】各写一条应答话术（30~120字，先接话再给价值再指向承接）：',
+    (qaCats.length ? qaCats.map((c, i) => `${i + 1}. ${c}`).join('\n') : '(无，可返回空数组)'),
+    '',
+    '输出格式：{"scenes":{"场景key":"该场景话术模板"},"qa":[{"category":"分类名","answer":"应答话术"}]}',
+  ].filter(Boolean).join('\n');
+  const raw = await _chatAi(config, system, user, 4000);
+  const d = parseJsonObject(raw);
+  const scenes = {};
+  if (d && d.scenes && typeof d.scenes === 'object') {
+    for (const k of Object.keys(d.scenes)) { const t = String(d.scenes[k] || '').trim(); if (t) scenes[k] = t; }
+  }
+  const qa = [];
+  if (d && Array.isArray(d.qa)) {
+    for (const q of d.qa) { const c = String((q && q.category) || '').trim(); const a = String((q && q.answer) || '').trim(); if (c && a) qa.push({ category: c, answer: a }); }
+  }
+  if (Object.keys(scenes).length === 0 && qa.length === 0) throw new Error('AI 未返回可用的默认话术：' + String(raw || '').slice(0, 160));
+  return { ok: true, scenes, qa, raw };
 }
 
 // 客户问答应答：①本地关键词路由 ②AI路由兜底 ③模板填变量 或 AI应答
@@ -2170,19 +3027,53 @@ async function handleQaToKb(data) {
 
 /* ═══════════ 全量备份 / 恢复（合并保留）：所有租户 + 运行数据 ═══════════ */
 
-// 导出：全部租户快照（含 config/知识库/提示词/获客清单等），当前租户用活动 key 覆盖（确保最新）
+// 导出：全部租户快照（含 config/知识库/话术库/提示词/获客清单等），当前租户用活动 key 覆盖（确保最新）
 async function handleExportAllData() {
-  const list = await TenantManager.list();
-  const cur = await TenantManager.getCurrentId();
   const pref = TenantManager.TENANT_KEYS.DATA_PREFIX;
+  // 空租户兜底：确保至少有一个"当前租户"存在，才不会把活动数据打进孤儿 key
+  let list = await TenantManager.list();
+  if (!list.length) {
+    try { await TenantManager.init(); } catch (_) {}
+    list = await TenantManager.list();
+  }
+  let cur = await TenantManager.getCurrentId();
+  if (!cur && list.length) cur = list[0].id;
+
+  // ★ 先把"当前租户的活动数据"强制存回其快照：知识库/话术库/产品卖点/人设即使还没切换过也一定进备份
+  const active = await chrome.storage.local.get(TenantManager.TENANT_SCOPED_KEYS);
+  if (cur) {
+    const curSnap = (await chrome.storage.local.get(pref + cur))[pref + cur] || {};
+    for (const k of TenantManager.TENANT_SCOPED_KEYS) if (active[k] !== undefined) curSnap[k] = active[k];
+    await chrome.storage.local.set({ [pref + cur]: curSnap });
+  }
+
   const data = {};
   const stored = await chrome.storage.local.get(list.map(t => pref + t.id));
   for (const t of list) { data[t.id] = stored[pref + t.id] || {}; }
-  // 当前租户：用活动 key 覆盖（含未暂存的最新值）
-  const active = await chrome.storage.local.get(TenantManager.TENANT_SCOPED_KEYS);
-  const curSnap = data[cur] = data[cur] || {};
-  for (const k of TenantManager.TENANT_SCOPED_KEYS) if (active[k] !== undefined) curSnap[k] = active[k];
-  return { ok: true, backup: { version: 1, exportedAt: Date.now(), tenants: list, currentId: cur, data } };
+  // 当前租户：再用活动 key 覆盖（含最新值，双保险）
+  if (cur) {
+    const curSnap = data[cur] = data[cur] || {};
+    for (const k of TenantManager.TENANT_SCOPED_KEYS) if (active[k] !== undefined) curSnap[k] = active[k];
+  }
+  // 非破坏性摘要，方便直观确认知识库/话术库/卖点/人设都在包里
+  // （同名租户用序号区分展示，避免多个「默认租户」叠成一个导致误判）
+  const profile = {};
+  const nameUsed = new Set();
+  for (const t of list) {
+    const d = data[t.id] || {};
+    let label = t.name || t.id, i = 2;
+    while (nameUsed.has(label)) { label = (t.name || t.id) + '（' + i + '）'; i++; }
+    nameUsed.add(label);
+    profile[label] = {
+      hasConfig: !!(d.config),
+      人设: !!(d.config && d.config.persona),
+      卖点数: (d.config && d.config.product && Array.isArray(d.config.product.sellPoints) ? d.config.product.sellPoints.length : 0),
+      话术库条数: Array.isArray(d.script_library) ? d.script_library.length : 0,
+      知识库条数: Array.isArray(d.knowledge_base) ? d.knowledge_base.length : 0,
+      获客清单数: Array.isArray(d.prospect_list) ? d.prospect_list.length : 0,
+    };
+  }
+  return { ok: true, backup: { version: 1, exportedAt: Date.now(), tenants: list, currentId: cur, data, summary: profile } };
 }
 
 // 导入（合并保留）：备份里的租户数据"并入"本地（备份覆盖同 key、本地独有保留、新租户追加）
@@ -2201,10 +3092,18 @@ async function handleImportAllData(data) {
     writes[pref + id] = curSnap;
   }
   // 2) 租户列表：保留本地 + 追加备份里没有的新租户
+  //    为防「多个重名租户」无法区分（如多个都叫「默认租户」，难免误看空壳以为数据丢了），
+  //    追加时若显示名与已有/本次追加的租户重名，自动加序号后缀
   const exist = await TenantManager.list();
   const merged = exist.slice();
+  const usedNames = new Set(exist.map(t => t.name).filter(Boolean));
   for (const bt of b.tenants) {
-    if (bt.id && !merged.some(t => t.id === bt.id)) merged.push({ id: bt.id, name: bt.name || '导入产品', createdAt: Date.now() });
+    if (!bt.id || merged.some(t => t.id === bt.id)) continue;
+    const base = bt.name || '导入产品';
+    let n = base, i = 2;
+    while (usedNames.has(n)) { n = base + '（' + i + '）'; i++; }
+    usedNames.add(n);
+    merged.push({ id: bt.id, name: n, createdAt: Date.now() });
   }
   writes[TenantManager.TENANT_KEYS.LIST] = merged;
   // 3) 当前租户：优先备份的 currentId（若合并后存在），否则保留本地当前
@@ -2218,42 +3117,211 @@ async function handleImportAllData(data) {
   for (const k of TenantManager.TENANT_SCOPED_KEYS) { if (tSnap[k] !== undefined) toWrite[k] = tSnap[k]; else toRemove.push(k); }
   if (toRemove.length) await chrome.storage.local.remove(toRemove);
   if (Object.keys(toWrite).length) await chrome.storage.local.set(toWrite);
+  // 5) ★ 顺手刷回 AI-Key：恢复后确保当前租户活动 config 里已带主/备用 Key，
+  //    并标记向导已完成 → 快捷配置不再误弹「去设置」提醒
+  try {
+    const snapCfg = (((await chrome.storage.local.get(pref + targetCur))[pref + targetCur] || {}).config) || null;
+    const curCfg = ((await chrome.storage.local.get('config')) || {}).config || {};
+    const curAi = curCfg.ai || {};
+    const snapAi = (snapCfg && snapCfg.ai) || {};
+    if (snapAi.apiKey || snapAi.fallbackApiKey) {
+      curCfg.ai = curCfg.ai || {};
+      if (!(curAi.apiKey || curAi.fallbackApiKey)) {
+        if (snapAi.apiKey) { curCfg.ai.apiKey = snapAi.apiKey; curCfg.ai.apiBaseUrl = snapAi.apiBaseUrl; curCfg.ai.model = snapAi.model; }
+        if (snapAi.fallbackApiKey) { curCfg.ai.fallbackApiKey = snapAi.fallbackApiKey; curCfg.ai.fallbackApiBaseUrl = snapAi.fallbackApiBaseUrl; curCfg.ai.fallbackModel = snapAi.fallbackModel; }
+        await chrome.storage.local.set({ config: curCfg });
+      }
+    }
+    await chrome.storage.local.set({ wizard_done: Date.now() });
+  } catch (_) {}
   return { ok: true, tenants: merged.length, currentId: targetCur, importedTenants: b.tenants.length };
 }
 
 const AI_CS_PURPOSE_TEXT = { sell: '卖货转化', brand: '品牌信任', profile: '主页涨粉', likes: '互动养数据', trend: '蹭热点', auto: '综合自动' };
 
+// ★ 渠道判定：按线索来源渠道路由（评论/点赞/关注/AI抓回），复刻 popup 的 _plChannel 口径
+function _chScrape(person) {
+  const src = (person && person.source) || {};
+  return String(src.stageEntry || src.signalType || src.channel || '');
+}
+function resolveChannel(person) {
+  const e = _chScrape(person);
+  if (/回复|评论|互动/.test(e)) return 'comment';
+  if (/赞|收藏|like/.test(e)) return 'like';
+  if (/关注|follow/.test(e)) return 'follow';
+  if (/AI|关键词|匹配|抓回/.test(e)) return 'ai';
+  return 'follow'; // 拿不到渠道时按"关注/破冰"兜底
+}
+
+// ★ 按渠道生成首触话术（配置-通知：4 渠道基调 + 共用 guide）：先接话题再带销售；强销售信号→销售促成
+async function handleChannelDraftForPerson(person) {
+  const config = await Storage.getConfig();
+  const aiCs = await Storage.getAiCsConfig();
+  const src = (person && person.source) || {};
+  const personText = String(src.signalText || src.likedNote || src.comment || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  const deliver = String((aiCs.guide && aiCs.guide.deliver) || '').trim() || config.product.guideText || '私信我';
+  const tips = String((aiCs.guide && aiCs.guide.tips) || '').trim();
+
+  // 强销售信号 → 销售促成（按 guide 推进成交）
+  if (_isStrongSellText(personText)) {
+    let tpl = await Storage.getPrompt('scen_sales_close'); if (!tpl) tpl = DEFAULT_PROMPTS.scen_sales_close;
+    const ctxt = { nickname: (person && person.nickname) || '对方', comment: personText || '（对方想买/想试用）', product_name: config.product.name || '我的产品', product_desc: String(config.product.description || ''), deliver, min_chars: '30', max_chars: '90' };
+    const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctxt, '');
+    let content = await _chatAi(config, systemPrompt, userPrompt, 500);
+    content = String(content || '').trim();
+    if (!content) content = _fallbackDraft(config, person, deliver); // 空 → 保底
+    return { draft: content, channel: '销售促成' };
+  }
+
+  const chKey = resolveChannel(person);
+  const ch = (aiCs.channels && aiCs.channels[chKey]) || (aiCs.channels && aiCs.channels.follow) || { promptScene: 'scen_ch_comment', minChars: 30, maxChars: 90 };
+  let tpl = await Storage.getPrompt(ch.promptScene); if (!tpl) tpl = DEFAULT_PROMPTS[ch.promptScene];
+  const ctxt = {
+    nickname: (person && person.nickname) || '对方',
+    product_name: config.product.name || '我的产品',
+    product_desc: String(config.product.description || ''),
+    deliver,
+    tips: tips || '（无，自然带即可）',
+    note_title: src.noteTitle || '（某篇笔记）',
+    comment: personText || String(src.comment || '').slice(0, 120) || '（无具体内容，按对方身份自然聊）',
+    min_chars: String(ch.minChars || 30),
+    max_chars: String(ch.maxChars || 120),
+  };
+  const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctxt, '');
+  let content = await _chatAi(config, systemPrompt, userPrompt, Math.max(ch.maxChars || 120, 200) + 200);
+  content = String(content || '').trim();
+  if (!content) content = _fallbackDraft(config, person, deliver); // 空 → 保底
+  return { draft: content, channel: chKey };
+}
+
+// 强销售信号识别：对方话里已透出"明确想拿到手/要试用/要买/问渠道价/索内容" → 交给"销售促成"处理，别再用一般场景
+const _STRONG_SELL_RE = /(能不能|可以|方便)?\s*(试用|试一下|体验一下|用用|拿去|给我一份|发我一份|给我|发我)\s|(怎么|如何|哪里|在哪儿)\s*(用|买|购买|下单|报名|加入|参加|获取|入手)|(多少钱|啥价|价位|价格|价格是|卖多少|怎么收费|费用|报价)|(留个|发个|给个|想要|需要的)\s*(邮箱|联系方式|微信|telegram|tg)|(想|要|需要)\s*(买|买一个|入手|试用|一份|资料|链接|渠道)/;
+function _isStrongSellText(t) {
+  return !!(t && _STRONG_SELL_RE.test(String(t)));
+}
+// 渠道 → A 触达场景：线索池所有获客渠道都必须落到一个场景，保证不缺话术
+function resolveTouchScene(person) {
+  if (!person || typeof person !== 'object') return 'dm_first';
+  if (person.stage === 'prospect') return 'chat_follow'; // 已接触 → 消息跟单（转化话术）
+  const src = person.source || {};
+  const entry = String(src.stageEntry || '');
+  const sig = String(src.signalType || '');
+  // ★ 强销售信号优先：话里已明确"要试用/要买/问价/已索邮箱资料" → 直接走"销售促成"，跳过普通触达/通知回访
+  const talk = [String(src.signalText || ''), String(src.comment || ''), String(src.content || '')].join(' ');
+  if (_isStrongSellText(talk)) return 'sales_close';
+  // 回评/通知性质 → 通知回访；其余渠道（AI筛选/评论跟进/手动/点赞/收藏/关注）→ 私信首触
+  if (entry === '回复' || entry === '通知回访' || sig.includes('回复')) return 'notif_reply';
+  return 'dm_first';
+}
+
+// ✨ 批量生成话术：给还没有 dmDraft 的人补生成并保存（按 配置-通知 场景/引导生成），用于"忘配AI刷新导致没话术"
+async function handleBatchGenDmDrafts(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const persons = Array.isArray(data && data.persons) ? data.persons : [];
+  if (!persons.length) throw new Error('没有可生成话术的对象');
+  let generated = 0, already = 0; const failed = [];
+  for (const p of persons) {
+    if (!p || !p.id) continue;
+    try {
+      const r = await handleChannelDraftForPerson(p); // 按线索渠道生成（先接话题→带销售/销售促成）
+      const draft = (r && r.draft || '').trim();
+      if (draft) { await Storage.updateProspect(p.id, { dmDraft: draft, dmChannel: (r && r.channel) || '' }); generated++; }
+      else failed.push(p.nickname || p.id || '?');
+    } catch (e) { failed.push(p.nickname || p.id || '?'); }
+  }
+  return { ok: true, generated, already, failed, total: persons.length };
+}
+
+// 优化话术：用户自己写的话术 → AI 自然润色（不改意图/引导，只去生硬、更口语，按人设语气）
+async function handleOptimizeDm(data) {
+  const config = await Storage.getConfig();
+  const raw = String((data && data.text) || '').trim();
+  if (!raw) throw new Error('缺少要优化的话术内容');
+  const persona = getPersonaText(config);
+  const product = config.product || {};
+  const system = [
+    '你是帮博主润色"联系/私信"话术的助手。下面是博主自己写的原文。',
+    '要求：在【不改变核心意思、不改变引导意图】（比如要让对方留邮箱/看主页置顶/私信，就保留那个衔接）的前提下，把它改得更自然、口语化、像真人说话、有温度；去掉生硬、客服腔、书面腔。',
+    '不要新增任何 微信/小程序/公众号/加V/链接/二维码 等站外渠道词；承接词最多用 私信我/主页置顶/邮箱（原文里有才保留）。',
+    persona ? '语气贴合这个博主：' + persona : '',
+    '只输出润色后的话术正文本身，不要任何前缀、冒号、引号或解释。',
+  ].filter(Boolean).join('\n');
+  const user = [
+    '【博主/产品】' + (String(product.name || '').trim() || '我的产品'),
+    '【原文】' + raw,
+  ].join('\n');
+  const content = await _chatAi(config, system, user, 900);
+  return { ok: true, text: String(content || '').trim() };
+}
+
 // 触达场景 A 话术生成（模板优先，否则 AI 按场景配置生成）
 async function handleAiCsTouch(data) {
   const config = await Storage.getConfig();
   const aiCs = await Storage.getAiCsConfig();
-  const key = String((data && data.key) || '');
-  if (!key || !aiCs.scenes[key]) throw new Error('未知触达场景：' + key);
+  const person = (data && data.person) || {};
+  // key 可省略：缺省按 层/渠道 推导，确保每渠道都落一个场景
+  let key = String((data && data.key) || '');
+  if (!key || !aiCs.scenes[key]) {
+    key = resolveTouchScene(person);
+    if (!aiCs.scenes[key] || aiCs.scenes[key].enabled === false) key = 'dm_first';
+  }
+  // ★ 强销售信号越权：对方话里已明确"要试用/要买/问价/索邮箱" → 一律落到"销售促成"，成立机会优先于普通触达（成交维护除外）
+  const _talk = [String((person.source && person.source.signalText) || ''), String((person.source && person.source.comment) || ''), String((data && data.context) || '')].join(' ');
+  if (_isStrongSellText(_talk) && aiCs.scenes.sales_close && aiCs.scenes.sales_close.enabled !== false && key !== 'after_sale') {
+    key = 'sales_close';
+  }
+  if (!aiCs.scenes[key]) throw new Error('未知触达场景：' + key);
   const s = aiCs.scenes[key];
   if (s.enabled === false) throw new Error('场景「' + s.name + '」未启用，请先在 AI客服 打开');
   const ctx = (data && data.context) || '';
-  const nickname = String(((data && data.person) || {}).nickname || '').trim();
-  const incoming = String(((data && data.person) || {}).source && ((data && data.person).source.comment) || ctx || '').trim();
+  const nickname = String(person.nickname || '').trim();
+  const incoming = String((person.source && person.source.comment) || ctx || '').trim();
 
-  // 固定模板优先（模板模式直接填变量）
-  if (s.template) {
-    const tpl = await Storage.getPrompt('scen_touch'); // 仅占位，模板不走 AI
-    return { ok: true, draft: _fillCsVars(s.template, config, incoming), scene: s.name, mode: 'template' };
+  // 固定模板优先（模板模式直接填变量；支持多条模板，按 incoming 哈希轮流取一条，避免回复千篇一律）
+  const _tplArr = Array.isArray(s.templates) ? s.templates.filter(t => t && String(t).trim()) : [];
+  const _baseTpl = String(s.template || '').trim();
+  if (_tplArr.length || _baseTpl) {
+    let chosen = _baseTpl || _tplArr[0];
+    if (_tplArr.length) {
+      let h = 0; const _src = String(incoming || '') + s.name;
+      for (let i = 0; i < _src.length; i++) h = (h * 31 + _src.charCodeAt(i)) >>> 0;
+      chosen = _tplArr[h % _tplArr.length] || _tplArr[0];
+    }
+    return { ok: true, draft: _fillCsVars(chosen, config, incoming), scene: s.name, mode: 'template' };
   }
 
-  // AI 生成
-  let tpl = await Storage.getPrompt(s.promptScene) || await Storage.getPrompt('scen_touch');
+  // AI 生成（注入画像，让话术贴合"在意的事/需求/切入点"）
+  let tpl = await Storage.getPrompt(s.promptScene) || DEFAULT_PROMPTS[s.promptScene] || await Storage.getPrompt('scen_touch');
   if (!tpl) tpl = DEFAULT_PROMPTS.scen_touch;
   let kb = '';
   if (s.useKb !== false) {
     try {
       const kbBase = (await Storage.getKnowledgeBase()) || [];
-      const kbR = KnowledgeSearch.searchKnowledgeBase(kbBase, { comment_content: incoming, note_title: '', comment_author: nickname }, config.roleKeywords || {});
+      const kbR = KnowledgeSearch.searchKnowledgeBase(kbBase, { comment_content: incoming, note_title: (person.source && person.source.noteTitle) || '', comment_author: nickname }, config.roleKeywords || {});
       if (kbR) kb = kbR.text || '';
     } catch (_) {}
   }
   const c2 = await Storage.getConfig();
   const purp = c2.product && c2.product.promoGoal ? '' : ''; // 保留空，用场景 purpose
+  const _p = person.profile || {};
+  const _srcT = person.source || {};
+  const _sigT = String(_srcT.signalType || '');
+  const _entT = String(_srcT.stageEntry || '');
+  const _prod = c2.product || {};
+  const _prodName = _prod.name || '我的产品';
+  const _prodDesc = String(_prod.description || '').slice(0, 120) || '（产品简介未填）';
+  // ★ 引导/承接方式：该场景在「配置-通知」里选的引导优先；没选则回落产品配置
+  const _sceneGuide = String(s.guidance || '').trim();
+  const _deliver = ((_sceneGuide || _prod.guideText || _prod.cta || '私信我')).slice(0, 40);
+  const _interacted = !!_sigT || _entT === '回复' || _entT === '消息';
+  const source_type = _interacted
+    ? '互动（对方已和你互动过：互相评论过，或点赞/关注过你或你发的评论）→ 可直接点破这条互动、自然邀对方用「' + _deliver + '」继续聊'
+    : 'AI挖掘（AI从评论/笔记匹配回来的、大概率没互动过）→ 先破冰呼应对方原话/需求，再自然介绍我的产品' + _prodName;
+  const _f = person.funnel || {};
+  const _dmc = person.dmCount || _f.dmCount || 0;
+  const _dms = String(person.dmStatus || _f.step || '');
+  const contact_state = `已私信${_dmc}次${_dms ? ('，状态=' + _dms) : ''}；对方需要进一步资料/细节就自然邀对方发「${_deliver}」，别催、别硬推`;
   const ctxt = {
     scene_name: s.name,
     purpose_text: AI_CS_PURPOSE_TEXT[s.purpose] || s.purpose || '综合自动',
@@ -2262,11 +3330,24 @@ async function handleAiCsTouch(data) {
     tone: s.toneMannerisms || ((c2.scriptStyle && c2.scriptStyle.toneMannerisms) || '自然口语化'),
     guidance: s.guidance || (c2.product && c2.product.guideText) || '',
     nickname: nickname || '对方',
+    identity: _p.identity || '（未知身份）',
+    needs: String(_p.needs || '').slice(0, 120) || '（未明确，可从评论判断）',
+    pain_points: String(_p.painPoints || '').slice(0, 120) || '（未明确）',
+    dm_angle: String(_p.dmAngle || '').slice(0, 120) || '（未给切入角度）',
+    tags: Array.isArray(_p.tags) ? _p.tags.join('、') : '',
+    note_title: (person.source && person.source.noteTitle) || '',
     comment: incoming.slice(0, 200) || '（空）',
     kb_context: kb || '（无）',
+    product_name: _prodName,
+    product_desc: _prodDesc,
+    deliver: _deliver,
+    source_type,
+    contact_state,
   };
   const { systemPrompt, userPrompt } = PromptRenderer.renderPrompt(tpl, ctxt, kb);
-  const reply = await _chatAi(config, systemPrompt, userPrompt, (s.maxChars || 120) + 200);
+  let reply = await _chatAi(config, systemPrompt, userPrompt, (s.maxChars || 120) + 200);
+  reply = String(reply || '').trim();
+  if (!reply) reply = _fallbackDraft(config, person, _deliver); // 空 → 保底
   await Storage.addAiLog({ scene: 'scen_' + key, tokensIn: 0, tokensOut: 0, success: true });
   return { ok: true, draft: reply, scene: s.name, mode: 'ai', auto: s.mode === 'auto' ? 'auto' : 'draft' };
 }
@@ -2294,7 +3375,10 @@ async function aiCsBump(sceneKey) {
 // ★ 通知回访：枚举通知页待回复（有人回了你评论/笔记），供「通知回访」场景草拟/发送
 async function _notifTab() {
   let tab = null;
-  try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  try { tab = await getEngineTab('touch'); } catch (_) { tab = null; }
+  if (!tab) {
+    try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
+  }
   if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
   return tab;
 }
@@ -2339,12 +3423,16 @@ async function handleSendDm(data) {
   const userLink = absUserUrlBg((person.source && person.source.userUrl) || (person.userLink || ''));
   if (!userLink) throw new Error('缺少用户主页链接，无法发送私信');
 
-  // 找到目标 tab（小红书页面）
+  // 找到目标 tab（小红书页面）：优先显式 tabId（@auto 跟单传触达工作台），否则用触达工作台，再退回现有 xhs 页
   let tab = null;
-  try {
-    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
-    tab = tabs[0];
-  } catch (_) {}
+  if (data.tabId) { try { const t = await chrome.tabs.get(data.tabId); if (t && /xiaohongshu\.com/.test(t.url || '')) tab = t; } catch (_) {} }
+  if (!tab) { try { tab = await getEngineTab('touch'); } catch (_) { tab = null; } }
+  if (!tab) {
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs[0];
+    } catch (_) {}
+  }
   if (!tab) {
     // 尝试打开用户主页（主动创建 tab）
     try {
@@ -2356,6 +3444,57 @@ async function handleSendDm(data) {
 
   // 激活标签页
   try { await chrome.tabs.update(tab.id, { active: true }); } catch (_) {}
+
+  // ★★ 新路径（已真机勘探确认）：不点主页「私信」按钮，直接用 `/chat?openUid={userId}` 直达私信窗，
+  //    再复用 chatSendMessage（.xhs-im-input-bar-editor + 发送按钮/回车）发送。可靠，先走这条。
+  const openUid = (String(userLink).match(/\/user\/(?:profile\/)?([a-zA-Z0-9_-]{6,})/i) || [])[1] || person.userId || '';
+  if (openUid) {
+    const chatUrl = 'https://www.xiaohongshu.com/chat?m_source=pwa&openUid=' + encodeURIComponent(openUid);
+    const _persistDm = async () => {
+      const plist = await Storage.getProspectList();
+      const p = plist.find(x => x.id === person.id);
+      if (p) {
+        const newCount = (p.dmCount || 0) + 1;
+        // 发出私信 = 已触达·待回复（不升商机；升级由"对方回复"触发）
+        const updates = { dmStatus: 'sent', dmCount: newCount, lastDmAt: Date.now(), awaitingReply: true, lastMsg: text, lastConvFp: { msg: String(text || '').slice(0, 300), at: Date.now() }, direction: 'outbound' };
+        await Storage.updateProspect(person.id, updates);
+      }
+      await Storage.addDmRecord({ personId: person.id, nickname: person.nickname || '', text, aiGenerated: !!data.aiGenerated, status: 'sent', repliedText: '' });
+    };
+    try {
+      try { await chrome.tabs.update(tab.id, { url: chatUrl, active: true }); } catch (ne) { throw new Error('导航到聊天失败：' + (ne && ne.message ? ne.message : ne)); }
+      await waitTabLoadBg(tab.id, 20000);
+    } catch (ne) {
+      throw new Error('导航到聊天页失败：' + (ne && ne.message ? ne.message : ne));
+    }
+    try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+    await _sleepBg(1500);
+    // 首次发送；会话若没及时打开/发送失败 → 等一会儿重试一次
+    let dmr = null;
+    try { dmr = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 45000); } catch (_) { dmr = null; }
+    if (!dmr || !dmr.success) {
+      await _sleepBg(2500);
+      try { dmr = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 45000); } catch (_) { dmr = null; }
+    }
+    if (dmr && dmr.success) {
+      await _persistDm();
+      return { ok: true, result: dmr };
+    }
+    // ★ 隐私限制：标记该线索"私信受限"，便于清单筛查，并给出可执行建议
+    const _markBlocked = async (reason) => {
+      try { await Storage.updateProspect(person.id, { dmBlocked: reason || 'privacy', dmBlockedAt: Date.now() }); } catch (_) {}
+    };
+    if (dmr && dmr.privacy) {
+      await _markBlocked('privacy');
+      const le = new Error('对方设置了隐私设置（或未关注你），暂时无法私信回复。未发送成功，已标记为「私信受限」。可去评论区互动破冰，或先关注对方待通过后重试。');
+      le.limited = true;
+      throw le;
+    }
+    if (dmr && dmr.limited) { const le = new Error(dmr.error || '对方限制/需先关注，建议改为评论互动破冰'); le.limited = true; throw le; }
+    // 未能成功 → 落到旧流程（开主页 + 按钮兜底 / 手动发送），不直接报错
+    try { await chrome.tabs.update(tab.id, { url: userLink }); await waitTabLoadBg(tab.id, 20000); } catch (_) {}
+    try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
+  }
 
   // ★ 确保已停在目标用户主页（不在则导航 + 等加载），并保证 content.js 已注入——与定位走同一套可靠流程
   const onProfile = await _tabIsOnProfile(tab.id, userLink);
@@ -2421,6 +3560,13 @@ async function handleSendDm(data) {
     }
     throw new Error((d2 && d2.error) || '已在聊天窗口导航，但发送未完成，请手动在该窗口发送');
   }
+  // ★ 隐私限制（主页兜底流程）：标记"私信受限"并给可执行建议
+  if (result && result.privacy) {
+    try { await Storage.updateProspect(person.id, { dmBlocked: 'privacy', dmBlockedAt: Date.now() }); } catch (_) {}
+    const pe = new Error('对方设置了隐私设置（或未关注你），暂时无法私信回复。未发送成功，已标记为「私信受限」。可去评论区互动破冰，或先关注对方待通过后重试。');
+    pe.limited = true;
+    throw pe;
+  }
   if (!result || !result.success) {
     // 若 sendMessage 抛错，优先透出真实原因；否则用 content 返回的 error
     let reason = (result && result.error) || '私信发送失败';
@@ -2441,9 +3587,11 @@ async function handleSendDm(data) {
       dmStatus: 'sent',
       dmCount: newCount,
       lastDmAt: Date.now(),
+      lastMsg: text,
+      lastConvFp: { msg: String(text || '').slice(0, 300), at: Date.now() },
+      awaitingReply: true, // 发出私信 = 已触达·待回复（不升商机；升级由"对方回复"触发）
+      direction: 'outbound',
     };
-    // ★ 对线索池做了动作（发出私信）→ 即视为接触 → 自动升为商机
-    if ((p.stage || 'lead') === 'lead') updates.stage = 'prospect';
     await Storage.updateProspect(person.id, updates);
   }
   await Storage.addDmRecord({
@@ -2465,10 +3613,14 @@ async function handleOpenDmChat(data) {
   if (!userLink) throw new Error('缺少用户主页链接');
 
   let tab = null;
-  try {
-    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
-    tab = tabs[0];
-  } catch (_) {}
+  if (data.tabId) { try { const t = await chrome.tabs.get(data.tabId); if (t && /xiaohongshu\.com/.test(t.url || '')) tab = t; } catch (_) {} }
+  if (!tab) { try { tab = await getEngineTab('touch'); } catch (_) { tab = null; } }
+  if (!tab) {
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs[0];
+    } catch (_) {}
+  }
   if (!tab) {
     try { tab = await chrome.tabs.create({ url: userLink, active: true }); await waitTabLoadBg(tab.id, 20000); }
     catch (err) { throw new Error('无法打开小红书页面，请先打开小红书网页版并登录'); }
@@ -2515,10 +3667,14 @@ async function handleLocateDmButton(data) {
   const userLink = absUserUrlBg(rawUserLink);
 
   let tab = null;
-  try {
-    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
-    tab = tabs[0];
-  } catch (_) {}
+  if (data.tabId) { try { const t = await chrome.tabs.get(data.tabId); if (t && /xiaohongshu\.com/.test(t.url || '')) tab = t; } catch (_) {} }
+  if (!tab) { try { tab = await getEngineTab('touch'); } catch (_) { tab = null; } }
+  if (!tab) {
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs[0];
+    } catch (_) {}
+  }
   if (!tab) {
     throw new Error('未找到小红书标签页，请先打开小红书网页版');
   }
@@ -2542,12 +3698,16 @@ async function handleEnrichByProfile(data) {
   const userLink = absUserUrlBg(rawUserLink);
   if (!userLink) throw new Error('缺少用户主页链接，无法定位用户');
 
-  // 找到小红书标签页（已登录状态下的窗口）
+  // 找到小红书标签页（已登录状态下的窗口）：自动跟单/客服优先用「客服工作台」专属 tab
   let tab = null;
-  try {
-    const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
-    tab = tabs[0];
-  } catch (_) {}
+  if (data.tabId) { try { const t = await chrome.tabs.get(data.tabId); if (t && /xiaohongshu\.com/.test(t.url || '')) tab = t; } catch (_) {} }
+  if (!tab) { try { tab = await getEngineTab('touch'); } catch (_) { tab = null; } }
+  if (!tab) {
+    try {
+      const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] });
+      tab = tabs[0];
+    } catch (_) {}
+  }
   if (!tab) {
     try {
       tab = await chrome.tabs.create({ url: userLink, active: true });
@@ -2769,11 +3929,62 @@ chrome.windows.onRemoved.addListener((windowId) => {
 
 /* ─── 一键灌水：闹钟调度（受 autoWater 版本开关闸门控制） ─── */
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (typeof Edition !== 'undefined' && !Edition.hasFeature('autoWater')) return;
   if (alarm.name && alarm.name.startsWith('auto-water-')) {
-    AutoWater.handleAlarm(alarm.name);
+    if (typeof Edition === 'undefined' || Edition.hasFeature('autoWater')) AutoWater.handleAlarm(alarm.name);
+    return;
+  }
+  // ★ 定时：自动周期（先静默刷新通知 → 再读 /chat 列表 双落地）。随机间隔，跑完才排下一次。
+  if (alarm.name === 'prospect-scan') {
+    requireProspectList(async () => {
+      try { await runAutoCycle(); } catch (_) {}
+      _armProspectScan(); // 跑完再随机排下一次（无固定节拍、不重叠）
+    }).catch(() => { _armProspectScan(); });
   }
 });
+
+// 随机抖动：基准 base ± min(10, floor(base/2))，兜底 ≥1；2→±1，10→±5，≥20→±10
+const _jittered = (base) => {
+  const span = Math.min(10, Math.max(1, Math.floor(base / 2)));
+  const j = (Math.random() < 0.5 ? -1 : 1) * Math.floor(Math.random() * (span + 1));
+  return Math.max(1, base + j);
+};
+// 后台扫描 /chat 私信：一次性闹钟，跑完再由监听器排下一次（只在开启时）。★频率下限 20 分钟（选 2/10 也按 20 跑，通知刷新不宜过密）
+const _armProspectScan = async () => {
+  try {
+    if (typeof chrome.alarms === 'undefined') return;
+    const st = await chrome.storage.local.get(['prospect_scan_auto', 'prospect_scan_interval_min']);
+    if (!(st && st.prospect_scan_auto === true)) { chrome.alarms.clear('prospect-scan', () => {}); return; }
+    const base = Math.max(20, parseInt(st.prospect_scan_interval_min, 10) || 20); // 下限 20 分钟
+    chrome.alarms.clear('prospect-scan', () => {});
+    chrome.alarms.create('prospect-scan', { delayInMinutes: _jittered(base) });
+  } catch (_) {}
+};
+// 设置页 / popup 开关：写 storage + 立即启动/取消【唯一】合并定时（frequency=intervalMin，实际 ± 抖动）
+async function handleSetAutoScanChat(data) {
+  const enabled = !!(data && data.enabled);
+  const intervalMin = enabled ? Math.max(1, parseInt((data && data.intervalMin), 10) || 10) : 0;
+  await chrome.storage.local.set({ prospect_scan_auto: enabled, prospect_scan_interval_min: intervalMin });
+  if (enabled) {
+    _armProspectScan(); // 合并周期由 prospect-scan 这次闹钟统一触发（跑完再排下一次）
+  } else {
+    chrome.alarms.clear('prospect-scan', () => {});
+    chrome.alarms.clear('msgCenterSync', () => {}); // 清掉历史遗留，确保停干净
+  }
+  return { ok: true, enabled, intervalMin };
+}
+
+// ★ 定时扫描 /chat 私信进线：**默认关闭**。要开启：控制台执行  chrome.storage.local.set({ prospect_scan_auto: true })
+//   开启后不设固定周期，每次跑完随机排下一次（20~40 分钟随机），silent 后台不抢前台焦点。
+(function scheduleProspectScan() {
+  try {
+    if (typeof chrome.alarms !== 'undefined') {
+      chrome.storage.local.get(['prospect_scan_auto'], (res) => {
+        if (res && res.prospect_scan_auto === true) _armProspectScan();
+        else chrome.alarms.clear('prospect-scan', () => {});
+      });
+    }
+  } catch (_) {}
+})();
 
 /* ═══════════ ✍️ 发笔记 · AI 生成文案（知识库参考 + 可选话题 → 小红书文案） ═══════════ */
 async function requireKnowledge(fn) {
@@ -2894,6 +4105,125 @@ async function _chatAi(config, system, user, maxTok) {
   const aiCfg = { ...config.ai, maxTokens: Math.max(config.ai.maxTokens || 4096, maxTok || 2048) };
   const r = await AiClient.chatCompletion(aiCfg, system, user);
   return String(r.content || '').trim();
+}
+
+// 🎨 封面标题 AI 排版：按标题语义分行 + 给字号与垂直位置，覆盖规则排版（标题偏长偏挤时救场）
+async function aiCoverLayoutBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const title = String((data && data.title) || '').trim();
+  const subtitle = String((data && data.subtitle) || '').trim();
+  if (!title) throw new Error('缺少封面标题');
+  const system = [
+    '你是小红书封面排版师。根据标题的字符数与语义，把它拆成 1~3 行大字（竖版封面中部），并给出字号档位与垂直位置。',
+    '规则：',
+    '· 标题 ≤6 字：1 行，字号档 大，垂直居中；',
+    '· 7~10 字：1~2 行（语义可断则断），字号档 中大，垂直居中；',
+    '· 11~14 字：2 行，字号档 中，靠上；',
+    '· 15~22 字：2 行，字号档 中偏小，靠上；',
+    '· >22 字：3 行，字号档 小，靠上。',
+    '分行要在语义自然处断开（词/短语/逗号顿号后），不要把一个词拆散、不要出现孤字。每行不宜超过 12 字。',
+    '只输出严格 JSON：{"lines":["第一行","第二行","第三行"],"size":"大/中大/中/中偏小/小","vertical":"center/top"}'
+  ].join('\n');
+  const user = '标题：' + title + (subtitle ? '\n副标题：' + subtitle : '');
+  const raw = await _chatAi(config, system, user, 512);
+  const parsed = parseJsonObject(raw) || {};
+  if (!parsed.lines || !Array.isArray(parsed.lines)) throw new Error('AI 排版未返回有效分行');
+  const sizeMap = { '大': 150, '中大': 128, '中': 112, '中偏小': 96, '小': 84 };
+  const barSize = sizeMap[String(parsed.size || '').trim()] || 106;
+  return { ok: true, lines: parsed.lines.map(s => String(s).trim()).filter(Boolean), size: barSize, vertical: String(parsed.vertical || 'top').trim() === 'center' ? 'center' : 'top' };
+}
+
+// 📚 知识架构：把知识库条目用 AI 重排成更清晰的"树状大纲 Markdown"（供知识 PDF 用）
+async function aiKbTreeBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  let kb = (data && data.kb) || [];
+  const topic = String((data && data.topic) || '').trim();
+  // 按话题关键词筛知识库，让配图聚焦本次主题；无命中则全量
+  if (topic) {
+    const kw = topic.toLowerCase().split(/[，,、\s]+/).filter(Boolean);
+    const hit = kb.filter(e => {
+      const hay = (String((e && e.title) || '') + ' ' + String((e && e.content) || '') + ' ' + (Array.isArray(e && e.tags) ? e.tags.join(' ') : '')).toLowerCase();
+      return kw.some(k => k && hay.includes(k)) || hay.includes(topic.toLowerCase());
+    });
+    if (hit.length) kb = hit;
+  }
+  const rows = (kb || []).filter(e => e && e.isActive !== false && (e.title || e.content));
+  if (!rows.length) throw new Error('知识库为空（或与「' + (topic || '该话题') + '」无关），无法重排');
+  const listText = rows.map(e => ((e.category || '通用') + ' | ' + (e.title || '') + '：' + String(e.content || '').slice(0, 200))).join('\n');
+  const prod = String(config.product.name || '').trim();
+  const system = [
+    '你是知识架构师。把下面这份"知识库条目"重组成一张清晰【树状知识架构】——用小红书/付费社群那种"主分支→子分支→要点"的高信息密度大纲，用来生成"配图的思维导图"（3:4 竖版）。',
+    '当前主题为："' + (topic || prod || '知识') + '"，分支与要点要围绕这个主题组织、提炼。',
+    '要求：',
+    '· 以 # 一级标题（如 "# ' + (topic || prod || '知识') + ' 知识架构"）开头；',
+    '· 用 ## 二级标题做主分支（按主题/分类归并，最多 6~8 个，命名要有传达力）；',
+    '· 每个主分支下用「- **条目名**」列子项，子项内用「  - 要点」列 2~6 个最核心的要点或数字/结论（每个要点 ≤28 字）；',
+    '· 只保留有价值的信息，删除情绪化废话；保留具体数字、步骤、价格、口径、话术骨架；',
+    '· 优先输出 Markdown，不要 JSON、不要解释文字、不要代码块标记。'
+  ].join('\n');
+  const user = '主题：' + (topic || prod || '知识') + '\n知识库条目：\n' + listText;
+  const raw = await _chatAi(config, system, user, 1500);
+  const md = String(raw || '').replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/, '').trim();
+  if (!md) throw new Error('AI 重排未返回内容');
+  return { ok: true, markdown: md };
+}
+
+// 🎁 提示词包：整合资料 + 风格/自定义 → 生成 文案/封面配图/口播稿/视频生成稿 四类提示词
+async function genPromptPackBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const ctx = String((data && data.ctx) || '').trim();
+  if (!ctx) throw new Error('整合资料为空，无法生成');
+  const styleOf = (m, key, d) => ({ coverStyle: (m.coverStyle && { brand: '固定品牌色', pop: '高饱和碰撞色', minimal: '简约留白', tech: '数据科技感' }[m.coverStyle]) || '默认/自动', voiceStyle: (m.voiceStyle && { friendly: '亲切日常', pro: '干货专业', punchy: '快节奏高能', emo: '情绪共鸣' }[m.voiceStyle]) || '默认/自动', videoForm: (m.videoForm && { talk: '口播讲解', slide: '图文动态轮播', vlog: '实拍混剪', avatar: '数字人' }[m.videoForm]) || '口播讲解', duration: (m.duration || '30s') }[key] || d);
+  const q = data || {};
+  const extra = String((q && q.extra) || '').trim();
+  const styleLine = '封面配色风格：' + (styleOf(q, 'coverStyle')) + '；口播风格：' + (styleOf(q, 'voiceStyle')) + '；视频形式：' + (styleOf(q, 'videoForm')) + '（' + (q.duration || '30s') + '）' + (extra ? '；本篇额外想说的：' + extra : '');
+
+  const system = [
+    '你是小红书资深内容与AIGC指令工程师。基于下面给定的一份「整合资料」，产出这一篇笔记的 4 类提示词，供用户直接复制去小红书发文案、去生图工具配图、去视频工具成片。',
+    '必须严格按这份整合资料的内容来，不要虚构资料里没有的事实；人设/卖点/知识库/本次笔记都要自然地用进去。',
+    '输出顺序固定，每段之间用一行 =====分隔，段落内可自由换行：',
+    '【文案提示词】给AI写/优化这篇笔记的完整指令：包含 目标读者、标题方向(给2-3个)、正文结构(开头钩子-中间干货-结尾引导)、话题标签、以及"必须参考的人设/卖点/知识库/额外要求"。可直接贴在对话里让AI产出正文。',
+    '【封面&配图生成提示词】清晰的两段：①封面=给生图工具的完整提示词(竖版3:4，包含封面大标题排版、配色——按"封面配色风格"、底图氛围)；②配图=知识卡片/思维导图的整体风格与排版建议提示词。',
+    '【口播稿】一段可以直接照着念的旁白(当前文本+卖点+人设+口播风格)，口语化、有停顿、结尾带引导，标注字数。',
+    '【视频生成稿】给视频工具(可灵/即梦/剪映等)的完整提示词：总时长(按时长)、分镜头列表(每个镜头：画面/运镜/口播台词/转场)、整体风格(口播风格+视频形式)。',
+    '不要输出 markdown 代码块标记，直接输出文本。'
+  ].join('\n');
+  const user = '【快问快答/自定义】\n' + styleLine + '\n\n【整合资料】\n' + ctx;
+  const raw = await _chatAi(config, system, user, 3000);
+
+  // 解析为四段
+  const segs = splitBySection(raw);
+  const result = {
+    copy: take(segs, '文案'),
+    cover: take(segs, '封面'),
+    voice: take(segs, '口播'),
+    video: take(segs, '视频'),
+  };
+  if (!result.copy && !result.cover && !result.voice && !result.video) {
+    // 兜底：整体当文案
+    result.copy = raw;
+  }
+  return { ok: true, result };
+}
+
+function splitBySection(raw) {
+  const out = new Array(4).fill('');
+  const blocks = String(raw || '').split(/^={3,}\s*$/m);
+  let bi = 0;
+  for (const b of blocks) {
+    const t = String(b || '').trim();
+    if (!t) continue;
+    if (bi < 4) out[bi] = t;
+    bi++;
+  }
+  return out;
+}
+function take(arr, k) {
+  const i = k === '文案' ? 0 : k === '封面' ? 1 : k === '口播' ? 2 : 3;
+  return (arr[i] || '').trim();
 }
 
 async function _npProductContext(config) {
@@ -3282,3 +4612,24 @@ async function handleNotePlan(data) {
   if (!d) throw new Error('AI 返回无法解析：' + String(raw).slice(0, 200));
   return { plan: d, raw };
 }
+
+
+/* ─── 消息中心：周期自愈循环(MV3 alarms)。全程 try/catch 静默，不影响其它功能 ─── */
+function startMessageCenterLoop() {
+  return (async () => {
+    // 出站发送：任何时刻都可拉取(仅在有待发送指令时才打开 /chat 去发)
+    try { await handleMessageCenterFlushOutbox({ limit: 10 }); } catch (_) {}
+    // Web 端点了「同步小红书」→ 有同步信号 → 主动同步
+    try {
+      const sig = await getMsgBackend('/sync-request', 5000);
+      if (sig && sig.pending) {
+        await handleMessageCenterSync({});
+        await postMsgBackend('/sync-ack', {});
+      }
+    } catch (_) {}
+    // 常规增量同步：消息中心用专属「消息」标签页(绝不碰通知/灌水/手头页)，所以不依赖用户是否开着小红书页面
+    try { await handleMessageCenterSync({}); } catch (e) { console.log('[消息中心] 常规同步失败', e && e.message); }
+  })();
+}
+
+/* （消息中心同步已并入 prospect-scan 合并周期 runMsgCenterCycle，不再单独定时） */

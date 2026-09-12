@@ -75,8 +75,7 @@
         if (rd && rd.click) rd.click();
         break;
       case 'send':
-        var bs = document.getElementById('batchSendBtn');
-        if (bs && bs.click) bs.click();
+        if (typeof window.batchSendAll === 'function') window.batchSendAll();
         break;
     }
   }

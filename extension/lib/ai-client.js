@@ -81,7 +81,7 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
 
   const useStream = typeof onProgress === 'function';
   const body = {
-    model: model || 'deepseek-chat',
+    model: model || 'deepseek-v4-flash',
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -108,13 +108,14 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
     });
   } catch (err) {
     if (err.name === 'TimeoutError') {
-      throw new Error('AI 请求超时（60秒），请检查网络或稍后重试');
+      throw new Error(`AI 请求超时（60秒）(${url} · ${model})。请检查网络能否访问该服务商地址，或稍后重试。`);
     }
     // 把“headers 含非法字符”这类底层错也转成清晰提示
     if (/non ISO-8859-1|headers' property/i.test(String(err.message || ''))) {
       throw new Error('AI 请求配置异常：API Key 或地址包含非法字符（多半是粘贴进了中文）。请在设置→AI 配置重新填写正确的 API Key。');
     }
-    throw new Error(`网络错误：${err.message}`);
+    const polite = /fetch failed|certificate|tls|proxy|cors|failed to fetch/i.test(String(err.message || '')) ? ' 多为网络/代理/证书问题，请确认能访问 ' + url + ' 或关闭代理重试。' : '';
+    throw new Error(`网络错误（${url} · ${model}）：${err.message}${polite}`);
   }
 
   if (!resp.ok) {
@@ -125,6 +126,10 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
     } catch (_) {}
     const httpErr = new Error(`AI API 错误：${errMsg}`);
     httpErr.status = resp.status;
+    // ★ 余额/额度不足：转成可行动提示（保留 status=402 便于备用 Key 的 failover 判定）
+    if (/insufficient[ _-]?(balance|quota)|balance|quota|insufficient/i.test(String(errMsg || ''))) {
+      httpErr.message = `AI API 错误：账户余额/额度不足（${String(errMsg || '').slice(0, 60)}）。当前请求地址 ${baseUrl}，模型 ${model || ''}。请确认：①这个 Key 属于哪个服务商，是否填对了 baseUrl；②在该服务商控制台里**这个 Key 所属账户**是否真有余额（可能有余额的是另一个账户）。`;
+    }
     // ★ 模型不存在自动回退：默认模型已迁移为非推理模型（如 deepseek-chat），
     //   若中转站不提供该模型名（返回 400/404 + model 相关错误），自动回退到迁移前的旧模型，避免功能全挂
     if (resp.status === 400 || resp.status === 404) {
@@ -245,7 +250,7 @@ function _ensureNonEmpty(content, diag) {
       const { fullRaw, chunkCount, reasoningLen, finishReason } = diag;
       if (reasoningLen > 0) {
         // 推理模型只发了思考过程、没发正文：最常见是思考占满 max_tokens 被截断
-        hint = `模型思考了 ${reasoningLen} 字但未输出正文${finishReason ? `（finish_reason=${finishReason}` : ''}${finishReason === 'length' ? '——思考过程占满了输出上限，请到设置页把「AI 最大输出 tokens」调大（建议 16384），或改用非推理模型（如 deepseek-chat）' : ''}）`;
+        hint = `模型思考了 ${reasoningLen} 字但未输出正文${finishReason ? `（finish_reason=${finishReason}` : ''}${finishReason === 'length' ? '——思考过程占满了输出上限，请到设置页把「AI 最大输出 tokens」调大（建议 16384）' : ''}）`;
       } else {
         hint = `服务端返回 ${chunkCount || 0} 个数据块但正文为空${finishReason ? `（finish_reason=${finishReason}）` : ''}`;
       }
@@ -282,7 +287,7 @@ async function testConnection(aiConfig) {
     );
     return {
       ok: true,
-      message: `连接成功！模型：${aiConfig.model || 'deepseek-chat'}，回复：${content.trim()}`,
+      message: `连接成功！模型：${aiConfig.model || 'deepseek-v4-flash'}，回复：${content.trim()}`,
       model: aiConfig.model,
       usage,
     };

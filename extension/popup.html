@@ -33,8 +33,9 @@
       max-width: 640px;
       min-height: 380px;
       height: 420px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-family: "Microsoft YaHei", "PingFang SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
       font-size: 13px;
+      line-height: 1.6;
       color: var(--ink);
       background: var(--bg);
       overflow: hidden;
@@ -544,9 +545,40 @@
       font-size:11px; padding:5px 8px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); outline:none;
     }
     .pl-filter select:focus, .pl-filter input:focus { border-color: var(--xhs-red); }
+    /* 渠道切换胶囊 */
+    .pl-pill {
+      font-size:11px; padding:4px 10px; border-radius:14px; border:1px solid var(--line);
+      background:#fff; color:#6b7280; cursor:pointer; font-weight:600; line-height:1.4;
+    }
+    .pl-pill:hover { border-color:var(--xhs-red); color:var(--xhs-red); }
+    .pl-pill.active { background:var(--xhs-red); color:#fff; border-color:var(--xhs-red); }
     .pl-batch { display:flex; gap:6px; align-items:center; padding:6px 10px 10px; border-bottom:1px solid var(--line); }
     .pl-card { border:1px solid var(--line); border-radius:var(--radius); margin:0 10px 10px; padding:10px 12px; background:#fff; box-shadow:var(--shadow); }
     .pl-card-top { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    /* 获客清单：表格视图（通知/消息/全部） */
+    .pl-table { width:100%; border-collapse:collapse; margin:0; background:#fff; }
+    .pl-table thead th {
+      font-size:11px; font-weight:600; color:#6b7280; text-align:left; padding:5px 8px;
+      border-bottom:1px solid var(--line); background:#f8fafc; position:sticky; top:0; white-space:nowrap;
+    }
+    .pl-table tbody tr.pl-row { cursor:pointer; }
+    .pl-table tbody tr.pl-row:hover td { background:#fafafa; }
+    .pl-table tbody tr.pl-row td { padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:middle; font-size:12px; }
+    .pl-table .pl-col-sel { width:22px; padding-right:0 !important; }
+    .pl-table .pl-col-sel input { accent-color:#7c3aed; }
+    .pl-table .pl-col-user { min-width:120px; max-width:160px; }
+    .pl-table .pl-col-src { width:52px; white-space:nowrap; }
+    .pl-table .pl-col-src2 { min-width:96px; max-width:240px; white-space:normal; line-height:1.7; }
+    .pl-table .pl-col-intent { width:44px; white-space:nowrap; color:#6b7280; }
+    .pl-table .pl-col-state { width:64px; }
+    .pl-table .pl-col-who { width:40px; white-space:nowrap; text-align:center; font-size:11px; }
+    .pl-table .pl-col-time { width:118px; white-space:nowrap; font-size:11px; color:#6b7280; }
+    .pl-table .pl-col-msg { max-width:240px; color:#4b5563; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pl-table .pl-col-x { width:26px; text-align:center; }
+    .pl-table .pl-col-x .pl-toggle { border:none; background:none; cursor:pointer; color:#9ca3af; font-size:12px; padding:2px 4px; }
+    .pl-table .pl-col-act .pl-foot { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+    .pl-table .pl-nickmeta { font-size:10px; color:#8a8f99; margin-top:2px; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .pl-table .pl-row-detail td { background:#fafafa; }
     .pl-nick { font-weight:700; font-size:13px; color:var(--ink); }
     .pl-uid { font-size:10px; color:#8a8f99; background:#f2f3f5; padding:1px 6px; border-radius:4px; font-family:monospace; }
     .pl-dot { width:9px; height:9px; border-radius:50%; flex:none; }
@@ -570,7 +602,6 @@
     .pl-actions button.done { border-color:#b45309; color:#b45309; }
     .pl-actions button.sell { border-color:#92400e; color:#92400e; }
     .pl-actions button.remove { border-color:#d32f2f; color:#d32f2f; }
-.pl-status { font-size:11px; padding:1px 4px; border:1px solid var(--line); border-radius:6px; color:#333; background:#fff; max-width:96px; }
     .pl-nickmeta { font-size:11px; color:#8a8f99; margin-left:6px; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .pl-origin { font-size:10px; padding:1px 6px; border-radius:8px; margin-left:6px; background:#eef2ff; color:#4f46e5; font-weight:600; white-space:nowrap; }
     .pl-subnav { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:8px; }
@@ -587,7 +618,7 @@
     .pl-foot-left { display:flex; align-items:center; gap:6px; }
     .pl-foot button { font-size:11px; padding:4px 12px; border-radius:8px; cursor:pointer; }
     .pl-foot button:disabled { opacity:0.4; cursor:not-allowed; }
-    .pl-status { font-size:11px; padding:2px 6px; border:1px solid #a855f7; border-radius:6px; color:#7c3aed; background:#faf5ff; font-weight:600; cursor:pointer; }
+    .pl-status { font-size:11px; padding:2px 6px; border:1px solid #a855f7; border-radius:6px; color:#7c3aed; background:#faf5ff; font-weight:600; cursor:pointer; max-width:96px; }
     .pl-home { border:1px solid #3b82f6; background:#eff6ff; color:#2563eb; font-weight:600; }
     .pl-home:hover { background:#2563eb; color:#fff; }
     .pl-copy { border:1px solid #10b981; background:#ecfdf5; color:#059669; font-weight:600; }
@@ -634,6 +665,18 @@
     .pl-page button { font-size:11px; padding:3px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
     .pl-page button:disabled { opacity:0.4; cursor:not-allowed; }
     .pl-page span { font-size:11px; color:var(--sub); }
+
+    /* 版本切换条（评论话术多版本） */
+    .version-tab {
+      flex: 1; padding: 4px 6px; border-radius: 4px;
+      border: 1px solid #374151; background: #1f2937; color: #9ca3af;
+      font-size: 11px; cursor: pointer; transition: all .15s;
+    }
+    .version-tab:hover:not(.active) { color: #fff; }
+    .version-tab.active {
+      background: var(--grad-red); border-color: #c62a42; color: #fff;
+      box-shadow: var(--btn-shadow); font-weight: 600;
+    }
 
     /* ===== 统一输入框 & 按钮体系 ===== */
     .search-input {
@@ -885,15 +928,13 @@
 
     /* ===== ✨ UI 打磨层（叠加统一，只做视觉不破坏布局） ===== */
     :root {
-      --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', sans-serif;
+      --font-ui: "Microsoft YaHei", "PingFang SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
       --radius-lg: 16px;
       --shadow-soft: 0 1px 2px rgba(15,23,42,.05), 0 3px 10px rgba(15,23,42,.05);
       --shadow-lift: 0 3px 6px rgba(15,23,42,.06), 0 12px 28px rgba(15,23,42,.11);
     }
     body {
       font-family: var(--font-ui);
-      -webkit-font-smoothing: antialiased;
-      text-rendering: optimizeLegibility;
     }
     /* 更精致的滚动条 */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -957,32 +998,106 @@
 
     /* 空状态图标微光 */
     #leftContent .empty-state .icon { filter: drop-shadow(0 2px 4px rgba(255,36,66,.22)); }
+
+    /* ===== 字体/排版统一优化层（提级小字号、消除毛边锯齿，覆盖行内样式） ===== */
+    html, body, button, input, select, textarea, label, .main-tab, .sub-tab,
+    .badge, .drop-item, .btn, .version-tab, .pl-pill, .pl-actions button,
+    .pl-foot button, .pl-page button, .ovl-f, .step3-tab, .reply-actions button {
+      font-family: var(--font-ui);
+    }
+    /* 正文 & 按钮：基准 12.5px */
+    #leftContent .btn, .send-btn, .locate-btn, .interact-btn, .refresh-btn,
+    .batch-send-btn, .search-input, .reply-box textarea, .modal-box textarea,
+    .pl-reply-text, .step3-actions button, .step3-textarea, .pl-filter select,
+    .pl-filter input, .copy-btn {
+      font-size: 12.5px !important;
+    }
+    /* 次要信息/小按钮/胶囊/徽标：统一 11.5px */
+    #leftContent .btn-sm, .btn-mini, .version-tab, .pl-actions button, .pl-foot button,
+    .pl-page button, .drop-item, .ovl-f, .pl-pill, .pl-badge, .pl-tag,
+    .pl-origin, .pl-uid, .pl-nickmeta, .pl-idinfo, .pl-hint, .pl-likerctx,
+    .pl-chat, .pl-dm-summary, .pl-result, .pl-source, .pl-status, .pl-col-sel input,
+    .pl-table thead th, .pl-table tbody tr.pl-row td, .pl-col-x .pl-toggle,
+    .note-meta, .note-status, .search-status .detail, .log-panel, .send-result,
+    .ai-reason, .prospect-reason, .prospect-reply-label, .step2-stat .lbl,
+    .step3-progress, .step2-progress, .minilabel, .pl-stat-card .label {
+      font-size: 11.5px !important;
+    }
+    /* 标题/重点信息：14-15px */
+    .header h1 { font-size: 15px !important; }
+    .main-tab { font-size: 14px !important; }
+    .sub-tab, .toolbar-title, .results-header .count,
+    #leftContent .note-item .note-title, .note-info.active .note-title,
+    .step-title, .plat .pl-nick, .search-status .text, .note-info .note-title {
+      font-size: 14px !important;
+    }
+    .modal-box h3 { font-size: 15px !important; }
+    .step3-author { font-size: 15px !important; }
+    .pl-nick { font-size: 14px !important; }
+    .pl-stat-card .num { font-size: 18px !important; }
+    .prospect-author, .prospect-quote { font-size: 12.5px !important; }
+    .step2-stat .num { font-size: 24px !important; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1><span class="logo-dot">📝</span> 智慧运维</h1>
     <div style="display:flex;align-items:center;gap:8px;">
-      <button id="bigWindowBtn" title="打开大窗总览（获客清单/灌水总结/双栏总览）" style="padding:5px 12px;font-size:11px;border:1px solid var(--xhs-red);background:var(--xhs-red-light);color:var(--xhs-red);border-radius:8px;cursor:pointer;font-weight:600;">↗ 大窗</button>
+      <button id="bigWindowBtn" title="打开大窗总览（获客清单/灌水总结/双栏总览）" style="padding:5px 12px;font-size:12px;border:1px solid var(--xhs-red);background:var(--xhs-red-light);color:var(--xhs-red);border-radius:8px;cursor:pointer;font-weight:600;">↗ 大窗</button>
       <span title="当前租户/产品，切换后配置、知识库、话术、已灌水记录都会随之切换" style="font-size:14px;">🏢</span>
-      <select id="tenantSwitcher" title="切换租户/产品" style="padding:5px 8px;font-size:11px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;max-width:140px;outline:none;"></select>
-      <button id="adminBtn" style="padding:5px 12px;font-size:11px;border:1px solid var(--xhs-red);background:#fff;color:var(--xhs-red);border-radius:8px;cursor:pointer;font-weight:600;" title="打开设置">⚙️ 设置</button>
+      <select id="tenantSwitcher" title="切换租户/产品" style="padding:5px 8px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;max-width:140px;outline:none;"></select>
+      <button id="adminBtn" style="padding:5px 12px;font-size:12px;border:1px solid var(--xhs-red);background:#fff;color:var(--xhs-red);border-radius:8px;cursor:pointer;font-weight:600;" title="打开设置">⚙️ 设置</button>
       <span class="badge" id="statusBadge">检查中...</span>
+      <span title="后台自动扫：定时刷新通知+消息，把新进线/回复吸进清单，并顺带自动 AI 触达清单里合适的人（每日≤10条，防风控）；最低 20 分钟一次。选 2/10 也按 20 跑" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0e7490;font-weight:600;white-space:nowrap;">🤖
+        <select id="plScanFreq2" style="font-size:11px;padding:3px 6px;border:1px solid #b9e6ff;border-radius:6px;color:#0e7490;background:#ecfeff;font-weight:600;cursor:pointer;">
+          <option value="off">自动扫：关</option>
+          <option value="2">2 分</option>
+          <option value="10">10 分</option>
+          <option value="20">20 分</option>
+          <option value="30">30 分</option>
+          <option value="60">60 分</option>
+        </select>
+      </span>
+      <label title="拟人化挡位：一键套用整套停留/间隔与每日上限，挡位越高越慢越安全" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#571f3d;font-weight:600;white-space:nowrap;">🕐
+        <select id="plDelayPreset" title="拟人化挡位（与设置页同步）：0极速~5极致防御，选完即时生效" style="font-size:11px;padding:3px 6px;border:1px solid #e3c7d6;border-radius:6px;color:#c2185b;background:#fff5f7;font-weight:600;cursor:pointer;max-width:150px;"></select>
+      </label>
     </div>
   </div>
+  <script>
+  (function () {
+    var el = document.getElementById('plScanFreq2'); if (!el) return;
+    chrome.storage.local.get(['prospect_scan_auto', 'prospect_scan_interval_min'], function (r) {
+      if (r && r.prospect_scan_auto === true) el.value = String(r.prospect_scan_interval_min || 10);
+    });
+    el.addEventListener('change', function () {
+      var on = el.value !== 'off';
+      chrome.runtime.sendMessage({ action: 'setAutoScanChat', data: { enabled: on, intervalMin: on ? parseInt(el.value, 10) : 0 } }, function () {});
+    });
+  })();
+  </script>
 
-  <!-- 主功能 Tab：一级（诊断/发笔记/获客/AI客服）+ 获客下二级 -->
+  <!-- 主功能 Tab：一级（诊断/发笔记/获客/通知/消息）+ 获客二级 + 通知二级 + 消息二级 -->
   <div id="mainTabs" style="display:flex;gap:0;padding:0 10px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0;">
     <button id="tabDiagnose" class="main-tab active" title="账号诊断：抓取本人主页，头像/简介/笔记整改建议 + 结合产品与知识库的内容规划">🔍 账号诊断</button>
     <button id="tabNotePublish" class="main-tab" title="发笔记：用知识库内容一键/定时发布小红书笔记">✍️ 发笔记</button>
-    <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 用户清单 / 灌水总结">🎯 获客</button>
-    <button id="tabAiCs" class="main-tab" title="AI客服：触达场景 + 客户问答话术库，配置好后 AI 触发/回复">🎧 AI客服</button>
+    <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 灌水总结">🎯 获客</button>
+    <button id="tabNotifGroup" class="main-tab" title="通知：按来源渠道看线索（赞/评/关/AI），进清单批量触达">🔔 通知</button>
+    <button id="tabMsgGroup" class="main-tab" title="消息：对方进线/已在聊的人 → 去卖、成交维护">📨 消息</button>
   </div>
   <!-- 二级 Tab（获客分组下） -->
   <div id="subTabs" style="display:none;flex-shrink:0;background:#fafafb;border-bottom:1px solid var(--line);">
     <button id="tabCommentAssistant" class="main-tab sub-tab active" title="当前笔记评论分析/商机挖掘/一键回复">📄 获客助手</button>
-    <button id="tabProspectList" class="main-tab sub-tab" title="获客清单：人群筛选 + AI 画像 + 定向私信">🎯 用户清单</button>
     <button id="tabWaterSummary" class="main-tab sub-tab" title="灌水总结：今天/本周/累计灌水记录与话术">💧 灌水总结</button>
+  </div>
+  <!-- 二级 Tab（🔔 通知分组：合并为「用户清单」+ 配置） -->
+  <div id="subTabs2" style="display:none;flex-shrink:0;background:#fafafb;border-bottom:1px solid var(--line);">
+    <button id="tabNotifAll" class="main-tab sub-tab active" title="用户清单：通知全部线索（不分渠道，按人合并多来源）">👥 用户清单</button>
+    <button id="tabNotifConfig" class="main-tab sub-tab" title="配置-通知：渠道基调 + 成交引导">⚙️ 配置</button>
+  </div>
+  <!-- 二级 Tab（📨 消息分组：先挂住，等通知稳定后再重做） -->
+  <div id="subTabs3" style="display:none;flex-shrink:0;background:#fafafb;border-bottom:1px solid var(--line);">
+    <button id="tabProspectList" class="main-tab sub-tab active" title="消息用户清单（待重做）">👥 用户清单</button>
+    <button id="tabAiCsQa" class="main-tab sub-tab" title="配置-消息：客户问答话术库">📖 配置-消息</button>
   </div>
 
   <!-- Split Layout -->
@@ -998,7 +1113,7 @@
             <a class="drop-item" data-action="cycle"><span class="drop-ico">🔄</span>循环 · 自动灌水</a>
           </div>
         </div>
-        <button class="btn btn-ghost btn-sm" id="btnCancelSearch" style="display:none;">✕ 取消</button>
+        <button class="btn btn-ghost btn-sm" id="btnCancelSearch" style="display:none;" title="取消当前搜索">✕ 取消</button>
         <span id="leftBotSlot"></span>
       </div>
       <!-- 灌水关键词列表：可添加多个（≤版本上限），逐个顺序搜索，第一个完成才搜第二个 -->
@@ -1008,7 +1123,7 @@
           <input type="text" id="awKeywordPopup" class="search-input" placeholder="输入关键词，回车添加" title="添加一个灌水搜索关键词，可添加多个（<版本上限），回车或点＋" style="flex:1;">
           <button class="btn btn-primary btn-sm" id="btnAddKw" title="添加到关键词列表">＋</button>
         </div>
-        <div id="kwHint" style="font-size:10px;color:var(--sub,#999);line-height:1.5;" title="按顺序逐个搜索：第一个关键词完成后才开始第二个"></div>
+        <div id="kwHint" style="font-size:12px;color:var(--sub,#999);line-height:1.5;" title="按顺序逐个搜索：第一个关键词完成后才开始第二个"></div>
       </div>
       <div class="left-content" id="leftContent">
         <!-- 初始状态：准备搜索 -->
@@ -1040,15 +1155,8 @@
         <div class="panel" id="panelResults">
           <div class="results-header">
             <span class="count" id="resultsCount"></span>
-            <div style="display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap;">
-              <button id="btnAutoAdvance" class="btn btn-primary btn-sm" style="background:#16a34a;border-color:#16a34a;color:#fff;" title="严格流水线：自动逐篇处理当前关键词（等每篇处理完才下一篇），当前词灌完自动切下一个关键词，全部完成自动停。运行中再点=停止">▶ 自动灌水</button>
-              <select id="autoStopSel" title="当前关键词怎样算“灌完”" style="font-size:11px;padding:2px 4px;">
-                <option value="perRound">每词≤每轮篇数</option>
-                <option value="all">当前词全部</option>
-              </select>
-            </div>
           </div>
-          <div id="filterStats" style="font-size:10px;color:var(--sub);padding:3px 10px;background:#fbfbfc;border-bottom:1px solid var(--line);"></div>
+          <div id="filterStats" style="font-size:12px;color:var(--sub);padding:3px 10px;background:#fbfbfc;border-bottom:1px solid var(--line);"></div>
           <ul class="note-list" id="noteList"></ul>
         </div>
 
@@ -1084,8 +1192,7 @@
               <a class="drop-item" data-rid="send"><span class="drop-ico">📤</span>自动评论</a>
             </div>
           </div>
-          <button id="batchSendBtn" style="display:none;" title="自动评论执行器（由下拉触发）"></button>
-        </div>
+          </div>
       </div>
       <div id="lockBanner" style="display:none;align-items:center;gap:8px;padding:8px 12px;margin:0;background:linear-gradient(90deg,#fff0f3,#ffe3e8);color:#c41d3c;font-size:12px;font-weight:600;border-bottom:1px solid #ffd1da;">
         <span class="loading-spinner" style="border-top-color:#c9930a;"></span>
@@ -1094,10 +1201,12 @@
       <div id="noteInfo" class="note-info" style="display:none"></div>
       <div id="statusBar" class="status-bar">⏸️ 待机中（未开始扫描）</div>
       <div id="mainContent" class="content"></div>
-      <!-- 获客清单独立视图（Tab 切换显示） -->
+      <!-- 用户清单独立视图（Tab 切换显示） -->
       <div id="prospectContent" class="content" style="display:none;"></div>
-      <!-- AI客服独立视图（触达场景 + 客户问答话术库） -->
-      <div id="aiCsContent" class="content" style="display:none;"></div>
+      <!-- AI客服·A 触达场景独立视图（Tab 切换显示） -->
+      <div id="aiCsSceneContent" class="content" style="display:none;"></div>
+      <!-- AI客服·B 客户问答话术库独立视图（Tab 切换显示） -->
+      <div id="aiCsQaContent" class="content" style="display:none;"></div>
       <!-- 灌水总结独立视图（Tab 切换显示） -->
       <div id="waterSummaryContent" class="content" style="display:none;"></div>
       <!-- 发笔记独立视图（Tab 切换显示） -->
@@ -1118,13 +1227,13 @@
     </div>
     <!-- 当前动作（实时）：content.js 每切一步都会刷新这里，包括等待读秒 -->
     <div id="lockOverlayStatus" style="margin-top:14px;width:94%;max-width:520px;background:#fff;border:1px solid #ffd6de;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:700;color:#c41d3c;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.06);">⚙️ 正在准备…</div>
-    <div style="margin-top:14px;color:#c66a7f;font-size:11px;font-weight:600;">📋 实时日志（最新在上方）</div>
+    <div style="margin-top:14px;color:#c66a7f;font-size:12px;font-weight:600;">📋 实时日志（最新在上方）</div>
     <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
       <button onclick="window.__setOverlayLogFilter('all');window._applyOverlayFilter();this.parentNode.querySelectorAll('.ovl-f').forEach(function(b){b.style.background=(b.dataset.f==='all'?'#c41d3c':'#fff');b.style.color=(b.dataset.f==='all'?'#fff':'#c41d3c');});" class="ovl-f" data-f="all" style="flex:none;font-size:11px;padding:2px 10px;border:1px solid #f3c2cd;border-radius:12px;cursor:pointer;background:#c41d3c;color:#fff;">全部</button>
       <button onclick="window.__setOverlayLogFilter('bot');window._applyOverlayFilter();this.parentNode.querySelectorAll('.ovl-f').forEach(function(b){b.style.background=(b.dataset.f==='bot'?'#c41d3c':'#fff');b.style.color=(b.dataset.f==='bot'?'#fff':'#c41d3c');});" class="ovl-f" data-f="bot" style="flex:none;font-size:11px;padding:2px 10px;border:1px solid #f3c2cd;border-radius:12px;cursor:pointer;background:#fff;color:#c41d3c;">🤖 只看 Bot</button>
       <button onclick="window.__setOverlayLogFilter('flow');window._applyOverlayFilter();this.parentNode.querySelectorAll('.ovl-f').forEach(function(b){b.style.background=(b.dataset.f==='flow'?'#c41d3c':'#fff');b.style.color=(b.dataset.f==='flow'?'#fff':'#c41d3c');});" class="ovl-f" data-f="flow" style="flex:none;font-size:11px;padding:2px 10px;border:1px solid #f3c2cd;border-radius:12px;cursor:pointer;background:#fff;color:#c41d3c;">💧 只看灌水</button>
     </div>
-    <div id="lockOverlayLog" style="margin-top:6px;width:94%;max-width:520px;flex:1;min-height:0;overflow-y:auto;background:#fffdfd;border:1px solid #f6e3e7;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#8a3a4e;"></div>
+    <div id="lockOverlayLog" style="margin-top:6px;width:94%;max-width:520px;flex:1;min-height:0;overflow-y:auto;background:#fffdfd;border:1px solid #f6e3e7;border-radius:8px;padding:8px 12px;font-size:12px;line-height:1.7;font-family:'Microsoft YaHei','PingFang SC','Microsoft YaHei UI',-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans SC',sans-serif;color:#8a3a4e;"></div>
   </div>
 
   <!-- 获客清单：私信弹窗 -->
@@ -1133,9 +1242,7 @@
       <h3 id="dmModalTitle">✉️ 私信</h3>
       <div class="pl-dm-summary" id="dmModalSummary"></div>
       <div style="display:flex;gap:6px;margin:6px 0;flex-wrap:wrap;">
-        <button class="pl-dm-gen" id="dmGenBtn" style="flex:1;">🤖 AI 生成话术</button>
-        <button class="pl-dm-gen" id="dmSceneBtn" style="flex:1;background:#fff;border:1px solid #0e7490;color:#0e7490;">🎧 场景话术</button>
-        <button class="pl-dm-gen" id="dmTimingBtn" style="flex:1;background:#fff;border:1px solid #8b5cf6;color:#6d28d9;">🎯 判断销售时机</button>
+        <button class="pl-dm-gen" id="dmGenBtn" style="flex:1;">✨ 优化话术</button>
       </div>
       <div id="dmTiming" class="pl-result" style="min-height:0;margin:0 0 6px;"></div>
       <textarea id="dmText" placeholder="私信内容..."></textarea>
@@ -1155,13 +1262,6 @@
       <div class="profile-field"><label>身份</label><input id="pfIdentity" placeholder="95后打工人"></div>
       <div class="profile-field"><label>需求</label><input id="pfNeeds" placeholder="想了解..."></div>
       <div class="profile-field"><label>痛点</label><input id="pfPain" placeholder="怕..."></div>
-      <div class="profile-field"><label>意向等级</label>
-        <select id="pfIntent">
-          <option value="high">高</option>
-          <option value="medium">中</option>
-          <option value="low">低</option>
-        </select>
-      </div>
       <div class="profile-field"><label>私信切入角度</label><input id="pfAngle" placeholder="对方问...，用...切入"></div>
       <div class="modal-footer">
         <button id="pfCancelBtn">取消</button>
@@ -1173,7 +1273,7 @@
   <script src="lib/note-trend.js"></script>
   <script src="popup.js"></script>
   <script src="auto-water-app.js"></script>
-  <script src="auto-bot.js"></script>
-  <script src="dropdown-ui.js"></script>
+<script src="auto-bot.js"></script>
+<script src="dropdown-ui.js"></script>
 </body>
 </html>

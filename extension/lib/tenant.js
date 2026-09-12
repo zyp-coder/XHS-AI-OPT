@@ -30,7 +30,9 @@ const TENANT_SCOPED_KEYS = [
   'auto_water_state',    // 搜索状态（含 foundNotes 笔记列表）
   'prospect_list',       // 获客清单
   'prospect_dm_history', // 获客清单私信历史
+  'prospect_sync_cursor',// 通知同步游标（识别"上次处理到最深那条"实现增量）
   'note_plan',           // 内容规划（含每页配图背景建议 photoPlans）
+  'np_used_topics',      // 发笔记：已用选题/卖点指纹池（剔除已发送，恢复后免重复发）
 ];
 
 /* ─── 底层读写 ─── */
@@ -88,13 +90,21 @@ async function _loadActiveFrom(id) {
  */
 async function init(defaultPrompts) {
   const list = await _list();
-  if (list.length > 0) return;
-  const id = _genId();
-  const tenant = { id, name: '默认租户', createdAt: Date.now() };
-  // 把现有活动数据原样收进默认租户（不丢老用户数据）
-  await _dumpActiveTo(id);
-  await _set({ [TENANT_KEYS.LIST]: [tenant], [TENANT_KEYS.CURRENT]: id });
-  console.log('[租户] 初始化默认租户:', id);
+  if (list.length === 0) {
+    const id = _genId();
+    const tenant = { id, name: '默认租户', createdAt: Date.now() };
+    // 把现有活动数据原样收进默认租户（不丢老用户数据）
+    await _dumpActiveTo(id);
+    await _set({ [TENANT_KEYS.LIST]: [tenant], [TENANT_KEYS.CURRENT]: id });
+    console.log('[租户] 初始化默认租户:', id);
+    return;
+  }
+  // ★ 防御：列表有租户但当前 id 丢失时，设回第一个（避免后续用空快照把活动数据清掉）
+  const cur = await _getCurrentId();
+  if (!cur && list.length) {
+    await _set({ [TENANT_KEYS.CURRENT]: list[0].id });
+    console.log('[租户] 当前 id 丢失，恢复为:', list[0].id);
+  }
 }
 
 /** 新建租户（不切换）。种子：仅提示词用默认，其余留空 → 各自默认（干净的新产品）。 */
@@ -119,6 +129,7 @@ async function switchTo(id) {
   const cur = await _getCurrentId();
   if (cur === id) return target; // 已是当前租户
   if (cur) await _dumpActiveTo(cur);
+  else await _dumpActiveTo(id); // ★ 无当前租户时：把现有活动数据归到目标租户，避免被空快照清空（不丢刷新新增的数据）
   await _loadActiveFrom(id);
   await _set({ [TENANT_KEYS.CURRENT]: id });
   console.log('[租户] 切换到:', id, target.name);
@@ -158,6 +169,14 @@ async function status() {
   return { tenants: await _list(), currentId: await _getCurrentId() };
 }
 
+/** 把当前活动 key（含获客清单）立即写回当前租户快照，防止"活动侧新写入"在后续快照重载时被盖回旧快照而丢数据 */
+async function snapshotCurrent() {
+  const id = await _getCurrentId();
+  if (!id) return false;
+  await _dumpActiveTo(id);
+  return true;
+}
+
 const TenantManager = {
   TENANT_KEYS,
   TENANT_SCOPED_KEYS,
@@ -167,6 +186,7 @@ const TenantManager = {
   rename,
   remove,
   status,
+  snapshotCurrent,
   list: _list,
   getCurrentId: _getCurrentId,
 };

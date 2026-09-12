@@ -8,7 +8,7 @@ from sqlalchemy import (
 
     Column, Integer, String, Text, DateTime, Float, Boolean, Enum,
 
-    ForeignKey, JSON, create_engine
+    ForeignKey, JSON, create_engine, UniqueConstraint
 
 )
 
@@ -79,6 +79,22 @@ class CommentDirection(str, enum.Enum):
     RECEIVED = "received"   # 收到的评论
 
     SENT = "sent"          # 发出的评论
+
+
+class ConversationStatus(str, enum.Enum):
+    """会话/客户销售状态"""
+    CHUNTING = "chunting"        # 触达中(默认)
+    SELLING = "selling"          # 销售中
+    WON = "won"                  # 已成单
+    COMPLETED = "completed"      # 已完成(交付完毕)
+    FOLLOWUP = "followup"        # 需跟进(7-15天无互动/变冷淡)
+    LOST = "lost"                # 流失
+
+
+class MessageDirection(str, enum.Enum):
+    """消息方向"""
+    THEM = "them"    # 对方发送
+    ME = "me"        # 我方发送
 
 
 
@@ -627,6 +643,140 @@ class ScriptLibrary(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+# ---------- 消息中心：会话 ----------
+
+class Conversation(Base):
+    """私信会话（消息工作台的数据主语，由扩展从小红书同步）"""
+    __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("product", "conv_id", name="uq_conv_product_conv"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    product = Column(String(200), default="", comment="所属产品/租户名")
+    conv_id = Column(String(200), comment="小红书会话ID")
+    partner_id = Column(String(200), default="", comment="对方小红书userId")
+    partner_name = Column(String(200), default="", comment="对方昵称")
+    avatar = Column(String(500), default="", comment="头像URL")
+    source = Column(String(50), default="", comment="来源: 关键词截流/评论/点赞/私信触达/主动进线")
+    note_title = Column(String(300), default="", comment="来源笔记标题")
+    note_url = Column(String(500), default="", comment="来源笔记链接")
+
+    # 销售状态（多级 + 半自动）
+    status = Column(Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x]), default=ConversationStatus.CHUNTING)
+    status_source = Column(String(20), default="manual", comment="状态来源: manual/ai/rule")
+    suggested_status = Column(Enum(ConversationStatus, values_callable=lambda x: [e.value for e in x]), nullable=True, default=None, comment="AI/规则建议状态(待人工确认)")
+    suggested_reason = Column(Text, default="", comment="建议理由")
+
+    # 意图
+    intent = Column(String(30), default="other", comment="意图: logistics/product_detail/suitability/price_compare/order/chat/other")
+    intent_confidence = Column(Float, default=0.0)
+    intent_reason = Column(Text, default="")
+    intent_at = Column(DateTime, nullable=True)
+
+    # AI 标签（只打标、不筛选；所有会话始终保留可见）
+    label = Column(String(20), default="", comment="AI标签: 有效商机/待定/无效/待复核，仅用于展示")
+    label_at = Column(DateTime, nullable=True)
+
+    # 激活/流失机制（按 last_at 时间驱动）
+    lost_at = Column(DateTime, nullable=True, comment="被判定流失(对方N天未回)的时间")
+
+    # 会话态（轻量字段）
+    last_msg = Column(Text, default="")
+    last_from = Column(String(10), default="", comment="最后说话方: them/me")
+    last_at = Column(DateTime, nullable=True)
+    unread_count = Column(Integer, default=0)
+    dm_count = Column(Integer, default=0, comment="我方已发私信条数")
+    last_dm_at = Column(DateTime, nullable=True)
+    them_replied = Column(Boolean, default=False, comment="对方是否回过")
+    direction = Column(String(20), default="outbound", comment="会话方向: inbound/outbound")
+    ai_tag = Column(String(50), default="", comment="AI备注/标签")
+
+    # 同步
+    fp = Column(String(200), default="", comment="最近一次同步指纹(用于diff判断是否有更新)")
+    sync_at = Column(DateTime, nullable=True, comment="最近轻量同步时间")
+    full_synced_at = Column(DateTime, nullable=True, comment="最近完整消息同步时间")
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    messages = relationship("Message", back_populates="conversation")
+
+
+# ---------- 消息中心：单条消息 ----------
+
+class Message(Base):
+    """会话内的单条消息时间线"""
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), index=True)
+    xhs_msg_id = Column(String(200), default="", comment="小红书消息ID(可用于去重)")
+    direction = Column(Enum(MessageDirection, values_callable=lambda x: [e.value for e in x]), comment="方向: them=对方/me=我方")
+    author = Column(String(200), default="", comment="消息作者昵称")
+    text = Column(Text, default="")
+    msg_at = Column(DateTime, nullable=True, comment="消息时间")
+    received_at = Column(DateTime, default=datetime.now, comment="入库时间")
+    ai_generated = Column(Boolean, default=False, comment="是否AI生成")
+    sent_at = Column(DateTime, nullable=True, comment="我方实际发送时间")
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+
+# ---------- 消息中心：意图快捷回复模板 ----------
+
+class IntentionTemplate(Base):
+    """按意图配置的快捷回复话术模板"""
+    __tablename__ = "intention_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    intent = Column(String(30), default="other", comment="意图: logistics/product_detail/suitability/price_compare/order/chat/other")
+    title = Column(String(300), default="", comment="标题")
+    content = Column(Text, default="", comment="话术内容(支持 {name} 等占位)")
+    product = Column(String(200), default="", comment="所属产品/租户名")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+# ---------- 消息中心：发送任务(出站队列，Web创建→扩展拉取执行→回写) ----------
+
+class SendTask(Base):
+    """待发送私信队列：Web端一键发送后在此排队，扩展轮询拉取并用 chatSendMessage 真实发出"""
+    __tablename__ = "send_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey("conversations.id"), index=True)
+    partner_id = Column(String(200), default="", comment="对方userId(扩展发送时用 openUid 直达)")
+    text = Column(Text, default="")
+    status = Column(String(20), default="pending", comment="状态: pending/sent/failed")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    picked_at = Column(DateTime, nullable=True, comment="扩展拉取时间")
+    sent_at = Column(DateTime, nullable=True, comment="实际发送时间")
+    error_msg = Column(Text, default="")
+
+
+# ---------- 客户邮箱线索（AI客服检测到用户留邮箱后由扩展上报） ----------
+class CustomerLead(Base):
+    """已留邮箱的客户线索（用于后续打包资料发给客户 + 通知客户）"""
+    __tablename__ = "customer_leads"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    xhs_user_id = Column(String(200), comment="小红书用户ID")
+    nickname = Column(String(200), comment="昵称")
+    email = Column(String(200), nullable=False, comment="客户留下的邮箱")
+    email_source_text = Column(Text, default="", comment="检测到邮箱的原文（上下文）")
+    detected_scene = Column(String(50), default="chat_follow", comment="检测到邮箱的 AI客服场景")
+    product = Column(String(200), default="", comment="所属产品/租户名")
+    note_title = Column(String(300), default="", comment="来源笔记标题")
+    note_url = Column(String(500), default="", comment="来源笔记链接")
+    pack_status = Column(String(20), default="pending", comment="打包状态: pending(未打包)/packed(已打包)")
+    pack_batch = Column(String(100), default="", comment="打包批次号")
+    pack_at = Column(DateTime, nullable=True, comment="打包时间")
+    notify_status = Column(String(20), default="pending", comment="通知状态: pending(未通知)/notified(已通知)")
+    notify_at = Column(DateTime, nullable=True, comment="通知时间")
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 # ---------- 初始化数据库 ----------
 
 
@@ -666,6 +816,17 @@ def init_db():
             if 'product_id' not in note_cols:
                 conn.execute(sa.text('ALTER TABLE notes ADD COLUMN product_id INTEGER'))
                 print('[init_db] 已迁移 notes.product_id')
+        # messages 中心：conversations 新增列
+        if 'conversations' in inspector.get_table_names():
+            cc = {c['name'] for c in inspector.get_columns('conversations')}
+            for col_name, col_type in [
+                ('label', 'VARCHAR(20)'),
+                ('label_at', 'DATETIME'),
+                ('lost_at', 'DATETIME'),
+            ]:
+                if col_name not in cc:
+                    conn.execute(sa.text(f'ALTER TABLE conversations ADD COLUMN {col_name} {col_type}'))
+                    print(f'[init_db] 已迁移 conversations.{col_name}')
         # schedules.account_id / product_id / last_error
         if 'schedules' in inspector.get_table_names():
             sched_cols = {c['name'] for c in inspector.get_columns('schedules')}

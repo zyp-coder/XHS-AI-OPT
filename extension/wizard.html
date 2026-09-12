@@ -10,13 +10,20 @@
     --txt:#f2f2f4; --sub:#a6a6b0; --dim:#6f6f79; --red:#ff274b; --ok:#3dd68c; --blue:#5b8dff;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;}
+  body{margin:0;font-family:"Microsoft YaHei","PingFang SC","Microsoft YaHei UI",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:13px;line-height:1.6;}
   header{max-width:640px;margin:0 auto;padding:28px 20px 0;}
   header h1{font-size:22px;margin:0 0 4px;}
   header p{color:var(--sub);font-size:13px;margin:0;}
   .steps{display:flex;gap:6px;margin-top:18px;}
   .step{flex:1;height:4px;border-radius:3px;background:var(--line);transition:background .25s;}
   .step.on{background:var(--red);}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:6px;}
+  .col{border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--card2);}
+  .col-head{font-size:14px;font-weight:700;margin-bottom:4px;}
+  .col-sub{font-size:12px;color:var(--sub);line-height:1.7;margin:0 0 12px;}
+  .import-btn{width:100%;padding:10px;border:1px dashed var(--blue);border-radius:9px;background:rgba(91,141,255,.08);color:var(--blue);font-size:13px;font-weight:600;cursor:pointer;}
+  .import-btn:hover{background:rgba(91,141,255,.15);}
+  @media(max-width:520px){.two-col{grid-template-columns:1fr;}}
   main{max-width:640px;margin:0 auto;padding:28px 20px 90px;}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;}
   .card h2{font-size:17px;margin:0 0 6px;}
@@ -83,19 +90,72 @@
 
   <!-- 第 1 步：AI -->
   <section id="page1" class="card">
-    <h2>① 配置 AI（用于分析评论、生成回复）</h2>
-    <p class="hint">选一个你已注册的 AI 服务商，填它的 API Key。Key 只存在你本地浏览器，不会上传。</p>
-    <div class="providers" id="providers"></div>
-    <div class="row"><label>API 地址</label><input type="text" id="baseUrl" placeholder="https://api.deepseek.com/v1"></div>
-    <div class="row" id="modelRow"><label>模型</label><select id="model"></select></div>
-    <div class="row" style="margin-bottom:6px;"><label>API Key *（只存本地）</label><input type="password" id="apiKey" placeholder="sk-…" style="font-family:monospace;"></div>
+    <h2>① 基础配置</h2>
+    <p class="hint">两种方式任选其一：<b>新装</b>就填右侧「配置 AI」；<b>换机/迁移</b>就点左侧「从备份恢复」，AI 配置会自动带上。</p>
+
+    <div class="two-col">
+      <!-- 左栏：从备份恢复 -->
+      <div class="col">
+        <div class="col-head" style="color:var(--blue);">📦 从备份恢复</div>
+        <p class="col-sub">导入之前导出的备份文件，产品/知识库/话术/AI 配置等自动还原，<b>本步就不必再填 AI</b>。</p>
+        <input type="file" id="restoreFile" accept="application/json,.json" style="display:none;">
+        <label for="restoreFile" id="restoreBtn" class="import-btn" style="display:flex;align-items:center;justify-content:center;cursor:pointer;">⬆ 选择备份文件导入</label>
+        <div id="restoreMsg" class="msg info hidden" style="margin-top:10px;display:none;"></div>
+      </div>
+
+      <!-- 右栏：配置 AI -->
+      <div class="col">
+        <div class="col-head" style="color:var(--ok);">⚙️ 配置 AI（日常对话 / 回复）</div>
+        <p class="col-sub">选一个已注册的服务商，填它的 API Key。Key 只存在你的浏览器。</p>
+        <div class="row">
+          <label>API 提供商</label>
+          <select id="apiProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="qwen">通义千问（阿里云）</option>
+            <option value="siliconflow">硅基流动 SiliconFlow</option>
+            <option value="qianfan">百度千帆 Qianfan</option>
+            <option value="gemini">Google Gemini（免费）</option>
+            <option value="openrouter">OpenRouter（免费路由）</option>
+            <option value="groq">Groq（免费快）</option>
+            <option value="zhipu">智谱 GLM（免费）</option>
+            <option value="custom">自定义（手动填写地址）</option>
+          </select>
+          <span style="font-size:11px;color:var(--sub);">选择服务商后，接口地址与模型自动匹配，无需手敲 URL</span>
+        </div>
+        <div class="row" id="customBaseUrlGroup" style="display:none;">
+          <label>自定义 API Base URL</label>
+          <input type="text" id="customBaseUrl" placeholder="https://your-api.com/v1">
+        </div>
+        <div class="row"><label>模型</label><select id="apiModel"><option value="" disabled selected>正在加载模型…</option></select></div>
+        <div class="row" style="margin-bottom:6px;"><label>API Key *（只存本地）</label><input type="password" id="apiKey" placeholder="sk-…" style="font-family:monospace;"></div>
+      </div>
+    </div>
+
     <div id="mmToggle" style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--blue);font-size:13px;padding:8px 0;user-select:none;">
       <span id="mmCaret">＋</span> 多模态模型（选配）：用于配图 / 图片理解，默认通义千问 Qwen3.7 Plus
     </div>
     <div id="mmBody" class="hidden" style="border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:4px;">
-      <div class="providers" id="mmProviders" style="grid-template-columns:repeat(3,1fr);"></div>
-      <div class="row"><label>多模态 API 地址</label><input type="text" id="mmBaseUrl" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"></div>
-      <div class="row"><label>多模态模型</label><select id="mmModel"></select></div>
+      <div class="row">
+        <label>多模态 API 提供商</label>
+        <select id="mmApiProvider">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+          <option value="qwen">通义千问（阿里云）</option>
+          <option value="siliconflow">硅基流动 SiliconFlow</option>
+          <option value="qianfan">百度千帆 Qianfan</option>
+          <option value="gemini">Google Gemini（免费）</option>
+          <option value="openrouter">OpenRouter（免费路由）</option>
+          <option value="groq">Groq（免费快）</option>
+          <option value="zhipu">智谱 GLM（免费）</option>
+          <option value="custom">自定义（手动填写地址）</option>
+        </select>
+      </div>
+      <div class="row" id="mmCustomBaseUrlGroup" style="display:none;">
+        <label>多模态自定义 API Base URL</label>
+        <input type="text" id="mmCustomBaseUrl" placeholder="https://your-api.com/v1">
+      </div>
+      <div class="row"><label>多模态模型</label><select id="mmApiModel"></select></div>
       <div class="row" style="margin-bottom:0;"><label>多模态 API Key（选填，想用多模态就填，留空则不启用）</label><input type="password" id="mmApiKey" style="font-family:monospace;"></div>
     </div>
   </section>
@@ -115,6 +175,6 @@
   <button class="btn primary" id="nextB">下一步</button>
 </div>
 
-<script src="wizard.js"></script>
+<script src="wizard.js?v=2"></script>
 </body>
 </html>

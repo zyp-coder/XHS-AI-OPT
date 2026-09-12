@@ -10,6 +10,7 @@ function app() {
             { id: 'comments', label: '评论互动', icon: '💬' },
             { id: 'drain', label: '引流任务', icon: '🚀' },
             { id: 'knowledge', label: '知识库', icon: '📚' },
+            { id: 'messages', label: '消息中心', icon: '💬' },
             { id: 'ai_config', label: 'AI 配置', icon: '🤖' },
             { id: 'comment_logs', label: '回复日志', icon: '📋' },
         ],
@@ -91,6 +92,7 @@ function app() {
                 case 'comments': renderComments(container); break;
                 case 'drain': renderDrain(container); break;
                 case 'knowledge': renderKnowledge(container); break;
+                case 'messages': renderMessages(container); break;
                 case 'ai_config': renderAIConfig(container); break;
                 case 'comment_logs': renderCommentLogs(container); break;
                 default: container.innerHTML = '<div class="text-center py-16 text-gray-500">页面不存在</div>';
