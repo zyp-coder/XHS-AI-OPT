@@ -36,6 +36,10 @@ with Session(eng) as s:
                         last_at=recent, created_at=recent, updated_at=recent)
     s.add_all([c1, c2])
     s.flush()
+    nm = M.NoteMonitor(note_url='https://www.xiaohongshu.com/explore/nm1', scenario='evergreen',
+                       title='被监控笔记', author='博主', entry_at=old, created_at=old, updated_at=old)
+    s.add(nm)
+    s.flush()
     s.add_all([
         M.Message(conversation_id=c1.id, text='旧会话消息', msg_at=old, received_at=old),
         M.Message(conversation_id=c2.id, text='新消息', msg_at=recent, received_at=recent),
@@ -55,6 +59,15 @@ with Session(eng) as s:
         M.DrainRecord(task_id=1, target_author='辛', created_at=recent),
         M.PromptLog(scene='s', prompt='p', response='r', created_at=now - timedelta(days=25)),
         M.PromptLog(scene='s', prompt='p2', response='r2', created_at=mid),
+        M.RadarSnapshot(monitor_id=nm.id, likes=1, collected_at=old),
+        M.RadarSnapshot(monitor_id=nm.id, likes=2, collected_at=recent),
+        M.ExitLog(monitor_id=nm.id, scenario='evergreen', exit_reason='time_expired',
+                  detail='老退出日志', created_at=old),
+        M.ExitLog(monitor_id=nm.id, scenario='evergreen', exit_reason='no_potential',
+                  detail='新退出日志', created_at=recent),
+        # 目标账号库：用户自己录入的盯人名单，不在自动清除范围（删除权在用户）
+        M.TargetAccount(xhs_user_id='u1', nickname='老目标账号', category='compete', created_at=old),
+        M.TargetAccount(xhs_user_id='u2', nickname='新目标账号', category='agent', created_at=recent),
         M.Account(nickname='号', phone='1', cookies='[]'),
     ])
     s.commit()
@@ -69,6 +82,7 @@ assert r['messages'] == 2, r          # 旧会话那条 + 活跃会话里的老�
 assert r['send_tasks'] == 2, r        # 旧会话的待发 + 已发送的老任务
 assert r['comments'] == 1 and r['comment_logs'] == 1, r
 assert r['drain_records'] == 1 and r['prompt_logs'] == 1, r
+assert r['radar_snapshots'] == 1 and r['exit_logs'] == 1, r
 
 with Session(eng) as s:
     assert [c.conv_id for c in s.query(M.Conversation).all()] == ['new']
@@ -81,6 +95,10 @@ with Session(eng) as s:
     assert [x.target_author for x in s.query(M.CommentLog).all()] == ['己']
     assert [d.target_author for d in s.query(M.DrainRecord).all()] == ['辛']
     assert s.query(M.PromptLog).count() == 1
+    assert [k.likes for k in s.query(M.RadarSnapshot).all()] == [2]
+    assert [e.exit_reason for e in s.query(M.ExitLog).all()] == ['no_potential']
+    assert s.query(M.NoteMonitor).count() == 1              # 监控池本身不动
+    assert [t.xhs_user_id for t in s.query(M.TargetAccount).all()] == ['u1', 'u2']
     assert s.query(M.Account).count() == 1                  # 自有内容不动
     assert s.get(M.Conversation, 2).partner_name == '乙'    # 加密列仍可正常解密
 
