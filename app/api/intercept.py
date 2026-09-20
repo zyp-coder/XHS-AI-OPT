@@ -161,3 +161,87 @@ async def debug_probe(data: DebugProbeBody):
     if result["note"] is None and not result["list"]:
         raise HTTPException(400, "请提供 note_url 或 list_url")
     return result
+
+
+class ScenarioTryBody(BaseModel):
+    scenario: str
+
+
+class CommentPreviewBody(BaseModel):
+    scenario: str
+    note_title: str = ""
+    note_content: str = ""
+    note_author: str = ""
+    extra: dict = {}
+
+
+@router.post("/experience/try-scenario")
+async def experience_try_scenario(data: ScenarioTryBody):
+    """真机试跑：只跑指定场景的"发现+采集"，返回该场景会抓到的笔记(不评论、不写干预)。
+
+    目的是让用户直观感受这个场景到底在盯什么、抓什么。
+    """
+    if data.scenario not in scenario_order():
+        raise HTTPException(400, f"未知场景: {data.scenario}")
+    from app.core.browser import browser_engine
+    from app.core.radar_engine import radar_engine
+    from app.core import intercept_common as ic
+    from app.models.models import Account
+    cfg = ic.get_scenario_config(data.scenario)
+    try:
+        with Session(engine) as sid:
+            acc = sid.query(Account).filter_by(is_active=True).first()
+        if acc:
+            await browser_engine.ensure_ready(acc.id)
+    except Exception:
+        pass
+    try:
+        await radar_engine.scan_scenario(data.scenario, cfg)
+    except Exception as e:
+        raise HTTPException(500, f"试跑失败: {e}")
+    # 汇总该场景监控池(含刚入列的)
+    import sqlalchemy as sa
+    with Session(engine) as s:
+        rows = s.query(NoteMonitor).filter(NoteMonitor.scenario == data.scenario,
+                                           NoteMonitor.is_active == True).order_by(
+            NoteMonitor.updated_at.desc()).limit(10).all()
+        notes = [
+            {"title": m.title, "author": m.author, "likes": m.last_likes,
+             "comments": m.last_comments, "rank": m.last_view_rank,
+             "url": m.note_url, "state": m.state}
+            for m in rows
+        ]
+    return {"scenario": data.scenario, "count": len(notes), "notes": notes}
+
+
+@router.post("/experience/preview-comment")
+async def experience_preview_comment(data: CommentPreviewBody):
+    """AI 评论预览：按场景生成一条评论(不发布)。让用户直接看到每个场景会怎么说。"""
+    if data.scenario not in scenario_order():
+        raise HTTPException(400, f"未知场景: {data.scenario}")
+    from app.core.ai_engine import ai_engine
+    from app.core import intercept_common as ic
+    cfg = ic.get_scenario_config(data.scenario)
+    scene = f"{data.scenario}_comment"
+    ctx = {
+        "note_title": data.note_title or "示例：这篇笔记讲的是什么，请自行脑补主题",
+        "note_content": data.note_content or "（未提供正文，可基于标题发挥）",
+        "note_author": data.note_author or "示例博主",
+    }
+    # 命中场景补充字段
+    if data.scenario in ("evergreen", "city"):
+        kws = ic.active_keywords()
+        ctx["keyword"] = (data.extra.get("keyword") or (kws[0] if kws else "")) or "示例关键词"
+    region = cfg.get("region_hint")
+    if data.scenario == "city":
+        ctx["city"] = region or "深圳"
+        ctx["region"] = region or "欢乐海岸"
+    if data.scenario == "pain":
+        ctx["pain_text"] = data.extra.get("pain_text") or data.note_title or "用户正在求助的原文"
+    if data.scenario == "topic":
+        ctx["topic_context"] = data.extra.get("topic_context") or "评论区正在激烈争论的问题"
+    try:
+        comment = ai_engine.generate_comment(scene, ctx)
+    except Exception as e:
+        raise HTTPException(500, f"生成失败: {e}")
+    return {"scenario": data.scenario, "comment": (comment or "").strip().strip('"').strip("'")}

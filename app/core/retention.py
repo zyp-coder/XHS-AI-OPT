@@ -4,9 +4,12 @@
 与插件端 extension/lib/data-privacy.js 同一套口径，服务端库内一视同仁（成交客户不豁免）：
 - 客户数据（客户邮箱线索 / 私信会话与消息 / 评论 / 回复日志 / 待发私信）：
   以「最后互动时间」为起点，静默满 CUSTOMER_DAYS 天自动清除。
-- 运行数据（引流执行记录 / AI 调用日志）：按记录时间起算，满 RUNTIME_DAYS 天自动清除。
+- 运行数据（引流执行记录 / AI 调用日志 / 指标快照 / 退出日志）：
+  按记录时间起算，满 RUNTIME_DAYS 天自动清除。
 
-只清记录本身（不可恢复）；账号 Cookie、知识库、话术、笔记、素材等自有内容不在清除范围。
+只清记录本身（不可恢复）。不在清除范围的自有内容：
+账号 Cookie、知识库、话术、笔记、素材等，以及目标账号库（用户自己录入的盯人名单，
+从不由采集流程自动写入，删除权在用户手上，见 DELETE /api/drain/target-accounts/{id}）。
 """
 from datetime import datetime, timedelta
 
@@ -84,6 +87,15 @@ def sweep_expired(now: datetime = None) -> dict:
 
         removed["prompt_logs"] = session.query(M.PromptLog).filter(
             M.PromptLog.created_at < run_cut,
+        ).delete(synchronize_session=False)
+
+        # 指标快照（纯数字时间序列）与退出日志（停止监控的原因记录）
+        removed["radar_snapshots"] = session.query(M.RadarSnapshot).filter(
+            M.RadarSnapshot.collected_at < run_cut,
+        ).delete(synchronize_session=False)
+
+        removed["exit_logs"] = session.query(M.ExitLog).filter(
+            M.ExitLog.created_at < run_cut,
         ).delete(synchronize_session=False)
 
         session.commit()

@@ -29,7 +29,8 @@ const interceptState = {
     exits: [],
     scenarioFilter: '',
     activeOnly: true,
-    activeTab: 'monitors',
+    activeTab: 'experience',
+    exp: {},   // scenario -> {running, notes[], err}
 };
 
 /* 可编辑的场景配置字段 */
@@ -71,7 +72,7 @@ async function renderIntercept(container) {
         <div class="mb-4 flex items-center justify-between flex-wrap gap-3">
             <div>
                 <h2 class="text-lg font-medium">全场景智能截流系统</h2>
-                <p class="text-xs text-gray-500">监控引擎发现 → 笔记监控列表 → 分级干预 → 活水清洗闭环</p>
+                <p class="text-xs text-gray-500">场景发现 → 笔记列表(监控池) → 分级干预 → 活水清洗闭环</p>
             </div>
             <div class="flex items-center gap-2">
                 <button onclick="interceptRunOnce()" class="btn-primary btn-sm">⚡ 立即扫描一轮</button>
@@ -81,25 +82,28 @@ async function renderIntercept(container) {
         </div>
 
         <!-- Tab -->
-        <div class="flex gap-2 mb-4">
-            <button onclick="interceptSetTab('monitors')" id="tab-monitors" class="btn-secondary btn-sm">📋 笔记监控列表</button>
+        <div class="flex gap-2 mb-4 flex-wrap">
+            <button onclick="interceptSetTab('experience')" id="tab-experience" class="btn-secondary btn-sm">🎮 场景体验</button>
+            <button onclick="interceptSetTab('monitors')" id="tab-monitors" class="btn-secondary btn-sm">📋 笔记列表</button>
             <button onclick="interceptSetTab('config')" id="tab-config" class="btn-secondary btn-sm">⚙️ 场景配置</button>
             <button onclick="interceptSetTab('exits')" id="tab-exits" class="btn-secondary btn-sm">🚪 退出日志</button>
         </div>
 
-        <div id="intercept-monitors"></div>
+        <div id="intercept-experience"></div>
+        <div id="intercept-monitors" style="display:none"></div>
         <div id="intercept-config" style="display:none"></div>
         <div id="intercept-exits" style="display:none"></div>
     `;
     interceptSetTab(interceptState.activeTab);
     await Promise.all([
         interceptLoadConfigs(), interceptLoadMonitors(), interceptLoadExits(),
+        interceptRenderExperience(),
     ]);
 }
 
 function interceptSetTab(tab) {
     interceptState.activeTab = tab;
-    ['monitors', 'config', 'exits'].forEach(t => {
+    ['experience', 'monitors', 'config', 'exits'].forEach(t => {
         const btn = document.getElementById(`tab-${t}`);
         const box = document.getElementById(`intercept-${t}`);
         if (btn) btn.className = `btn-${t === tab ? 'primary' : 'secondary'} btn-sm`;
@@ -108,6 +112,7 @@ function interceptSetTab(tab) {
     if (tab === 'monitors') interceptRenderMonitors();
     if (tab === 'config') interceptRenderConfigs();
     if (tab === 'exits') interceptRenderExits();
+    if (tab === 'experience') interceptRenderExperience();
 }
 
 async function interceptLoadAll() {
@@ -337,6 +342,153 @@ function interceptRenderExits() {
             </table>`}
         </div>
     `;
+}
+
+/* ============ 场景体验 ============ */
+function interceptExperienceDesc(sc) {
+    const m = {
+        burst: ['盯着最新发布的笔记', 'Δ点赞≥阈值判定起飞 → 抢C位发干货钩子'],
+        evergreen: ['固定关键词TopN长期驻留', '卡位升降+存量对账，掉位就重新抢'],
+        city: ['关键词+城市抓本地新帖', '注入"同在XX区"地域信任词'],
+        pain: ['抓"求推荐/听劝/怎么办"求助帖', '调产品卖点库给对症方案'],
+        topic: ['抓评论/点赞>阈值的高讨论帖', '发神回复/情绪共鸣，不删不评自己'],
+        highv: ['从白名单用户清单取最新笔记', '极度赞同+补充干货的降维打击'],
+    };
+    return m[sc] || ['', ''];
+}
+
+function interceptRenderExperience() {
+    const el = document.getElementById('intercept-experience');
+    if (!el) return;
+    el.innerHTML = `
+        <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <p class="text-sm text-gray-400">每个场景都可以「🔍 试跑真机抓取」（看TA在盯什么笔记）和「💬 预览AI评论」（看TA会怎么说，不发布）。</p>
+            <button onclick="interceptOpenPreview()" class="btn-primary btn-sm">💬 统一AI评论预览</button>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            ${Object.keys(SCENARIO_LABELS).map(sc => interceptExpCard(sc)).join('')}
+        </div>
+    `;
+}
+
+function interceptExpCard(sc) {
+    const d = interceptExperienceDesc(sc);
+    const st = interceptState.exp[sc] || {};
+    const notesHtml = (st.notes || []).length
+        ? `<div class="mt-3 space-y-1">${st.notes.map(n => `
+            <div class="flex items-start justify-between gap-2 bg-gray-900/60 rounded p-2 text-xs">
+                <div class="min-w-0">
+                    <div class="text-gray-200 truncate">${escapeHtml(n.title || '(无标题)')}</div>
+                    <div class="text-gray-500">${escapeHtml(n.author || '')}${n.likes ? ` · 👍${n.likes}` : ''}${n.comments ? ` · 💬${n.comments}` : ''}${n.rank ? ` · #${n.rank}` : ''}</div>
+                </div>
+                <a class="text-blue-400 hover:underline flex-shrink-0" href="${escapeHtml(n.url || '#')}" target="_blank">↗</a>
+            </div>`).join('')}</div>` : '';
+    return `
+        <div class="card p-4">
+            <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-2xl">${SCENARIO_ICONS[sc]}</span>
+                    <span class="font-medium">${SCENARIO_LABELS[sc]}</span>
+                </div>
+                <span class="tag-blue text-xs">${d[0]}</span>
+            </div>
+            <div class="text-xs text-gray-500 mb-3">${d[1]}</div>
+            <div class="flex gap-2 mb-2">
+                <button id="exp-${sc}" onclick="interceptTryScenario('${sc}')" class="btn-secondary btn-sm flex-1">${st.running ? '⏳ 试跑中...' : '🔍 试跑该场景'}</button>
+                <button onclick="interceptOpenPreview('${sc}')" class="btn-secondary btn-sm">💬 评论预览</button>
+            </div>
+            ${st.err ? `<div class="text-xs text-red-400">${escapeHtml(st.err)}</div>` : ''}
+            ${st.count != null ? `<div class="text-xs text-gray-400">本次试跑监控池共 ${st.count} 篇（最近10篇如下）</div>` : ''}
+            ${notesHtml}
+        </div>`;
+}
+
+async function interceptTryScenario(scenario) {
+    const st = interceptState.exp[scenario] = interceptState.exp[scenario] || {};
+    st.running = true; st.err = '';
+    const btn = document.getElementById(`exp-${scenario}`);
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 试跑中(浏览器打开页面)...'; }
+    try {
+        const r = await API.post('/intercept/experience/try-scenario', { scenario });
+        st.notes = r.notes || [];
+        st.count = r.count;
+        if (!st.notes.length) st.err = '未抓到笔记：请确认已配置关键词/高V用户清单、浏览器已登录';
+    } catch (e) {
+        st.err = e.message;
+    }
+    st.running = false;
+    interruptRenderExpCard(scenario);
+}
+
+function interruptRenderExpCard(scenario) {
+    const host = document.getElementById('intercept-experience');
+    if (!host) return;
+    for (const sc of Object.keys(SCENARIO_LABELS)) {
+        if (sc === scenario) continue;
+    }
+    interceptRenderExperience();
+}
+
+function interceptOpenPreview(scenario) {
+    let ov = document.getElementById('preview-overlay');
+    if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'preview-overlay';
+        ov.className = 'modal-overlay';
+        ov.innerHTML = `
+            <div class="modal max-w-2xl max-h-[85vh] overflow-y-auto">
+                <h3 class="text-lg font-medium mb-2">💬 AI 评论预览（不发布）</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-gray-400">场景</label>
+                        <select id="pv-scenario" class="input mt-1">
+                            ${Object.keys(SCENARIO_LABELS).map(s => `<option value="${s}" ${s === scenario ? 'selected' : ''}>${SCENARIO_ICONS[s]} ${SCENARIO_LABELS[s]}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">笔记标题</label>
+                        <input id="pv-title" class="input mt-1" placeholder="示例：闺蜜背着我偷偷卷了个大项目..." value="">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">笔记正文（可选）</label>
+                        <textarea id="pv-content" class="input mt-1" rows="3" placeholder="可选，留空则基于标题发挥"></textarea>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">作者（可选）</label>
+                        <input id="pv-author" class="input mt-1" placeholder="示例博主">
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button onclick="document.getElementById('preview-overlay').style.display='none'" class="btn-secondary btn-sm">关闭</button>
+                        <button id="pv-run" onclick="interceptRunPreview()" class="btn-primary btn-sm">✨ 生成评论</button>
+                    </div>
+                </div>
+                <div id="pv-result" class="mt-4"><div class="text-xs text-gray-500">填标题后点「生成评论」…</div></div>
+            </div>`;
+        document.body.appendChild(ov);
+        ov.onclick = (e) => { if (e.target === ov) ov.style.display = 'none'; };
+    }
+    ov.style.display = 'flex';
+}
+
+async function interceptRunPreview() {
+    const btn = document.getElementById('pv-run');
+    const box = document.getElementById('pv-result');
+    if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+    box.innerHTML = '<div class="loading">AI 思考中…</div>';
+    try {
+        const r = await API.post('/intercept/experience/preview-comment', {
+            scenario: document.getElementById('pv-scenario').value,
+            note_title: document.getElementById('pv-title').value,
+            note_content: document.getElementById('pv-content').value,
+            note_author: document.getElementById('pv-author').value,
+        });
+        box.innerHTML = `
+            <div class="text-xs text-gray-400 mb-1">${SCENARIO_ICONS[r.scenario]} ${SCENARIO_LABELS[r.scenario]} 会说：</div>
+            <div class="p-3 bg-gray-900 rounded text-sm text-gray-100">${escapeHtml(r.comment || '(空)')}</div>`;
+    } catch (e) {
+        box.innerHTML = `<div class="text-red-400 text-sm">生成失败：${escapeHtml(e.message)}</div>`;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '✨ 生成评论'; }
 }
 
 /* ============ 干跑调试 ============ */

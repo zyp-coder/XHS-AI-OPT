@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """FastAPI 应用入口"""
+import logging
 import os
 import re
 import sys
@@ -7,8 +8,8 @@ import time
 from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -56,14 +57,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS 配置
+# ── 本地服务入口加固 ────────────────────────────────────────
+# 服务只监听 127.0.0.1，但仍有两类浏览器侧风险，仅靠「监听本机」挡不住：
+#   1) DNS 重绑定：外部域名解析到 127.0.0.1 后，页面就成了「同源」，绕过同源策略直连本服务
+#      → 校验 Host 头只在放行名单内（浏览器无法伪造 Host）
+#   2) 跨站页面直连：任意网页 fetch 本机端口（POST 一律带 Origin，表单提交也带）
+#      → /api/ 下带 Origin 的请求必须来自本机页面或浏览器扩展，否则拒绝
+# 本机命令行/脚本调用不带 Origin，照常放行（这类调用本就能直接读 data/ 目录，无需设防）。
+_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_ALLOWED_ORIGINS = {"http://%s:%d" % (HOST, PORT), "http://localhost:%d" % PORT}
+# Chrome 扩展 ID 固定为 32 位 a–p 字母；开发期免打包加载的 ID 会变，故按形态放行
+_EXT_ORIGIN_RE = re.compile(r"^chrome-extension://[a-p]{32}$")
+_guard_log = logging.getLogger("uvicorn.error")
+
+# CORS 配置：只放行本机页面与浏览器扩展（原先的 * 会让任意网站在浏览器里读写本机数据）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=sorted(_ALLOWED_ORIGINS),
+    allow_origin_regex=_EXT_ORIGIN_RE.pattern,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def local_access_guard(request: Request, call_next):
+    if request.url.hostname not in _ALLOWED_HOSTS:
+        _guard_log.warning("[guard] blocked non-local host: %r", request.headers.get("host"))
+        return JSONResponse({"detail": "仅允许本机访问"}, status_code=403)
+    if request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin and origin not in _ALLOWED_ORIGINS and not _EXT_ORIGIN_RE.match(origin):
+            _guard_log.warning("[guard] blocked non-local origin: %s %s origin=%s",
+                               request.method, request.url.path, origin)
+            return JSONResponse({"detail": "来源未被允许"}, status_code=403)
+    return await call_next(request)
 
 # 静态文件（前端 SPA）— 禁用 JS 缓存
 
