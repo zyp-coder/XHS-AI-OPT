@@ -9,6 +9,7 @@ function app() {
             { id: 'notes', label: '笔记管理', icon: '📝' },
             { id: 'comments', label: '评论互动', icon: '💬' },
             { id: 'drain', label: '引流任务', icon: '🚀' },
+            { id: 'intercept', label: '截流系统', icon: '🎯' },
             { id: 'knowledge', label: '知识库', icon: '📚' },
             { id: 'messages', label: '消息中心', icon: '💬' },
             { id: 'ai_config', label: 'AI 配置', icon: '🤖' },
@@ -91,6 +92,7 @@ function app() {
                 case 'notes': renderNotes(container); break;
                 case 'comments': renderComments(container); break;
                 case 'drain': renderDrain(container); break;
+                case 'intercept': renderIntercept(container); break;
                 case 'knowledge': renderKnowledge(container); break;
                 case 'messages': renderMessages(container); break;
                 case 'ai_config': renderAIConfig(container); break;

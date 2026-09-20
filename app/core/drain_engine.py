@@ -144,7 +144,7 @@ class DrainEngine:
                     base = random.randint(task.interval_min, task.interval_max)
                     # 额外增加 30-180 秒的随机"思考时间"
                     extra = random.randint(30, 180)
-                    # 10% 概率来个"摸鱼时间"（假装去倒水/上厕所）
+                    # 10% 概率来个"摸鱼时间"（随机长停顿）
                     if random.random() < 0.1:
                         extra += random.randint(120, 600)
                         safe_print(f"  ☕ 摸鱼中... 休息{extra//60}分钟")
@@ -202,8 +202,8 @@ class DrainEngine:
         # 去掉可能的引号
         comment = comment.strip().strip('"').strip("'")
 
-        # 发布评论
-        success = await browser_engine.comment_on_note(target["url"], comment)
+        # 发布评论（页面已停在目标笔记，跳过重复导航，避免同 URL 单周期二次加载）
+        success = await browser_engine.comment_on_note(target["url"], comment, skip_goto=True)
 
         # 记录
         self._add_record(
@@ -275,7 +275,7 @@ class DrainEngine:
 
             if comment:
                 comment = comment.strip().strip('"').strip("'")
-                success = await browser_engine.comment_on_note(note_url, comment)
+                success = await browser_engine.comment_on_note(note_url, comment, skip_goto=True)
 
                 self._add_record(
                     task.id,
@@ -358,6 +358,8 @@ class DrainEngine:
                                     if submit:
                                         await submit.click()
                                     await browser_engine.random_delay()
+                                    # ★ 节奏控制：回评他人之间留更长“回看评论区+思考”间隔，避免同页连发机械节拍
+                                    await browser_engine.human_pause(8, 20)
 
                                 self._add_record(
                                     task.id,

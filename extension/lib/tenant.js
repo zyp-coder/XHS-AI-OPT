@@ -33,6 +33,10 @@ const TENANT_SCOPED_KEYS = [
   'prospect_sync_cursor',// 通知同步游标（识别"上次处理到最深那条"实现增量）
   'note_plan',           // 内容规划（含每页配图背景建议 photoPlans）
   'np_used_topics',      // 发笔记：已用选题/卖点指纹池（剔除已发送，恢复后免重复发）
+  'daily_browse_config', // 🌿 日常浏览：时段/配额/概率配置
+  'daily_browse_daily',  // 🌿 日常浏览：每日浏览计数
+  'daily_browse_last',   // 🌿 日常浏览：最近一轮结果（页面侧落盘，供后台对账）
+  'daily_browse_log',    // 🌿 日常浏览：运行日志
 ];
 
 /* ─── 底层读写 ─── */

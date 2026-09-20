@@ -48,7 +48,7 @@
   }
 
   // ===== 停留时间配置（设置页「⏱️ 停留时间」Tab，存 delay_config，单位毫秒，默认 = 技术下限：能跑通的最快值）=====
-  // 实际停留 = 设定值 + 随机上浮最多 50%（更像真人）；带技术下限的项用 floor 兜底防功能失效
+  // 实际停留 = 设定值 + 随机上浮最多 50%（节奏更自然）；带技术下限的项用 floor 兜底防功能失效
   const DELAY_DEFAULTS = { browseDwell: 1500, typingCharDelay: 20, likeGap: 450, lazyLoadWait: 900, retryBackWait: 300, retryOpenWait: 800, noteOpenBuffer: 700, preSendGap: 500, batchItemGap: 6000 };
   let _delayCfg = { ...DELAY_DEFAULTS };
   try {
@@ -60,7 +60,7 @@
     });
   } catch (_) {}
   function dwellMs(key, floor) {
-    // 支持两种存法：旧 {key: 数值} 或新 {key: {min,max}}（区间随机、更防爬）。
+    // 支持两种存法：旧 {key: 数值} 或新 {key: {min,max}}（区间随机、更自然）。
     // 旧数值 n → 视为 min=n、max≈n*1.6，保留旧的“至多上浮”随机性。
     const c = _delayCfg[key];
     let minV = 0, maxV = 0;
@@ -101,7 +101,7 @@
       await sleep(50);
       return;
     }
-    // 模仿真人通道：逐字输入 + 随机停顿（节奏基于拟人挡位的 typingCharDelay）
+    // 自然输入通道：逐字输入 + 随机停顿（节奏基于拟人挡位的 typingCharDelay）
     const perCharMs = typingCfg;
     for (let i = 0; i < txt.length; i++) {
       const ch = txt[i];
@@ -598,7 +598,7 @@
     // ★ AI 分析期间的页面“轻划动”心跳：每几秒小幅滚动一次，保持页面活跃、防后台节流（由 auto-bot 驱动，AI 完成后自动停止）
     if (request.action === 'nudgeScroll') {
       try {
-        // 方向随机的小幅滚动（偶尔反向一下更像真人，也避免一直往一个方向滚到底）
+        // 方向随机的小幅滚动（偶尔反向一下更自然，也避免一直往一个方向滚到底）
         const dir = Math.random() < 0.25 ? -1 : 1;
         scrollNoteBy(dir * (100 + Math.floor(Math.random() * 150)));
         sendResponse({ ok: true });
@@ -860,6 +860,13 @@
       searchViaInput(request.keyword).then(r => sendResponse(r)).catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
+    // ── 🌿 日常浏览：在信息流/搜索结果里自动浏览一轮（滚动/停留/可点赞收藏） ──
+    if (request.action === 'browseRound') {
+      runExclusive('🌿 日常浏览', () => browseRound(request.opts || {}))
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ ok: false, error: (e && e.message) || String(e) }));
+      return true;
+    }
     // ── 一键灌水：查找笔记链接并返回坐标（供 CDP 可信点击） ──
     if (request.action === 'findNoteLink') {
       sendResponse(findNoteLinkCoords(request.title, request.noteId, request.searchIndex, request.rawLinkIndex));
@@ -985,7 +992,7 @@
       try {
         const NODES = document.querySelectorAll('div, span, button, a');
         let clicked = 0;
-        const CAP = 40;
+        const CAP = 25;                                   // ★ 节奏控制：单轮展开连点上限 40→25，避免机械连点
         for (let _n = 0; _n < NODES.length && clicked < CAP; _n++) {
           const b = NODES[_n];
           if (b.offsetParent === null) continue;
@@ -995,11 +1002,14 @@
           if (t.length >= 2 && t.length <= 14 && /展开|查看更多|更多回复|条回复|展开更多/.test(t) && !/收起/.test(t)) {
             try { b.click(); } catch (_) {}
             clicked++;
-            await sleep(200);
+            // ★ 节奏控制：每次展开随机停顿 300-850ms（去掉机械的 200ms 连点节拍），
+            //   每连点 4 次再插一段更长的“人思考”停顿 1.2-2.4s
+            await sleep(300 + Math.random() * 550);
+            if (clicked % 4 === 0) await sleep(1200 + Math.random() * 1200);
           }
         }
       } catch (_) {}
-      // 2. ★【方案B：平滑滚动三屏】不再“瞬移到底”，改为每次平滑下滚约一屏高度，连滚 rounds 次，更像真人、DOM 更安静
+      // 2. ★【方案B：平滑滚动三屏】不再“瞬移到底”，改为每次平滑下滚约一屏高度，连滚 rounds 次，更自然、DOM 更安静
       const scroller = scrollableAncestorOf(marker.element) || getNoteScroller();
       const step = (scroller && (scroller.clientHeight || scroller.innerHeight)) || window.innerHeight || 800;
       if (scroller && typeof scroller.scrollBy === 'function') {
@@ -1828,7 +1838,7 @@
         if (t !== '回复' && t !== 'Reply') continue;
 
         // ===== 方案一：elementFromPoint 视觉定位 =====
-        // 直接找该位置实际渲染的最深层元素，绕过 offsetParent/DOM 层级问题
+        // 直接找该位置实际渲染的最深层元素，避开 offsetParent/DOM 层级问题
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
           const cx = rect.left + rect.width / 2;
@@ -1921,7 +1931,7 @@
     return { replyBtn: null, sig: '', via: '', duplicate: false, tried };
   }
 
-  /* ── 模拟人类浏览行为：随机滚动到评论区元素（停留时长由 delay_config.browseDwell 控制，0=整段跳过） ── */
+  /* ── 模拟浏览节奏：随机滚动到评论区元素（停留时长由 delay_config.browseDwell 控制，0=整段跳过） ── */
   async function simulateHumanScroll(targetOriginalText) {
     if (!(_delayCfg.browseDwell > 0)) return; // 停留时间为 0 → 不模拟浏览，直接干活
     // ★ 方案一：通过评论内容定位，滚动实际评论元素
@@ -1955,21 +1965,21 @@
           behavior: 'smooth',
           block: i === 0 ? 'center' : (Math.random() > 0.5 ? 'start' : 'end')
         });
-        // 停顿模拟阅读（时长可在设置页「停留时间」配置）
-        await sleepWithCountdown(dwellMs('browseDwell'), `👀 模拟真人浏览阅读（第 ${i + 1} 段）`);
+        // 停留阅读（时长可在设置页「停留时间」配置）
+        await sleepWithCountdown(dwellMs('browseDwell'), `👀 浏览停留（第 ${i + 1} 段）`);
       }
       return;
     }
     // ★ 方案二：无评论 → 滚动笔记弹层内部容器（而非背景页面）
     scrollNoteBy((Math.random() - 0.5) * 400);
-    await sleepWithCountdown(dwellMs('browseDwell'), '👀 模拟真人浏览');
+    await sleepWithCountdown(dwellMs('browseDwell'), '👀 浏览停留');
   }
 
   // ============================
   // 发送回复
   // ============================
   async function sendReplyToComment(author, originalText, replyText, commentIdx, userLink, images, humanize) {
-    // humanize=true （自动批量发送）：模仿真人——先滞留浏览、逐字打字，骗反爬。
+    // humanize=true （自动批量发送）：自然节奏——先停留浏览、逐字输入，控制操作频率。
     // humanize=false（手动逐条一键发送）：走快速通道，跳过浏览滞留、一次性填字，不磨蹭。
     const fast = !humanize;
     // ★ 小红书限制：单条评论不能超过300字，超出则硬截断（所有发送路径的统一收口）
@@ -2016,8 +2026,8 @@
       }
     } catch (_) {}
 
-    // ===== 0.（已按用户要求移除）自动批量时不再“模拟真人浏览阅读”＝点赞之后到发评论之间的等待已去掉，
-    //     防爬节奏改由“条间随机 3~8 秒间隔”承担（见 popup 批量发送与 auto-bot），不再逐条磨蹭 =====
+    // ===== 0.（已按用户要求移除）自动批量时不再单独“浏览停留阅读”＝点赞之后到发评论之间的等待已去掉，
+    //     节奏控制改由“条间随机 3~8 秒间隔”承担（见 popup 批量发送与 auto-bot），不再逐条磨蹭 =====
 
     // ===== 1. 定位回复按钮（文本流 Ctrl+F 优先，DOM 定位降级） =====
     _showStatus('定位回复按钮...');
@@ -2207,7 +2217,7 @@
       }
       await sleep(50);
     } else {
-      // ★ 模仿真人通道（自动批量发送）：逐字输入 + 随机停顿，骗反爬；节奏均基于 typingCfg
+      // ★ 自然节奏通道（自动批量发送）：逐字输入 + 随机停顿，控制操作频率；节奏均基于 typingCfg
       const perCharMs = typingCfg;
 
       for (let i = 0; i < totalLen; i++) {
@@ -2279,7 +2289,7 @@
 
     // ===== 6. 发送（面板搜索+多事件类型点击）=====
     _showStatus('发送回复...');
-    await sleep(dwellMs('preSendGap', 400)); // 拟人挡位：点「发送」前先停留，避免打开即秒发被判机器
+    await sleep(dwellMs('preSendGap', 400)); // 拟人挡位：点「发送」前先停留，避免打开即秒发
 
     // ★ 坐标级点击：PointerEvent + MouseEvent + click，覆盖 React 各种事件绑定
     async function _clickButton(el) {
@@ -2466,7 +2476,7 @@
 
   /* ── 定位回复：仅定位+点击回复，不打字不发送，供手动操作 ── */
   async function locateAndOpenReply(author, originalText, commentIdx, userLink) {
-    // ★ 先模拟人类浏览滑动
+    // ★ 先按浏览节奏滑动
     await simulateHumanScroll(originalText);
 
     let replyBtn = findReplyByTextFlow(originalText);
@@ -3047,9 +3057,9 @@ const it = _likerFromContainer(container, name);
 
   // ── 获客·消息台：在 /chat 会话页发送消息（复用私信的 native setter + 发送按钮/回车 + 限制检测机制）
   async function chatSendMessage(text) {
-    if (!/\/chat/.test(location.href)) return { success: false, error: '不在 /chat 会话页，请先打开会话' };
+    if (!/\/chat/.test(location.href)) return { success: false, definitive: true, error: '不在 /chat 会话页，请先打开会话' };
     const raw = String(text || '').trim();
-    if (!raw) return { success: false, error: '内容为空' };
+    if (!raw) return { success: false, definitive: true, error: '内容为空' };
     const msg = raw.length > 300 ? raw.slice(0, 300) : raw;
 
     // 定位输入框（/chat 的编辑器 contenteditable 或通用）
@@ -3059,7 +3069,7 @@ const it = _likerFromContainer(container, name);
       if (inputEl) break;
       await sleep(500);
     }
-    if (!inputEl) return { success: false, error: '未找到 /chat 输入框（可能会话没打开）' };
+    if (!inputEl) return { success: false, definitive: true, error: '未找到 /chat 输入框（可能会话没打开）' };
 
     _showStatus('输入消息...');
     inputEl.focus();
@@ -3095,15 +3105,15 @@ const it = _likerFromContainer(container, name);
       if (_dmSent(inputEl)) { sentOk = true; break; }
       if (_detectPrivacy()) {
         _hideStatus();
-        return { success: false, privacy: true, limited: true, error: '对方设置了隐私设置（或未关注你），暂时无法私信回复。建议① 评论区互动破冰后再试；② 或先关注对方待通过。此用户已标记"私信受限"。' };
+        return { success: false, privacy: true, definitive: true, limited: true, error: '对方设置了隐私设置（或未关注你），暂时无法私信回复。建议① 评论区互动破冰后再试；② 或先关注对方待通过。此用户已标记"私信受限"。' };
       }
     }
 
     const limitRe = /(关注后才能|关注后即可|无法发送|不能发送|私信限制|被限制|防骚扰|对方.*关注|暂不支持|隐私设置|不能回复|回复不了)/;
     const limited = limitRe.test((document.body.innerText || '').slice(-1000));
     _hideStatus();
-    if (limited && !sentOk) return { success: false, error: '检测到发送限制提示（可能对方未关注你/防骚扰），建议先评论互动破冰', limited: true };
-    return { success: sentOk, via, error: sentOk ? '' : '发送未确认，请手动检查该会话' };
+    if (limited && !sentOk) return { success: false, definitive: false, error: '检测到发送限制提示（可能对方未关注你/防骚扰），建议先评论互动破冰', limited: true };
+    return { success: sentOk, definitive: false, via, error: sentOk ? '' : '发送未确认，请手动检查该会话' };
   }
 
   // ── 获客·逐条归因：读当前 /chat 会话的消息线程，判断"对方是否回过你" ──
@@ -3256,7 +3266,7 @@ const it = _likerFromContainer(container, name);
     }
     if (!inputEl) {
       _hideStatus();
-      return { success: false, error: '回复输入框未出现（可能被风控或页面异常），请手动重试' };
+      return { success: false, error: '回复输入框未出现（可能页面结构变化），请手动重试' };
     }
 
     // ===== 5. 交叉验证 placeholder（“回复 {昵称}”） =====
@@ -3280,7 +3290,7 @@ const it = _likerFromContainer(container, name);
     await _typeInto(inputEl, replyText);
     await sleep(80);
 
-    // ===== 6.5 拟人：发送前先停留，避免秒发被判机器 =====
+    // ===== 6.5 拟人：发送前先停留，避免秒发 =====
     await sleep(dwellMs('preSendGap', 400));
 
     // ===== 7. 发送（按钮优先，Enter 兜底；发送成功三重信号防重复提交） =====
@@ -3813,7 +3823,7 @@ async function sendDmOnProfile(userLink, text) {
     return { success: res.sent, error: res.sent ? '' : '发送未确认，请手动检查', verified: res.sent };
   }
 
-  // ── 在用户主页抓取公开「小红书号」+ 主页昵称（抓不到静默返回 {}，绝不报错/不加重反爬） ──
+  // ── 在用户主页抓取公开「小红书号」+ 主页昵称（抓不到静默返回 {}，绝不报错/不增加额外请求） ──
   function extractUserProfile() {
     const _val = (s) => String(s || '').replace(/\s+/g, '').trim();
     let xhsId = '';
@@ -4832,6 +4842,245 @@ async function sendDmOnProfile(userLink, text) {
     } catch (_) {}
 
     return { clicked: false, reason: '未找到匹配笔记', totalLinks: allNoteLinks.length, noteId, title };
+  }
+
+  // ═══════════ 🌿 日常浏览（全功能版）：在信息流/搜索结果里做普通浏览动作 ═══════════
+  // 一个「单位」= 挑一篇笔记：向下滚一段 → 停留 → 按概率点开 → 停留阅读 → 按概率点赞/收藏 → 退回信息流。
+  // 节奏（时段/配额/停留/概率）由设置页「🌿 日常浏览」配置，background 侧 lib/daily-browse.js 驱动。
+  function _dbRand(min, max) {
+    const a = Number(min) || 0, b = Number(max) || 0;
+    return a + Math.random() * Math.max(0, b - a);
+  }
+  function _dbSleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Math.round(ms)))); }
+  function _dbVisible(el) {
+    if (!el || el.offsetParent === null) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 60 || r.height < 60) return false;
+    return r.bottom > 80 && r.top < (window.innerHeight - 60);
+  }
+  function _dbCardInfo(link) {
+    const href = link.getAttribute('href') || '';
+    const m = href.match(/\/explore\/([a-z0-9]+)/) || href.match(/\/search_result\/([a-z0-9]+)/) || href.match(/\/note\/([a-z0-9]+)/);
+    if (!m) return null;
+    let title = '';
+    try {
+      const card = link.closest('section') || link.parentElement || link;
+      const t = card.querySelector('[class*="title"], .title');
+      title = ((t && t.textContent) || (card.innerText || '')).replace(/\s+/g, ' ').trim().slice(0, 40);
+    } catch (_) {}
+    return { noteId: m[1], title, el: link };
+  }
+  // 当前视口里可浏览的笔记卡片（同一 noteId 只留一张；skip = 本轮已处理过的）
+  function _dbVisibleCards(skip) {
+    const out = [], seen = new Set();
+    let links = [];
+    try { links = getNoteLinkElements(); } catch (_) { links = []; }
+    for (const link of links) {
+      const info = _dbCardInfo(link);
+      if (!info || seen.has(info.noteId)) continue;
+      seen.add(info.noteId);
+      if (skip && skip.has(info.noteId)) continue;
+      if (!_dbVisible(info.el)) continue;
+      out.push(info);
+    }
+    return out;
+  }
+  function _dbIsNoteOpen() {
+    try { return !!findBottomReplyInput(); } catch (_) { return false; }
+  }
+  // 笔记详情页的「赞 / 收藏」：优先按交互区 class 命中，再退回极短文案匹配；评论区里的赞一律排除
+  function _dbFindEngageEl(kind) {
+    const isLike = kind === 'like';
+    const clsRe = isLike ? /like-wrapper|like-container|like-box/i : /collect-wrapper|collect-container|collect-box/i;
+    const txtRe = isLike ? /^(赞|已赞|点赞|已点赞)$/ : /^(收藏|已收藏|收藏夹)$/;
+    const cands = [];
+    for (const el of document.querySelectorAll('div, span, button, a')) {
+      if (el.offsetParent === null) continue;
+      let cls = '';
+      try { cls = String(el.className || ''); } catch (_) { cls = ''; }
+      const txt = (el.textContent || '').trim();
+      if (txt.length > 12) continue;
+      const byCls = clsRe.test(cls);
+      const byTxt = txtRe.test(txt);
+      if (!byCls && !byTxt) continue;
+      try { if (el.closest('[class*="comment"]')) continue; } catch (_) {}
+      let depth = 0, p = el;
+      while ((p = p.parentElement)) depth++;
+      cands.push({ el, byCls, byTxt, depth, txt, cls });
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) => (b.byCls - a.byCls) || (b.depth - a.depth));
+    const c = cands[0];
+    return { el: c.el, active: /active/i.test(c.cls) || /已赞|已收藏/.test(c.txt) };
+  }
+  // 收藏后会弹「选择收藏夹」：点掉弹层里的取消/关闭；兜底按 Esc
+  async function _dbDismissDialog() {
+    await _dbSleep(600);
+    try {
+      const btns = Array.from(document.querySelectorAll('button, div, span, a')).filter(el => {
+        if (el.offsetParent === null) return false;
+        const t = (el.textContent || '').trim();
+        if (t !== '取消' && t !== '关闭') return false;
+        try { return !!el.closest('[class*="modal"], [class*="dialog"], [class*="popover"], [class*="mask"], [class*="picker"], [class*="collect"]'); } catch (_) { return false; }
+      });
+      if (btns.length) {
+        const el = btns[btns.length - 1];
+        try { _npClick(el); } catch (_) { try { el.click(); } catch (__) {} }
+        await _dbSleep(500);
+        return true;
+      }
+    } catch (_) {}
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+      await _dbSleep(400);
+    } catch (_) {}
+    return false;
+  }
+  // 退回信息流：优先点弹层关闭按钮，兜底 history.back()；等到回复框消失
+  async function _dbCloseNote(timeoutMs) {
+    const t0 = Date.now();
+    const limit = timeoutMs || 9000;
+    try {
+      const closers = Array.from(document.querySelectorAll('[class*="close" i]')).filter(el => {
+        if (el.offsetParent === null) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width < 12 || r.width > 90) return false;
+        if (r.top > window.innerHeight * 0.35) return false;
+        const t = (el.textContent || '').trim();
+        return t.length === 0 || /^(关闭|返回|取消|×|✕|✖)$/.test(t);
+      });
+      if (closers.length) {
+        try { _npClick(closers[0]); } catch (_) {}
+        await _dbSleep(700);
+      }
+    } catch (_) {}
+    if (_dbIsNoteOpen() && window.history.length > 1) {
+      try { window.history.back(); } catch (_) {}
+    }
+    while (Date.now() - t0 < limit) {
+      if (!_dbIsNoteOpen()) return true;
+      await _dbSleep(400);
+    }
+    return !_dbIsNoteOpen();
+  }
+  // 打开一篇笔记并停留阅读；返回 { opened, dwellMs }
+  async function _dbOpenAndRead(card, dwellMinS, dwellMaxS) {
+    const out = { opened: false, dwellMs: 0 };
+    try {
+      card.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await _dbSleep(_dbRand(300, 700));
+      try { _npClick(card.el); } catch (_) { try { card.el.click(); } catch (__) {} }
+    } catch (_) { return out; }
+    const t0 = Date.now();
+    while (Date.now() - t0 < 15000) {
+      if (_dbIsNoteOpen()) { out.opened = true; break; }
+      await _dbSleep(400);
+    }
+    if (!out.opened) return out;   // 点了没开（卡片重排/被吞）：不硬撑，退回信息流继续
+    const dwellMs = Math.round(_dbRand(dwellMinS, dwellMaxS) * 1000);
+    const steps = Math.max(1, Math.round(dwellMs / 12000));
+    for (let i = 0; i < steps; i++) {
+      _touchLock();
+      await _dbSleep(dwellMs / steps);
+      try {
+        const sc = getNoteScroller();
+        if (sc) sc.scrollBy({ top: Math.round(_dbRand(180, 520)), behavior: 'smooth' });
+      } catch (_) {}
+    }
+    out.dwellMs = dwellMs;
+    return out;
+  }
+  // 点赞 / 收藏当前打开的笔记
+  async function _dbEngage(kind) {
+    _touchLock();
+    const found = _dbFindEngageEl(kind);
+    if (!found) return { ok: false, error: '未找到' + (kind === 'like' ? '点赞' : '收藏') + '按钮' };
+    if (found.active) return { ok: true, already: true };
+    try {
+      found.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      await _dbSleep(_dbRand(250, 600));
+      try { _npClick(found.el); } catch (_) { try { found.el.click(); } catch (__) {} }
+      await _dbSleep(_dbRand(600, 1100));
+    } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
+    let ok = false;
+    try { const after = _dbFindEngageEl(kind); ok = !!(after && after.active); } catch (_) {}
+    if (kind === 'collect') await _dbDismissDialog();
+    return { ok, clicked: true };
+  }
+  // 一轮日常浏览：count 篇；每篇结果顺手落到 daily_browse_last（后台被杀也能对账）
+  async function browseRound(opts) {
+    opts = opts || {};
+    const count = Math.max(1, Math.min(8, parseInt(opts.count, 10) || 1));
+    const dwellMinS = Math.max(2, Number(opts.dwellMin) || 8);
+    const dwellMaxS = Math.max(dwellMinS, Number(opts.dwellMax) || 25);
+    const openRate = Math.max(0, Math.min(100, Number(opts.openRate)) || 0);
+    const likeRate = Math.max(0, Math.min(100, Number(opts.likeRate)) || 0);
+    const collectRate = Math.max(0, Math.min(100, Number(opts.collectRate)) || 0);
+    const roundId = opts.roundId || ('r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
+    const startedAt = Date.now();
+    const maxMs = count * ((dwellMaxS + 30) * 1000) + 60000;   // 本轮硬上限，防止异常卡死
+    const items = [];
+    const picked = new Set();
+    const _persist = async () => {
+      try {
+        await chrome.storage.local.set({
+          daily_browse_last: { roundId, startedAt, items: items.slice(), ts: Date.now(), url: location.href.slice(0, 120) },
+        });
+      } catch (_) {}
+    };
+    const _stopped = async () => {
+      try { const d = await chrome.storage.local.get('daily_browse_stop_at'); return (d.daily_browse_stop_at || 0) > startedAt; } catch (_) { return false; }
+    };
+    console.log('[日常浏览] 开始一轮：目标 ' + count + ' 篇，停留 ' + dwellMinS + '~' + dwellMaxS + 's，打开 ' + openRate + '%，赞 ' + likeRate + '%，藏 ' + collectRate + '%');
+    for (let i = 0; i < count; i++) {
+      if (Date.now() - startedAt > maxMs) { console.warn('[日常浏览] 本轮超过时间上限，提前收尾'); break; }
+      if (await _stopped()) { console.log('[日常浏览] 收到停止指令，提前收尾'); break; }
+      _touchLock();
+      // 1) 向下滚一段 + 停留（普通浏览动作）
+      try { window.scrollBy({ top: Math.round(_dbRand(320, Math.max(360, (window.innerHeight || 800) * 0.9))), behavior: 'smooth' }); } catch (_) {}
+      await _dbSleep(_dbRand(700, 1600));
+      const feedDwell = Math.round(_dbRand(dwellMinS, dwellMaxS) * 1000 * 0.4);
+      _touchLock();
+      await _dbSleep(feedDwell);
+      // 2) 挑一张当前视口里的卡片
+      let cards = _dbVisibleCards(picked);
+      if (!cards.length) {
+        try { window.scrollBy({ top: Math.round(_dbRand(400, 900)), behavior: 'smooth' }); } catch (_) {}
+        await _dbSleep(1300);
+        cards = _dbVisibleCards(picked);
+      }
+      if (!cards.length) { console.log('[日常浏览] 当前没有可浏览的卡片，本轮收尾'); break; }
+      const card = cards[Math.floor(Math.random() * cards.length)];
+      picked.add(card.noteId);
+      const item = { noteId: card.noteId, title: card.title, opened: false, liked: false, collected: false, dwellMs: feedDwell, ts: Date.now() };
+      // 3) 按概率打开笔记 → 停留阅读 → 按概率点赞/收藏 → 退回信息流
+      if (Math.random() * 100 < openRate) {
+        const r = await _dbOpenAndRead(card, dwellMinS, dwellMaxS);
+        item.opened = !!r.opened;
+        item.dwellMs = feedDwell + (r.dwellMs || 0);
+        if (r.opened) {
+          if (Math.random() * 100 < likeRate) { const lk = await _dbEngage('like'); item.liked = !!(lk && lk.ok); }
+          if (Math.random() * 100 < collectRate) { const cl = await _dbEngage('collect'); item.collected = !!(cl && cl.ok); }
+          await _dbCloseNote(9000);
+        }
+      }
+      items.push(item);
+      await _persist();
+      console.log('[日常浏览] 第 ' + (i + 1) + '/' + count + ' 篇：' + (card.title || card.noteId) +
+        (item.opened ? '（已打开 ' + Math.round(item.dwellMs / 1000) + 's）' : '（仅停留）') +
+        (item.liked ? ' 👍' : '') + (item.collected ? ' ⭐' : ''));
+    }
+    await _persist();
+    const summary = {
+      ok: true, roundId, items,
+      viewed: items.length,
+      openedCount: items.filter(x => x.opened).length,
+      likedCount: items.filter(x => x.liked).length,
+      collectedCount: items.filter(x => x.collected).length,
+      ms: Date.now() - startedAt,
+    };
+    console.log('[日常浏览] 本轮结束：浏览 ' + summary.viewed + ' 篇，打开 ' + summary.openedCount + ' 篇，点赞 ' + summary.likedCount + '，收藏 ' + summary.collectedCount);
+    return summary;
   }
 
   /* ── 调试：列出页面所有 a[href*="/explore/"] / a[href*="/note/"] / a[href*="/search_result/"] 原始元素 ── */

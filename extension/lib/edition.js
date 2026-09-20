@@ -4,19 +4,22 @@
  * ⚠️ 本文件内容在正式打包时会被 build.js 自动覆盖写死。
  *    默认这里是「开发版 dev」：所有功能全开、永不过期，方便本地开发调试。
  *
- * 版本类型：
- *   dev          开发版（全开、不过期，仅本地用）
- *   trial        试用版（15天；无批量发送；无产品库；无租户）
- *   ent          企业版（1年；有批量发送；有产品库；禁用租户）
- *   ent-tenant   企业版+租户（1年；有批量发送；有产品库；有租户）
+ * 版本类型（与 build.js PRESETS 对应）：
+ *   dev            开发版（全开、不过期，仅本地用）
+ *   full           全功能版（¥539/月；② + 发送笔记 + 日常浏览）
+ *   comment        评论助手·基础版（¥239/月；手动评论助手，无自动化/无获客清单）
+ *   comment-multi  评论助手·升级版（¥399/月；一键灌水+笔记列表 + 获客清单 + 多关键词）
+ *   pro            自用版（全功能、零等待、不过期，自用）
  *
  * 功能开关（features）：
- *   batchSend    批量整页发送（自动评论按钮）
+ *   batchSend    整页发送评论（同一篇笔记的多条评论一键发完；手动触发）
  *   productLib   产品库（产品描述参与 AI 生成）
- *   tenant       多租户模式
+ *   tenant       多租户模式（多产品/多租户切换，三档全开）
  *   knowledge    知识库（录入/导入专业知识，AI 生成时引用）
- *   autoWater    一键灌水（关键词搜笔记 + 调度配置）
- *   prospectList 获客清单（人群筛选 + 定向私信）
+ *   autoWater    一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器：口径 × 节奏）
+ *   prospectList 获客清单（通知/消息线索汇总 + 定向私信）
+ *   notePublish  发送笔记（AI 选题 → 生成图文 → 发布）
+ *   dailyBrowse  日常浏览（按时段/配额自动浏览，可配点赞收藏；全功能版独家）
  */
 
 const EDITION = {
@@ -24,7 +27,7 @@ const EDITION = {
   type: 'dev',
   // 展示名（顶栏/设置页显示）
   label: '开发版',
-  // 授权给谁（企业版可写客户名，试用版留空）
+  // 授权给谁（可写客户名；留空表示通用）
   licensee: '',
   // 打包时间戳（毫秒）；dev 版为 0
   builtAt: 0,
@@ -37,7 +40,7 @@ const EDITION = {
   // xhsId 为公开小红书号（个人主页“小红书号：xxx”）；name 为可选的主页昵称（仅用于展示）。
   // 留空（xhsId 为空）表示不绑定账号，任何已登录账号均可用（dev / 全功能自用版默认如此）。
   boundAccount: { xhsId: '', name: '' },
-  // 一键灌水最大关键词数（1=单关键词；8=多关键词）；price 定价（0=不标价）
+  // 一键灌水最大关键词数（1=单关键词；8=多关键词）；price 定价（元/月；0=不标价）
   keywordMax: 8,
   price: 0,
   // noDelay=true（自用版 pro）：所有拟人延时归零（零等待），仍全功能
@@ -50,6 +53,8 @@ const EDITION = {
     knowledge: true,
     autoWater: true,
     prospectList: true,
+    notePublish: true,
+    dailyBrowse: true,
   },
 };
 

@@ -9,6 +9,7 @@ from openai import OpenAI
 
 from app.models.models import AIConfig, AIPrompt, PromptLog, KnowledgeBase, ScriptLibrary, engine
 from app.models.models import init_db  # 用于重置默认 Prompt
+from app.core.crypto import encrypt_text, decrypt_text
 
 
 class AIEngine:
@@ -33,19 +34,20 @@ class AIEngine:
         self._load_config()
 
     def _load_config(self):
-        """从数据库加载 AI 配置（主模型 + 备用模型）"""
+        """从数据库加载 AI 配置（主模型 + 备用模型），API Key 落盘为密文，此处解密使用"""
         with Session(engine) as session:
             config = session.query(AIConfig).first()
-            if config and config.api_key:
+            api_key = decrypt_text(config.api_key) if config else ""
+            if config and api_key:
                 self._config = {
-                    "api_key": config.api_key,
+                    "api_key": api_key,
                     "api_base_url": config.api_base_url,
                     "model": config.model,
                     "temperature": config.temperature,
                     "max_tokens": config.max_tokens,
                 }
                 self._client = OpenAI(
-                    api_key=config.api_key,
+                    api_key=api_key,
                     base_url=config.api_base_url,
                 )
             elif config:
@@ -64,16 +66,17 @@ class AIEngine:
 
             # 加载备用模型配置
             if config and config.fallback_api_base_url and config.fallback_model:
+                fallback_key = decrypt_text(config.fallback_api_key or "")
                 self._fallback_config = {
-                    "api_key": config.fallback_api_key,
+                    "api_key": fallback_key,
                     "api_base_url": config.fallback_api_base_url,
                     "model": config.fallback_model,
                     "temperature": config.temperature,
                     "max_tokens": config.max_tokens,
                 }
-                if config.fallback_api_key:
+                if fallback_key:
                     self._fallback_client = OpenAI(
-                        api_key=config.fallback_api_key,
+                        api_key=fallback_key,
                         base_url=config.fallback_api_base_url,
                     )
                 else:
@@ -115,24 +118,24 @@ class AIEngine:
                       temperature: float, max_tokens: int,
                       fallback_api_key: str = "", fallback_api_base_url: str = "",
                       fallback_model: str = "") -> dict:
-        """更新 AI 配置（含备用模型）"""
+        """更新 AI 配置（含备用模型），API Key 加密后落盘"""
         with Session(engine) as session:
             config = session.query(AIConfig).first()
             if not config:
-                config = AIConfig(api_key=api_key, api_base_url=api_base_url,
+                config = AIConfig(api_key=encrypt_text(api_key), api_base_url=api_base_url,
                                   model=model, temperature=temperature,
                                   max_tokens=max_tokens,
-                                  fallback_api_key=fallback_api_key or None,
+                                  fallback_api_key=encrypt_text(fallback_api_key) or None,
                                   fallback_api_base_url=fallback_api_base_url or None,
                                   fallback_model=fallback_model or None)
                 session.add(config)
             else:
-                config.api_key = api_key
+                config.api_key = encrypt_text(api_key)
                 config.api_base_url = api_base_url
                 config.model = model
                 config.temperature = temperature
                 config.max_tokens = max_tokens
-                config.fallback_api_key = fallback_api_key or None
+                config.fallback_api_key = encrypt_text(fallback_api_key) or None
                 config.fallback_api_base_url = fallback_api_base_url or None
                 config.fallback_model = fallback_model or None
             session.commit()
@@ -317,6 +320,43 @@ class AIEngine:
                 "scene_name": "私信销售回复（消息中心）",
                 "system_prompt": "你是小红书私信售前客服，回复要自然、口语化、像真人，不机械不推销腔。结合知识库里的具体产品信息（题库内容/结果/价格/交付方式）给出有价值、能推进成交的回答。\n\n规则：\n1. 针对客户当下面临的问题/意图直接回应，别绕弯\n2. 用知识库里真实的数字和事实支撑，不要编造价格/功能\n3. 回应中自然引导下一步（如获取交付方式/加深度了解），但绝对不出现'微信'小程序'链接'二维码'加V'等站外导流词，用'我主页/私信发你'承接\n4. 保持亲切、简短，一般控制在80字以内",
                 "user_prompt_template": "【客户意图】{intent}\n【客户最近消息】\n{their_recent}\n【该会话历史对话】\n{conversation_history}\n\n请写一条给这位客户的私信回复。直接返回回复文本，不要加引号、不要任何解释或markdown。"
+            },
+            # ============ 全场景截流 6 Prompt ============
+            {
+                "scene": "burst_comment",
+                "scene_name": "爆发狙击评论(抓推荐流C位)",
+                "system_prompt": "你是发现页里一个真实的小红书用户，正赶上一篇刚起飞的笔记。你评论的目标：在她起飞前10分钟抢到前排C位，用干货钩子让人记住你。\n\n要求：\n1. 紧扣笔记内容，给出真正有用的干货/经验/数据支撑（从知识库里提取具体题库、测试结果、球星资料）\n2. 观点鲜明，先说自己的真实看法（[说实话][以我的经验]开头）\n3. 自然把'慧眼识人助手'放在'我当时就是靠这个测出来的'语境里（只提产品名，不写'小程序/微信'等站外渠道词、不发链接，导流用'我主页/私信'承接）\n4. 简短有力，40-60字，像真人抢热评\n5. 不能像广告，不能有模板痕迹",
+                "user_prompt_template": "【笔记标题】{note_title}\n【笔记内容】{note_content}\n【笔记作者】{note_author}\n\n这篇笔记刚起飞，我要抢前排评论。请生成一条含干货钩子、观点鲜明、能让人记住我的评论（40-60字，自然带出慧眼识人助手，不写站外渠道词、不发链接）。直接返回评论文本。"
+            },
+            {
+                "scene": "evergreen_comment",
+                "scene_name": "长尾常青评论(霸占干货搜索排名)",
+                "system_prompt": "你是这个领域真正懂行的老手，在干货搜索词下面写极度专业的解决方案评论，目的：在这篇老笔记下长期占据高质量评论位置。\n\n要求：\n1. 极度专业、结构清晰，给出能直接解决问题的完整方案/清单\n2. 用知识库里的具体数据、题库内容、球星资料、测试结果来支撑，不空话\n3. 把'慧眼识人助手'作为解决方案工具箱里自然的一员（只提产品名，不写'小程序/微信'等站外渠道词、不发链接）\n4. 篇幅可稍长（80-150字），因为这里是搜索流量、用户要干货\n5. 专业但有温度，像真人的深度回答，不是广告文案",
+                "user_prompt_template": "【笔记标题】{note_title}\n【笔记内容】{note_content}\n【搜索关键词】{keyword}\n\n这是搜索'{keyword}'排名靠前的老笔记，我要写一条专业方案评论长期占位。请基于知识库给出一条极度专业、能解决问题的评论（80-150字），自然带出慧眼识人助手（只提产品名，不写站外渠道词、不发链接）。直接返回评论文本。"
+            },
+            {
+                "scene": "city_comment",
+                "scene_name": "同城精准评论(抓LBS本地流量)",
+                "system_prompt": "你是本地一个真实用户，刚刷到同城的一篇探店/本地笔记。评论目标：借本地信任感截流同城刚需。\n\n要求：\n1. 必须注入地域信任词（如'同在{city}''我家就住{region}附近'），显得是本地真人\n2. 说本地人才懂的口吻，自然而然\n3. 在合适语境带出'慧眼识人助手'（只提产品名，不写'小程序/微信'等站外渠道词、不发链接）\n4. 40-60字，真实接地气",
+                "user_prompt_template": "【城市】{city}\n【地域/区】{region}\n【笔记标题】{note_title}\n【笔记内容】{note_content}\n\n这是同城笔记，我以本地人身份评论，必须自然注入地域信任词。请生成一条带本地点特征的多城信任评论（40-60字），自然带出慧眼识人助手（只提产品名，不写站外渠道词、不发链接）。直接返回评论文本。"
+            },
+            {
+                "scene": "pain_comment",
+                "scene_name": "痛点猎杀评论(精准转化求助用户)",
+                "system_prompt": "评论区里有个正在四处求助的精准用户，这条评论要正中他痛处、给针对性极强的解决路径，把他从'我再看看'推向'我要试'。\n\n逻辑：\n1. 先准确复述/共情他的具体困扰（呼应他的原话）\n2. 给出有数据支撑的具体解决步骤，把'慧眼识人助手'作为对症的工具（只提产品名，不写'小程序/微信'等站外渠道词、不发链接，要产品用'我主页/私信'承接）\n3. 从知识库里提取能直接替他解题的具体内容（题库/测试结果/球星资料/工具步骤）\n4. 简短直接有力量，50-90字，像内行给建议\n5. 不能像广告，要让求助者觉得你真懂他",
+                "user_prompt_template": "【求助者原话】{pain_text}\n【笔记标题】{note_title}\n【笔记内容】{note_content}\n\n这位用户在精准求助。请生成一条共情到位、给针对性解决路径、能覆盖求吸引转化的评论（50-90字），自然带出慧眼识人助手对症解决（只提产品名，不写站外渠道词、不发链接）。直接返回评论文本。"
+            },
+            {
+                "scene": "topic_comment",
+                "scene_name": "话题吃瓜评论(蹭高曝光/情绪共鸣)",
+                "system_prompt": "这是评论区吵得很热闹的高活跃笔记，我的目标是蹭高曝光。评论要：\n1. 神回复/扎心共鸣，观点犀利，能让人想点赞或接话\n2. 先亮鲜明观点（[说实话][我个人觉得]），说普通人想说的话\n3. 不带硬广：产品只能以'我当时用'.慧眼识人助手'测了下'的语境极轻地带出（只提产品名，不写'小程序/微信'等站外渠道词、不发链接），甚至可以完全不提\n4. 短而狠，30-50字\n5. 绝不像广告，纯像一个真人的情绪观点",
+                "user_prompt_template": "【笔记标题】{note_title}\n【笔记内容】{note_content}\n【评论区高活跃话题】{topic_context}\n\n这是高讨论度笔记，请生成一条观点犀利、能引起共鸣/接话的神回复（30-50字），可带可不带慧眼识人助手（一旦带就极轻、只提产品名、不写站外渠道词、不发链接）。直接返回评论文本。"
+            },
+            {
+                "scene": "highv_comment",
+                "scene_name": "高V狙击评论(借头部IP溢出流量)",
+                "system_prompt": "这是头部高V博主的笔记，下面已经一堆人附和。我的目标：在他评论区借溢出流量被大家看到。\n\n策略（降维打击）：\n1. 先'极度赞同'博主：接住他最亮那句观点，表明我真的深入看过\n2. 再'补充干货'：给出博主没讲到的、知识库里能支撑的具体增量信息（数据/题库/测试结果/球星资料），让评论区觉得'这人比博主还懂'\n3. 把'慧眼识人助手'放成'我当时就是用XX验证出来的'的语境（只提产品名，不写'小程序/微信'等站外渠道词、不发链接）\n4. 60-100字，专业又谦逊，像同行高手\n5. 不能像拍马屁，要真的提供增量价值",
+                "user_prompt_template": "【高V笔记标题】{note_title}\n【高V笔记内容】{note_content}\n【高V作者】{note_author}\n\n这是头部博主笔记，我在他评论区抢溢出流量。请生成一条'极度赞同+补充干货'的降维打击评论（60-100字），从知识库提取具体增量信息，自然带出慧眼识人助手（只提产品名，不写站外渠道词、不发链接）。直接返回评论文本。"
             },
         ]
 

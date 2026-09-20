@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """打包脚本：将「慧眼识人助手」运营系统打包成独立 zip。
 - 白名单复制：app/、main.py、config.py、requirements.txt、extension/、data/xhs_ops.db
-- 清除数据库中的账号 Cookie 与 AI api_key（避免凭证泄露），保留产品资料(KB/话术/Prompt)
+- 清除数据库中的账号 Cookie 与 AI api_key / fallback_api_key（避免凭证泄露），保留产品资料(KB/话术/Prompt)
+  ※ 不复制 data/.secret.key：即便有漏网密文，缺密钥也无法解密
 - 自动排除 __pycache__、*.pyc 等
 """
 import io
@@ -10,7 +11,8 @@ import shutil
 import sqlite3
 import zipfile
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# 本脚本位于 scripts/dev/，再上溯两级才是仓库根
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 STAGE = os.path.join(ROOT, "_dist_stage")
 PKG_NAME = "慧眼识人助手运营系统_v1.0"
 ZIP_PATH = os.path.join(ROOT, PKG_NAME + ".zip")
@@ -59,10 +61,10 @@ try:
     print("     已清空 accounts.cookies:", cur.rowcount, "行")
 except sqlite3.OperationalError as e:
     print("     accounts 表跳过:", e)
-# 清 AI api_key
+# 清 AI api_key（主模型 + 备用模型）
 try:
-    cur.execute("UPDATE ai_config SET api_key = NULL")
-    print("     已清空 ai_config.api_key:", cur.rowcount, "行")
+    cur.execute("UPDATE ai_config SET api_key = NULL, fallback_api_key = NULL")
+    print("     已清空 ai_config.api_key / fallback_api_key:", cur.rowcount, "行")
 except sqlite3.OperationalError as e:
     print("     ai_config 表跳过:", e)
 # 清评论日志中的截图/敏感数据（可选，保持轻量）

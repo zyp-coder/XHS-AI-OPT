@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.crypto import blind_index
 from app.models.models import CustomerLead, engine
 
 router = APIRouter(tags=["客户邮箱"])
@@ -86,16 +87,18 @@ async def report_lead(req: ReportLeadRequest):
     if not email:
         raise HTTPException(400, "未检测到有效邮箱")
 
+    # 邮箱列已加密落盘，等值匹配走 email_hash 盲索引（同明文恒定同索引）
+    email_hash = blind_index(email)
     with Session(engine) as session:
         # 去重：同一邮箱（且尽量认到同一个人）→ 更新，否则新增
         lead = None
         if req.xhs_user_id:
             lead = session.query(CustomerLead).filter(
                 CustomerLead.xhs_user_id == req.xhs_user_id,
-                CustomerLead.email == email,
+                CustomerLead.email_hash == email_hash,
             ).first()
         if not lead:
-            lead = session.query(CustomerLead).filter(CustomerLead.email == email).first()
+            lead = session.query(CustomerLead).filter(CustomerLead.email_hash == email_hash).first()
 
         created = lead is None
         if created:
@@ -141,10 +144,14 @@ async def list_leads(
         if notify_status in VALID_NOTIFY:
             q = q.filter(CustomerLead.notify_status == notify_status)
         if keyword:
-            kw = f"%{keyword.strip()}%"
-            q = q.filter(
-                (CustomerLead.nickname.like(kw)) | (CustomerLead.email.like(kw))
-            )
+            # 昵称/邮箱已加密落盘，SQL LIKE 失效 → 取出后内存过滤（分页语义不变）
+            kw = keyword.strip().lower()
+            rows = q.order_by(CustomerLead.id.desc()).all()
+            rows = [
+                r for r in rows
+                if kw in (r.nickname or "").lower() or kw in (r.email or "").lower()
+            ]
+            return {"total": len(rows), "items": [_lead_dict(r) for r in rows[offset:offset + limit]]}
         total = q.count()
         rows = q.order_by(CustomerLead.id.desc()).offset(offset).limit(limit).all()
         return {"total": total, "items": [_lead_dict(r) for r in rows]}

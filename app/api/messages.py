@@ -679,29 +679,37 @@ async def list_conversations(
             q = q.filter(Conversation.product == product)
         if pending_confirmation:
             q = q.filter(Conversation.suggested_status.isnot(None))
-        if keyword:
-            kw = f"%{keyword.strip()}%"
-            q = q.filter(
-                (Conversation.partner_name.like(kw)) | (Conversation.last_msg.like(kw)) | (Conversation.conv_id.like(kw))
-            )
+        # 昵称 / 最后消息已加密落盘，SQL LIKE 失效 → 关键词过滤改到内存里做
+        kw_lc = keyword.strip().lower() if keyword else ""
         # 激活/时间过滤
-        if recency:
-            rows = q.all()
-            now = datetime.now()
-            def in_bucket(c):
-                if not c.last_at:
-                    return recency == "older"
-                d = (now - c.last_at).days
-                if recency == "today":
-                    return d == 0
-                if recency == "3d":
-                    return 0 <= d <= 3
-                if recency == "week":
-                    return 0 <= d <= 7
-                if recency == "older":
-                    return d > 7 if c.last_at else True
-                return True
-            rows = [r for r in rows if in_bucket(r)]
+        if recency or kw_lc:
+            rows = q.order_by(
+                Conversation.suggested_status.isnot(None).desc(),
+                Conversation.last_at.desc(),
+            ).all()
+            if kw_lc:
+                rows = [
+                    r for r in rows
+                    if kw_lc in (r.partner_name or "").lower()
+                    or kw_lc in (r.last_msg or "").lower()
+                    or kw_lc in (r.conv_id or "").lower()
+                ]
+            if recency:
+                now = datetime.now()
+                def in_bucket(c):
+                    if not c.last_at:
+                        return recency == "older"
+                    d = (now - c.last_at).days
+                    if recency == "today":
+                        return d == 0
+                    if recency == "3d":
+                        return 0 <= d <= 3
+                    if recency == "week":
+                        return 0 <= d <= 7
+                    if recency == "older":
+                        return d > 7 if c.last_at else True
+                    return True
+                rows = [r for r in rows if in_bucket(r)]
             total = len(rows)
             rows = rows[offset:offset + limit]
         else:

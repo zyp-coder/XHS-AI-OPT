@@ -75,13 +75,20 @@ function formatNum(n) {
   return String(n);
 }
 
-// ── Storage 读写（直接操作 chrome.storage.local） ───────────
+// ── Storage 读写（直接操作 chrome.storage.local；敏感 key 与 AI Key 字段在此加解密） ───────────
 async function getStorage(key) {
   const r = await chrome.storage.local.get(key);
-  return r[key];
+  const raw = r[key];
+  if (typeof DataPrivacy === 'undefined' || raw === undefined || raw === null) return raw;
+  if (key === 'config') return DataPrivacy.unlockConfig(raw);
+  return DataPrivacy.unlock(key, raw);   // 敏感 key 解出明文；其余 key 原样返回
 }
 async function setStorage(key, value) {
-  await chrome.storage.local.set({ [key]: value });
+  let v = value;
+  if (typeof DataPrivacy !== 'undefined' && value !== undefined && value !== null) {
+    v = (key === 'config') ? await DataPrivacy.lockConfig(value) : await DataPrivacy.lock(key, value);
+  }
+  await chrome.storage.local.set({ [key]: v });
 }
 
 // ── 默认配置结构 ─────────────────────────────────────────────
@@ -231,7 +238,7 @@ function wireSellPointListEvents(count) {
 
   const btn = document.getElementById('addSellPointBtn');
   if (btn) btn.onclick = () => {
-    if (_productLibLocked) { showMsg('productSaveMsg', '🔒 产品卖点为企业版功能，当前版本不可用', 'err'); return; }
+    if (_productLibLocked) { showMsg('productSaveMsg', '🔒 产品卖点当前版本不可用，升级更高版本可解锁', 'err'); return; }
     const childCount = listEl.querySelectorAll('.sp-card').length;
     if (childCount >= 10) { showMsg('productSaveMsg', '⚠️ 最多添加 10 个卖点', 'err'); return; }
     listEl.insertAdjacentHTML('beforeend', sellPointCardHtml({}, childCount, _productLibLocked));
@@ -1155,12 +1162,21 @@ document.getElementById('kbImageDelete')?.addEventListener('click', function() {
 
 document.getElementById('kbSearch')?.addEventListener('input', renderKbList);
 document.getElementById('kbTagFilter')?.addEventListener('change', renderKbList);
-document.getElementById('exportKbBtn')?.addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(kbData, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `knowledge_base_${Date.now()}.json`;
-  a.click();
+document.getElementById('exportKbBtn')?.addEventListener('click', async () => {
+  const pw = await CryptoBox.askPassword({
+    title: '设置导出加密口令',
+    hint: '知识库导出为加密文件，请设一个口令并记牢；导入时要用同一个口令。',
+    okText: '加密导出', confirm: true,
+  });
+  if (!pw.ok) return;
+  try {
+    const enc = await CryptoBox.encryptFile(JSON.stringify(kbData), pw.password);
+    const blob = new Blob([enc], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `knowledge_base_enc_${Date.now()}.json`;
+    a.click();
+  } catch (e) { alert('导出失败：' + (e.message || e)); }
 });
 document.getElementById('clearKbBtn')?.addEventListener('click', async () => {
   if (!confirm(`确认清空所有知识库条目？（共 ${kbData.length} 条）\n\n建议先导出备份再清空。`)) return;
@@ -1174,16 +1190,25 @@ document.getElementById('kbImportFile')?.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    const text = await file.text();
+    let text = await file.text();
+    if (CryptoBox.isFileEnvelope(text)) {
+      const pw = await CryptoBox.askPassword({
+        title: '输入知识库口令',
+        hint: '这是加密导出的知识库文件，请输入导出时设置的口令。',
+        okText: '解密导入',
+      });
+      if (!pw.ok) { e.target.value = ''; return; }
+      text = await CryptoBox.decryptFile(text, pw.password);
+    }
     const data = JSON.parse(text);
-    if (!Array.isArray(data)) { alert('JSON 格式错误，应为数组'); return; }
-    if (!confirm(`导入 ${data.length} 条数据（将覆盖现有知识库）？`)) return;
+    if (!Array.isArray(data)) { alert('JSON 格式错误，应为数组'); e.target.value = ''; return; }
+    if (!confirm(`导入 ${data.length} 条数据（将覆盖现有知识库）？`)) { e.target.value = ''; return; }
     kbData = data;
     await setStorage('knowledge_base', kbData);
     updateKbTagFilter();
     renderKbList();
     alert('导入成功');
-  } catch { alert('文件解析失败，请检查 JSON 格式'); }
+  } catch (err) { alert('文件解析失败：' + ((err && err.message) || '请检查文件格式')); }
   e.target.value = '';
 });
 
@@ -1316,76 +1341,53 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 一键灌水（只保留灌水历史；搜索关键词已移到 popup 左上方输入框，调度功能早已下线）
 // ══════════════════════════════════════════════════════════════
 async function loadAutoWaterConfig() {
-  await Promise.all([loadAutoWaterHistory(), loadNoteTrendConfig(), loadSearchFilterConfig()]);
+  await Promise.all([loadAutoWaterHistory(), loadAutoWaterRules()]);
 }
 
-/* ─── 搜索排序/范围筛选（coldFilter / cycleFilter，写入 auto_water_config） ─── */
-async function loadSearchFilterConfig() {
-  try {
-    const aw = (await getStorage('auto_water_config')) || {};
-    const cold = aw.coldFilter || { enabled: true, sort: 'rotate', scope: 'unseen' };
-    const cyc  = aw.cycleFilter || { enabled: false, sort: 'likes', scope: '' };
-    const setBool = (id, val) => { const e = document.getElementById(id); if (e) e.checked = !!val; };
-    const setSel = (id, val) => { const e = document.getElementById(id); if (e) e.value = val; };
-    setBool('awColdOn', cold.enabled);
-    setSel('awColdSort', cold.sort || 'rotate');
-    setSel('awColdScope', cold.scope || 'unseen');
-    setBool('awCycOn', cyc.enabled);
-    setSel('awCycSort', cyc.sort || 'likes');
-    setSel('awCycScope', cyc.scope || '');
-  } catch (_) {}
-}
+/* ─── 灌水规则：上限（note_trend_config，与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）
+       + 搜索排序/范围（auto_water_config.filter，两种口径共用） ─── */
+const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 2 };
+const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
+const AW_FILTER_DEFAULT = { enabled: true, sort: 'rotate', scope: 'unseen' };
 
-document.getElementById('awFilterSaveBtn')?.addEventListener('click', async () => {
-  const g = id => document.getElementById(id);
-  const aw = (await getStorage('auto_water_config')) || {};
-  aw.coldFilter = {
-    enabled: !!(g('awColdOn') && g('awColdOn').checked),
-    sort: (g('awColdSort') && g('awColdSort').value) || 'rotate',
-    scope: (g('awColdScope') && g('awColdScope').value) || 'unseen',
-  };
-  aw.cycleFilter = {
-    enabled: !!(g('awCycOn') && g('awCycOn').checked),
-    sort: (g('awCycSort') && g('awCycSort').value) || 'likes',
-    scope: (g('awCycScope') && g('awCycScope').value) || '',
-  };
-  await setStorage('auto_water_config', aw);
-  const msg = document.getElementById('awFilterSaveMsg');
-  if (msg) {
-    msg.textContent = '✅ 已保存：冷启动' + (aw.coldFilter.enabled ? '开（' + (aw.coldFilter.sort === 'rotate' ? '轮换' : ({ likes: '点赞最多', collects: '收藏最多', comments: '评论最多' }[aw.coldFilter.sort])) + (aw.coldFilter.scope ? '·未看过' : '') + ')' : '关') + '；循环' + (aw.cycleFilter.enabled ? '开' : '关');
-    setTimeout(() => { msg.textContent = ''; }, 4000);
-  }
-});
-
-/* ─── 循环计划设置（note_trend_config，与 popup 侧 lib/note-trend.js 共用同一 key 与默认值） ─── */
-const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, scanIntervalMin: 2 };
-
-async function loadNoteTrendConfig() {
+async function loadAutoWaterRules() {
   try {
     const cfg = Object.assign({}, NT_DEFAULT_CONFIG, (await getStorage('note_trend_config')) || {});
-    const ids = ['ntMaxPerRound', 'ntMaxPerNote', 'ntCooldownHours', 'ntScanIntervalMin'];
-    ids.forEach(id => {
+    Object.entries(NT_EL_IDS).forEach(([k, id]) => {
       const el = document.getElementById(id);
-      if (el) el.value = cfg[id.replace('ntMaxPerRound', 'maxPerRound').replace('ntMaxPerNote', 'maxPerNote').replace('ntCooldownHours', 'cooldownHours').replace('ntScanIntervalMin', 'scanIntervalMin')];
+      if (el) el.value = cfg[k];
     });
-    const msg = document.getElementById('ntSaveMsg');
+    const aw = (await getStorage('auto_water_config')) || {};
+    const f = aw.filter || aw.coldFilter || AW_FILTER_DEFAULT; // ★ 兼容旧版 coldFilter 未迁移的数据
+    const on = document.getElementById('awFilterOn'); if (on) on.checked = f.enabled !== false;
+    const sort = document.getElementById('awFilterSort'); if (sort) sort.value = f.sort || 'rotate';
+    const scope = document.getElementById('awFilterScope'); if (scope) scope.value = f.scope || '';
+    const msg = document.getElementById('awRulesSaveMsg');
     if (msg) msg.textContent = '';
   } catch (_) {}
 }
 
-document.getElementById('ntSaveBtn')?.addEventListener('click', async () => {
-  const ids = ['maxPerRound', 'maxPerNote', 'cooldownHours', 'scanIntervalMin'];
+document.getElementById('awRulesSaveBtn')?.addEventListener('click', async () => {
   const cfg = {};
-  const elIds = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', scanIntervalMin: 'ntScanIntervalMin' };
-  for (const k of ids) {
-    const el = document.getElementById(elIds[k]);
+  Object.entries(NT_EL_IDS).forEach(([k, id]) => {
+    const el = document.getElementById(id);
     const v = parseInt(el ? el.value : '', 10);
     if (!isNaN(v) && v > 0) cfg[k] = v;
-  }
+  });
   await setStorage('note_trend_config', cfg);
-  const msg = document.getElementById('ntSaveMsg');
+  const aw = (await getStorage('auto_water_config')) || {};
+  aw.filter = {
+    enabled: !!document.getElementById('awFilterOn')?.checked,
+    sort: document.getElementById('awFilterSort')?.value || 'rotate',
+    scope: document.getElementById('awFilterScope')?.value || '',
+  };
+  delete aw.coldFilter;    // 旧的两套筛选已并入 aw.filter
+  delete aw.cycleFilter;
+  await setStorage('auto_water_config', aw);
+  const msg = document.getElementById('awRulesSaveMsg');
   if (msg) {
-    msg.textContent = '✅ 已保存：每轮最多 ' + cfg.maxPerRound + ' 篇 / 每篇最多 ' + cfg.maxPerNote + ' 次 / 冷却 ' + cfg.cooldownHours + ' 小时 / 间隔 ' + cfg.scanIntervalMin + ' 分钟';
+    const sortLabel = aw.filter.sort === 'rotate' ? '轮换' : ({ likes: '点赞最多', collects: '收藏最多', comments: '评论最多' }[aw.filter.sort] || aw.filter.sort);
+    msg.textContent = '✅ 已保存：每轮最多 ' + cfg.maxPerRound + ' 篇 / 每篇最多 ' + cfg.maxPerNote + ' 次 / 冷却 ' + cfg.cooldownHours + 'h / 复核 ' + cfg.checkedHours + 'h / 间隔 ' + cfg.scanIntervalMin + 'min；筛选' + (aw.filter.enabled ? '开（' + sortLabel + (aw.filter.scope ? '·未看过' : '') + '）' : '关');
     setTimeout(() => { msg.textContent = ''; }, 4000);
   }
 });
@@ -1434,17 +1436,17 @@ const DELAY_KEYS = Object.keys(DELAY_DEFAULT);
 
 // ═══ 拟人化挡位（0~5）：一键套用整套「停留/间隔」，挡位越高越慢越安全 ═══
 const DELAY_PRESETS = [
-  { level:0, name:'极速 · 裸跑', daily:'不限', desc:'完全不拟人，贴着技术下限最快跑。仅建议自用小号/单篇测试，批量高风险。批量点赞仍保留 300ms 保底间隔防连点。',
+  { level:0, name:'极速 · 裸跑', daily:'不限', desc:'不做停留与逐字输入延时，跑得最快。仅建议单篇测试用，不建议上量。批量点赞仍保留 300ms 保底间隔。',
     cfg:{ browseDwell:{min:0,max:0}, typingCharDelay:{min:0,max:0}, likeGap:{min:300,max:300}, lazyLoadWait:{min:300,max:300}, retryBackWait:{min:300,max:300}, retryOpenWait:{min:800,max:800}, noteOpenBuffer:{min:300,max:300}, preSendGap:{min:400,max:400}, batchItemGap:{min:0,max:0} } },
   { level:1, name:'轻装 · 单篇/少量', daily:'≤20', desc:'只留底线缓冲，适合快速试探或低量测试。',
     cfg:{ browseDwell:{min:500,max:1000}, typingCharDelay:{min:0,max:0}, likeGap:{min:300,max:500}, lazyLoadWait:{min:300,max:600}, retryBackWait:{min:300,max:500}, retryOpenWait:{min:800,max:1200}, noteOpenBuffer:{min:300,max:500}, preSendGap:{min:300,max:600}, batchItemGap:{min:1000,max:2000} } },
-  { level:2, name:'标准拟人（推荐默认）', daily:'≤10', desc:'模拟真人浏览/逐字打字/点赞间隔/条间间隔，日常稳定，推荐使用。',
+  { level:2, name:'标准拟人（推荐默认）', daily:'≤10', desc:'自然浏览停留/逐字输入/点赞间隔/条间间隔，日常稳定，推荐使用。',
     cfg:{ browseDwell:{min:1200,max:2000}, typingCharDelay:{min:15,max:30}, likeGap:{min:300,max:600}, lazyLoadWait:{min:700,max:1100}, retryBackWait:{min:500,max:900}, retryOpenWait:{min:1100,max:2200}, noteOpenBuffer:{min:500,max:900}, preSendGap:{min:400,max:700}, batchItemGap:{min:4000,max:8000} } },
   { level:3, name:'保守拟人', daily:'≤8', desc:'间隔拉长约一倍，加思考停顿，适合对量不敏感但求稳。',
     cfg:{ browseDwell:{min:2000,max:4000}, typingCharDelay:{min:20,max:40}, likeGap:{min:800,max:1500}, lazyLoadWait:{min:1200,max:2000}, retryBackWait:{min:900,max:1500}, retryOpenWait:{min:2000,max:3500}, noteOpenBuffer:{min:1000,max:1800}, preSendGap:{min:800,max:1200}, batchItemGap:{min:8000,max:15000} } },
-  { level:4, name:'重度拟人 · 养号', daily:'≤5', desc:'更长随机间隔，适合新号养号或平台严打窗口。',
+  { level:4, name:'重度拟人 · 新号起步', daily:'≤5', desc:'更长随机间隔，适合新号起步或流量不稳定期。',
     cfg:{ browseDwell:{min:4000,max:8000}, typingCharDelay:{min:30,max:50}, likeGap:{min:1500,max:3000}, lazyLoadWait:{min:2000,max:3500}, retryBackWait:{min:1500,max:2500}, retryOpenWait:{min:3000,max:5000}, noteOpenBuffer:{min:1800,max:3000}, preSendGap:{min:1200,max:2000}, batchItemGap:{min:15000,max:30000} } },
-  { level:5, name:'极致防御', daily:'≤3', desc:'处处关卡、超长随机，单篇都耗时数分钟，追求极限存活。',
+  { level:5, name:'极致从容', daily:'≤3', desc:'每步都留足停顿、超长随机，单篇耗时数分钟，节奏最缓。',
     cfg:{ browseDwell:{min:8000,max:15000}, typingCharDelay:{min:40,max:80}, likeGap:{min:3000,max:6000}, lazyLoadWait:{min:3500,max:6000}, retryBackWait:{min:2500,max:4000}, retryOpenWait:{min:5000,max:8000}, noteOpenBuffer:{min:3000,max:5000}, preSendGap:{min:1500,max:2500}, batchItemGap:{min:30000,max:60000} } },
 ];
 
@@ -1672,7 +1674,7 @@ async function applyEditionToSettings() {
   // 到期：全屏遮罩锁死
   if (status.expired) { showSettingsExpiredMask(ed); return; }
 
-  // 产品库（trial 关闭）：灰显「产品卖点」并标注企业版功能（不隐藏）
+  // 产品库（未开通时关闭）：灰显「产品卖点」并标注版本限制（不隐藏）
   _productLibLocked = !ed.features || !ed.features.productLib;
   if (_productLibLocked) {
     const grp = document.getElementById('sellPointList');
@@ -1681,7 +1683,7 @@ async function applyEditionToSettings() {
       grp.style.opacity = '0.55';
       grp.style.pointerEvents = 'none';
       grp.style.cursor = 'not-allowed';
-      grp.setAttribute('title', '🔒 产品卖点为企业版功能，升级后解锁');
+      grp.setAttribute('title', '🔒 产品卖点当前版本不可用，升级后解锁');
     }
     const addBtn = document.getElementById('addSellPointBtn');
     if (addBtn) { addBtn.disabled = true; addBtn.style.opacity = '0.55'; }
@@ -1691,68 +1693,67 @@ async function applyEditionToSettings() {
         const badge = document.createElement('span');
         badge.className = 'edition-lock-badge';
         badge.style.cssText = 'font-size:11px;color:#ff2442;background:#fff0f3;border:1px solid #ffd9e0;padding:1px 6px;border-radius:3px;margin-left:6px;';
-        badge.textContent = '🔒 产品卖点为企业版功能（当前版本 ' + (ed.label || '') + ' 不可用）';
+        badge.textContent = '🔒 产品卖点当前版本（' + (ed.label || '') + '）不可用';
         label.appendChild(badge);
       }
     }
   }
 
-  // 租户模式（trial / ent 关闭）：灰显 Tab + 面板加锁定提示，禁用面板内操作（不隐藏）
-  if (!ed.features || !ed.features.tenant) {
-    const tabItem = document.querySelector('.tab-item[data-tab="tenant"]');
-    const panel = document.getElementById('tab-tenant');
-    if (tabItem) {
-      tabItem.style.opacity = '0.45';
-      tabItem.textContent = '🔒 租户/产品';
-      tabItem.title = '多租户为「企业版·多租户」专属功能，当前版本（' + (ed.label || '') + '）不可用';
-    }
-    if (panel) {
-      // 面板顶部插入锁定提示条
-      if (!panel.querySelector('.edition-lock-notice')) {
-        const notice = document.createElement('div');
-        notice.className = 'edition-lock-notice';
-        notice.style.cssText = 'padding:10px 14px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;color:#856404;font-size:13px;line-height:1.6;margin-bottom:14px;';
-        notice.innerHTML = '🔒 多租户（多产品独立配置）属于「企业版·多租户」，当前版本（' + esc(ed.label || '') + '）不可用。如需同时运营多个产品，请联系服务商升级解锁。';
-        const header = panel.querySelector('.panel-header');
-        if (header) header.insertAdjacentElement('afterend', notice);
-        else panel.insertAdjacentElement('afterbegin', notice);
-      }
-      // 禁用面板内所有操作控件；租户列表是异步渲染的，用 pointer-events 屏蔽
-      panel.querySelectorAll('input, button, select, textarea').forEach(el => { el.disabled = true; });
-      const list = document.getElementById('tenantList');
-      if (list) { list.style.opacity = '0.5'; list.style.pointerEvents = 'none'; }
-    }
-    // 若租户 Tab 原本是默认激活态，改为激活「产品配置」（Tab 仍可点击查看锁定说明）
-    if (tabItem && tabItem.classList.contains('active')) {
-      tabItem.classList.remove('active');
-      if (panel) panel.classList.remove('active');
-      const basicTab = document.querySelector('.tab-item[data-tab="product"]');
-      const basicPanel = document.getElementById('tab-product');
-      if (basicTab) basicTab.classList.add('active');
-      if (basicPanel) basicPanel.classList.add('active');
-    }
-  }
+  // 租户模式：三档全开（tenant 恒为 true），不再做灰显锁定
 
-  // 知识库（试用版关闭）：灰显 Tab + 面板锁定
+  // 知识库（未开通时关闭）：灰显 Tab + 面板锁定
   if (!ed.features || !ed.features.knowledge) {
     lockSettingsTab({
       tab: 'knowledge',
       panelId: 'tab-knowledge',
       lockedLabel: '🔒 知识库',
-      tabTitle: '知识库为企业版功能，当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 知识库（录入专业知识、AI 生成时自动引用）属于企业版功能，当前版本（' + esc(ed.label || '') + '）不可用。升级企业版后可解锁，让回复更专业、更像真人。',
+      tabTitle: '知识库当前版本（' + (ed.label || '') + '）不可用',
+      notice: '🔒 知识库（录入专业知识、AI 生成时自动引用）当前版本（' + esc(ed.label || '') + '）不可用。升级更高版本后可解锁，让回复更专业、更自然。',
       listId: 'kbList',
     });
   }
 
-  // 一键灌水（试用版关闭）：灰显 Tab + 面板锁定
+  // 一键灌水（未开通时关闭）：灰显 Tab + 面板锁定
   if (!ed.features || !ed.features.autoWater) {
     lockSettingsTab({
       tab: 'autowater',
       panelId: 'tab-autowater',
       lockedLabel: '🔒 一键灌水',
-      tabTitle: '一键灌水为企业版功能，当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 一键灌水（关键词批量搜笔记 + 笔记列表逐篇处理）属于企业版功能，当前版本（' + esc(ed.label || '') + '）不可用。升级企业版后可解锁批量获客。',
+      tabTitle: '一键灌水当前版本（' + (ed.label || '') + '）不可用',
+      notice: '🔒 一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器）当前版本（' + esc(ed.label || '') + '）不可用。升级「评论助手·升级版」或更高版本解锁。',
+    });
+  }
+
+  // 封面设置（发送笔记的配套，未开通时关闭）
+  if (!ed.features || !ed.features.notePublish) {
+    lockSettingsTab({
+      tab: 'cover',
+      panelId: 'tab-cover',
+      lockedLabel: '🔒 封面设置',
+      tabTitle: '封面设置随「发送笔记」提供，当前版本（' + (ed.label || '') + '）不可用',
+      notice: '🔒 封面设置属于「发送笔记」功能，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
+    });
+  }
+
+  // AI 客服·场景话术（通知/私信获客的配套，未开通时关闭）
+  if (!ed.features || !ed.features.prospectList) {
+    lockSettingsTab({
+      tab: 'aics',
+      panelId: 'tab-aics',
+      lockedLabel: '🔒 AI客服·场景话术',
+      tabTitle: 'AI 客服随「通知 / 私信」提供，当前版本（' + (ed.label || '') + '）不可用',
+      notice: '🔒 AI 客服·场景话术（通知/私信线索的触达与问答话术）随「通知 / 私信」提供，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
+    });
+  }
+
+  // 日常浏览（全功能版独家）
+  if (!ed.features || !ed.features.dailyBrowse) {
+    lockSettingsTab({
+      tab: 'dailybrowse',
+      panelId: 'tab-dailybrowse',
+      lockedLabel: '🔒 日常浏览',
+      tabTitle: '日常浏览为「全功能版」专属，当前版本（' + (ed.label || '') + '）不可用',
+      notice: '🔒 日常浏览（按时段与每日配额自动浏览、可配点赞收藏）为「全功能版」专属功能，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
     });
   }
 }
@@ -1962,9 +1963,9 @@ async function renderTenantList() {
     } else {
       const snap = (await getStorage(snapKey(t))) || {};
       const inner = snap[snapKey(t)] || {};
-      cfg = inner.config || {};
-      kb = inner.knowledge_base;
-      pl = inner.prospect_list;
+      cfg = await DataPrivacy.unlockConfig(inner.config || {});
+      kb = await DataPrivacy.unlock('knowledge_base', inner.knowledge_base);
+      pl = await DataPrivacy.unlock('prospect_list', inner.prospect_list);
     }
     stats[t.id] = {
       sell: (cfg.product && Array.isArray(cfg.product.sellPoints)) ? cfg.product.sellPoints.length : 0,
@@ -2101,15 +2102,15 @@ function renderBackup() {
   const box = document.getElementById('backupBody'); if (!box) return;
   box.innerHTML = `
     <div style="background:#fff7fa;border:1px solid #f6dde3;border-radius:8px;padding:10px 12px;font-size:12px;color:#8a3a4e;line-height:1.7;margin-bottom:12px;">
-      ⚠️ 备份文件包含你的 <b>API Key、账号绑定信息、获客清单/私信历史</b> 等敏感数据。请<b>本地保存、不要外传或提交到公开仓库</b>。
+      ⚠️ 备份文件包含 <b>API Key、账号绑定信息、获客清单/私信历史</b> 等敏感数据，导出时用你设置的<b>口令整体加密</b>，恢复时要输入同一口令；<b>口令无法找回</b>，请连同文件一起妥善保存、不要外传。
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button id="backupExport" style="font-size:13px;padding:10px 18px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">⬇ 导出全部数据</button>
+      <button id="backupExport" style="font-size:13px;padding:10px 18px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">⬇ 导出全部数据（加密）</button>
       <button id="backupImport" style="font-size:13px;padding:10px 18px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;font-weight:600;">⬆ 从备份文件导入（合并）</button>
       <input type="file" id="backupFile" accept=".json,application/json" style="display:none;">
     </div>
     <div id="backupMsg" style="font-size:12px;color:#0a7b5a;margin-top:10px;"></div>
-    <div style="font-size:12px;color:#888;margin-top:10px;line-height:1.8;">导出：把<b>所有产品(租户)</b>的完整配置 + 获客清单/私信历史/已灌水/内容规划 打成一份 JSON。<br>导入（合并保留）：备份数据<b>并入</b>本地——备份里的配置会覆盖本地同名 key，本地独有的产品保留，备份里的新产品追加进来，不会清空现有配置。适合换版本/换机后还原。</div>`;
+    <div style="font-size:12px;color:#888;margin-top:10px;line-height:1.8;">导出（加密）：把<b>所有产品(租户)</b>的完整配置 + 获客清单/私信历史/已灌水/内容规划打成一份<b>口令加密</b>的文件。<br>导入（合并保留）：备份数据<b>并入</b>本地——备份里的配置会覆盖本地同名 key，本地独有的产品保留，备份里的新产品追加进来，不会清空现有配置。适合换版本/换机后还原（也支持早期未加密的旧备份）。</div>`;
   document.getElementById('backupExport')?.addEventListener('click', backupExport);
   document.getElementById('backupImport')?.addEventListener('click', () => { document.getElementById('backupFile')?.click(); });
   document.getElementById('backupFile')?.addEventListener('change', backupImportFile);
@@ -2120,16 +2121,23 @@ async function backupExport() {
   try {
     const r = await chrome.runtime.sendMessage({ action: 'exportAllData', data: {} });
     if (!r || !r.ok) throw new Error((r && r.error) || '导出失败');
-    const blob = new Blob([JSON.stringify(r.backup, null, 2)], { type: 'application/json' });
+    const pw = await CryptoBox.askPassword({
+      title: '设置导出加密口令',
+      hint: '备份文件包含 API Key、获客清单、私信与评论记录，将用这个口令整体加密。<b>口令无法找回</b>，请自行记牢；恢复时要用同一个口令。',
+      okText: '加密导出', confirm: true,
+    });
+    if (!pw.ok) { if (msg) msg.textContent = ''; return; }
+    const enc = await CryptoBox.encryptFile(JSON.stringify(r.backup), pw.password);
+    const blob = new Blob([enc], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'xhs-ai-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.download = 'xhs-ai-backup-' + new Date().toISOString().slice(0, 10) + '.enc.json';
     a.click(); URL.revokeObjectURL(a.href);
     if (msg) {
       const sm = (r.backup && r.backup.summary) || {};
       const lines = Object.entries(sm).map(([name, s]) =>
         `${name}：卖点${s.卖点数} · 话术库${s.话术库条数} · 知识库${s.知识库条数} · 获客${s.获客清单数}`).join('；');
-      msg.textContent = '✅ 已导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份' +
-        (lines ? '　（' + lines + '）' : '') + '，请本地妥善保存。';
+      msg.textContent = '✅ 已加密导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份' +
+        (lines ? '　（' + lines + '）' : '') + '，请连同口令一起妥善保存。';
       msg.style.color = '#0a7b5a';
     }
   } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导出失败：' + (e.message || e); } }
@@ -2139,14 +2147,27 @@ async function backupImportFile(e) {
   const file = e.target.files && e.target.files[0]; if (!file) return;
   const msg = document.getElementById('backupMsg'); if (msg) msg.textContent = '读取备份文件…';
   const raw = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result || '')); r.onerror = () => reject(new Error('读取失败')); r.readAsText(file, 'utf-8'); });
+  let text = raw;
+  if (CryptoBox.isFileEnvelope(raw)) {
+    const pw = await CryptoBox.askPassword({
+      title: '输入备份口令',
+      hint: '这个备份是加密文件，请输入导出时设置的口令。',
+      okText: '解密导入',
+    });
+    if (!pw.ok) { if (msg) msg.textContent = ''; e.target.value = ''; return; }
+    if (msg) msg.textContent = '解密中…';
+    try { text = await CryptoBox.decryptFile(raw, pw.password); }
+    catch (err) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ ' + (err.message || err); } e.target.value = ''; return; }
+  }
   let backup;
-  try { backup = JSON.parse(raw); } catch (_) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 文件不是合法的 JSON 备份'; } return; }
-  if (!backup || !backup.tenants || !backup.data) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 不是有效的备份文件（缺 tenants/data）'; } return; }
+  try { backup = JSON.parse(text); } catch (_) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 文件不是合法的 JSON 备份'; } e.target.value = ''; return; }
+  if (!backup || !backup.tenants || !backup.data) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 不是有效的备份文件（缺 tenants/data）'; } e.target.value = ''; return; }
   try {
     const r = await chrome.runtime.sendMessage({ action: 'importAllData', data: { backup } });
     if (r && r.ok) { if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 导入完成：合并 ' + r.importedTenants + ' 个备份产品，本地现有 ' + r.tenants + ' 个产品已保留。'; } if (msg) msg.textContent += ' 刷新页面以加载全部数据…'; setTimeout(function () { location.reload(); }, 900); }
     else if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + ((r && r.error) || '未知'); }
   } catch (err) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导入失败：' + (err.message || err); } }
+  e.target.value = '';
 }
 
 async function renderAiCsSettings() {
@@ -2291,3 +2312,127 @@ async function genAicsDefaults() {
   } catch (e) { alert('❌ 生成失败：' + e.message); }
 }
 async function testAics() { const inn = document.getElementById('aicsIn'); const out = document.getElementById('aicsOut'); if (!inn || !out) return; const q = inn.value.trim(); if (!q) return; out.textContent = '路由中…'; try { const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } }); out.innerHTML = r && r.ok ? ('🎯 ' + _ae(r.category) + ' · ' + (r.mode === 'ai' ? 'AI' : '模板') + '\n' + _ae(r.reply)) : ('❌ ' + _ae((r && r.error) || '失败')); } catch (e) { out.textContent = '❌ ' + e.message; } }
+
+/* ═══════════ 🌿 日常浏览（全功能版专属：时段 + 每日配额 + 按比例点赞收藏） ═══════════ */
+function _dbParseWindows(text) {
+  const out = [];
+  String(text || '').split(/\r?\n|;/).forEach(line => {
+    const m = line.trim().match(/^(\d{1,2}:\d{2})\s*[-~—至到]\s*(\d{1,2}:\d{2})$/);
+    if (m) out.push({ start: m[1], end: m[2] });
+  });
+  return out;
+}
+function _dbFmtWindows(wins) {
+  return (Array.isArray(wins) ? wins : [])
+    .map(w => ((w && w.start) || '') + '-' + ((w && w.end) || ''))
+    .filter(s => s !== '-').join('\n');
+}
+function _dbFmtTs(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function _dbNum(id, def) {
+  const el = document.getElementById(id);
+  const n = el ? parseInt(el.value, 10) : NaN;
+  return isFinite(n) ? n : def;
+}
+function _dbSetNum(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+
+function renderDailyBrowseStatus(st) {
+  const box = document.getElementById('dbStatus');
+  const logBox = document.getElementById('dbLogs');
+  if (!box) return;
+  if (!st || !st.cfg) { box.innerHTML = '⚠️ ' + ((st && st.error) || '当前版本未开通「日常浏览」'); if (logBox) logBox.innerHTML = ''; return; }
+  const c = st.cfg;
+  const lines = [];
+  lines.push('今日已浏览：<b>' + (st.todayCount || 0) + '</b> / ' + (c.dailyQuota || 0) + ' 篇');
+  lines.push('状态：' + (st.running ? '🌿 正在浏览中' : (c.enabled ? (st.inWindow ? '✅ 已开启（当前在时段内）' : '⏸ 已开启（当前不在时段内）') : '未开启')));
+  if (st.nextAt) lines.push('下次运行：约 ' + _dbFmtTs(st.nextAt));
+  if (st.lastRound && st.lastRound.ts) {
+    const its = st.lastRound.items || [];
+    lines.push('最近一轮：' + _dbFmtTs(st.lastRound.ts) + ' · 浏览 ' + its.length + ' 篇' +
+      (its.filter(x => x.opened).length ? '，打开 ' + its.filter(x => x.opened).length + ' 篇' : '') +
+      (its.filter(x => x.liked).length ? '，点赞 ' + its.filter(x => x.liked).length : '') +
+      (its.filter(x => x.collected).length ? '，收藏 ' + its.filter(x => x.collected).length : ''));
+  }
+  box.innerHTML = lines.join('<br>');
+  if (logBox) {
+    const logs = st.logs || [];
+    logBox.innerHTML = logs.length
+      ? logs.map(l => '<div>' + esc(l.text || '') + '</div>').join('')
+      : '<div style="color:#bbb;">暂无日志</div>';
+  }
+}
+
+async function loadDailyBrowse() {
+  if (!document.getElementById('dbEnabled')) return;
+  let st = null;
+  try { st = await chrome.runtime.sendMessage({ action: 'dailyBrowseStatus' }); } catch (_) {}
+  if (!st || !st.cfg) { renderDailyBrowseStatus(st); return; }
+  const c = st.cfg;
+  const en = document.getElementById('dbEnabled'); if (en) en.checked = !!c.enabled;
+  const win = document.getElementById('dbWindows'); if (win) win.value = _dbFmtWindows(c.windows);
+  const kw = document.getElementById('dbKeywords'); if (kw) kw.value = (c.keywords || []).join('\n');
+  _dbSetNum('dbDailyQuota', c.dailyQuota);
+  _dbSetNum('dbPerRound', c.perRound);
+  _dbSetNum('dbIntervalMin', c.intervalMin);
+  _dbSetNum('dbDwellMin', c.dwellMin);
+  _dbSetNum('dbDwellMax', c.dwellMax);
+  _dbSetNum('dbOpenRate', c.openRate);
+  _dbSetNum('dbLikeRate', c.likeRate);
+  _dbSetNum('dbCollectRate', c.collectRate);
+  renderDailyBrowseStatus(st);
+}
+
+document.querySelector('[data-tab="dailybrowse"]')?.addEventListener('click', loadDailyBrowse);
+
+document.getElementById('dbSaveBtn')?.addEventListener('click', async () => {
+  const winRaw = (document.getElementById('dbWindows') || {}).value || '';
+  const windows = _dbParseWindows(winRaw);
+  if (winRaw.trim() && !windows.length) {
+    showMsg('dbSaveMsg', '❌ 时段格式不对：每行写成 09:00-11:30 这样（或用「−」分隔）', 'err');
+    return;
+  }
+  const keywords = String((document.getElementById('dbKeywords') || {}).value || '')
+    .split(/\r?\n|,|，/).map(s => s.trim()).filter(Boolean);
+  const cfg = {
+    enabled: !!(document.getElementById('dbEnabled') || {}).checked,
+    windows,
+    keywords,
+    dailyQuota: _dbNum('dbDailyQuota', 40),
+    perRound: _dbNum('dbPerRound', 6),
+    intervalMin: _dbNum('dbIntervalMin', 25),
+    dwellMin: _dbNum('dbDwellMin', 8),
+    dwellMax: _dbNum('dbDwellMax', 25),
+    openRate: _dbNum('dbOpenRate', 60),
+    likeRate: _dbNum('dbLikeRate', 25),
+    collectRate: _dbNum('dbCollectRate', 12),
+  };
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'dailyBrowseSaveConfig', data: { config: cfg } });
+    if (!r || r.error || !r.cfg) throw new Error((r && r.error) || '保存失败');
+    showMsg('dbSaveMsg', '✅ 已保存' + (r.cfg.enabled ? '，到点会自动跑' : '（当前未开启）'), 'ok');
+    loadDailyBrowse();
+  } catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
+});
+
+document.getElementById('dbRunBtn')?.addEventListener('click', async () => {
+  showMsg('dbSaveMsg', '🌿 正在打开页面开始浏览…一轮大约 1~3 分钟，请不要关掉小红书标签页', '');
+  const btn = document.getElementById('dbRunBtn'); if (btn) btn.disabled = true;
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'dailyBrowseRunNow' });
+    const n = (r && Array.isArray(r.items)) ? r.items.length : 0;
+    if (r && r.ok) showMsg('dbSaveMsg', '✅ 本轮完成：浏览 ' + n + ' 篇', 'ok');
+    else showMsg('dbSaveMsg', '⚠️ ' + ((r && r.error) || '本轮未完成'), 'err');
+  } catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
+  if (btn) btn.disabled = false;
+  loadDailyBrowse();
+});
+
+document.getElementById('dbStopBtn')?.addEventListener('click', async () => {
+  try { await chrome.runtime.sendMessage({ action: 'dailyBrowseStop' }); showMsg('dbSaveMsg', '⏹ 已通知本轮尽快结束（当前这一篇会跑完）', 'ok'); }
+  catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
+  loadDailyBrowse();
+});

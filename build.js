@@ -5,16 +5,14 @@
  *       再打成可直接「加载已解压的扩展 / 上传」的 zip 包。
  *
  * 用法（在项目根目录执行）：
- *   node build.js trial                          # 试用版（15天，无批量/产品库/租户）
- *   node build.js trial-pro                      # 试用版Pro（15天，在试用版基础上开放产品库）
- *   node build.js ent --licensee "张三公司"       # 企业版（1年，有产品库，无租户）
- *   node build.js ent-tenant --licensee "李四"    # 企业版+租户（1年，全功能）
- *   node build.js test                           # 体验版（1天，全功能，给朋友试效果）
- *   node build.js pro                            # 全功能版（永不过期，全功能，自用）
+ *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月，全部功能 + 日常浏览）
+ *   node build.js comment --licensee "李四"       # 评论助手·基础版（¥239/月，手动评论，无自动化）
+ *   node build.js comment-multi --licensee "王五" # 评论助手·升级版（¥399/月，一键灌水 + 笔记列表 + 多关键词）
+ *   node build.js pro                            # 自用版（全功能、零等待，自用）
  *
  * 可选参数：
- *   --licensee "客户名"   写入授权对象（企业版建议填）
- *   --days N             覆盖默认有效天数（如 --days 30）
+ *   --licensee "客户名"   写入授权对象（建议填）
+ *   --days N             覆盖默认有效天数（如 --days 30；0 = 不过期）
  *   --xhs-id "小红心书号"   绑定到指定「小红书号」：插件只在当前登录为该书号时才可用
  *   --xhs-name "昵称"      绑定对象的主页昵称（仅用于展示）
  *   --out 目录           输出目录（默认 dist）
@@ -36,34 +34,34 @@ const PRESETS = {
   pro: {
     label: '自用版',
     validDays: 0,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true },
+    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true },
     keywordMax: 8, price: 0, noDelay: true,
   },
 
-  // ── 对外销售的三档 ──
-  // ① 全功能版：所有功能；定价 539
+  // ── 对外销售的三档（按月收费：默认有效期 30 天，打包时可用 --days 覆盖）──
+  // ③ 全功能版：② + 通知/私信（获客清单）+ 发送笔记 + 日常浏览（独家）；定价 539/月
   full: {
     label: '全功能版',
-    validDays: 0,
+    validDays: 30,
     price: 539,
     keywordMax: 8,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true },
+    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true },
   },
-  // ② 评论助手·单关键词：单租户、单关键词评论助手 + 产品库/知识库/运营总结；定价 239
+  // ① 评论助手·基础版：手动 AI 评论（含整页一键发送）+ 账号诊断 + 产品库/知识库/多产品；无任何自动化；定价 239/月
   comment: {
-    label: '评论助手·单关键词',
-    validDays: 0,
+    label: '评论助手·基础版',
+    validDays: 30,
     price: 239,
     keywordMax: 1,
-    features: { batchSend: true, productLib: true, tenant: false, knowledge: true, autoWater: true, prospectList: false },
+    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: false, dailyBrowse: false },
   },
-  // ③ 评论助手·多关键词：单租户、多关键词评论助手 + 获客清单 + 产品库/知识库/运营总结；定价 399
+  // ② 评论助手·升级版：① + 一键灌水/笔记列表（找该去评论的笔记）+ 多关键词；获客清单 2026-09-20 按老板口径挪到③；定价 399/月
   'comment-multi': {
-    label: '评论助手·多关键词',
-    validDays: 0,
+    label: '评论助手·升级版',
+    validDays: 30,
     price: 399,
     keywordMax: 8,
-    features: { batchSend: true, productLib: true, tenant: false, knowledge: true, autoWater: true, prospectList: true },
+    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: false, dailyBrowse: false },
   },
 };
 
@@ -109,7 +107,7 @@ function obfuscatePayload(payloadObj) {
 // 说明：敏感项（boundAccount / builtAt / expireAt / validDays）以混淆载荷形式嵌入，
 //       不直接明文裸露绑定号；并写入 integrity 校验，运行时校验失败即视为被篡改。
 function genEditionJs(cfg) {
-  const featuresStr = `{\n    batchSend: ${cfg.features.batchSend},\n    productLib: ${cfg.features.productLib},\n    tenant: ${cfg.features.tenant},\n    knowledge: ${cfg.features.knowledge},\n    autoWater: ${cfg.features.autoWater},\n    prospectList: ${cfg.features.prospectList},\n  }`;
+  const featuresStr = `{\n    batchSend: ${cfg.features.batchSend},\n    productLib: ${cfg.features.productLib},\n    tenant: ${cfg.features.tenant},\n    knowledge: ${cfg.features.knowledge},\n    autoWater: ${cfg.features.autoWater},\n    prospectList: ${cfg.features.prospectList},\n    notePublish: ${cfg.features.notePublish},\n    dailyBrowse: ${cfg.features.dailyBrowse},\n  }`;
   const bound = cfg.boundAccount || { xhsId: '', name: '' };
 
   // 敏感载荷（重要值不落明文）
@@ -271,359 +269,16 @@ if (typeof module !== 'undefined') { module.exports = Edition; }
 function patchManifest(destDir, cfg) {
   const mp = path.join(destDir, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
+  // 源 manifest 名称带「· 全功能版」后缀（开发环境自用），打包时压回产品名再拼当前档位，避免出现两个档位名
+  const baseName = String(manifest.name || '').split('·')[0].trim() || '小红书评论助手';
   const suffix = cfg.licensee ? `${cfg.label}·${cfg.licensee}` : cfg.label;
-  manifest.name = `${manifest.name} · ${suffix}`;
+  manifest.name = `${baseName} · ${suffix}`;
   fs.writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf8');
   return manifest;
 }
 
-// ── 生成「使用说明.txt」（按版本功能动态裁剪） ──────────────
-function genManual(cfg) {
-  const f = cfg.features || {};
-  const expireStr = cfg.expireAt ? new Date(cfg.expireAt).toLocaleDateString('zh-CN') : '永不过期';
-  const validStr = cfg.validDays > 0 ? (cfg.validDays + ' 天') : '永久';
-  const L = [];
-  const push = (s) => L.push(s);
-  const HR = '────────────────────────────────────────────────';
-  let n = 0;
-  const sec = (title) => { n++; push(''); push(HR); push('  ' + n + '、' + title); push(HR); };
-
-  push('================================================');
-  push('   小红书评论助手 · ' + cfg.label + '  使用说明');
-  push('================================================');
-  push('');
-  push('【授权信息】');
-  push('  版本类型：' + cfg.label);
-  push('  授权对象：' + (cfg.licensee || '通用'));
-  push('  有效期  ：' + validStr + (cfg.expireAt ? ('，截止 ' + expireStr) : ''));
-  if (cfg.price > 0) push('  定价    ：¥' + cfg.price + ' 元/套');
-  push('  灌水关键词上限：' + (cfg.keywordMax == null ? 8 : cfg.keywordMax) + ' 个');
-  const bound = cfg.boundAccount || {};
-  if (bound.xhsId) {
-    push('  绑定小红书号：' + bound.xhsId + (bound.name ? ('（' + bound.name + '）') : ''));
-  }
-  push('');
-  push('【重要提示】');
-  if (cfg.expireAt) {
-    push('  · 本工具需全程联网：AI 生成话术、授权时间校准都要网络。');
-    push('  · 到期后功能会自动锁定，请在到期前联系服务商续期或换新包。');
-  } else {
-    push('  · 本版本永不过期、功能全开，无需授权时间校准。');
-    push('  · AI 生成话术仍需联网（调用大模型接口）。');
-  }
-  if (bound.xhsId) {
-    push('  ●【绑定账号】本工具已绑定小红书号「' + bound.xhsId + '」。');
-    push('  · 使用前请先在小红书网页版登录该账号；只有该账号才可正常使用。');
-    push('  · 若检测到当前登录账号不是绑定账号，工具会自动锁定，无法回复/私信/点赞等。');
-  }
-
-  push('')
-  push('  ⚠️【使用机制与风控提醒（务必先看）】小红书对「批量、高频、异常」行为有风控，请按真人节奏使用：');
-  push('  · 把频率调低、间隔拉长并随机化；别同一篇笔记反复刷、别新号一上来就大批量操作。');
-  push('  · 每条话术先人工看一遍再点发送，别一字不改全量灌水，避免话术雷同被识别。');
-  push('  · 保持内容多元：不要长时间只发相同文案、或只跟同类型账号互动。');
-  push('  · 本工具只是辅助，发送/点赞/关注等操作都由你自己确认并触发；请在你可接受风险的账号上使用。');
-  push('  ·【免责声明】因使用本工具、操作过于频繁或任何平台原因导致的账号异常、限流或封禁，责任由使用者自担，作者与工具方概不负责。');
-
-  sec('安装 / 加载插件');
-  push('  1) 打开 Chrome 浏览器，地址栏输入并回车：chrome://extensions');
-  push('  2) 打开右上角「开发者模式」开关。');
-  push('  3) 把本压缩包解压到一个固定文件夹（不要放临时目录，删了插件会失效）。');
-  push('  4) 点「加载已解压的扩展程序」，选择解压后的文件夹。');
-  push('  5) 安装成功后，浏览器右上角会出现插件图标（建议点 📌 固定住）。');
-
-  sec('打开插件 / 打开后台设置');
-  push('  · 打开插件：先在浏览器打开小红书网页，再点右上角的插件图标，');
-  push('    会在屏幕左侧弹出「评论助手」操作窗口。');
-  push('  · 打开后台设置：点插件窗口右上角的「⚙️ 设置」按钮；');
-  push('    或在 chrome://extensions 里点本插件的「扩展选项」。');
-
-  sec('配置 AI（必做，否则无法生成话术）');
-  push('  ① AI-Key  → 【必配】不配无法调用 AI。');
-  push('  ② 产品名称 → 【必配】AI 靠它知道你在推广什么。');
-  push('  ③ 知识库  → 【强烈建议必配】让话术更专业真人。');
-  push('  其余（引导方式/话术风格/昵称/关键词过滤/停留时间）为【选配】，可不设置。');
-  push('');
-  push('  进入「设置」→ 左侧「🤖 AI 配置」：');
-  push('  1) API Key：填你的大模型密钥（形如 sk-xxxxxxxx）。');
-  push('  2) API 提供商：DeepSeek / OpenAI / 通义千问 / 硅基流动 / 自定义。');
-  push('     选好后 Base URL 与模型会自动匹配；选「自定义」需手填 Base URL。');
-  push('  3) 模型：按提供商自动列出，选一个即可。');
-  push('  4) Temperature 建议 0.8；Max Tokens 建议 2000。');
-  push('  5) 点「保存 AI 配置」→ 再点「🔌 测试连接」，显示成功即 OK。');
-  push('');
-  push('  【去哪拿 API Key？】');
-  push('   · DeepSeek（性价比高，推荐）：https://platform.deepseek.com');
-  push('   · 通义千问：阿里云百炼控制台');
-  push('   · OpenAI：https://platform.openai.com');
-
-  sec('基本配置');
-  push('  「设置」→「📦 基本配置」：');
-  push('  · 产品名称【必配】：你要推广的产品 / 服务名。');
-  push('  · 引导方式【选配】：如 微信小程序 / 公众号 / App。');
-  if (f.productLib) {
-    push('  · 产品简述【选配】：一两句话描述产品，AI 会据此理解场景（本版本可用）。');
-  }
-  push('  · 我的小红书昵称【选配】：填你自己的账号昵称（可多个，每行一个），');
-  push('    用于防止重复给同一篇笔记灌水。');
-  push('  · 商机关键词过滤【选配】：只回复命中关键词的评论。');
-
-  sec('话术风格【选配】');
-  push('  「设置」→「✍️ 话术风格」：可自定义 A / B / C 三种话术风格，');
-  push('  留空则用系统默认风格；字数范围可在同页「字数控制」单独设置。');
-
-  if (f.knowledge) {
-    sec('知识库【强烈建议必配】');
-    push('  「设置」→「📚 知识库」：录入你的专业知识、个人经历、话术模板，');
-    push('  AI 生成回复时会自动引用，回复更专业、更像真人。');
-    push('  不配也能用，但话术会比较泛、不够有干货。');
-  }
-
-  if (f.prospectList) {
-    sec('获客清单（本版本可用）');
-    push('  插件窗口左上角切到「🎯 获客清单」：');
-    push('  · 收录：评论助手里点商机卡片的「➕ 入清单」，或用收录关键词自动入库。');
-    push('  · 筛选：按标签 / 意向等级 / 私信状态 / 昵称过滤候选人群。');
-    push('  · 画像：勾选未画像的人点「⚡ 批量画像」，AI 自动打人群标签。');
-    push('  · 私信：点「✉️ 私信」→「🤖 AI 生成话术」→ 人工确认后发送。');
-    push('    ※ 私信需登录小红书网页版并打开过对方主页；发送前请人工核对话术，避免被风控。');
-  }
-
-  if (f.autoWater) {
-    sec('一键灌水（本版本可用）');
-    push('  「设置」→「💧 一键灌水」：配置搜索关键词与调度参数，');
-    push('  配合插件窗口左侧的「🔎 搜索」批量找笔记。');
-  }
-
-  if (f.tenant) {
-    sec('多产品 / 多租户切换（本版本专属）');
-    push('  · 一个「租户」= 一个产品，各自独立的配置 / 知识库 / 话术 / 灌水记录。');
-    push('  · 新建与管理：「设置」→「🏢 租户/产品」。');
-    push('  · 快速切换：插件窗口顶部的下拉框，切换后整套数据随之切换。');
-  }
-
-  sec('日常使用流程');
-  push('  1) 在浏览器打开一篇小红书笔记；');
-  if (f.autoWater) {
-    push('     或用插件窗口左侧的「🔎 搜索」按关键词批量找笔记，再点列表打开。');
-  }
-  push('  2) 点插件窗口的「🔄 刷新」→ 自动提取评论、AI 挖掘潜在客户并生成话术。');
-  push('  3) 逐条查看 AI 生成的话术，满意就点该条的「一键发送」。');
-  push('     （每条都需要你人工点击确认后才会发送。）');
-  if (f.batchSend) {
-    push('  4) 想省事：点「📤 评论刷新」，会自动对当前整页所有商机评论逐个发送。');
-  } else {
-    push('');
-    push('  ※ 本（试用）版本仅支持逐条「一键发送」（需人工逐条确认），');
-    push('    不含整页批量自动发送功能。升级企业版可解锁。');
-  }
-
-  sec('常见问题');
-  push('  · 点了没反应？确认当前浏览器标签页是小红书页面。');
-  push('  · 生成话术失败？回「🤖 AI 配置」点「测试连接」，检查 Key / 额度 / 网络。');
-  if (cfg.expireAt) {
-    push('  · 提示「授权已到期」？请联系服务商续期或获取新包。');
-    push('  · 全程无网络会导致授权无法校准、AI 无法调用，请保持联网。');
-  } else {
-    push('  · 无网络时 AI 无法调用（本版本不做授权校时，不会因断网锁定）。');
-  }
-
-  push('');
-  push('================================================');
-  push('  技术支持 / 续期咨询：____________________');
-  push('================================================');
-
-  return L.join('\r\n') + '\r\n';
-}
-
-// ── 生成「使用说明.html」（分节：授权/提示/安装/AI/价格/配置/FAQ；按版本动态裁剪，可打印） ──
 function escHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-function genManualHtml(cfg) {
-  const f = cfg.features || {};
-  const bound = cfg.boundAccount || {};
-  const expireStr = cfg.expireAt ? new Date(cfg.expireAt).toLocaleDateString('zh-CN') : '永不过期';
-  const validStr = cfg.validDays > 0 ? (cfg.validDays + ' 天') : '永久';
-  const priceStr = cfg.price > 0 ? ('¥' + cfg.price + ' / 买断') : (cfg.type === 'pro' ? '（自用版，未标价）' : (cfg.type === 'full' ? '（官方定价 ¥539）' : '（试用，未标价）'));
-  const kwMax = (cfg.keywordMax == null ? 8 : cfg.keywordMax);
-  const feat = (b) => (b ? '<td class="yes">✔</td>' : '<td class="no">—</td>');
-  const boundLine = bound.xhsId ? `<div class="warn">本工具已绑定小红书号「<b>${escHtml(bound.xhsId)}</b>」${bound.name ? '（' + escHtml(bound.name) + '）' : ''}，仅该账号在本人在主页验证通过后才能使用。</div>` : '';
-  const t = (b) => (b ? '<span class="ok">开通</span>' : '<span class="off">未含</span>');
-
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>${escHtml(cfg.label)} · 使用说明</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font:14px/1.8 "Microsoft YaHei","PingFang SC",sans-serif;color:#222;background:#f5f6f8;padding:18px}
-  .page{max-width:860px;margin:0 auto;background:#fff;border-radius:12px;padding:34px 40px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
-  h1{font-size:23px;text-align:center;margin-bottom:4px}
-  .edition{text-align:center;color:#7a7a7a;font-size:13px;margin-bottom:24px}
-  h2{font-size:18px;margin:26px 0 12px;padding-left:10px;border-left:4px solid #ff274b;color:#1f1f1f}
-  h3{font-size:15px;margin:16px 0 6px}
-  p,li{font-size:13.5px;color:#333}
-  ul{padding-left:22px}
-  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
-  th,td{border:1px solid #e7e7e7;padding:9px 11px;text-align:center;vertical-align:middle}
-  th{background:#f6f7f9;color:#333}
-  td.lab{text-align:left;color:#555}
-  .price{color:#ff274b;font-weight:700}
-  .yes{color:#2e9e4f;font-weight:600}
-  .no{color:#c2c6cc}
-  .ok{color:#2e9e4f}
-  .off{color:#c2c6cc}
-  .warn{background:#fff4e8;border:1px solid #ffd9b3;border-radius:8px;padding:10px 12px;margin:12px 0;color:#7a4a1f}
-  .must{background:#ffeef2;border:1px solid #ffc4d1;border-radius:8px;padding:10px 14px;margin:12px 0;color:#8a0f2e}
-  .must b{color:#c00036}
-  .badge-req{display:inline-block;background:#ff274b;color:#fff;border-radius:4px;font-size:11px;padding:0 6px;margin-left:6px;vertical-align:1px}
-  .badge-opt{display:inline-block;background:#e5e7eb;color:#6b7280;border-radius:4px;font-size:11px;padding:0 6px;margin-left:6px;vertical-align:1px}
-  .tip{background:#eef5ff;border-radius:8px;padding:10px 12px;margin:12px 0;color:#28406e;font-size:13px}
-  .cur{background:#ffeef2}
-  .foot{text-align:center;color:#999;font-size:12px;margin-top:28px;padding-top:14px;border-top:1px dashed #ddd}
-  @media print{body{background:#fff;padding:0}.page{box-shadow:none}}
-</style>
-</head>
-<body>
-<div class="page">
-
-  <h1>小红书评论助手 · ${escHtml(cfg.label)}</h1>
-  <div class="edition">使用说明 · 自动生成 ${new Date(cfg.builtAt).toLocaleString('zh-CN')}</div>
-
-  <div class="must">🗝️ <b>配置必读（先配这三样，才可正常使用）：</b><br>
-    ① <b>AI-Key</b>（AI 配置）—— 必配，不配无法调用 AI 生成话术。<br>
-    ② <b>产品名称</b>（基本配置）—— 必配，AI 靠它知道你在推广什么。<br>
-    ③ <b>知识库</b>（知识库页）—— 强烈建议必配，AI 引用它让话术更专业真人。<br>
-    其余（引导方式、话术风格、我的昵称、关键词过滤、停留时间等）均为 <b>选配</b>，可不设置。</div>
-
-  <div class="tip">⚠️ <b>使用机制与风控提醒（务必先看）：</b>小红书对「批量、高频、异常」行为有风控，请按真人节奏使用：<br>
-    · 把频率调低、间隔拉长并随机化；别同一篇笔记反复刷、别新号一上来就大批量操作。<br>
-    · 每条话术先人工看一遍再点发送，别一字不改全量灌水，避免话术雷同被识别。<br>
-    · 保持内容多元：不要长时间只发相同文案、或只跟同类型账号互动。<br>
-    · 本工具只是辅助，发送/点赞/关注等操作都由你自己确认并触发；请在你可接受风险的账号上使用。</div>
-  <div class="warn">📵 <b>免责声明：</b>因使用本工具、操作过于频繁或任何平台原因导致的账号异常、限流或封禁，责任由使用者自担，作者与工具方概不负责。</div>
-
-  <h2>一、授权信息</h2>
-  <table>
-    <tr><th style="text-align:left">项目</th><th style="text-align:left">内容</th></tr>
-    <tr><td class="lab">版本类型</td><td style="text-align:left">${escHtml(cfg.label)}</td></tr>
-    <tr><td class="lab">授权对象</td><td style="text-align:left">${escHtml(cfg.licensee || '通用')}</td></tr>
-    <tr><td class="lab">有效期</td><td style="text-align:left">${validStr}${cfg.expireAt ? ('（截止 ' + expireStr + '）') : ''}</td></tr>
-    <tr><td class="lab">定价</td><td style="text-align:left"><span class="price">${priceStr}</span></td></tr>
-    <tr><td class="lab">灌水关键词上限</td><td style="text-align:left">${kwMax} 个${kwMax === 1 ? '（单关键词版）' : ''}</td></tr>
-    <tr><td class="lab">功能范围</td><td style="text-align:left">${f.batchSend ? '批量/整页发送 ' : ''}${f.productLib ? '产品库 ' : ''}${f.tenant ? '多租户 ' : ''}${f.knowledge ? '知识库 ' : ''}${f.autoWater ? '一键灌水 ' : ''}${f.prospectList ? '获客清单 ' : ''}${!f.batchSend && !f.productLib && !f.tenant && !f.knowledge && !f.autoWater && !f.prospectList ? '评论助手核心' : ''}</td></tr>
-    ${bound.xhsId ? '<tr><td class="lab">绑定小红书号</td><td style="text-align:left">' + escHtml(bound.xhsId) + (bound.name ? '（' + escHtml(bound.name) + '）' : '') + '</td></tr>' : ''}
-  </table>
-  ${boundLine}
-
-  <h2>二、重要提示</h2>
-  <ul>
-    <li>本工具需<b>全程联网</b>：AI 生成话术、授权时间校准都要网络。</li>
-    ${cfg.expireAt ? '<li>到期后功能会自动锁定，请在到期前联系服务商续期或换新包。</li>' : '<li>本版本永不过期、功能全开，无需授权时间校准。</li>'}
-    ${bound.xhsId ? '<li><b>绑定账号</b>：只有绑定号能在本人「我的」主页验证通过后正常使用；检测到登录账号非法时工具自动锁定。</li>' : ''}
-    ${cfg.expireAt ? '<li>全程无网络会导致授权无法校准、AI 无法调用，请保持联网。</li>' : ''}
-    <li>灌水按<b>顺序逐个关键词</b>执行：第一个关键词完成才开始第二个，不并发。</li>
-  </ul>
-
-  <h2>三、插件安装和使用</h2>
-  <h3>安装 / 加载插件</h3>
-  <ol>
-    <li>打开 Chrome 浏览器，地址栏输入并回车：<code>chrome://extensions</code></li>
-    <li>打开右上角「开发者模式」开关。</li>
-    <li>把本压缩包解压到一个固定文件夹（不要放临时目录，删了插件会失效）。</li>
-    <li>点「加载已解压的扩展程序」，选择解压后的文件夹。</li>
-    <li>安装成功后浏览器右上角出现插件图标（建议固定住）。</li>
-  </ol>
-  <h3>打开插件 / 后台设置</h3>
-  <ul>
-    <li>先在浏览器打开小红书网页，再点右上角插件图标，左侧弹出操作窗口。</li>
-    <li>后台设置：点插件窗口右上角「⚙️ 设置」，或在 chrome://extensions 点本插件的「扩展选项」。</li>
-  </ul>
-  <h3>日常使用流程</h3>
-  <ol>
-    <li>在浏览器打开一篇小红书笔记，或到插件左侧<b>添加灌水关键词列表</b>后按「🔎 搜索」批量找笔记。</li>
-    <li>点「🔄 刷新」提取评论、AI 生成话术。</li>
-    <li>满意后点该条「一键发送」（每条需人工点击确认）。</li>
-    ${f.batchSend ? '<li>想省事：点「📤 自动评论」整页批量逐个发送。</li>' : '<li>本版本支持逐条一键发送（人工确认），不含整页批量，升级更高版本可解锁。</li>'}
-  </ol>
-
-  <h2>四、AI 配置说明</h2>
-  <div class="tip">进入「设置」→「🤖 AI 配置」。<b class="badge-req">必配</b>：不填 API-Key，AI 无法生成话术，评论助手基本不能用。</div>
-  <ol>
-    <li><b>API Key</b><span class="badge-req">必配</span>：填你的大模型密钥（形如 sk-xxxxxxxx）。</li>
-    <li><b>API 提供商</b>：DeepSeek / OpenAI / 通义千问 / 硅基流动 / 自定义；选好自动匹配 Base URL 与模型。</li>
-    <li><b>模型</b>：按提供商自动列出，选一个即可。</li>
-    <li><b>Temperature</b> 建议 0.8；<b>Max Tokens</b> 建议 2000。</li>
-    <li>点「保存 AI 配置」→「🔌 测试连接」，成功即 OK。</li>
-  </ol>
-  <p style="font-size:12.5px;color:#888">去哪拿 Key：DeepSeek platform.deepseek.com（性价比高，推荐）；通义千问阿里云百炼；OpenAI platform.openai.com。</p>
-
-  <h2>五、价格和功能定位</h2>
-  ${priceTierTable(cfg)}
-  <div class="tip">当前这个安装包为「<b>${escHtml(cfg.label)}</b>」，你正在使用的正是它对应的档位（价格见上方授权信息）。</div>
-  <ul>
-    <li><b>全功能版（¥539 · 买断）</b>：全部功能（产品库/知识库/多租户/获客清单/多关键词），适合品牌自营、多产品同时运营。</li>
-    <li><b>评论助手·多关键词（¥399 · 买断）</b>：单租户 + 多关键词 + 获客清单 + 产品库 + 知识库 + 运营总结，适合单产品、多词引流获客。</li>
-    <li><b>评论助手·单关键词（¥239 · 买断）</b>：单租户 + 单关键词 + 产品库 + 知识库 + 评论助手 + 运营总结，最经济，适合单一主词起步。</li>
-  </ul>
-
-  <h2>六、配置说明</h2>
-  <h3>基本配置</h3>
-  <ul>
-    <li><b>产品名称</b><span class="badge-req">必配</span>：要推广的产品/服务名，AI 靠它判断并写话术。</li>
-    <li><b>引导方式</b><span class="badge-opt">选配</span>：如微信小程序 / 公众号 / App；留空 = 不引流。</li>
-    ${f.productLib ? '<li><b>产品简述</b><span class="badge-opt">选配</span>：一两句描述产品，AI 据此理解场景。</li>' : ''}
-    <li><b>我的小红书昵称</b><span class="badge-opt">选配</span>：填自己的账号昵称（可多个），防重复给同一篇灌水。</li>
-    <li><b>商机关键词过滤</b><span class="badge-opt">选配</span>：只回复命中关键词的评论。</li>
-  </ul>
-  <h3>话术风格</h3>
-  <p>「设置」→「✍️ 话术风格」<span class="badge-opt">选配</span>：自定义 A / B / C 三种风格，留空用默认；字数控制同页设置。</p>
-  ${f.knowledge ? '<h3>知识库（强烈建议必配）</h3><div class="must">📚<b>知识库</b><span class="badge-req">强烈建议必配</span>：「设置」→「📚 知识库」录入你的专业知识/经历/话术模板，AI 生成时自动引用，回复更专业、更像真人；不配也能用，但话术会泛、不够有干货。</div>' : ''}
-  ${f.prospectList ? '<h3>获客清单</h3><p>插件左上切换到「🎯 获客清单」：收录（＋入清单 / 关键词收录）、筛选、⚡ 批量画像、✉️ 定向私信。私信需人工核对话术再发。</p>' : ''}
-  ${f.autoWater ? '<h3>一键灌水（关键词列表）</h3><ul><li>插件左下「关键词列表」添加，最多 ' + kwMax + ' 个。</li><li>点「搜索」按顺序逐个关键词搜笔记；第一个完成才开始第二个。</li><li>「🧊 冷启动 / 🔄 循环」自动灌水同样按列表顺序执行。</li></ul>' : ''}
-  ${f.tenant ? '<h3>多产品 / 多租户切换</h3><p>「设置」→「🏢 租户/产品」新建与管理，一个租户一个产品，各自独立配置/知识库/话术/灌水记录。</p>' : ''}
-
-  <h2>七、常见问题</h2>
-  <ul>
-    <li><b>点了没反应？</b>确认当前浏览器标签页是小红书页面。</li>
-    <li><b>生成话术失败？</b>回「🤖 AI 配置」点「测试连接」，查 Key/额度/网络。</li>
-    ${cfg.expireAt ? '<li><b>提示「授权已到期」？</b>联系服务商续期或获取新包。</li>' : ''}
-    <li><b>提示「账号校验未通过」？</b>打开小红书网页版，点右上角头像进入<b>本人「我的」主页</b>（页面有“编辑资料”），系统会自动读取小红书号完成验证；非绑定账号会锁定。</li>
-    <li><b>关键词没有全部搜？</b>灌水是按列表顺序逐个执行的，请查看当前进度是否第一个还没完成。</li>
-    ${bound.xhsId ? '<li><b>「授权文件校验失败」？</b>安装包可能被改动，请向服务商重新索取安装包。</li>' : ''}
-  </ul>
-
-  <div class="foot">技术支持 / 续期咨询：＿＿＿＿＿＿＿＿</div>
-</div>
-</body>
-</html>
-`;
-}
-
-// 三档售价表（随每个版本显示全三档，并标出当前档）
-function priceTierTable(cfg) {
-  const cur = cfg.type === 'full' ? 'class="cur"' : (cfg.type === 'comment' || cfg.type === 'comment-multi' ? 'class="cur"' : '');
-  return `<table>
-    <tr>
-      <th style="width:16%">功能项</th>
-      <th>全功能版</th>
-      <th>评论助手·多关键词</th>
-      <th>评论助手·单关键词</th>
-    </tr>
-    <tr>
-      <td class="lab">定价（买断）</td>
-      <td class="price">¥539</td>
-      <td class="price">¥399</td>
-      <td class="price">¥239</td>
-    </tr>
-    <tr><td class="lab">核心评论助手 / 运营总结</td><td>✔</td><td>✔</td><td>✔</td></tr>
-    <tr><td class="lab">灌水关键词数量</td><td>8</td><td>8</td><td>1</td></tr>
-    <tr><td class="lab">获取清单</td><td class="yes">✔</td><td class="yes">✔</td><td class="no">—</td></tr>
-    <tr><td class="lab">产品库 / 知识库</td><td class="yes">✔</td><td class="yes">✔</td><td class="yes">✔</td></tr>
-    <tr><td class="lab">多租户切换</td><td class="yes">✔</td><td class="no">—</td><td class="no">—</td></tr>
-  </table>`;
 }
 
 // ── 打包记录（dist/打包记录.json 可编辑 + 自动生成可读表格 html） ──
@@ -687,17 +342,40 @@ function buildRecordHtml(list) {
 }
 
 // ── 极简三步使用说明（生成 txt + html 双份） ───────────────
+// 本版本功能清单：按 preset 开关生成（对外用词避开禁用词表）
+function featureLines(cfg) {
+  const f = cfg.features || {};
+  const out = [];
+  if (f.tenant) out.push('多产品（多租户）切换');
+  if (f.productLib) out.push('产品库');
+  if (f.knowledge) out.push('知识库');
+  if (f.batchSend) out.push('整页发送：同一篇笔记的多条评论一键发完');
+  if (f.autoWater) out.push('一键灌水：冷启动 / 循环计划 + 笔记列表');
+  if (f.prospectList) out.push('通知 / 私信：用户线索汇成清单，可批量触达');
+  if (f.notePublish) out.push('发送笔记：AI 选题 → 生成图文 → 发布');
+  if (f.dailyBrowse) out.push('日常浏览：按时段与每日配额自动浏览，可配点赞、收藏');
+  out.push('账号诊断：头像 / 简介 / 笔记整改建议 + 选题规划');
+  out.push('评论助手：评论刷新 → 商机分析 → 一键回复');
+  return out;
+}
+
 function writeStepsManual(stageDir, cfg) {
   const bound = cfg.boundAccount || {};
   const validStr = cfg.validDays > 0 ? (cfg.validDays + ' 天') : '永久';
   const lc = cfg.licensee || '通用';
   const boundLine = bound.xhsId ? ('绑定小红书号：' + bound.xhsId + (bound.name ? '（' + bound.name + '）' : '')) : '';
+  const feats = featureLines(cfg);
+  const featsTxt = feats.map((x, i) => '  ' + (i + 1) + ') ' + x).join('\n');
+  const featsHtml = feats.map((x) => '<li>' + escHtml(x) + '</li>').join('');
 
   const txt = `================================================
    小红书评论助手 · ${cfg.label}  使用说明
 ================================================
 版本：${cfg.label}　｜　授权：${lc}　｜　有效期：${validStr}
 ${boundLine ? boundLine + '\n' : ''}────────────────────────────────────────
+本版本已开通的功能：
+${featsTxt}
+
 本工具只要 3 步就会用：
 
 【第①步】拿 DeepSeek 的 API Key
@@ -747,6 +425,11 @@ ${boundLine ? boundLine + '\n' : ''}──────────────�
   <h1>小红书评论助手 · ${escHtml(cfg.label)}</h1>
   <div class="sub">使用说明 · 只要 3 步就会用</div>
   <div class="auth">版本：${escHtml(cfg.label)}　｜　授权：${escHtml(lc)}　｜　有效期：${escHtml(validStr)}${bound.xhsId ? '　｜　绑定：' + escHtml(bound.xhsId) : ''}</div>
+
+  <div class="step">
+    <h2>本版本已开通的功能</h2>
+    <ol>${featsHtml}</ol>
+  </div>
 
   <div class="step">
     <h2>① 拿 DeepSeek 的 API Key</h2>
@@ -857,6 +540,7 @@ function main() {
       if (src === SRC) return true;
       if (src.includes('node_modules')) return false;
       const name = path.basename(src);
+      if (name.endsWith('.backup')) return false;
       return !name.startsWith('_');
     },
   });
@@ -887,7 +571,7 @@ function main() {
   console.log('   版本类型 :', type, '(' + preset.label + ')');
   console.log('   授权对象 :', opts.licensee || '(无)');
   console.log('   绑定账号 :', cfg.boundAccount.xhsId ? `${cfg.boundAccount.xhsId}${cfg.boundAccount.name ? '（' + cfg.boundAccount.name + '）' : ''}` : '(未绑定)');
-  console.log('   定价     :', cfg.price > 0 ? ('¥' + cfg.price) : '(自用/试用不标价)');
+  console.log('   定价     :', cfg.price > 0 ? ('¥' + cfg.price + ' / 月') : '(自用/试用不标价)');
   console.log('   灌水关键词上限 :', cfg.keywordMax, '个');
   console.log('   有效天数 :', validDays > 0 ? validDays + ' 天' : '永久');
   console.log('   到期时间 :', expireAt ? new Date(expireAt).toLocaleString('zh-CN') : '永不过期');

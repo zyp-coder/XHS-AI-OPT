@@ -40,6 +40,31 @@ async function getTargetTab() {
 let pageData = null;
 let kbImages = []; // 知识库匹配的图片
 
+/* ========== 敏感数据读写：落盘为密文，页面里统一走这两个口子拿到明文 ========== */
+/** 读敏感 key（knowledge_base / prospect_list / watering_logs / replied_comments …）的明文 */
+async function readPlain(key) {
+  const d = await chrome.storage.local.get(key);
+  if (typeof DataPrivacy === 'undefined') return d[key];
+  return DataPrivacy.unlock(key, d[key]);
+}
+/** 写敏感 key（自动加密落盘） */
+async function writePlain(key, value) {
+  const v = (typeof DataPrivacy !== 'undefined' && value !== undefined && value !== null)
+    ? await DataPrivacy.lock(key, value) : value;
+  await chrome.storage.local.set({ [key]: v });
+}
+/** 读 config 明文（AI Key 等字段自动解密） */
+async function readConfigPlain() {
+  const d = await chrome.storage.local.get('config');
+  const cfg = (d && d.config) || {};
+  return (typeof DataPrivacy === 'undefined') ? cfg : DataPrivacy.unlockConfig(cfg);
+}
+/** 写 config（AI Key 等字段自动加密落盘） */
+async function writeConfigPlain(cfg) {
+  const v = (typeof DataPrivacy === 'undefined') ? cfg : await DataPrivacy.lockConfig(cfg);
+  await chrome.storage.local.set({ config: v, wizard_done: Date.now() });
+}
+
 // ========== 本地回复记录管理（chrome.storage.local） ==========
 const REPLIED_KEY = 'replied_comments';
 
@@ -50,8 +75,7 @@ const WATER_LOGS_LIMIT = 500;
 /** 读取全部灌水明细（新→旧） */
 async function getWaterLogs() {
   try {
-    const data = await chrome.storage.local.get(WATER_LOGS_KEY);
-    const logs = data[WATER_LOGS_KEY] || [];
+    const logs = (await readPlain(WATER_LOGS_KEY)) || [];
     return Array.isArray(logs) ? logs : [];
   } catch (_) { return []; }
 }
@@ -62,13 +86,13 @@ async function addWaterLog(entry) {
     const logs = await getWaterLogs();
     logs.unshift({ ...entry, ts: Date.now() });
     if (logs.length > WATER_LOGS_LIMIT) logs.length = WATER_LOGS_LIMIT;
-    await chrome.storage.local.set({ [WATER_LOGS_KEY]: logs });
+    await writePlain(WATER_LOGS_KEY, logs);
   } catch (_) {}
 }
 
 /** 清空灌水明细 */
 async function clearWaterLogs() {
-  try { await chrome.storage.local.set({ [WATER_LOGS_KEY]: [] }); } catch (_) {}
+  try { await writePlain(WATER_LOGS_KEY, []); } catch (_) {}
 }
 
 /** 本地日期 YYYY-MM-DD（不用 toISOString，避免 UTC 时区差一天） */
@@ -192,21 +216,19 @@ function renderLikedList() {
 /** 获取当前笔记的本地已回复记录列表 */
 async function getLocalRepliedForNote(noteUrl) {
   if (!noteUrl) return [];
-  const data = await chrome.storage.local.get(REPLIED_KEY);
-  const map = data[REPLIED_KEY] || {};
+  const map = (await readPlain(REPLIED_KEY)) || {};
   return map[noteUrl] || [];
 }
 
 /** 将一条回复保存到本地存储 */
 async function addLocalReply(noteUrl, author, comment) {
   if (!noteUrl) return;
-  const data = await chrome.storage.local.get(REPLIED_KEY);
-  const map = data[REPLIED_KEY] || {};
+  const map = (await readPlain(REPLIED_KEY)) || {};
   if (!map[noteUrl]) map[noteUrl] = [];
   const exists = map[noteUrl].some(e => e.author === author && e.comment === comment);
   if (!exists) {
     map[noteUrl].push({ author, comment, repliedAt: Date.now() });
-    await chrome.storage.local.set({ [REPLIED_KEY]: map });
+    await writePlain(REPLIED_KEY, map);
   }
 }
 
@@ -278,9 +300,9 @@ const POPUP_DELAY_PRESETS = [
     cfg:{ browseDwell:{min:1200,max:2000}, typingCharDelay:{min:15,max:30}, likeGap:{min:300,max:600}, lazyLoadWait:{min:700,max:1100}, retryBackWait:{min:500,max:900}, retryOpenWait:{min:1100,max:2200}, noteOpenBuffer:{min:500,max:900}, preSendGap:{min:400,max:700}, batchItemGap:{min:4000,max:8000} } },
   { level:3, name:'3 保守拟人',
     cfg:{ browseDwell:{min:2000,max:4000}, typingCharDelay:{min:20,max:40}, likeGap:{min:800,max:1500}, lazyLoadWait:{min:1200,max:2000}, retryBackWait:{min:900,max:1500}, retryOpenWait:{min:2000,max:3500}, noteOpenBuffer:{min:1000,max:1800}, preSendGap:{min:800,max:1200}, batchItemGap:{min:8000,max:15000} } },
-  { level:4, name:'4 重度·养号',
+  { level:4, name:'4 重度·新号',
     cfg:{ browseDwell:{min:4000,max:8000}, typingCharDelay:{min:30,max:50}, likeGap:{min:1500,max:3000}, lazyLoadWait:{min:2000,max:3500}, retryBackWait:{min:1500,max:2500}, retryOpenWait:{min:3000,max:5000}, noteOpenBuffer:{min:1800,max:3000}, preSendGap:{min:1200,max:2000}, batchItemGap:{min:15000,max:30000} } },
-  { level:5, name:'5 极致防御',
+  { level:5, name:'5 极致从容',
     cfg:{ browseDwell:{min:8000,max:15000}, typingCharDelay:{min:40,max:80}, likeGap:{min:3000,max:6000}, lazyLoadWait:{min:3500,max:6000}, retryBackWait:{min:2500,max:4000}, retryOpenWait:{min:5000,max:8000}, noteOpenBuffer:{min:3000,max:5000}, preSendGap:{min:1500,max:2500}, batchItemGap:{min:30000,max:60000} } },
 ];
 const POPUP_DELAY_ROUND_LIMIT = { 0: 0, 1: 30, 2: 20, 3: 12, 4: 8, 5: 5 };
@@ -445,8 +467,8 @@ function fsFillModel(prov, cur, selId) {
 function ensureFirstSetup() {
   (async function () {
     try {
-      const got = await chrome.storage.local.get('config');
-      const ai = (got.config && got.config.ai) || {};
+      const got = await readConfigPlain();
+      const ai = got.ai || {};
       if (ai.apiKey || ai.fallbackApiKey) return; // 已配置 AI，不展示
       if (document.getElementById('firstSetupPanel')) return;
       const ROOT = document.createElement('div');
@@ -526,16 +548,27 @@ function ensureFirstSetup() {
         const f = $('fsRestoreFile').files && $('fsRestoreFile').files[0];
         if (!f) return;
         const m = $('fsRestoreMsg'); msg(m, '读取备份文件…', false);
+        let text = await f.text();
+        if (CryptoBox.isFileEnvelope(text)) {
+          const pw = await CryptoBox.askPassword({
+            title: '输入备份口令',
+            hint: '这个备份是加密文件，请输入导出时设置的口令。',
+            okText: '解密导入',
+          });
+          if (!pw.ok) { $('fsRestoreFile').value = ''; return msg(m, '', false); }
+          msg(m, '解密中…', false);
+          try { text = await CryptoBox.decryptFile(text, pw.password); }
+          catch (err) { $('fsRestoreFile').value = ''; return msg(m, '❌ ' + ((err && err.message) || err), false); }
+        }
         let backup = null;
-        try { backup = JSON.parse(await f.text()); } catch (_) { return msg(m, '❌ 文件不是合法的 JSON 备份', false); }
+        try { backup = JSON.parse(text); } catch (_) { return msg(m, '❌ 文件不是合法的 JSON 备份', false); }
         if (!backup || !backup.tenants || !backup.data) return msg(m, '❌ 不是有效的备份文件（缺 tenants/data）', false);
         msg(m, '合并导入中…', false);
         let r = null;
         try { r = await chrome.runtime.sendMessage({ action: 'importAllData', data: { backup } }); } catch (e) { r = null; }
         if (!r || !r.ok) return msg(m, '❌ 导入失败：' + ((r && r.error) || '后台未响应'), false);
         await chrome.storage.local.set({ wizard_done: Date.now() });
-        const got = await chrome.storage.local.get('config');
-        const cfg = (got.config && got.config.ai) || {};
+        const cfg = (await readConfigPlain()).ai || {};
         msg(m, '✅ 已导入 ' + (r.importedTenants || 0) + ' 个产品。' + ((cfg.apiKey || cfg.fallbackApiKey) ? 'AI 配置已就绪！' : '备份里没 AI Key，请在右侧填写。'), true);
         $('fsRestoreFile').value = '';
         if (cfg.apiKey || cfg.fallbackApiKey) setTimeout(() => ROOT.remove(), 900);
@@ -547,13 +580,12 @@ function ensureFirstSetup() {
         const p = $('fsProvider').value;
         if (p === 'custom' && !/^https?:\/\//i.test($('fsCustomUrl').value.trim())) return msg(m, '请填正确的自定义 API 地址（以 http:// 开头），或改选服务商', false);
         if (!key) return msg(m, '请填写 API Key', false);
-        const got = await chrome.storage.local.get('config');
-        const cfg = (got && got.config && typeof got.config === 'object') ? got.config : {};
+        const cfg = await readConfigPlain();
         cfg.ai = cfg.ai || {};
         cfg.ai.apiKey = key;
         cfg.ai.apiBaseUrl = fsProviderOf(p, 'fsCustomUrl') || 'https://api.deepseek.com/v1';
         cfg.ai.model = $('fsModel').value.trim() || 'deepseek-v4-flash';
-        await chrome.storage.local.set({ config: cfg, wizard_done: Date.now() });
+        await writeConfigPlain(cfg);
         msg(m, '✅ 已保存，AI 已就绪！', true);
         setTimeout(() => ROOT.remove(), 700);
         try { if (typeof applyEditionToPopup === 'function') applyEditionToPopup(); } catch (_) {}
@@ -609,7 +641,8 @@ function switchMainTab(name) {
     if (el) el.classList.add('active');
   };
   const _hideSub = () => { if (subTabs) subTabs.style.display = 'none'; if (subTabs2) subTabs2.style.display = 'none'; if (subTabs3) subTabs3.style.display = 'none'; };
-  const _showSubHuoke = () => { if (subTabs) subTabs.style.display = ''; if (subTabs2) subTabs2.style.display = 'none'; if (subTabs3) subTabs3.style.display = 'none'; };
+  // 获客分组只有「获客助手」一个子页时（无灌水的版本），整条二级 Tab 栏隐藏，避免空条
+  const _showSubHuoke = () => { if (subTabs) subTabs.style.display = document.getElementById('tabWaterSummary') ? '' : 'none'; if (subTabs2) subTabs2.style.display = 'none'; if (subTabs3) subTabs3.style.display = 'none'; };
   const _showSubNotif = () => { if (subTabs) subTabs.style.display = 'none'; if (subTabs2) subTabs2.style.display = ''; if (subTabs3) subTabs3.style.display = 'none'; };
   const _showSubMsg = () => { if (subTabs) subTabs.style.display = 'none'; if (subTabs2) subTabs2.style.display = 'none'; if (subTabs3) subTabs3.style.display = ''; };
   // ★ 通知分组下切子页前清掉通知二级高亮
@@ -689,10 +722,8 @@ let _waterSummaryLoaded = false;
 let _notePublishLoaded = false;
 let _diagLoaded = false;
 
-/* ═══════════ ✍️ 发笔记（知识库 → 一键 / 定时发布小红书笔记） ═══════════ */
-let _npSchedCache = null;
+/* ═══════════ ✍️ 发笔记（知识库 → AI 生成成稿 → 一键发布小红书笔记） ═══════════ */
 function _npEl(container, id) { return container ? container.querySelector('#' + id) : null; }
-function npFmtWhen(ms) { const d = new Date(ms); return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
 
 let _npWiz = null;
 let _npWizKeys = ['卖点', '人群', '话题', '成稿'];
@@ -809,8 +840,8 @@ async function npLoadSellPoints(container) {
   _npWiz.loading = true;
   // ① 优先使用用户在「设置→基本配置→产品卖点」维护的卖点（含配图），直接列出可选
   try {
-    const c = await chrome.storage.local.get('config');
-    const spList = (c && c.config && c.config.product && c.config.product.sellPoints) || [];
+    const c = await readConfigPlain();
+    const spList = (c && c.product && c.product.sellPoints) || [];
     const manual = spList.filter(s => s && (String(s.title || '').trim() || String(s.content || '').trim()));
     if (manual.length) {
       _npWiz.sellPoints = manual.map(s => ({
@@ -977,57 +1008,6 @@ function navForStep() {
   return back + ' ' + btnWiz('np-copy-result', '📋 复制成稿', true) + ' <span style="flex:1;"></span> ' + btnWiz('np-wiz-again', '🔄 重新生成', false) + ' ' + btnWiz('np-wiz-next', '↩ 再来一篇(新卖点)', false);
 }
 
-async function npRenderScheduled(container) {
-  const el = _npEl(container, 'npSchedList');
-  if (!el) return;
-  let list = [];
-  try { list = (await chrome.runtime.sendMessage({ action: 'listScheduledPublishes' })) || []; _npSchedCache = list; } catch (_) {}
-  const pend = list.filter(x => !x.done);
-  if (!pend.length) { el.innerHTML = '<div style="font-size:11px;color:#bbb;padding:2px 0;">暂无定时任务</div>'; return; }
-  el.innerHTML = pend.map(x => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px dashed #eee;font-size:11px;">
-      <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#333;">${esc(x.title)}</span>
-      <span style="color:#e07b00;">🕒 ${npFmtWhen(x.when)}</span>
-      <button data-id="${esc(x.id)}" class="np-cancel" style="flex:none;border:none;background:none;color:#d32f2f;cursor:pointer;font-size:11px;">取消</button>
-    </div>`).join('');
-  el.querySelectorAll('.np-cancel').forEach(btn => btn.addEventListener('click', () => npCancelSchedule(btn.getAttribute('data-id'), container)));
-}
-function _npSchedFor(entryId) {
-  if (!_npSchedCache) return false;
-  return _npSchedCache.some(x => String(x.id) === String(entryId) && !x.done);
-}
-async function npScheduleQuick(entryId, kbList, container) {
-  const e = kbList.find(x => String(x.id) === String(entryId));
-  if (!e) return;
-  const d = prompt('定时提醒时间（格式：YYYY-MM-DD HH:mm）');
-  if (!d) return;
-  const when = new Date(d.replace(' ', 'T')).getTime();
-  if (isNaN(when) || when <= Date.now()) { toast('时间格式不对或不是未来时间', 'error'); return; }
-  await npDoSchedule(e, when, container);
-}
-async function npAddSchedule(container, kbList) {
-  const sel = _npEl(container, 'npSchedSel'); const whenEl = _npEl(container, 'npSchedWhen');
-  const entry = kbList.find(x => String(x.id) === String(sel && sel.value));
-  const when = new Date((whenEl && whenEl.value) || '').getTime();
-  if (!entry) { toast('请选择知识库条目', 'error'); return; }
-  if (!when || isNaN(when) || when <= Date.now()) { toast('请选择未来的发布时间', 'error'); return; }
-  await npDoSchedule(entry, when, container);
-}
-async function npDoSchedule(entry, when, container) {
-  const btn = _npEl(container, 'npSchedBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '设定中…'; }
-  try {
-    await chrome.runtime.sendMessage({ action: 'scheduleNotePublish', when, id: entry.id, title: entry.title, content: entry.content, tags: entry.tags || [], image: entry.image || '' });
-    toast('⏰ 已设定定时提醒：' + npFmtWhen(when));
-  } catch (e) { toast('定时失败：' + ((e && e.message) || e), 'error'); }
-  if (btn) { btn.disabled = false; btn.textContent = '设定'; }
-  await npRenderScheduled(container);
-}
-async function npCancelSchedule(id, container) {
-  try { await chrome.runtime.sendMessage({ action: 'cancelScheduledPublish', id }); } catch (_) {}
-  await npRenderScheduled(container);
-}
-
 // 🤖 AI 生成文案：选参考素材 + 引导话题 → AI 生成 → 复制
 let _npActiveKB = null;
 let _npActiveContainer = null;
@@ -1043,8 +1023,6 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-gen-again')) { npGenerateNote(nc); return; }
     if (t && t.closest('.np-copy-result')) { npCopyResult(nc); return; }
     if (t && t.closest('.np-refresh')) { _notePublishLoaded = false; renderNotePublish(nc); return; }
-    if (t && t.closest('.np-sched-set')) { npAddSchedule(nc, _npActiveKB || []); return; }
-    if (t && t.closest('.np-cancel')) { npCancelSchedule(t.closest('.np-cancel').getAttribute('data-id'), nc); return; }
     if (t && t.closest('.np-wiz-next')) { npWizNext(nc); return; }
     if (t && t.closest('.np-wiz-prev')) { if (_npWiz && _npWiz.step > 0) { _npWiz.step--; npWizRender(nc); } return; }
     if (t && t.closest('.np-wiz-again')) { npWizAgain(nc); return; }
@@ -1140,7 +1118,7 @@ let _npNote = { title: '', tags: [], titleIdx: 0 };
 let _npImgResults = [];
 let _lastNoteDraft = null;
 async function getProductName() {
-  try { const c = await chrome.storage.local.get('config'); return (c.config && c.config.product && c.config.product.name) || ''; } catch (_) { return ''; }
+  try { const c = await readConfigPlain(); return (c.product && c.product.name) || ''; } catch (_) { return ''; }
 }
 
 async function npGenerateNote(container) {
@@ -1299,7 +1277,7 @@ async function npLoadKbMd(container, topic) {
   const ta = document.getElementById('npKbMdText');
   if (!ta) return;
   let kb = [];
-  try { const d = await chrome.storage.local.get('knowledge_base'); kb = (d && d.knowledge_base) || []; } catch (_) {}
+  try { kb = (await readPlain('knowledge_base')) || []; } catch (_) {}
   const md = npKbTreeMarkdown(kb, topic);
   ta.value = md;
   npRenderMindMapFromTextarea(container);
@@ -1357,7 +1335,7 @@ async function npPackBuildCtx(container) {
   const ta = _npEl(container, 'npPackCtx') || document.querySelector('.np-pack-ctx');
   if (!ta) return;
   let cfg = {}, kb = [];
-  try { const c = await chrome.storage.local.get(['config', 'knowledge_base']); cfg = (c && c.config) || {}; kb = (c && c.knowledge_base) || []; } catch (_) {}
+  try { cfg = await readConfigPlain(); kb = (await readPlain('knowledge_base')) || []; } catch (_) {}
   const per = cfg.persona || {};
   const prod = cfg.product || {};
   const ss = cfg.scriptStyle || {};
@@ -1453,7 +1431,7 @@ async function npAiKbMd(container) {
   const btn = container.querySelector('.np-mm-ai');
   if (!ta) return;
   let kb = [];
-  try { const d = await chrome.storage.local.get('knowledge_base'); kb = (d && d.knowledge_base) || []; } catch (_) {}
+  try { kb = (await readPlain('knowledge_base')) || []; } catch (_) {}
   const topic = ((_npWiz && _npWiz.draft && _npWiz.draft.titles && _npWiz.draft.titles[0])) || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 重排中…'; }
   try {
@@ -1654,8 +1632,7 @@ async function npRenderCover(container) {
   // 读取封面基础字段
   if (!_npCoverOpts) {
     try {
-      const c = await chrome.storage.local.get('config');
-      const cfg = (c && c.config) || {};
+      const cfg = await readConfigPlain();
       const p = cfg.product || {};
       const per = cfg.persona || {};
       _npCoverOpts = {
@@ -1955,7 +1932,7 @@ function _setToolbarMode(mode) {
       _followBatchBtn = document.createElement('button');
       _followBatchBtn.className = 'batch-send-btn';
       _followBatchBtn.textContent = '🤖 通知页全部回复';
-      _followBatchBtn.title = '在通知页自动回复所有待回复会话：AI 生成 → 自动发送 → 3~8 秒间隔防反爬';
+      _followBatchBtn.title = '在通知页自动回复所有待回复会话：AI 生成 → 自动发送 → 3~8 秒随机间隔';
       _followBatchBtn.addEventListener('click', () => {
         const fc = document.getElementById('chatFollowContent');
         if (fc) batchChatFollowReply(fc);
@@ -3447,7 +3424,7 @@ async function syncNotifToLeads(container, opts) {
   const bReset = document.getElementById('plNotifRefresh') ? '🔄 刷新通知' : '🔄 增量刷新通知';
   if (window.__lastNotifSyncAt && (Date.now() - window.__lastNotifSyncAt < 20000)) {
     const sec = Math.ceil((20000 - (Date.now() - window.__lastNotifSyncAt)) / 1000);
-    addLog(`⏳ 刷新太频繁，请等 ${sec}s 再试（防触风控）`, 'warn');
+    addLog(`⏳ 刷新太频繁，请等 ${sec}s 再试`, 'warn');
     return false;
   }
   window.__lastNotifSyncAt = Date.now();
@@ -4040,13 +4017,19 @@ async function saveAiCs(container, which) {
 async function exportAiCs() {
   try {
     const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} });
-    const text = JSON.stringify((r && r.config) || {}, null, 2);
+    const pw = await CryptoBox.askPassword({
+      title: '设置导出加密口令',
+      hint: 'AI客服配置导出为<b>加密文件</b>（含话术与问答），请设一个口令并记牢；导入时要用同一个口令。',
+      okText: '加密导出', confirm: true,
+    });
+    if (!pw.ok) return;
+    const text = await CryptoBox.encryptFile(JSON.stringify((r && r.config) || {}, null, 2), pw.password);
     const blob = new Blob([text], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'ai-cs-config-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.download = 'ai-cs-config-' + new Date().toISOString().slice(0, 10) + '.enc.json';
     a.click(); URL.revokeObjectURL(a.href);
-    addLog('✅ AI客服配置已导出为 JSON 文件（A场景 + B问答、含三条/多条模板）', 'success');
+    addLog('✅ AI客服配置已加密导出（A场景 + B问答，需口令才能导入）', 'success');
   } catch (e) { addLog('❌ 导出失败：' + e.message, 'error'); }
 }
 
@@ -4055,14 +4038,24 @@ function importAiCs() {
   input.type = 'file'; input.accept = '.json,application/json';
   input.style.display = 'none';
   document.body.appendChild(input);
-  input.addEventListener('change', () => {
+  input.addEventListener('change', async () => {
     const file = input.files && input.files[0];
     input.remove();
     if (!file) return;
     const rd = new FileReader();
-    rd.onload = () => {
+    rd.onload = async () => {
       try {
-        const val = String(rd.result || '');
+        let val = String(rd.result || '');
+        if (CryptoBox.isFileEnvelope(val)) {
+          const pw = await CryptoBox.askPassword({
+            title: '输入配置口令',
+            hint: '这是加密导出的 AI客服配置文件，请输入导出时设置的口令。',
+            okText: '解密导入',
+          });
+          if (!pw.ok) return;
+          try { val = await CryptoBox.decryptFile(val, pw.password); }
+          catch (err) { addLog('❌ ' + (err.message || err), 'error'); return; }
+        }
         JSON.parse(val); // 提前校验格式，给出友好报错
         chrome.runtime.sendMessage({ action: 'importAiCsConfig', data: { json: val } }).then((r) => {
           if (r && r.ok) {
@@ -4465,13 +4458,13 @@ async function touchScenePrefill(person) {
   } catch (e) { /* 预填失败不阻塞，仍可手动「场景话术/AI生成」 */ }
 }
 
-// ★ 批量触达（全自动）：只处理【勾选】的通知线索，AI 草拟后自动发送，逐条随机间隔防限流
+// ★ 批量触达（全自动）：只处理【勾选】的通知线索，AI 草拟后自动发送，逐条随机间隔发送
 async function batchTouchAuto(container) {
   const ids = Array.from(_selectedIds);
   if (!ids.length) { addLog('⚠️ 未勾选任何线索：请先勾选要触达的人，再点批量触达', 'warn'); return; }
   let leads = _plData.list.filter(p => p && p.id && ids.includes(p.id) && _plBucket(p) === 'notif' && !p.convId && !p.dmBlocked);
   if (!leads.length) { addLog('⚠️ 勾选的人里没有可自动触达的（可能已在会话/受限/非通知桶）', 'warn'); return; }
-  if (!window.confirm(`将自动私信以下 ${leads.length} 人：\n${leads.map(l => '· ' + (l.nickname || '未知')).join('\n')}\n\n请确认无 <b>微信/链接</b> 等违规词（触达风控风险自担），且已登录小红书。`)) return;
+  if (!window.confirm(`将自动私信以下 ${leads.length} 人：\n${leads.map(l => '· ' + (l.nickname || '未知')).join('\n')}\n\n请确认无 <b>微信/链接</b> 等违规词（请自行确认内容合规），且已登录小红书。`)) return;
   const _s = (ms) => new Promise(r => setTimeout(r, ms));
   setLockBanner(true, 'touchAuto');
   let ok = 0, blocked = 0, fail = 0;
@@ -4496,7 +4489,7 @@ async function batchTouchAuto(container) {
       if (e && e.limited) { blocked++; addLog(`⛔ ${nick}：私信受限，跳过`, 'warn'); }
       else { fail++; addLog(`❌ ${nick}：${e.message}`, 'error'); }
     }
-    await _s(3000 + Math.random() * 5000); // 逐条随机 3~8 秒，防群发风控
+    await _s(3000 + Math.random() * 5000); // 逐条随机 3~8 秒，避免连发
   }
   setLockBanner(false, 'touchAuto');
   _selectedIds.clear();
@@ -4715,7 +4708,7 @@ async function applyEditionToPopup() {
   renderEditionBadge(status);
   // 3.5) 账号绑定（绑定版）：校验当前登录账号
   applyAccountBindToPopup();
-  // 4) 批量发送（自动评论）——试用版灰显锁定 ▾ 下拉入口
+  // 4) 批量发送（自动评论）——未开通时灰显锁定 ▾ 下拉入口
   if (!ed.features || !ed.features.batchSend) {
     const btn = document.getElementById('commentCaret');
     if (btn) {
@@ -4724,38 +4717,28 @@ async function applyEditionToPopup() {
       btn.style.opacity = '0.45';
       btn.style.cursor = 'not-allowed';
       btn.style.filter = 'grayscale(1)';
-      btn.title = '当前版本（' + (ed.label || '') + '）不含整页批量发送，仅支持逐条一键发送；升级企业版解锁';
+      btn.title = '当前版本（' + (ed.label || '') + '）不含整页批量发送，仅支持逐条一键发送；升级更高版本解锁';
     }
   }
-  // 4) 租户切换器——非租户版灰显锁定
-  if (!ed.features || !ed.features.tenant) {
-    const sel = document.getElementById('tenantSwitcher');
-    if (sel) {
-      sel.disabled = true;
-      sel.dataset.locked = '1';
-      sel.innerHTML = '<option>🔒 多租户（企业版·多租户）</option>';
-      sel.style.opacity = '0.5';
-      sel.style.cursor = 'not-allowed';
-      sel.title = '当前版本（' + (ed.label || '') + '）不含多产品/多租户切换，升级「企业版·多租户」解锁';
-      const label = sel.previousElementSibling;
-      if (label) { label.style.opacity = '0.5'; }
-    }
-  }
-  // 5) 一键灌水笔记列表（左侧面板依赖灌水功能）——非企业版直接隐藏整个笔记列表，右侧评论助手占满窗口自适应
+  // 4) 租户切换器：三档全开（tenant 恒为 true），不再做灰显锁定
+  // 5) 一键灌水笔记列表（左侧面板依赖灌水功能）——未开通时直接隐藏整个笔记列表，右侧评论助手占满窗口自适应
   if (!ed.features || !ed.features.autoWater) {
     const panelLeft = document.getElementById('panelLeft');
     const divider = document.getElementById('divider');
     if (panelLeft) panelLeft.style.display = 'none';
     if (divider) divider.style.display = 'none';
+    document.getElementById('tabWaterSummary')?.remove(); // 灌水总结随灌水一起：无灌水则无总结可看
   }
   // 6) 通知/消息——非开通版本隐藏一级 tab
   if (!ed.features || !ed.features.prospectList) {
     ['tabNotifGroup', 'tabMsgGroup', 'tabNotifConfig', 'tabAiCsQa'].forEach(id => document.getElementById(id)?.remove());
     const _subT2 = document.getElementById('subTabs2'); if (_subT2) _subT2.style.display = 'none';
     const _subT3 = document.getElementById('subTabs3'); if (_subT3) _subT3.style.display = 'none';
+    const _scanSel = document.getElementById('plScanFreq2'); // 🤖 自动扫频率（依赖通知/消息的自动扫）
+    if (_scanSel && _scanSel.parentElement) _scanSel.parentElement.style.display = 'none';
   }
-  // 7) 发笔记——依赖知识库，非开通版本隐藏 tab 按钮
-  if (!ed.features || !ed.features.knowledge) {
+  // 7) 发笔记——未开通版本隐藏 tab 按钮
+  if (!ed.features || !ed.features.notePublish) {
     document.getElementById('tabNotePublish')?.remove();
   }
 }
@@ -4867,7 +4850,7 @@ async function startup() {
   // ── 页面类型守卫 + 自愈重试 ──
   // 有时小红书会在笔记详情页里瞬时灌入列表/卡片内容（或 SPA 还没切完），
   // 守卫抓到"页面不对"时不再直接放弃：停掉本次 → 停顿 → 返回并重新打开笔记 → 再扫描。
-  // 中间刻意加入随机停顿，尽量像真人操作，避免被风控识别。
+  // 中间刻意加入随机停顿，让节奏更自然。
   const isNoteUrl = (u) => /xiaohongshu\.com\/(explore|discovery\/item)\//.test(u || '');
   const initialUrl = tab.url || '';
   const curNoteId = _noteIdFromUrl(initialUrl);
@@ -4982,7 +4965,7 @@ async function startup() {
 
     addLog(`⚠️ 检测到抓的是笔记卡片/背景信息流而非评论，停掉本次，返回后重新打开笔记重试`, 'warn');
 
-    // 1) 返回上一页（模拟真人先退出），停顿时长读设置页「停留时间」配置（技术下限 300ms）
+    // 1) 返回上一页（先退出再重试），停顿时长读设置页「停留时间」配置（技术下限 300ms）
     const backWait = await getDwellMs('retryBackWait', 300);
     setStatus(`⚠️ 页面内容异常，正在返回…（第 ${attempt}/${MAX_TRY} 次重试）`, 'warn');
     try { await chrome.tabs.sendMessage(curTab.id, { action: 'goBack' }); } catch (_) {}
@@ -5150,8 +5133,8 @@ window.refreshCommentAssistant = refreshData;
 window.getWateredNoteUrls = loadWateredNoteUrls;
 
 // ========== 批量串行发送 ==========
-// ★ 是否正在“自动批量发送”（自动譄评）：决定发送时要不要模仿真人拖延。
-//   true=批量/自动（慢慢骗反爬）；false=手动逐条一键发送（快速，不磨蹭）
+// ★ 是否正在“自动批量发送”（自动评论）：决定发送时是否走自然节奏。
+//   true=批量/自动（节奏放慢）；false=手动逐条一键发送（快速，不磨蹭）
 let _batchSending = false;
 
 // 互动行为配置（设置页「⏱️ 停留时间」Tab 的「🤝 互动行为」区，存 behavior_config）：
@@ -5166,9 +5149,9 @@ async function getBehaviorConfig() {
 }
 
 async function batchSendAll() {
-  // 版本闸门：试用版不含整页批量发送（按钮已灰显，这里双保险）
+  // 版本闸门：未开通不含整页批量发送（按钮已灰显，这里双保险）
   if (!editionFeatureOn('batchSend')) {
-    addLog('🔒 当前版本不支持整页批量发送，请逐条使用「一键发送」；升级企业版可解锁', 'warn');
+    addLog('🔒 当前版本不支持整页批量发送，请逐条使用「一键发送」；升级更高版本可解锁', 'warn');
     return;
   }
   const caretBtn = document.getElementById('commentCaret');
@@ -5181,7 +5164,7 @@ async function batchSendAll() {
   }
 
   addLog(`📤 开始批量发送，共 ${sendBtns.length} 条评论`, 'info');
-  // ★ 标记“自动批量发送中”：只有自动发送才模仿真人（浏览滞留 + 逐字打字）骗反爬；
+  // ★ 标记“自动批量发送中”：只有自动发送才走自然节奏（浏览停留 + 逐字输入）；
   //   手动逐条点“一键发送”不需要这些，走快速通道
   _batchSending = true;
   if (caretBtn) { caretBtn.disabled = true; caretBtn.style.opacity = '0.5'; }
@@ -5231,10 +5214,10 @@ async function batchSendAll() {
       failCount++;
     }
 
-    // ★ 批量条间防反爬间隔：随机 3~8 秒（用户要求；手动逐条发送不加此间隔）
+    // ★ 批量条间发送间隔：随机 3~8 秒（用户要求；手动逐条发送不加此间隔）
     if (i < sendBtns.length - 1) {
       const gap = 3000 + Math.floor(Math.random() * 5000);
-      addLog(`⏸ 防反爬间隔：停 ${(gap / 1000).toFixed(1)}s 再发下一条...`, 'info');
+      addLog(`⏸ 发送间隔：停 ${(gap / 1000).toFixed(1)}s 再发下一条...`, 'info');
       await sleep(gap);
     }
   }
@@ -5361,7 +5344,7 @@ function renderChatFollow(container, data) {
   batchBtn.id = 'chatFollowBatchBtn';
   batchBtn.textContent = pendingCount > 0 ? `🤖 全部回复 (${pendingCount})` : '🤖 全部回复';
   batchBtn.disabled = pendingCount === 0;
-  batchBtn.title = '串行回复所有待回复会话：AI 生成 → 自动发送 → 3~8 秒间隔防反爬';
+  batchBtn.title = '串行回复所有待回复会话：AI 生成 → 自动发送 → 3~8 秒随机间隔';
   const syncBtn = document.createElement('button');
   syncBtn.className = 'refresh-btn';
   syncBtn.id = 'chatFollowSyncBtn';
@@ -5654,7 +5637,7 @@ async function sendChatFollowReply(conv, replyText, card, sendBtn) {
   }
 }
 
-// 全部串行回复（AI 生成 → 发送 → 3~8 秒防反爬间隔）
+// 全部串行回复（AI 生成 → 发送 → 3~8 秒随机间隔）
 async function batchChatFollowReply(container) {
   let convs = [];
   try {
@@ -5714,10 +5697,10 @@ async function batchChatFollowReply(container) {
       try {
         await chrome.runtime.sendMessage({ action: 'chatFollowMarkSent', data: { userId: conv.userId, replyText: gen.reply, lastRepliedIncoming: conv.pendingIncoming } });
       } catch (_) {}
-      // 条间防反爬间隔：随机 3~8 秒（最后一条不用等）
+      // 条间发送间隔：随机 3~8 秒（最后一条不用等）
       if (i < convs.length - 1) {
         const gap = 3000 + Math.floor(Math.random() * 5000);
-        addLog(`⏸ 防反爬间隔：停 ${(gap / 1000).toFixed(1)}s 再回复下一位...`, 'info');
+        addLog(`⏸ 发送间隔：停 ${(gap / 1000).toFixed(1)}s 再回复下一位...`, 'info');
         await sleep(gap);
       }
     }
@@ -5732,7 +5715,7 @@ async function batchChatFollowReply(container) {
 }
 
 // ========== 商机挖掘 ==========
-// skipScreen=true：绕过评论量门槛，把不足 10 条的评论也强塞给 AI（空态里“仍要 AI 全量分析”按钮用）
+// skipScreen=true：跳过评论量门槛，把不足 10 条的评论也强塞给 AI（空态里“仍要 AI 全量分析”按钮用）
 
 // ── 同行碰撞笔记判定（获客时"不灌水、只收求分享线索") ──
 //  逻辑：某笔记评论区里"求分享/求资料/求带/想要/蹲..."等求取类评论占比过高，
@@ -5764,7 +5747,7 @@ async function collisionLeadModeEnabled() {
 // 调试钩子：window.__collisionDebug=true 时打印判定明细，便于调阈值
 window.__collisionShareLog = function(msg){ if (window.__collisionDebug) addLog(msg, 'warn'); };
 
-// skipScreen=true：绕过评论量门槛，把不足 10 条的评论也强塞给 AI（空态里“仍要 AI 全量分析”按钮用）
+// skipScreen=true：跳过评论量门槛，把不足 10 条的评论也强塞给 AI（空态里“仍要 AI 全量分析”按钮用）
 async function loadProspecting(container, skipScreen) {
   // 清空容器，用 DOM 方法添加加载提示（不用 innerHTML）
   while (container.firstChild) container.removeChild(container.firstChild);
@@ -5855,7 +5838,8 @@ async function loadProspecting(container, skipScreen) {
       let shareHits = [];
       try { shareHits = collisionShareHits(filteredComments); } catch (_) {}
       if (shareHits.length > 0) {
-        addLog(`🚦 判定为本篇为同行碰撞笔记：${shareHits.length}/${filteredComments.length} 条为求分享评论，本笔记不灌水，改收求分享线索`, 'warn');
+        const _leadsOn = editionFeatureOn('prospectList');
+        addLog(`🚦 判定为本篇为同行碰撞笔记：${shareHits.length}/${filteredComments.length} 条为求分享评论，本笔记不灌水` + (_leadsOn ? '，改收求分享线索' : ''), 'warn');
         window.__collisionShareLog(`碰撞明细：${shareHits.map(h => '@' + (h.author || '?')).join('、')}`);
         await renderShareLeads(container, shareHits, { repliedBanner });
         // ★ 本篇无待发评论（lead 模式不灌水）→ 通知机器人返回列表 / 去下一篇，严格流水线不卡死
@@ -5867,7 +5851,7 @@ async function loadProspecting(container, skipScreen) {
     }
 
     // ★ 评论量门槛：刚起量/没流量的文章评论不足，没有挖掘价值 → 直接退出，不劳烦 AI。
-    //   评论 ≥10 条才值得挖（skipScreen=true 时绕过，强制全量分析）
+    //   评论 ≥10 条才值得挖（skipScreen=true 时跳过，强制全量分析）
     if (skipScreen) {
       addLog('⏩ 已按你的要求跳过评论量门槛（不足 10 条也全量分析）', 'warn');
     } else if (filteredComments.length < 10) {
@@ -5933,7 +5917,7 @@ async function loadProspecting(container, skipScreen) {
       }
     } catch (_) {}
 
-    // 通过 background.js 请求商机挖掘（skipAiScreen：“仍要 AI 全量分析”按钮同时绕过本地预筛和 AI 快筛）
+    // 通过 background.js 请求商机挖掘（skipAiScreen：“仍要 AI 全量分析”按钮同时跳过本地预筛和 AI 快筛）
     const requestData = { ...pageData, comments: filteredComments, skipAiScreen: !!skipScreen };
     // ★ AI 返回期间也锁定界面，并告知“AI 正在思考”（网络请求可能要十几秒，防止用户此时手动操作）
     setLockBanner(true, 'aiThinking');
@@ -6017,7 +6001,7 @@ async function loadProspecting(container, skipScreen) {
         <button id="retryProspectBtn" class="retry-btn">🔄 重新扫描</button>`;
       container.appendChild(fastDiv);
       document.getElementById('forceAiBtn')?.addEventListener('click', async () => {
-        addLog('🤖 手动要求：绕过快筛，全量交给 AI 分析', 'warn');
+        addLog('🤖 手动要求：跳过快筛，全量交给 AI 分析', 'warn');
         setStatus('<span class="loading-spinner"></span> AI 全量分析中...', '');
         await loadProspecting(container, true);
       });
@@ -6159,7 +6143,7 @@ async function loadProspecting(container, skipScreen) {
       } catch (_) {}
     })();
 
-    // ========== 用 DOM API 重新渲染（绕过 innerHTML 潜在的兼容问题） ==========
+    // ========== 用 DOM API 重新渲染（避开 innerHTML 潜在的兼容问题） ==========
     // 清空容器
     while (container.firstChild) container.removeChild(container.firstChild);
 
@@ -6322,15 +6306,16 @@ async function loadProspecting(container, skipScreen) {
             <button class="send-btn" data-prospect="${i}" data-idx="${idx}" data-author="${esc(author)}" data-original="${esc(content)}" data-userlink="${esc(userLink)}">
               📤 一键发送
             </button>
-            <button class="addlist-btn" data-prospect="${i}" data-idx="${idx}" data-author="${esc(author)}" data-original="${esc(content)}" data-userlink="${esc(userLink)}" style="font-size:11px;padding:3px 8px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:4px;cursor:pointer;">➕ 入清单</button>
+            ${editionFeatureOn('prospectList') ? `<button class="addlist-btn" data-prospect="${i}" data-idx="${idx}" data-author="${esc(author)}" data-original="${esc(content)}" data-userlink="${esc(userLink)}" style="font-size:11px;padding:3px 8px;border:1px solid #7c3aed;background:#f5f3ff;color:#6d28d9;border-radius:4px;cursor:pointer;">➕ 入清单</button>` : ''}
           </div>
           <div id="sendResult_${i}" class="send-result"></div>
         </div>`;
       container.appendChild(card);
     });
 
-    // ── AI 筛选入库（不再靠关键词：AI 从评论里筛出值得收进清单跟进的人，可一键全入库） ──
-    try {
+    // ── AI 筛选入库（不再靠关键词：AI 从评论里筛出值得收进清单跟进的人，可一键全入库）──
+    //    线索入库属「通知/私信」获客清单（全功能版专属），未开通版本不显示这块
+    if (editionFeatureOn('prospectList')) try {
       const aiCapture = document.createElement('details');
       aiCapture.style.cssText = 'margin:6px 0;font-size:11px;border:1px solid #c4b5fd;border-radius:6px;padding:6px;background:#f5f3ff;';
       const aiSummary = document.createElement('summary');
@@ -6478,7 +6463,7 @@ async function loadProspecting(container, skipScreen) {
           const result = await sendTabMessageWithTimeout(tab.id, {
             action: 'sendReply', author, originalText: original, replyText, commentIdx: parseInt(commentIdx), userLink,
             images: kbImages, // 传递知识库图片
-            humanize: _batchSending, // ★ 只有自动批量发送才模仿真人；手动一键发送走快速通道
+            humanize: _batchSending, // ★ 只有自动批量发送才走逐字输入；手动一键发送走快速通道
           }, 60000);
           if (result && result.success) {
             if (result.verified) {
@@ -6724,10 +6709,14 @@ async function renderShareLeads(container, shareHits, opts) {
     container.appendChild(warnDiv);
   }
 
+  const _leadsOn = editionFeatureOn('prospectList');   // 获客清单（通知/私信）为全功能版专属
+
   // 统计横幅
   const banner = document.createElement('div');
   banner.style.cssText = 'font-size:12px;padding:8px 10px;border-radius:6px;margin-bottom:8px;background:#fff4e5;color:#8a5a00;border:1px solid #f6d9a8;line-height:1.5;';
-  banner.innerHTML = `🚦 判定为<b>同行碰撞笔记</b>（评论区 ${shareHits.length} 条求分享），<b>本笔记不灌水</b>。<br>已将 ${shareHits.length} 位"求分享"用户收入<b>用户清单 · 线索池</b>，备好触达词可直接<b>私信触达</b>。`;
+  banner.innerHTML = _leadsOn
+    ? `🚦 判定为<b>同行碰撞笔记</b>（评论区 ${shareHits.length} 条求分享），<b>本笔记不灌水</b>。<br>已将 ${shareHits.length} 位"求分享"用户收入<b>用户清单 · 线索池</b>，备好触达词可直接<b>私信触达</b>。`
+    : `🚦 判定为<b>同行碰撞笔记</b>（评论区 ${shareHits.length} 条求分享），<b>本笔记不灌水</b>。`;
   container.appendChild(banner);
 
   const noteTitle = (pageData && pageData.title) || (pageData && pageData.noteData && pageData.noteData.title) || '';
@@ -6735,8 +6724,13 @@ async function renderShareLeads(container, shareHits, opts) {
 
   const stats = document.createElement('div');
   stats.className = 'scan-stats';
-  stats.textContent = `🎇 ${shareHits.length} 位求分享用户已入线索池 · 不评论（避免碰撞）`;
+  stats.textContent = _leadsOn
+    ? `🎇 ${shareHits.length} 位求分享用户已入线索池 · 不评论（避免碰撞）`
+    : `🚫 本篇不评论（避免碰撞）· 直接换下一篇`;
   container.appendChild(stats);
+
+  // 无获客清单版本：只提示「本篇不灌水」，不写线索池、不给私信入口
+  if (!_leadsOn) return;
 
   for (let i = 0; i < shareHits.length; i++) {
     const h = shareHits[i] || {};
@@ -7558,7 +7552,7 @@ var DIAG_PURPOSES = [
   ['sell', '🛍️ 卖产品（获客转化）'],
   ['brand', '🏷️ 品牌种草（信任/口碑）'],
   ['profile', '👤 主页涨粉（引流主页）'],
-  ['likes', '👍 互动涨赞（养号/数据）'],
+  ['likes', '👍 互动涨赞（提升活跃）'],
   ['trend', '🔥 蹭热点（借话题/大V）'],
   ['auto', '🧩 综合自动（每条看菜下饭）'],
   ];
@@ -7581,8 +7575,8 @@ function _dBtn(id, label, sub, color) {
   return '<button id="' + id + '" class="btn ' + (color || 'btn-primary') + '" style="margin-right:8px;margin-bottom:8px;">' + label + (sub ? '<span style="font-size:11px;opacity:.8;margin-left:4px;">' + sub + '</span>' : '') + '</button>';
 }
 async function _diagSay(method, data) { return await chrome.runtime.sendMessage({ action: method, data: data || {} }); }
-async function _diagGetCfg() { const r = await chrome.storage.local.get('config'); return (r && r.config) || {}; }
-async function _diagSaveCfg(cfg) { await chrome.storage.local.set({ config: cfg }); }
+async function _diagGetCfg() { return await readConfigPlain(); }
+async function _diagSaveCfg(cfg) { await chrome.storage.local.set({ config: (typeof DataPrivacy !== 'undefined') ? await DataPrivacy.lockConfig(cfg) : cfg }); }
 function _diagCard(innerHtml) { return '<div style="border:1px solid #e7eaf0;border-radius:12px;padding:14px 16px;background:#fff;box-shadow:0 1px 3px rgba(24,24,40,.05);">' + innerHtml + '</div>'; }
 function _diagLabel(txt) { return '<div style="font-size:12px;color:#333;margin-bottom:4px;">' + txt + '</div>'; }
 function _diagStepTitle(no, txt) {

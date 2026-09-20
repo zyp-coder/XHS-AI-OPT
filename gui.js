@@ -59,9 +59,9 @@ const PAGE = `<!DOCTYPE html>
    <div class="field">
      <label>版本档位</label>
 <select name="type">
-       <option value="full">全功能版（全功能 · ¥539）</option>
-       <option value="comment-multi">评论助手·多关键词（获客清单 · ¥399）</option>
-       <option value="comment">评论助手·单关键词（¥239）</option>
+       <option value="full">全功能版（发笔记 + 日常浏览 + 通知/私信 · ¥539/月）</option>
+       <option value="comment-multi">评论助手·升级版（一键灌水 + 笔记列表 · ¥399/月）</option>
+       <option value="comment">评论助手·基础版（手动评论 · ¥239/月）</option>
        <option value="pro">自用版（内部·零等待·全功能）</option>
      </select>
    </div>
@@ -75,7 +75,7 @@ const PAGE = `<!DOCTYPE html>
      <input type="text" name="licensee" placeholder="例如：某公司 或 张三（会显示在包名上）">
    </div>
    <div class="row">
-     <div class="field"><label>有效天数</label><input type="number" name="days" value="7" min="1"></div>
+     <div class="field"><label>有效天数</label><input type="number" name="days" value="30" min="1"></div>
      <div class="field"><label>输出目录</label><input type="text" name="out" value="dist"></div>
    </div>
    <button type="submit" class="btn" id="btn">开始打包</button>

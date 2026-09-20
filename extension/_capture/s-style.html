@@ -83,7 +83,7 @@
         </div>
         <div class="form-group">
           <label>我的小红书昵称（防重复灌水）</label>
-          <textarea id="myAccountNames" rows="2" placeholder="每行一个昵称，可填多个（如小号/曾用过的名字）。例：
+          <textarea id="myAccountNames" rows="2" placeholder="每行一个昵称，可填多个（如曾用昵称）。例：
 码农小张
 张工程师"></textarea>
           <span class="hint">扫描时若发现笔记里已有你这些名字的评论，会直接判定这篇已灌水、跳过 AI，并记入已灌水清单</span>
@@ -216,7 +216,7 @@
               <option value="sell">🛍️ 卖产品（获客转化）——教程/避雷/对比优先，自然带产品</option>
               <option value="brand">🏷️ 品牌种草（信任/口碑）——对比/补充/数据，立口碑不硬卖</option>
               <option value="profile">👤 主页涨粉（引流主页）——给干货让人来主页</option>
-              <option value="likes">👍 互动涨赞（养号/数据）——金句/提问/玩梗，不谈产品</option>
+              <option value="likes">👍 互动涨赞（提升活跃）——金句/提问/玩梗，不谈产品</option>
               <option value="trend">🔥 蹭热点（借话题/大V）——借势拉曝光</option>
               <option value="auto">🧩 综合自动（每条看菜下饭）——AI 见什么评论就用什么打法，最像真人</option>
             </select>
@@ -255,7 +255,7 @@
             <li>⑧ 共情共鸣流：用经历接住对方情绪，讲透感受，可带产品就轻带一句</li>
             <li>⑨ 借势热点流：顺笔记/评论区热话题延伸，借流量拉曝光</li>
             <li>⑩ 情绪带赞流：短金句/玩梗刺中情绪，纯点赞互动，不谈产品</li>
-            <li>⑪ 提问互动流：抛一个有讨论度的问题撬回复，养号/涨互动</li>
+            <li>⑪ 提问互动流：抛一个有讨论度的问题撬回复，提升互动</li>
             <li>⑫ 求教自嘲流：以"蹲一个懂的人"自嘲发问戳共鸣（仅适合纯闲聊触达）</li>
           </ul>
         </div>
@@ -388,7 +388,7 @@
       <section id="tab-delays" class="tab-panel">
         <div class="panel-header">
           <h2>⏱️ 停留时间</h2>
-          <p>统一配置各环节的拟人停留/间隔（单位：毫秒）。默认 = 技术下限（能跑通的最快值）；实际停留会在设定值基础上随机上浮最多 50%，更像真人。注意：贴着下限跑速度最快但风控风险更高，批量操作建议点「填入拟人推荐值」</p>
+          <p>统一配置各环节的拟人停留/间隔（单位：毫秒）。默认 = 最低值（能跑通的最快值）；实际停留会在设定值基础上随机上浮最多 50%，节奏更自然。注意：贴着下限跑速度最快但操作频率更高，批量操作建议点「填入拟人推荐值」</p>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -405,19 +405,19 @@
             <input type="number" id="dl_likeGap" min="0" max="60000" step="100" value="0">
           </div>
           <div class="form-group">
-            <label>📜 加载评论·每轮懒加载等待 <span style="font-size:11px;color:#999;">（推荐 1100；技术下限/默认 300，太小可能抓不全评论）</span></label>
+            <label>📜 加载评论·每轮懒加载等待 <span style="font-size:11px;color:#999;">（推荐 1100；最低值/默认 300，太小可能抓不全评论）</span></label>
             <input type="number" id="dl_lazyLoadWait" min="0" max="60000" step="100" value="300">
           </div>
           <div class="form-group">
-            <label>↩️ 抓错页自愈·返回后停顿 <span style="font-size:11px;color:#999;">（推荐 900；技术下限/默认 300）</span></label>
+            <label>↩️ 抓错页自愈·返回后停顿 <span style="font-size:11px;color:#999;">（推荐 900；最低值/默认 300）</span></label>
             <input type="number" id="dl_retryBackWait" min="0" max="60000" step="100" value="300">
           </div>
           <div class="form-group">
-            <label>🔁 抓错页自愈·重开笔记等待 <span style="font-size:11px;color:#999;">（推荐 2200；技术下限/默认 800，太小会抓到没加载完的页）</span></label>
+            <label>🔁 抓错页自愈·重开笔记等待 <span style="font-size:11px;color:#999;">（推荐 2200；最低值/默认 800，太小会抓到没加载完的页）</span></label>
             <input type="number" id="dl_retryOpenWait" min="0" max="60000" step="100" value="800">
           </div>
           <div class="form-group">
-            <label>🔗 列表打开笔记·就绪前缓冲 <span style="font-size:11px;color:#999;">（推荐 800；技术下限/默认 300）</span></label>
+            <label>🔗 列表打开笔记·就绪前缓冲 <span style="font-size:11px;color:#999;">（推荐 800；最低值/默认 300）</span></label>
             <input type="number" id="dl_noteOpenBuffer" min="0" max="60000" step="100" value="300">
           </div>
           <div class="form-group">
@@ -425,14 +425,14 @@
             <input type="number" id="dl_preSendGap" min="0" max="60000" step="100" value="500">
           </div>
           <div class="form-group">
-            <label>📤 批量发送·每条之间间隔 <span style="font-size:11px;color:#999;">（推荐 8000；默认 0=不停，最快档连发风控风险高）</span></label>
+            <label>📤 批量发送·每条之间间隔 <span style="font-size:11px;color:#999;">（推荐 8000；默认 0=不停，最快档连发操作频率过高）</span></label>
             <input type="number" id="dl_batchItemGap" min="0" max="600000" step="500" value="0">
           </div>
         </div>
 
         <div class="panel-header" style="margin-top:24px;">
           <h2 style="font-size:15px;">🤝 互动行为</h2>
-          <p>关注是风控权重最高的动作，可在这里关掉或降频；保存按钮在下方（与停留时间一起保存）</p>
+          <p>关注是这里最重的动作，可在这里关掉或降频；保存按钮在下方（与停留时间一起保存）</p>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="display:flex;align-items:center;">
@@ -450,7 +450,7 @@
         <div class="toolbar" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
           <button class="btn-primary" id="delaySaveBtn">保存</button>
           <button class="btn-secondary btn-sm" id="delayRecommendBtn" title="填入历史版本的拟人节奏（不会自动保存，填入后需点保存）">填入拟人推荐值</button>
-          <button class="btn-secondary btn-sm" id="delayZeroBtn" title="恢复默认：各项回到技术下限（能跑通的最快值，不会自动保存，填入后需点保存）">恢复默认（最快）</button>
+          <button class="btn-secondary btn-sm" id="delayZeroBtn" title="恢复默认：各项回到最低值（能跑通的最快值，不会自动保存，填入后需点保存）">恢复默认（最快）</button>
           <span id="delaySaveMsg" class="save-msg"></span>
         </div>
       </section>

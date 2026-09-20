@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI 雕兄 · 封面</title>
+<style>
+:root{
+  --gold:#D4AF37; --gold-lt:#F2DC8E; --red:#E8503A;
+  --white:#F5F5F5; --dim:#B8BDC4; --gray:#8A929C;
+  --W:1080px; --H:1440px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#07090c;
+  font-family:"Microsoft YaHei","PingFang SC","Hiragino Sans GB",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;color:var(--white)}
+
+#stage{position:relative;width:var(--W);height:var(--H);overflow:hidden;
+  background:radial-gradient(880px 1180px at 50% 36%, #181e28 0%, #0e1116 55%, #090b0f 100%)}
+#stage::before{content:"";position:absolute;width:1100px;height:1100px;left:-260px;top:-320px;
+  background:radial-gradient(circle, rgba(212,175,55,.09), transparent 62%)}
+#stage::after{content:"";position:absolute;width:1000px;height:1000px;right:-300px;bottom:-360px;
+  background:radial-gradient(circle, rgba(232,80,58,.07), transparent 62%)}
+
+.kicker{position:absolute;left:70px;top:80px;z-index:3;display:flex;align-items:center;gap:18px;
+  padding:15px 34px 15px 26px;border-radius:999px;border:2px solid rgba(212,175,55,.45);
+  background:linear-gradient(90deg,rgba(212,175,55,.24),rgba(212,175,55,.05) 80%,rgba(212,175,55,0));
+  font-size:38px;font-weight:800;letter-spacing:.1em;color:var(--white)}
+.kicker::before{content:"";flex:none;width:19px;height:19px;background:var(--gold);transform:rotate(45deg)}
+
+.title{position:absolute;left:60px;right:60px;top:170px;bottom:470px;z-index:2;
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:36px;text-align:center}
+.pre{font-size:44px;font-weight:700;letter-spacing:.14em;color:var(--dim)}
+.big{font-size:150px;font-weight:900;line-height:1.16;letter-spacing:.02em;white-space:nowrap;
+  background:linear-gradient(100deg,#D4AF37 0%,#F2DC8E 26%,#FFF9E3 50%,#F2DC8E 72%,#D4AF37 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.big .num{font-size:1.14em;letter-spacing:-.01em}
+.big.solo{font-size:146px}
+.note{font-size:46px;font-weight:600;letter-spacing:.04em;color:var(--white);white-space:nowrap}
+.tiny{font-size:28px;color:var(--gray);letter-spacing:.06em}
+
+body[data-v="a"] .v-a,body[data-v="b"] .v-b,body[data-v="c"] .v-c,body[data-v="d"] .v-d{display:flex}
+
+/* 9:16（1920 高）时画幅更瘦长，文字与人物都要放大压低，别在中间留一大片空 */
+body.tall .title{top:230px;bottom:610px}
+body.tall #host{right:-84px;bottom:-300px;width:748px}
+body.tall #nameplate{padding:22px 38px 24px}
+body.tall .np-role{font-size:28px}
+body.tall .np-name{font-size:60px}
+
+#host{position:absolute;right:-76px;bottom:-286px;width:672px;z-index:1}
+#host .h-glow{position:absolute;left:-14%;right:-14%;top:-12%;bottom:6%;
+  background:radial-gradient(closest-side,rgba(212,175,55,.26),rgba(212,175,55,.06) 56%,transparent 78%);
+  filter:blur(10px)}
+#host .h-floor{position:absolute;left:-8%;right:-8%;bottom:-4%;height:22%;
+  background:radial-gradient(ellipse at 52% 50%,rgba(212,175,55,.30),rgba(212,175,55,.07) 50%,transparent 74%);
+  filter:blur(14px)}
+#host .h-fig{position:relative;display:block;
+  -webkit-mask-image:linear-gradient(to left,#000 84%,rgba(0,0,0,.42) 95%,transparent 100%);
+  mask-image:linear-gradient(to left,#000 84%,rgba(0,0,0,.42) 95%,transparent 100%)}
+#host img{display:block;width:100%;height:auto;
+  filter:saturate(.95) contrast(1.05) drop-shadow(0 0 26px rgba(212,175,55,.32)) drop-shadow(0 30px 62px rgba(0,0,0,.72))}
+
+#nameplate{position:absolute;right:62px;bottom:70px;z-index:3;padding:20px 34px 22px;border-radius:18px;
+  text-align:right;
+  background:linear-gradient(100deg,rgba(12,15,20,.9),rgba(26,30,38,.72));
+  border:1px solid rgba(212,175,55,.46);
+  box-shadow:0 20px 54px rgba(0,0,0,.6),inset 0 0 34px rgba(212,175,55,.06)}
+#nameplate::before{content:"";position:absolute;left:0;top:16%;bottom:16%;width:5px;border-radius:3px;
+  background:linear-gradient(to bottom,transparent,var(--gold),transparent)}
+.np-role{display:block;font-size:26px;letter-spacing:.32em;color:var(--gold);margin-bottom:6px}
+.np-name{display:block;font-size:54px;font-weight:900;letter-spacing:.06em;
+  background:linear-gradient(100deg,#F2DC8E,#FFF8DE 46%,#D4AF37);-webkit-background-clip:text;
+  background-clip:text;color:transparent}
+</style>
+</head>
+<body data-v="a">
+<div id="stage">
+  <div class="kicker">AI 雕兄</div>
+
+  <div class="title v-a">
+    <div class="pre">没投广告 · 没买流量</div>
+    <div class="big">15天 <span class="num">1000+</span></div>
+    <div class="big">真人加我</div>
+    <div class="tiny">*效果因人而异</div>
+  </div>
+
+  <div class="title v-b">
+    <div class="pre">小生意做小红书</div>
+    <div class="big solo">别学流量博主</div>
+    <div class="note">你要的是客户，不是播放量</div>
+  </div>
+
+  <div class="title v-c">
+    <div class="pre">2026 了</div>
+    <div class="big" style="font-size:110px">还在为获客发愁？</div>
+    <div class="note" style="font-size:44px">你每天漏掉的搜索客户<br>都是真金白银</div>
+  </div>
+
+  <div class="title v-d">
+    <div class="pre">2026 了 · 还在为获客发愁？</div>
+    <div class="big">15天 <span class="num">1000+</span></div>
+    <div class="big">真人加我</div>
+    <div class="tiny">没投广告 · 没买流量　*效果因人而异</div>
+  </div>
+
+  <div id="host">
+    <span class="h-glow"></span><span class="h-floor"></span>
+    <div class="h-fig"><img src="AI雕兄-形象-透明.png" alt=""></div>
+  </div>
+  <div id="nameplate"><span class="np-role">AI 运营教练</span><span class="np-name">AI杨小过</span></div>
+</div>
+
+<script>
+const q = new URLSearchParams(location.search);
+document.body.dataset.v = (q.get('v') || 'a').toLowerCase();
+if (q.get('w')) document.documentElement.style.setProperty('--W', q.get('w') + 'px');
+if (q.get('h')) document.documentElement.style.setProperty('--H', q.get('h') + 'px');
+if ((parseInt(q.get('h'), 10) || 1440) >= 1700) document.body.classList.add('tall');
+</script>
+</body>
+</html>

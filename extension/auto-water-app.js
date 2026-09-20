@@ -10,6 +10,8 @@ window.AutoWaterApp = (function () {
   var resultsRendered = false;
   var eventsBound = false;
   var noteOpened = false;
+  // ★ 执行器运行中：锁住单篇「🔗 打开」（人工与自动会抢同一个页面，必须显式互斥）
+  var botLocked = false;
 
   function $(sel) { return document.querySelector(sel); }
 
@@ -80,10 +82,18 @@ window.AutoWaterApp = (function () {
   }
 
   function enableOpenButtons() {
+    if (botLocked) return;   // ★ 执行器运行中：保持禁用，等它停机再放开
     document.querySelectorAll('.btn-open-note').forEach(function(btn) {
       if (btn.dataset.watered === 'true') return;
       btn.disabled = false;
     });
+  }
+
+  /* ─── 手动/自动互斥锁：执行器启动/停止时由 auto-bot.js 调用 ─── */
+  function setBotLock(locked) {
+    botLocked = !!locked;
+    if (botLocked) disableOpenButtons();
+    else enableOpenButtons();
   }
 
   /* ─── 全局通知：笔记被打开 (req 6) ─── */
@@ -456,9 +466,13 @@ window.AutoWaterApp = (function () {
       }
       list.appendChild(li);
     }
+    // ★ 执行器运行中重渲染（逐屏推进会整列重建）：新按钮默认可用，这里补回锁
+    if (botLocked) disableOpenButtons();
   }
 
-  /* 点赞趋势徽标 + 采样详情：每篇渲染打标徽标，并显示 ①第几次刷到 ②对比上次点赞变化 ③上次刷到时间 ④新刷到标记 */
+  /* 点赞趋势徽标 + 采样详情：每篇渲染打标徽标，并显示 ①第几次刷到 ②对比上次点赞变化 ③上次刷到时间 ④新刷到标记
+     ★「灌水:选中」不再本地复刻判定：追涨口径一律取 NoteTrend.explainPick（与引擎挑篇同源）；
+       全部口径（看到就灌）读列表自身的已灌/已打开状态——与执行器读的是同一处 dataset */
   function refreshTrendBadges(trendsArg) {
     if (!window.NoteTrend) return;
     var p = trendsArg ? Promise.resolve(trendsArg) : window.NoteTrend.getTrends();
@@ -473,12 +487,19 @@ window.AutoWaterApp = (function () {
         el.title = '点赞趋势：' + meta.desc + (t && t.samples && t.samples.length > 1 ? '（最近两次采样：' + t.samples[t.samples.length - 2].likes + ' → ' + t.samples[t.samples.length - 1].likes + '）' : '');
       });
 
-      // 加载循环计划度控制配置，用于判定"是否会被循环计划选中灌水"
+      // 加载度控制配置，用于判定"是否会被灌水"
       var cfg = window.NoteTrend.DEFAULT_CONFIG;
       try { cfg = await window.NoteTrend.getConfig(); } catch (_) {}
       var now = Date.now();
+      // 当前口径：列表头 #botScopeSel —— 全部未灌过=看到就灌；只追涨势=只挑涨势
+      var scopeSel = document.getElementById('botScopeSel');
+      var allMode = scopeSel ? scopeSel.value !== 'growing' : true;
+      var allowedIds = {};
+      document.querySelectorAll('#noteList .note-item').forEach(function (li) {
+        if (li.dataset.noteId) allowedIds[li.dataset.noteId] = true;
+      });
 
-      // ② 详情行：被采集次数 / 上次采集点赞数 / 本次点赞数 / 是否被循环计划选中灌水
+      // ② 详情行：被采集次数 / 上次采集点赞数 / 本次点赞数 / 是否会被灌水
       document.querySelectorAll('#noteList .trend-detail').forEach(function (el) {
         var t = trends && trends[el.dataset.noteId];
         if (!t || !t.samples || t.samples.length === 0) { el.textContent = ''; return; }
@@ -487,27 +508,21 @@ window.AutoWaterApp = (function () {
         var prev = samples.length >= 2 ? samples[samples.length - 2] : null;
         var prevLikes = prev ? (prev.likes || 0) : '—';
 
-        // 是否被循环计划选中灌水：需≥2次采样、标签为增长中/快速增长、未达灌水上限、不在冷却期
-        var picked = false;
-        var pickReason = '';
-        if (samples.length < 2) {
-          pickReason = '（采样不足）';
+        var pickHtml;
+        if (allMode) {
+          var li = el.closest('.note-item');
+          var ob = li ? li.querySelector('.btn-open-note') : null;
+          var watered = !!(ob && ob.dataset.watered === 'true');
+          var opened = !!(ob && ob.dataset.opened === 'true');
+          pickHtml = (!watered && !opened)
+            ? '<span style="color:#b45309;font-weight:600;"> · 灌水:✅待灌</span>'
+            : '<span style="color:#bbb;"> · 灌水:✖' + (watered ? '（已灌过）' : '（已打开）') + '</span>';
         } else {
-          var inCooldown = t.lastWateredAt && (now - t.lastWateredAt) < (cfg.cooldownHours || 24) * 3600000;
-          var overLimit = (t.wateredCount || 0) >= (cfg.maxPerNote || 2);
-          if ((t.tag === 'growing' || t.tag === 'hot') && !overLimit && !inCooldown) {
-            picked = true;
-          } else if (overLimit) {
-            pickReason = '（已达灌水上限）';
-          } else if (inCooldown) {
-            pickReason = '（冷却中）';
-          } else {
-            pickReason = '（点赞未增长）';
-          }
+          var r = window.NoteTrend.explainPick(el.dataset.noteId, t, cfg, now, allowedIds);
+          pickHtml = r.picked
+            ? '<span style="color:#b45309;font-weight:600;"> · 灌水:✅选中</span>'
+            : '<span style="color:#bbb;"> · 灌水:✖未选中（' + (r.reason || '') + '）</span>';
         }
-        var pickHtml = picked
-          ? '<span style="color:#b45309;font-weight:600;"> · 灌水:✅选中</span>'
-          : '<span style="color:#bbb;"> · 灌水:✖未选中' + pickReason + '</span>';
 
         el.innerHTML =
           '<span style="color:#555;">采集 ' + samples.length + ' 次</span>' +
@@ -543,8 +558,7 @@ window.AutoWaterApp = (function () {
       // 2. 加载 replied_comments（评论助手的回复记录），提取有回复的笔记 URL
       var repliedCountMap = {}; // noteUrl -> count
       try {
-        var rdata = await chrome.storage.local.get('replied_comments');
-        var rmap = rdata['replied_comments'] || {};
+        var rmap = (typeof readPlain === 'function' ? await readPlain('replied_comments') : (await chrome.storage.local.get('replied_comments'))['replied_comments']) || {};
         console.log('[笔记列表] replied_comments 原始数据:', rmap);
         Object.keys(rmap).forEach(function(noteUrl) {
           if (rmap[noteUrl] && rmap[noteUrl].length > 0) {
@@ -685,7 +699,7 @@ window.AutoWaterApp = (function () {
           if (csBtn) csBtn.style.display = 'none';
           try {
             await chrome.runtime.sendMessage({ action: 'cancelSearch' });
-            showError('⏱ 搜索超过 3 分钟未完成，已自动取消（页面可能被反爬拦截）。请重试');
+            showError('⏱ 搜索超过 3 分钟未完成，已自动取消（页面可能加载异常）。请重试');
           } catch (_) {}
         }
         return;
@@ -756,9 +770,9 @@ window.AutoWaterApp = (function () {
   async function showWateredList() {
     try {
       // 1. 直接读取原始 storage（不经过 window.getWateredNoteUrls，避免静默异常）
-      var raw = await chrome.storage.local.get(['watered_notes', 'replied_comments', 'opened_notes']);
+      var raw = await chrome.storage.local.get(['watered_notes', 'opened_notes']);
       var wateredUrls = Array.isArray(raw['watered_notes']) ? raw['watered_notes'] : [];
-      var repliedComments = raw['replied_comments'] || {};
+      var repliedComments = (typeof readPlain === 'function' ? await readPlain('replied_comments') : {}) || {};
       var openedUrls = Array.isArray(raw['opened_notes']) ? raw['opened_notes'] : [];
       var repliedKeys = Object.keys(repliedComments).filter(function(k) {
         return repliedComments[k] && repliedComments[k].length > 0;
@@ -892,5 +906,15 @@ window.AutoWaterApp = (function () {
       resultsRendered = false;
       try { await refreshStatus(); } catch (_) {}
     },
+    /* 按 noteId 取当前搜索结果的原始对象（执行器统一打开时用它取带 rawLinkIndex 的实时定位信息） */
+    getNoteById: function (noteId) {
+      if (!noteId) return null;
+      for (var i = 0; i < foundNotes.length; i++) {
+        if (foundNotes[i] && foundNotes[i].noteId === noteId) return foundNotes[i];
+      }
+      return null;
+    },
+    /* 执行器运行中的手动/自动互斥锁（auto-bot.js 启停时调用） */
+    setBotLock: setBotLock,
   };
 })();

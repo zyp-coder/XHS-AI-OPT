@@ -1,4 +1,4 @@
-/**
+﻿/**
  * auto-bot.js — 自动灌水机器人（纯事件驱动版）
  * 
  * 独立于现有代码，仅通过操作界面按钮实现自动化：
@@ -9,7 +9,9 @@
  *
  * 所有等待均通过 MutationObserver 实现，零固定延时，纯串行执行。
  *
- * 使用方法：打开 popup 后，点击工具栏的 "🤖 自动" 按钮启动。
+ * 使用方法：打开 popup 后，在左侧列表头选好「口径 × 节奏」，点「🤖 开始」启动。
+ *   口径：全部未灌过（原🧊冷启动）/ 只追涨势（原🔄循环计划）
+ *   节奏：一遍跑完 / 定时轮（每「扫描间隔」分钟一轮）
  */
 
 (function () {
@@ -149,6 +151,32 @@
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
+  /* ─── 节奏控制：每日/每轮次数门禁（读 auto_water_daily = { 'YYYY-MM-DD': count }，与设置页共享） ─── */
+  function _awTodayKey() { return new Date().toISOString().slice(0, 10); }
+  async function _awDailyUsed() {
+    try {
+      const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_daily', res); });
+      const d = (r && r['auto_water_daily']) || {};
+      return Number(d[_awTodayKey()]) || 0;
+    } catch (_) { return 0; }
+  }
+  async function _awDailyBump(n) {
+    try {
+      const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_daily', res); });
+      const d = (r && r['auto_water_daily']) || {};
+      d[_awTodayKey()] = (Number(d[_awTodayKey()]) || 0) + (Number(n) || 0);
+      await new Promise(function (res) { chrome.storage.local.set({ auto_water_daily: d }, res); });
+      return d[_awTodayKey()];
+    } catch (_) { return 0; }
+  }
+  /* 读 auto_water_config.schedule（dailyMax/perRound），0=不限 */
+  async function _awSchedule() {
+    try {
+      const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
+      return ((r && r['auto_water_config'] && r['auto_water_config'].schedule) || {});
+    } catch (_) { return {}; }
+  }
+
   /* ─── 发消息给 background（带超时兜底，防止后台不响应导致 bot 永久卡死） ─── */
   function sendMsg(action, data, timeoutMs) {
     return new Promise(function (resolve, reject) {
@@ -244,8 +272,8 @@
       return null;
     },
 
-    /** 启动 */
-    start: async function (mode) {
+    /** 启动。scope=口径：all 全部未灌过 / growing 只追涨势；pace=节奏：once 一遍跑完 / interval 定时轮 */
+    start: async function (scope, pace) {
       if (this.running) {
         botLog('⏳ 机器人已在运行中', 'warn');
         return;
@@ -253,17 +281,30 @@
       window.__botEngineBusy = 'bot';
       this.running = true;
       this.stopped = false;
-      this.mode = mode === 'cycle' ? 'cycle' : 'cold';
+      this.scope = scope === 'growing' ? 'growing' : 'all';
+      this.pace = pace === 'interval' ? 'interval' : 'once';
       // ★ 双引擎：启动即绑定水 tab（只在它上面驱动页面，客服走客服 tab，二者互不抢页）
       try { await this._ensureWaterTab(); } catch (_) {}
-      botLog('🤖 ===== 自动灌水机器人启动（' + (this.mode === 'cycle' ? '🔄 循环计划' : '🧊 冷启动') + '） =====', 'info');
+      // ★ 手动/自动互斥：运行期间禁用列表里的单篇「🔗 打开」，避免人工点开与执行器抢同一个页面
+      this._setBotLock(true);
+      botLog('🤖 ===== 自动灌水启动（口径：' + (this.scope === 'growing' ? '只追涨势' : '全部未灌过') +
+        ' · 节奏：' + (this.pace === 'interval' ? '定时轮' : '一遍跑完') + '） =====', 'info');
       this._updateUI(true);
 
       try {
-        if (this.mode === 'cycle') {
-          await this._cycleMain();
+        if (this.pace === 'interval') {
+          var config = await this._trendConfig();
+          botLog('⏳ 定时轮：每 ' + config.scanIntervalMin + ' 分钟扫描一轮（间隔在设置页「💧 一键灌水」里改）', 'info');
+          var round = 0;
+          while (true) {
+            this._checkStop();
+            round++;
+            botLog('🔁 ===== 第 ' + round + ' 轮扫描开始 =====', 'info');
+            await this._runRound();
+            await this._waitNextRound(config, round);
+          }
         } else {
-          await this._mainLoop();
+          await this._runRound();
         }
       } catch (e) {
         if (e.message === '手动停止') {
@@ -277,9 +318,222 @@
       window.__botEngineBusy = '';
       this.running = false;
       this._updateUI(false);
+      this._setBotLock(false);
       if (!this.stopped) {
-        botLog('🏁 ===== 自动灌水机器人完成 =====', 'success');
+        botLog('🏁 ===== 自动灌水完成 =====', 'success');
       }
+    },
+
+    /** 手动/自动互斥：列表单篇「🔗 打开」的启用/禁用交给左侧面板自己管（重渲染后也保持禁用） */
+    _setBotLock: function (locked) {
+      try {
+        if (window.AutoWaterApp && window.AutoWaterApp.setBotLock) window.AutoWaterApp.setBotLock(locked);
+      } catch (_) {}
+    },
+
+    /** 读「💧 灌水规则」里的度控制/节奏配置（NoteTrend 侧默认值兜底） */
+    _trendConfig: async function () {
+      var config = { scanIntervalMin: 2, maxPerRound: 3 };
+      try {
+        if (window.NoteTrend) {
+          var c = await window.NoteTrend.getConfig();
+          if (c) config = c;
+        }
+      } catch (_) {}
+      return config;
+    },
+
+    /* ─── 执行器：一轮 = 搜索 → 按口径挑篇 → 逐篇打开/AI 分析/发送/返回 ─── */
+    _runRound: async function () {
+      var self = this;
+      var foundNotes = await self._doSearchRound();
+      if (!foundNotes) {
+        botLog(self.pace === 'interval' ? '⚠️ 本轮搜索失败/无结果，等下一轮' : '⏭ 结束：搜索未能产生笔记列表', 'warn');
+        return false;
+      }
+      if (self.scope === 'growing') return await self._roundGrowing(foundNotes);
+      return await self._roundAll(foundNotes);
+    },
+
+    /* ─── 口径「全部未灌过」：当前结果逐屏推进，看到就灌（已灌过/已打开过的跳过） ─── */
+    _roundAll: async function () {
+      var self = this;
+      // ★ 列表永远 = 当前页可见项，绝不脱节:
+      //   本屏可见的笔记逐篇处理完 → 滚动搜索页加载下一屏 → popup 重渲染新一批 → 继续，到底为止。
+      //   避免旧逻辑"列表登记了一堆滚动后的卡片，但回顶后靠下的卡片不在 DOM"导致的 CTRL+F 找不到。
+      var handledNotes = {};
+      var screenGuard = 0;   // 一轮最多翻几屏，防死循环
+      var SCREEN_MAX = 30;
+      // ★ 节奏控制：本轮已处理篇数 + 每日已达上限（dailyMax/perRound，0=不限）
+      var processedThisRun = 0;
+      var _awSch = await _awSchedule();
+      var _dailyMax = Number(_awSch.dailyMax) || 0;
+      var _perRoundCap = Number(_awSch.perRound) || 0;
+      var notes = $$('#noteList .note-item');
+      if (notes.length === 0) {
+        botLog('⚠️ 笔记列表为空，结束本轮', 'warn');
+        return false;
+      }
+
+      while (screenGuard++ < SCREEN_MAX) {
+        self._checkStop();
+        notes = $$('#noteList .note-item');
+        // 按 noteId 挑第一篇“本轮未处理过”的笔记（逐屏推进后整列由 popup 重渲染，仍按 noteId 去重跳过）
+        var note = null, nid = '', num = 0;
+        for (var k = 0; k < notes.length; k++) {
+          var _id = notes[k].dataset.noteId || '';
+          if (!handledNotes[_id]) { note = notes[k]; nid = _id; num = k + 1; break; }
+        }
+        if (!note) {
+          // ★ 当前屏已全部处理 → 滚动加载下一屏，处理新一批
+          var advOk = await self._advanceScreen();
+          if (!advOk) break;
+          continue;
+        }
+        handledNotes[nid] = true; // 先登记，逐屏推进时据此跳过已处理的，防重复
+
+        // ★ 节奏控制每日/每轮门禁：达到即停，避免一轮无限刷
+        var _usedNow = await _awDailyUsed();
+        if (_dailyMax > 0 && _usedNow >= _dailyMax) {
+          botLog('⏹ 已达每日评论上限 ' + _dailyMax + ' 条（今天已发 ' + _usedNow + '），本轮结束', 'warn');
+          break;
+        }
+        if (_perRoundCap > 0 && processedThisRun >= _perRoundCap) {
+          botLog('⏹ 已达每轮处理上限 ' + _perRoundCap + ' 篇，本轮结束', 'warn');
+          break;
+        }
+
+        // ★ 单篇出错只跳过本篇，绝不拖垮整轮（否则一异常整轮"断"）
+        var noteTitle = '';
+        try {
+          var titleEl = note.querySelector('.note-title');
+          noteTitle = titleEl ? titleEl.textContent.trim().slice(0, 30) : ('#' + num);
+          var openBtn = note.querySelector('.btn-open-note');
+          // 已灌水/已打开 → 跳过（与列表徽标「全部未灌过」口径同源）
+          if (!openBtn || openBtn.dataset.watered === 'true' || openBtn.dataset.opened === 'true') {
+            botLog('⏭ 笔记 "' + noteTitle + '" 已灌水/已打开，跳过', 'info');
+            continue;
+          }
+          botLog('📄 打开笔记 "' + noteTitle + '" (' + num + '/' + notes.length + ')', 'info');
+
+          var openOk = await self._openNote(self._noteFromList(nid), { recordOpened: true });
+          if (!openOk) {
+            // ★ 方案A下列表与页面实时一致，单篇打开失败多属偶发（页面瞬时态）→ 直接返回列表、跳过本篇继续
+            await self._goBackToList();
+            continue;
+          }
+
+          // ===== 等 AI 分析并逐个发送 =====
+          var wRes = await self._waterCurrentNote(noteTitle, note, nid);
+          var sentCount = wRes ? wRes.count : 0;
+          processedThisRun++; // ★ 节奏控制：本篇计入本轮处理篇数
+          if (sentCount > 0) await _awDailyBump(sentCount); // ★ 节奏控制：已发条数计入每日上限
+          // ★ 扫过却没东西可发（AI 判定无商机/评论不足）→ 记一笔"扫过了"（只加冷却、不占浇水次数），
+          //   避免已打开未灌水的笔记在逐屏推进时又被挑出来反复打开刷同一页
+          if (sentCount <= 0 && wRes && wRes.reason === 'empty' && window.NoteTrend) {
+            try { await window.NoteTrend.noteChecked(nid || ''); } catch (_) {}
+          }
+          if (sentCount > 0 && window.NoteTrend) {
+            try { await window.NoteTrend.markWatered(nid || ''); } catch (_) {}
+          }
+
+          // ===== 返回列表（恢复打开按钮），处理下一篇 =====
+          await self._goBackToList();
+          botLog('  ✅ 笔记 "' + noteTitle + '" 处理完毕', 'success');
+        } catch (e) {
+          botLog('  ⚠️ 处理笔记 "' + (noteTitle || ('#' + num)) + '" 出错：' + (e && e.message ? e.message : e) + '，跳到下一篇', 'warn');
+          try { await self._goBackToList(); } catch (_) {}
+        }
+      }
+
+      botLog('📊 所有笔记处理完成！', 'success');
+      return true;
+    },
+
+    /* ─── 口径「只追涨势」：从趋势库挑点赞增长中的笔记（度控制：每轮上限/每篇总次数/同篇冷却/复核冷却） ─── */
+    _roundGrowing: async function (foundNotes) {
+      var self = this;
+      var config = await self._trendConfig();
+      // 等点赞采样落库 → 挑"增长中"的笔记
+      try { if (window.NoteTrend) await window.NoteTrend.flushSamples(); } catch (_) {}
+      // ★ 只从"当前这轮搜索结果"里挑：用本轮 DOM 笔记的 noteId 作为候选池，
+      //   避免从历史累积趋势库挑出不在当前页面的笔记 → 打开时 CTRL+F 找不到
+      var allowedIds = {};
+      for (var fi = 0; fi < foundNotes.length; fi++) {
+        var _nid = foundNotes[fi].dataset.noteId;
+        if (_nid) allowedIds[_nid] = true;
+      }
+      var picked = [];
+      var statText = '';
+      try {
+        if (window.NoteTrend) {
+          var trends = await window.NoteTrend.getTrends();
+          picked = window.NoteTrend.pickCycleNotes(trends, config, Date.now(), allowedIds);
+          // ★ 趋势库分布统计：便于判断是"真没增长"还是"采样没进来"
+          var nHot = 0, nGrow = 0, nFlat = 0, nDown = 0, nNew = 0;
+          for (var sid in trends) {
+            var st = trends[sid];
+            if (!st || !st.samples || st.samples.length < 2) { nNew++; continue; }
+            if (st.tag === 'hot') nHot++;
+            else if (st.tag === 'growing') nGrow++;
+            else if (st.tag === 'flat') nFlat++;
+            else if (st.tag === 'down') nDown++;
+            else nNew++;
+          }
+          statText = '📊 趋势库 ' + Object.keys(trends).length + ' 篇（🔥快速增长 ' + nHot + ' / 📈增长中 ' + nGrow + ' / ⚪平稳 ' + nFlat + ' / 📉下滑 ' + nDown + ' / 🆕观察中' + nNew + '）';
+        }
+      } catch (_) {}
+      botLog(statText || '📊 趋势库为空（本轮搜索未产生采样，需重新搜索）', 'info');
+      if (picked.length === 0) {
+        botLog('⏭ 本轮没有符合条件的增长中笔记（需≥2次采样且点赞在涨；灌水达上限/冷却中的不挑）', 'info');
+        return true;
+      }
+      botLog('🎯 本轮挑选 ' + picked.length + ' 篇增长中笔记：' + picked.map(function (p) { return String(p.title || p.noteId || '').slice(0, 10); }).join('、'), 'success');
+
+      // 逐篇打开（追涨复核：无视已灌水标记）→ 等 AI → 发送 → 返回
+      for (var pi = 0; pi < picked.length; pi++) {
+        self._checkStop();
+        // ★ 节奏控制每日门禁：达到即停本轮
+        var _sch = await _awSchedule();
+        var _dMax = Number(_sch.dailyMax) || 0;
+        var _used = await _awDailyUsed();
+        if (_dMax > 0 && _used >= _dMax) {
+          botLog('⏹ 已达每日评论上限 ' + _dMax + ' 条（今天已发 ' + _used + '），本轮停止', 'warn');
+          break;
+        }
+        var note = picked[pi];
+        var nid = note.noteId || '';
+        // ★ 用当前搜索结果里的实时标题/链接/索引定位（趋势库里的历史标题可能与卡片文字有细微差异）
+        var payload = self._noteFromList(nid) || {};
+        if (!payload.title) payload.title = note.title;
+        if (!payload.url) payload.url = note.url;
+        var title = String(payload.title || nid).slice(0, 30);
+        botLog('📄 打开增长笔记 "' + title + '" (' + (pi + 1) + '/' + picked.length + ')', 'info');
+        try {
+          // ★ 追涨复核：force 置 __forceRescan，无视"已有我的评论"拦截
+          var openOk = await self._openNote(payload, { force: true });
+          if (!openOk) {
+            await self._goBackToList();
+          } else {
+            var wRes = await self._waterCurrentNote(title, null, nid);
+            var sent = wRes ? wRes.count : 0;
+            if (sent > 0) await _awDailyBump(sent); // ★ 节奏控制：已发条数计入每日上限
+            // ★ 扫过却没东西可发（AI 判定无商机）→ 只加复核冷却、不占浇水次数，
+            //   下一轮才不会被当成"增长中"反复打开刷同一页
+            if (sent <= 0 && wRes && wRes.reason === 'empty' && window.NoteTrend) {
+              try { await window.NoteTrend.noteChecked(nid); } catch (_) {}
+            }
+            if (sent > 0 && window.NoteTrend) {
+              try { await window.NoteTrend.markWatered(nid); } catch (_) {}
+            }
+            await self._goBackToList();
+          }
+        } catch (enote) {
+          botLog('  ⚠️ 处理笔记 "' + title + '" 出错：' + (enote && enote.message ? enote.message : enote) + '，跳到下一篇', 'warn');
+          try { await self._goBackToList(); } catch (_) {}
+        }
+      }
+      return true;
     },
 
     /** 停止 */
@@ -372,276 +626,11 @@
       return true;
     },
 
-    /* ─── 标记当前运行的计划（cold/cycle），供搜索引擎按计划应用排序/范围筛选 ─── */
-    _setActivePlan: async function (plan) {
-      try {
-        var r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
-        var cfg = (r && r['auto_water_config']) || {};
-        cfg.activePlan = plan;
-        await new Promise(function (res) { chrome.storage.local.set({ auto_water_config: cfg }, res); });
-      } catch (_) {}
-    },
-
-    /* ─── 主循环（纯串行） ─── */
-    _mainLoop: async function () {
-      var self = this;
-      await self._setActivePlan('cold');
-      // ★ 入口硬门禁：冷启动/循环必须先用关键词列表做过搜索，绝不灌旧列表。
-      //   列表为空时，把输入框里还没添加的词先加进去。
-      var kwFirst = '';
-      var kwList = [];
-      try {
-        var _raw = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
-        kwList = (((_raw['auto_water_config'] || {}).keywords) || []).slice();
-      } catch (_) {}
-      var kwInput = $('#awKeywordPopup');
-      var typed = kwInput ? String(kwInput.value || '').trim() : '';
-      if (typed && kwList.indexOf(typed) === -1) kwList.push(typed);
-      kwList = kwList.map(function (x) { return String(x || '').trim(); }).filter(function (x) { return x; });
-      // 去重保序
-      var seen = {}, uniq = [];
-      for (var _i = 0; _i < kwList.length; _i++) { if (!seen[kwList[_i]]) { seen[kwList[_i]] = 1; uniq.push(kwList[_i]); } }
-      kwList = uniq;
-      kwFirst = kwList[0] || '';
-      if (!kwFirst) {
-        botLog('❌ 冷启动失败：还没有任何搜索关键词。请先在左上方添加关键词（回车或点＋），形成关键词列表后，再点「🧊 冷启动·自动灌水」', 'error');
-        return;
-      }
-      botLog('📌 自动灌水 · 本次关键词列表（共 ' + kwList.length + ' 个）："' + kwList.join('、').slice(0, 40) + '"', 'info');
-      // ★ 把关键词列表写进 auto_water_config，搜索引擎（searchNotes）按列表逐个搜索
-      try {
-        var raw2 = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
-        var cfg = (raw2 && raw2['auto_water_config']) || {};
-        cfg.keywords = kwList;
-        await new Promise(function (res) { chrome.storage.local.set({ auto_water_config: cfg }, res); });
-        if (kwFirst) await new Promise(function (res) { chrome.storage.local.set({ _aw_last_keyword: kwFirst }, res); });
-      } catch (_) {}
-
-      // ===== Step 1: 搜索（复用循环计划同一套搜索流程） =====
-      var foundNotes = await self._doSearchRound();
-      if (!foundNotes) {
-        botLog('⏭ 冷启动结束：搜索未能产生笔记列表', 'warn');
-        return;
-      }
-
-// ===== Step 2: 遍历每个笔记（串行，逐屏推进 — 方案A） =====
-      // ★ 列表永远 = 当前页可见项，绝不脱节:
-      //   本屏可见的笔记逐篇处理完 → 滚动搜索页加载下一屏 → popup 重渲染新一批 → 继续，到底为止。
-      //   规避旧逻辑"列表登记了一堆滚动后的卡片，但回顶后靠下的卡片不在 DOM"导致的 CTRL+F 找不到。
-      var handledNotes = {};
-      var screenGuard = 0;   // 一轮最多翻几屏，防死循环
-      var SCREEN_MAX = 30;
-      var notes = $$('#noteList .note-item');
-      if (notes.length === 0) {
-        botLog('⚠️ 笔记列表为空，冷启动结束', 'warn');
-        return;
-      }
-
-      while (screenGuard++ < SCREEN_MAX) {
-        self._checkStop();
-        notes = $$('#noteList .note-item');
-        // 按 noteId 挑第一篇“本次未处理过”的笔记（逐屏推进后整列由 popup 重渲染，仍按 noteId 去重跳过）
-        var note = null, nid = '', num = 0;
-        for (var k = 0; k < notes.length; k++) {
-          var _id = notes[k].dataset.noteId || '';
-          if (!handledNotes[_id]) { note = notes[k]; nid = _id; num = k + 1; break; }
-        }
-        if (!note) {
-          // ★ 当前屏已全部处理 → 滚动加载下一屏，处理新一批
-          var advOk = await self._advanceScreen();
-          if (!advOk) break;
-          continue;
-        }
-        handledNotes[nid] = true; // 先登记，逐屏推进时据此跳过已处理的，防重复
-
-        // ★ 单篇出错只跳过本篇，绝不拖垮整个冷启动（否则一异常整轮"断"）
-        try {
-          var openBtn = note.querySelector('.btn-open-note');
-          if (!openBtn || openBtn.disabled || openBtn.dataset.watered === 'true' || openBtn.dataset.opened === 'true') {
-            var titleEl = note.querySelector('.note-title');
-            var ti = titleEl ? titleEl.textContent.trim().slice(0, 30) : ('#' + num);
-            botLog('⏭ 笔记 "' + ti + '" 已灌水/已打开，跳过', 'info');
-            continue;
-          }
-
-          var titleEl2 = note.querySelector('.note-title');
-          var noteTitle = titleEl2 ? titleEl2.textContent.trim().slice(0, 30) : ('#' + num);
-          botLog('📄 步骤2：打开笔记 "' + noteTitle + '" (' + num + '/' + notes.length + ')', 'info');
-
-          // 点击打开笔记，同时监听成功/失败
-          openBtn.click();
-          botLog('  → 已点击打开，等待笔记加载...', 'info');
-
-          var openOk = false;
-          try {
-            // 三路监听成功/跳过/失败（打开失败时按钮短暂显示 ⏭ 或 ❌，3 秒后恢复——必须用 MutationObserver 第一时间捕获）
-            var openResult = await Promise.race([
-              waitText(openBtn, '✅ 已打开', 60000).then(function () { return 'success'; }),
-              waitText(openBtn, '⏭', 60000).then(function () { return 'skip'; }),
-              waitText(openBtn, '❌', 60000).then(function () { return 'fail'; })
-            ]);
-            if (openResult === 'success') {
-              openOk = true;
-              botLog('  ✅ 笔记加载完成', 'success');
-            } else if (openResult === 'skip') {
-              botLog('  ⏭ 笔记被跳过（页面脚本不可用/未定位到链接）', 'warn');
-            } else {
-              botLog('  ❌ 笔记打开失败（按钮显示 ❌）', 'error');
-            }
-          } catch (e) {
-            botLog('  ⚠️ 笔记加载超时（60s），跳过', 'warn');
-          }
-
-          // ★ 方案A下列表与页面实时一致，单篇打开失败多属偶发（页面瞬时态）→ 直接返回列表、跳过本篇继续
-          if (!openOk) {
-            await self._goBackToList();
-            continue;
-          }
-
-          // ===== Step 3: 等待 AI 分析并逐个发送（与循环计划共用同一套发送流程） =====
-          var wRes = await self._waterCurrentNote(noteTitle, note, nid);
-          var sentCount = wRes ? wRes.count : 0;
-          // ★ 扫过却没东西可发（AI 判定无商机/评论不足）→ 记一笔"扫过了"（只加冷却、不占浇水次数），
-          //   避免冷启动里已打开未灌水的笔记在逐屏推进时又被挑出来反复打开刷同一页
-          if (sentCount <= 0 && wRes && wRes.reason === 'empty' && window.NoteTrend) {
-            try { await window.NoteTrend.noteChecked(nid || ''); } catch (_) {}
-          }
-          if (sentCount > 0 && window.NoteTrend) {
-            try { await window.NoteTrend.markWatered(nid || ''); } catch (_) {}
-          }
-
-          // ===== Step 4: 返回列表（恢复打开按钮），处理下一篇 =====
-          await self._goBackToList();
-          botLog('  ✅ 笔记 "' + noteTitle + '" 处理完毕', 'success');
-        } catch (e) {
-          botLog('  ⚠️ 处理笔记 "' + (noteTitle || ('#' + num)) + '" 出错：' + (e && e.message ? e.message : e) + '，跳到下一篇', 'warn');
-          try { await self._goBackToList(); } catch (_) {}
-        }
-      }
-
-      botLog('📊 所有笔记处理完成！', 'success');
-    },
-
-    /* ============================================================
-       循环计划模式（每 scanIntervalMin 分钟一轮）
-       每轮：搜索 → 点赞采样（renderResults 自动做）→ 挑"增长中"的笔记 → 强制打开 → 等 AI → 发送 → 下一轮
-       ============================================================ */
-    _cycleMain: async function () {
-      var self = this;
-      await self._setActivePlan('cycle');
-      var round = 0;
-      var config = { scanIntervalMin: 2, maxPerRound: 3 };
-      try {
-        if (window.NoteTrend) {
-          var c = await window.NoteTrend.getConfig();
-          if (c) config = c;
-        }
-      } catch (_) {}
-      botLog('🔄 循环计划启动：每 ' + config.scanIntervalMin + ' 分钟扫描一轮，每轮最多评论 ' + config.maxPerRound + ' 篇增长中的笔记（度控制可在设置页调整）', 'info');
-
-      while (true) {
-        self._checkStop();
-        round++;
-        botLog('🔁 ===== 第 ' + round + ' 轮扫描开始 =====', 'info');
-
-        // Step 1: 搜索（复用冷启动同一套搜索流程）
-        var foundNotes = await self._doSearchRound();
-        if (!foundNotes) {
-          botLog('⚠️ 本轮搜索失败/无结果，等待下一轮', 'warn');
-          await self._waitNextRound(config, round);
-          continue;
-        }
-
-        // Step 2: 等点赞采样落库 → 挑"增长中"笔记（度控制过滤）
-        try { if (window.NoteTrend) await window.NoteTrend.flushSamples(); } catch (_) {}
-        // ★ 只从"当前这轮搜索结果"里挑：用本轮 DOM 笔记的 noteId 作为候选池，
-        //   避免从历史累积趋势库挑出不在当前页面的笔记 → 打开时 CTRL+F 找不到
-        var allowedIds = {};
-        for (var fi = 0; fi < foundNotes.length; fi++) {
-          var _nid = foundNotes[fi].dataset.noteId;
-          if (_nid) allowedIds[_nid] = true;
-        }
-        var picked = [];
-        var statText = '';
-        try {
-          if (window.NoteTrend) {
-            var trends = await window.NoteTrend.getTrends();
-            picked = window.NoteTrend.pickCycleNotes(trends, config, Date.now(), allowedIds);
-            // ★ 趋势库分布统计：便于判断是"真没增长"还是"采样没进来"
-            var nHot = 0, nGrow = 0, nFlat = 0, nDown = 0, nNew = 0;
-            for (var sid in trends) {
-              var st = trends[sid];
-              if (!st || !st.samples || st.samples.length < 2) { nNew++; continue; }
-              if (st.tag === 'hot') nHot++;
-              else if (st.tag === 'growing') nGrow++;
-              else if (st.tag === 'flat') nFlat++;
-              else if (st.tag === 'down') nDown++;
-              else nNew++;
-            }
-            statText = '📊 趋势库 ' + Object.keys(trends).length + ' 篇（🔥快速增长 ' + nHot + ' / 📈增长中 ' + nGrow + ' / ⚪平稳 ' + nFlat + ' / 📉下滑 ' + nDown + ' / 🆕观察中' + nNew + '）';
-          }
-        } catch (_) {}
-        botLog(statText || '📊 趋势库为空（本轮搜索未产生采样，需重新搜索）', 'info');
-        if (picked.length === 0) {
-          botLog('⏭ 本轮没有符合条件的增长中笔记（需≥2次采样且点赞在涨；灌水达上限/冷却中的不挑），等待下一轮', 'info');
-          await self._waitNextRound(config, round);
-          continue;
-        }
-        botLog('🎯 本轮挑选 ' + picked.length + ' 篇增长中笔记：' + picked.map(function (p) { return String(p.title || p.noteId || '').slice(0, 10); }).join('、'), 'success');
-
-        // Step 3: 逐篇强制打开（无视已灌水标记）→ 等 AI → 发送 → 返回
-        for (var pi = 0; pi < picked.length; pi++) {
-          self._checkStop();
-          var note = picked[pi];
-          // ★ 从当前搜索结果 DOM 里匹配这篇笔记，取其实时标题/链接/索引，避免用趋势库历史标题导致 CTRL+F 失败
-          var live = null;
-          for (var mi = 0; mi < foundNotes.length; mi++) {
-            if (foundNotes[mi].dataset.noteId === (note.noteId || '')) {
-              var linkEl = foundNotes[mi].querySelector('.note-title a');
-              live = {
-                noteId: note.noteId,
-                title: linkEl ? (linkEl.textContent || '').trim() : note.title,
-                url: linkEl ? (linkEl.getAttribute('href') || note.url) : note.url,
-                index: mi,
-              };
-              break;
-            }
-          }
-          var title = String((live && live.title) || note.title || note.noteId || '').slice(0, 30);
-          botLog('📄 打开增长笔记 "' + title + '" (' + (pi + 1) + '/' + picked.length + ')', 'info');
-          try {
-            var openOk = await self._openNoteForce(note, live);
-            if (!openOk) {
-              await self._goBackToList();
-            } else {
-              var wRes = await self._waterCurrentNote(title, null, note.noteId || (live && live.noteId) || '');
-              var sent = wRes ? wRes.count : 0;
-              // ★ 扫过却没东西可发（AI 判定无商机）→ 只加冷却、不占浇水次数，
-              //   循环计划下一轮才不会被当成"增长中"反复打开刷同一页
-              if (sent <= 0 && wRes && wRes.reason === 'empty' && window.NoteTrend) {
-                try { await window.NoteTrend.noteChecked(note.noteId || (live && live.noteId) || ''); } catch (_) {}
-              }
-              if (sent > 0 && window.NoteTrend) {
-                try { await window.NoteTrend.markWatered(note.noteId || (live && live.noteId) || ''); } catch (_) {}
-              }
-              await self._goBackToList();
-            }
-          } catch (enote) {
-            botLog('  ⚠️ 处理笔记 "' + title + '" 出错：' + (enote && enote.message ? enote.message : enote) + '，跳到下一篇', 'warn');
-            try { await self._goBackToList(); } catch (_) {}
-          }
-        }
-
-        // Step 4: 等待下一轮（可中断）
-        await self._waitNextRound(config, round);
-      }
-    },
-
-    /* ─── 搜索一轮：点搜索按钮 → 等结果面板 + 笔记列表；返回 note-item 数组（两模式共用） ─── */
+    /* ─── 搜索一轮：点搜索按钮 → 等结果面板 + 笔记列表；返回 note-item 数组（两个口径共用） ─── */
     _doSearchRound: async function () {
       var self = this;
       self._checkStop();
-      // ★ 方案B：先校验搜索关键词输入框。输入框为空时回退到已校验的关键词列表（冷启动/循环是从列表读的，输入框往往是空的）。
+      // ★ 方案B：先校验搜索关键词输入框。输入框为空时回退到已校验的关键词列表（执行器是从列表读的，输入框往往是空的）。
       //   只有两者都为空才判定"拒绝用旧列表直接刷"。
       var kwInput = $('#awKeywordPopup');
       var kw = kwInput ? String(kwInput.value || '').trim() : '';
@@ -702,31 +691,29 @@
       }
     },
 
-    /* ─── 强制打开（循环计划）：不走 DOM 按钮，直接 background openNote + popup 刷新链路 ───
-     * 打开前置一次性标志 __forceRescan：popup 重新分析时无视"已有我的评论"拦截（但仍过滤已回复评论）
+    /* ─── 统一打开笔记（原冷启动"点列表按钮"与循环计划"openNote 直连"合并成这一条） ───
+     * 都走 background 的 openNote（content 侧按标题定位 + rawLinkIndex 兜底），差别只在两个开关：
+     *   opts.force=true      → 置一次性标志 __forceRescan，重新分析时无视"已有我的评论"拦截（追涨复核专用）
+     *   opts.recordOpened=true → 打开成功写进 opened_notes（「全部未灌过」口径据此跳过已打开过的）
      */
-    _openNoteForce: async function (note, live) {
+    _openNote: async function (note, opts) {
+      opts = opts || {};
       try {
-        window.__forceRescan = true;
-        // ★ 用"当前搜索结果 DOM"里的实时标题/链接/索引定位，而不是趋势库里的历史标题——
-        //   历史标题可能与当前卡片文字有细微差异（emoji/截断/空格），导致 CTRL+F 匹配失败、打开失败
-        var payload = {
-          noteId: note.noteId || (live && live.noteId),
-          url: (live && live.url) || note.url,
-          title: (live && live.title) || note.title,
-          author: note.author || (live && live.author) || '',
-        };
-        // 带上当前搜索结果中的原始索引，作为内容脚本定位的后备（找不到标题时按索引点）
-        if (live && live.index !== undefined) payload.rawLinkIndex = live.index;
-        var resp = await sendMsg('openNote', { note: payload });
+        if (opts.force) window.__forceRescan = true;
+        var resp = await sendMsg('openNote', { note: note });
         if (resp && resp.ok) {
           botLog('  ✅ 笔记已打开（' + (resp.ready ? '详情页就绪' : '就绪超时，仍尝试扫描') + '），刷新评论助手...', 'success');
+          if (opts.recordOpened && note && note.url && window.saveOpenedNoteUrl) {
+            try { await window.saveOpenedNoteUrl(note.url); } catch (_) {}
+          }
           if (window.refreshCommentAssistant) {
             try { window.refreshCommentAssistant(); } catch (_) {}
           }
           return true;
         }
-        botLog('  ⏭ 打开失败/跳过：' + ((resp && resp.error) || '未知原因'), 'warn');
+        // ★ 定位失败（CTRL+F 未命中/脚本不可用）与真报错分开记：前者是"跳过"，后者是"失败"
+        var skipped = !!(resp && resp.skipped);
+        botLog('  ' + (skipped ? '⏭' : '❌') + ' 打开失败/跳过：' + ((resp && resp.error) || '未知原因'), skipped ? 'warn' : 'error');
         return false;
       } catch (e) {
         botLog('  ⚠️ 打开异常：' + e.message, 'warn');
@@ -734,7 +721,30 @@
       }
     },
 
-    /* ─── 等待 AI 分析 + 逐个发送（两模式共用）；waitWateredEl 传笔记列表项时可监听"列表项已灌水"（冷启动） ───
+    /* ─── 取某篇笔记的实时信息：优先从当前列表查 searchResults 原始对象（带 rawLinkIndex 等页面定位信息），
+     * 查不到再退回列表 DOM 的标题/链接（页面重绘/不在本批时不至于拿不到标题） ─── */
+    _noteFromList: function (noteOrId) {
+      var nid = (typeof noteOrId === 'string')
+        ? noteOrId
+        : ((noteOrId && noteOrId.dataset && noteOrId.dataset.noteId) || (noteOrId && noteOrId.noteId) || '');
+      var n = null;
+      try {
+        if (window.AutoWaterApp && window.AutoWaterApp.getNoteById) n = window.AutoWaterApp.getNoteById(nid);
+      } catch (_) {}
+      if (n) return n;
+      var li = null;
+      try {
+        li = nid ? document.querySelector('#noteList .note-item[data-note-id="' + String(nid).replace(/["\\]/g, '') + '"]') : null;
+      } catch (_) {}
+      var a = li ? li.querySelector('.note-title a') : null;
+      return {
+        noteId: nid,
+        url: a ? (a.getAttribute('href') || '') : '',
+        title: a ? (a.textContent || '').trim() : '',
+      };
+    },
+
+    /* ─── 等待 AI 分析 + 逐个发送（两个口径共用）；waitWateredEl 传笔记列表项时可监听"列表项已灌水"（逐屏灌水） ───
      * 返回 { count, reason }：reason ∈ watered/empty/timeout/nobtns/sent/failed */
     _waterCurrentNote: async function (noteTitle, waitWateredEl, noteId) {
       var self = this;
@@ -830,7 +840,7 @@
       for (var si = 0; si < sendBtns.length; si++) {
         self._checkStop();
 
-        // ★ 自动评论条间防反爬间隔（手动逐条发送不加此间隔）：
+        // ★ 自动评论条间发送间隔（手动逐条发送不加此间隔）：
         //   优先用设置里的 batchItemGap 区间随机；未配置时默认 3~8s；自用版(_noDelayApplied) 为 0 零等待
         if (si > 0) {
           var gapMs = 0;
@@ -839,7 +849,10 @@
             var dcv = (dc && dc.delay_config) || {};
             var c = dcv.batchItemGap;
             if (c && typeof c === 'object') {
-              gapMs = (Number(c.min) || 0) + Math.random() * Math.max(0, (Number(c.max) || 0) - (Number(c.min) || 0));
+              var lo = Number(c.min) || 0, hi = Math.max(lo, Number(c.max) || 0);
+              gapMs = lo + Math.random() * (hi - lo);
+              // ★ 节奏控制：即使挡位0(裸跑)配置区间为 0，也给最小 3~6s 保底，避免 0 间隔瞬时连发
+              if (gapMs < 3000) gapMs = 3000 + Math.floor(Math.random() * 3000);
             } else if (typeof c === 'number' && c > 0) {
               gapMs = Math.round(c * 1.1);
             } else {
@@ -986,25 +999,19 @@
       }
     },
 
-    /* ─── 更新 UI 按钮状态 ─── */
+    /* ─── 更新 UI：执行器两个参数在运行中禁用，按钮切「开始/停止」 ─── */
     _updateUI: function (running) {
-      var sel = document.getElementById('botModeSelect');
-      if (sel) sel.disabled = running;
+      ['botScopeSel', 'botPaceSel'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.disabled = running;
+      });
       var btn = document.getElementById('botToggleBtn');
       if (!btn) return;
-      if (running) {
-        btn.textContent = '⏹ 停止';
-        btn.style.cssText =
-          'padding:4px 10px;font-size:12px;border:1px solid #dc2626;' +
-          'background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;' +
-          'transition:all 0.15s;font-weight:500;white-space:nowrap;';
-      } else {
-        btn.textContent = '🤖 自动';
-        btn.style.cssText =
-          'padding:4px 10px;font-size:12px;border:1px solid #059669;' +
-          'background:#fff;color:#059669;border-radius:4px;cursor:pointer;' +
-          'transition:all 0.15s;font-weight:500;white-space:nowrap;';
-      }
+      btn.textContent = running ? '⏹ 停止' : '🤖 开始';
+      btn.classList.toggle('running', !!running);
+      btn.title = running
+        ? '停止自动灌水（当前：' + (bot.scope === 'growing' ? '只追涨势' : '全部未灌过') + ' · ' + (bot.pace === 'interval' ? '定时轮' : '一遍跑完') + '）'
+        : '启动/停止自动灌水（口径 × 节奏）';
     },
   };
 
@@ -1012,51 +1019,33 @@
      挂载到 window
      ============================================================ */
   window.AutoBot = bot;
-  window.startAutoBot = function () { bot.start(); };
+  window.startAutoBot = function () { var p = readParams(); bot.start(p[0], p[1]); };
   window.stopAutoBot = function () { bot.stop(); };
 
+  /* 读列表头上的执行器参数：[口径, 节奏] */
+  function readParams() {
+    var s = document.getElementById('botScopeSel');
+    var p = document.getElementById('botPaceSel');
+    return [s ? s.value : 'all', p ? p.value : 'once'];
+  }
+
   /* ============================================================
-     添加启动按钮到工具栏
+     绑定列表头的执行器控件（控件本体在 popup.html 里，不再由这里注入）
      ============================================================ */
   function initUI() {
-    if (document.getElementById('botToggleBtn')) return;
-
-    var slot = document.getElementById('leftBotSlot');
-    if (!slot) {
+    var btn = document.getElementById('botToggleBtn');
+    if (!btn) {
       setTimeout(initUI, 500);
       return;
     }
-
-    var sel = document.createElement('select');
-    sel.id = 'botModeSelect';
-    sel.innerHTML = '<option value="cold">🧊 冷启动</option><option value="cycle">🔄 循环计划</option>';
-    sel.title = '自动灌水模式：🧊冷启动=看到笔记就灌（灌过的跳过）；🔄循环计划=每隔一段时间扫描一次，只挑点赞增长中的笔记评论（无视已灌水标记，但受度控制约束）';
-    sel.style.cssText =
-      'padding:3px 4px;font-size:11px;border:1px solid #d0d0d0;border-radius:4px;background:#fff;color:#333;margin-right:4px;'; // 运行中禁用（_updateUI 处理）
-    slot.appendChild(sel);
-
-    var btn = document.createElement('button');
-    btn.id = 'botToggleBtn';
-    btn.textContent = '🤖 自动';
-    btn.title = '启动/停止自动灌水机器人（🧊冷启动 / 🔄循环计划）';
-    btn.style.cssText =
-      'padding:4px 10px;font-size:12px;border:1px solid #059669;' +
-      'background:#fff;color:#059669;border-radius:4px;cursor:pointer;' +
-      'transition:all 0.15s;font-weight:500;white-space:nowrap;';
-    btn.addEventListener('mouseenter', function () {
-      if (!bot.running) btn.style.background = '#ecfdf5';
-    });
-    btn.addEventListener('mouseleave', function () {
-      if (!bot.running) btn.style.background = '#fff';
-    });
+    if (btn.dataset.botBound) return;
+    btn.dataset.botBound = 'true';
     btn.addEventListener('click', function () {
       if (bot.running) { bot.stop(); return; }
-      var modeSel = document.getElementById('botModeSelect');
-      bot.start(modeSel ? modeSel.value : 'cold');
+      var p = readParams();
+      bot.start(p[0], p[1]);
     });
-
-    slot.appendChild(btn);
-    botLog('🤖 自动灌水机器人已加载（纯事件驱动版），点击「🤖 自动」启动', 'info');
+    botLog('🤖 自动灌水已就绪：列表头选「口径 × 节奏」，点「🤖 开始」启动', 'info');
   }
 
   // DOM 就绪后初始化

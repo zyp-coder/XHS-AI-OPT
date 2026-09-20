@@ -81,7 +81,7 @@ const NoteTrend = (function () {
     hot: { label: '🔥 快速增长', color: '#c62828', desc: '每小时点赞增量 ≥10' },
     growing: { label: '📈 增长中', color: '#2e7d32', desc: '点赞持续增加' },
     flat: { label: '⚪ 平稳', color: '#757575', desc: '点赞无明显变化' },
-    down: { label: '📉 下滑', color: '#1565c0', desc: '点赞减少（可能被限流）' },
+    down: { label: '📉 下滑', color: '#1565c0', desc: '点赞减少（可能热度回落）' },
     new: { label: '🆕 观察中', color: '#9e9e9e', desc: '采样不足，需再扫一轮' },
   };
 
@@ -175,28 +175,37 @@ const NoteTrend = (function () {
     await set(TRENDS_KEY, trends);
   }
 
-  /* 循环计划挑笔记：只看增长中/快速增长的，且满足度控制（总次数上限 / 同篇冷却），按增速降序取前 maxPerRound 篇
-     ★ allowedIds 可选：传入"当前这轮搜索结果"的 noteId 集合后，只从这些候选里挑——
-       否则会从历史累积趋势库挑出不在当前页面的笔记，导致打开时 CTRL+F 找不到、全部失败 */
+  /* ★ 单篇"是否会被灌水"的唯一判定：引擎挑篇（pickCycleNotes）与列表徽标共用，杜绝两处口径不一致。
+     返回 { picked, reason }：reason=未选中原因，直接交给列表展示。
+     allowedIds 可选：只认"当前这轮搜索结果"里的 noteId——否则会从历史累积趋势库挑出不在当前页面的笔记 */
+  function explainPick(noteId, t, config, now, allowedIds) {
+    now = now || Date.now();
+    var cfg = config || {};
+    if (allowedIds && (!noteId || !allowedIds[noteId])) return { picked: false, reason: '不在本轮搜索结果' };
+    if (!t || !t.samples || t.samples.length < 2) return { picked: false, reason: '采样不足' };
+    if ((t.wateredCount || 0) >= (cfg.maxPerNote || DEFAULT_CONFIG.maxPerNote)) return { picked: false, reason: '已达灌水上限' };
+    if (t.lastWateredAt && now - t.lastWateredAt < (cfg.cooldownHours || DEFAULT_CONFIG.cooldownHours) * 3600000) return { picked: false, reason: '冷却中' };
+    // ★ 只"扫过空手"的：用更短的 checkedHours 复核窗口，避免反复刷同一页，也不至于一整天不再看它
+    if (t.lastCheckedAt && now - t.lastCheckedAt < (cfg.checkedHours || DEFAULT_CONFIG.checkedHours) * 3600000) return { picked: false, reason: '刚扫过·复核冷却' };
+    if (t.tag !== 'growing' && t.tag !== 'hot') return { picked: false, reason: '点赞未增长' };
+    return { picked: true, reason: '' };
+  }
+
+  /* 循环计划（追涨口径）挑笔记：只看增长中/快速增长的，且满足度控制（总次数上限 / 同篇冷却 / 扫过复核冷却），
+     按增速降序取前 maxPerRound 篇；判定全部走 explainPick，与列表徽标同源 */
   function pickCycleNotes(trends, config, now, allowedIds) {
     now = now || Date.now();
     var out = [];
     for (var id in (trends || {})) {
-      if (allowedIds && !allowedIds[id]) continue;
       var t = trends[id];
-      if (!t || !t.samples || t.samples.length < 2) continue;
-      if (t.tag !== 'growing' && t.tag !== 'hot') continue;
-      if ((t.wateredCount || 0) >= (config.maxPerNote || 2)) continue;
-      if (t.lastWateredAt && now - t.lastWateredAt < (config.cooldownHours || 24) * 3600000) continue;
-      // ★ 只"扫过空手"的：用更短的 checkedHours 复核窗口，避免反复刷同一页，也不至于一整天不再看它
-      if (t.lastCheckedAt && now - t.lastCheckedAt < (config.checkedHours || 2) * 3600000) continue;
+      if (!explainPick(id, t, config, now, allowedIds).picked) continue;
       // ★ 把 noteId 挂到对象上：trends 以 noteId 为键，但 trend 对象本身不含 noteId，
-      //   不挂上的话 _openNoteForce 传 note.noteId 为 undefined → openNote 报“笔记信息不完整”导致整篇被跳过
+      //   不挂上的话调用方拿不到 noteId → openNote 报“笔记信息不完整”导致整篇被跳过
       t.noteId = id;
       out.push(t);
     }
     out.sort(function (a, b) { return growthRate(b) - growthRate(a); });
-    return out.slice(0, (config.maxPerRound || 3));
+    return out.slice(0, ((config && config.maxPerRound) || DEFAULT_CONFIG.maxPerRound));
   }
 
   return {
@@ -214,6 +223,7 @@ const NoteTrend = (function () {
     flushSamples,
     markWatered,
     noteChecked,
+    explainPick,
     pickCycleNotes,
   };
 })();

@@ -24,6 +24,12 @@ async def lifespan(app: FastAPI):
     """应用生命周期"""
     # 启动时：初始化数据库
     init_db()
+    # 启动时：清一轮过期数据（客户数据 90 天 / 运行数据 30 天，与插件端口径一致）
+    from app.core.retention import sweep_expired
+    try:
+        sweep_expired()
+    except Exception as e:
+        print(f"[main] 过期数据清除失败: {e}")
     # 启动调度器（定时发布等）
     from app.core.scheduler import scheduler
     try:
@@ -80,12 +86,13 @@ _BOOT_TS = str(int(time.time()))
 
 
 # ====== API 路由注册 ======
-from app.api import accounts, notes, comments, drain, analytics, ai, materials, extension, knowledge_base, comment_logs, script_library, schedule, diagnosis, customers, messages
+from app.api import accounts, notes, comments, drain, analytics, ai, materials, extension, knowledge_base, comment_logs, script_library, schedule, diagnosis, customers, messages, intercept
 
 app.include_router(accounts.router, prefix="/api/accounts", tags=["账号管理"])
 app.include_router(notes.router, prefix="/api/notes", tags=["笔记管理"])
 app.include_router(comments.router, prefix="/api/comments", tags=["评论互动"])
 app.include_router(drain.router, prefix="/api/drain", tags=["引流任务"])
+app.include_router(intercept.router, prefix="/api/intercept", tags=["全场景截流"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["数据分析"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI 配置"])
 app.include_router(materials.router, prefix="/api/materials", tags=["素材库"])

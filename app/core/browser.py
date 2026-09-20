@@ -1,22 +1,20 @@
-"""Playwright 浏览器引擎 - 单例 + 健康自愈 + 隐身 + 拟人化"""
+"""Playwright 浏览器引擎 - 单例 + 健康自愈 + 拟人化（Android 模拟器真实设备模式）"""
 import asyncio
 import json
-import os
 import random
 import shutil
 import time as time_module
 from typing import Optional
-from pathlib import Path
 
 from config import (
-    COOKIE_DIR, DATA_DIR,
-    EMULATOR_ENABLED, EMULATOR_TYPE,
-    ANDROID_SDK_ROOT, LDPLAYER_ROOT, LDPLAYER_ADB_SERIAL,
-    AVD_NAME, AVD_DEVICE,
-    EMULATOR_PORT, CHROME_CDP_PORT,
+    COOKIE_DIR,
+    EMULATOR_ENABLED,
+    ANDROID_SDK_ROOT,
+    AVD_NAME, CHROME_CDP_PORT,
     EMULATOR_BOOT_TIMEOUT, CHROME_LAUNCH_TIMEOUT, ADB_TIMEOUT,
-    EMULATOR_RAM_MB, EMULATOR_LOCALE, EMULATOR_TIMEZONE,
+    EMULATOR_RAM_MB,
 )
+from app.core.crypto import encrypt_text, decrypt_text
 
 
 def safe_print(*args, **kwargs):
@@ -35,11 +33,11 @@ class BrowserEngine:
     """浏览器引擎（全局单例）
 
     设计原则：
+    - 仅支持 Android 模拟器模式（真实移动端 Chrome），不做桌面端兜底
     - 全局只启动一个浏览器，所有引流任务共用一个登录会话
     - 浏览器窗口保持打开，不会自行关闭
     - 内置健康检查 + 自动重启
     - 每次操作前检查页面和登录状态
-    - 使用 stealth 插件避免被反爬检测
     - 拟人化操作：随机延迟、阅读时间、鼠标轨迹、打字错误
     """
 
@@ -56,9 +54,6 @@ class BrowserEngine:
         self.login_status = "unknown"  # unknown / logged_in / expired
         self.last_error = ""
         self._health_task = None   # 后台健康检查任务
-
-        # 持久化用户数据目录（让浏览器看起来更像真实用户）
-        self._user_data_dir = str(DATA_DIR / "chrome_profile")
 
         # ========== Android 模拟器相关 ==========
         self._emulator_process = None       # 模拟器进程
@@ -145,338 +140,48 @@ class BrowserEngine:
     # ==================== 启动与清理 ====================
 
     async def _do_start(self, account_id: Optional[int]) -> str:
-        """启动浏览器
+        """启动浏览器（仅 Android 模拟器模式：真实移动端 Chrome）
 
-        优先使用 Android 模拟器（真实移动端 Chrome），
-        不可用时 fallback 到桌面 Chrome + stealth 伪装。
+        模拟器不可用时直接返回错误，不做桌面端兜底。
         """
         from playwright.async_api import async_playwright
 
         self._playwright = await async_playwright().start()
 
-        # ========== 尝试 Android 模拟器模式 ==========
-        if EMULATOR_ENABLED:
-            try:
-                result = await self._start_emulator_mode()
-                if result == "started":
-                    safe_print("  Android 模拟器模式已启动（真实移动端 Chrome）")
-                    self.status = "running"
-                    self._account_id = account_id
-                    if account_id:
-                        try:
-                            await self.load_cookies(account_id)
-                        except Exception:
-                            pass
-                    self._start_health_check()
-                    return "started"
-                else:
-                    safe_print(f"  模拟器启动未成功 ({result})，回退到桌面模式")
-            except Exception as e:
-                safe_print(f"  模拟器启动异常: {e}，回退到桌面模式")
-                await self._cleanup_emulator()
+        if not EMULATOR_ENABLED:
+            return "error:模拟器模式已禁用（EMULATOR_ENABLED=False）"
 
-        # ========== 桌面 Chrome + stealth 模式（兜底） ==========
-        safe_print("  启动桌面 Chrome（stealth 伪装模式）...")
+        try:
+            result = await self._start_emulator_mode()
+        except Exception as e:
+            await self._cleanup_emulator()
+            return f"error:模拟器启动异常: {e}"
 
-        # 清理上次残留的锁文件（崩溃后恢复）
-        lock_file = Path(self._user_data_dir) / "SingletonLock"
-        if lock_file.exists():
-            try:
-                lock_file.unlink()
-            except Exception:
-                pass
+        if result != "started":
+            await self._cleanup_emulator()
+            return f"error:模拟器启动失败（{result}）"
 
-        chrome_path = self._find_chrome()
-
-        # 精简的 Chrome 启动参数（去掉大量可疑的 --disable-* 标志）
-        args = [
-            "--disable-blink-features=AutomationControlled",  # 隐藏 webdriver（最关键）
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--hide-scrollbars",
-            "--password-store=basic",
-            "--disable-features=IsolateOrigins,site-per-process",
-        ]
-
-        # iPhone 14 Pro 设备规格
-        device_metrics = {
-            "viewport": {"width": 390, "height": 844},
-            "device_scale_factor": 3,
-            "is_mobile": True,
-            "has_touch": True,
-            "screen": {"width": 390, "height": 844},
-        }
-
-        # 启动持久化上下文
-        context_kwargs = {
-            "user_data_dir": self._user_data_dir,
-            "headless": False,
-            "args": args,
-            **device_metrics,
-            "user_agent": self._mobile_ua(),
-            "locale": "zh-CN",
-            "timezone_id": "Asia/Shanghai",
-            "permissions": ["clipboard-read", "clipboard-write"],
-            "reduced_motion": "reduce",
-            "forced_colors": "active",
-        }
-
-        if chrome_path:
-            context_kwargs["executable_path"] = chrome_path
-
-        self.context = await self._playwright.chromium.launch_persistent_context(
-            **context_kwargs
-        )
-        self.browser = None
-
-        # 获取已创建的页面
-        pages = self.context.pages
-        self.page = pages[0] if pages else await self.context.new_page()
-
-        # 应用全面隐身脚本
-        await self._apply_stealth()
-
+        safe_print("  Android 模拟器模式已启动（真实移动端 Chrome）")
         self.status = "running"
         self._account_id = account_id
-
         if account_id:
             try:
                 await self.load_cookies(account_id)
             except Exception:
                 pass
-
         self._start_health_check()
         return "started"
-
-    async def _apply_stealth(self):
-        """全面隐身脚本 — 仅在桌面模式使用，模拟器模式下跳过
-
-        在页面加载任何 JS 之前注入，覆盖 navigator / chrome / permissions 等
-        """
-        if not self.page:
-            return
-
-        # ========== 模拟器模式：不需要任何伪装 ==========
-        if self._emulator_mode:
-            safe_print("  真实 Android 模式 — 跳过 stealth 脚本")
-            return
-
-        # 先尝试 playwright-stealth（处理 WebGL、canvas 等底层检测）
-        try:
-            from playwright_stealth import Stealth
-            stealth = Stealth(
-                navigator_languages_override=("zh-CN", "zh", "en"),
-                navigator_platform_override="iPhone",
-                webgl_vendor_override="Apple Inc.",
-                webgl_renderer_override="Apple GPU",
-            )
-            await stealth.apply_stealth_async(self.page)
-        except ImportError:
-            safe_print(" playwright-stealth 未安装，使用内置隐身脚本")
-        except Exception as e:
-            safe_print(f"  playwright-stealth 异常: {e}")
-
-        # 再注入我们自己的综合脚本（覆盖更全面，在 playwright-stealth 之后执行）
-        await self.page.add_init_script("""
-        (() => {
-            // ============================================================
-            // 1. 核心自动化检测屏蔽
-            // ============================================================
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-                configurable: true,
-            });
-
-            // ============================================================
-            // 2. 插件列表 — 移动端 Safari/Chrome 有内置 PDF 插件
-            // ============================================================
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [
-                    { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-                    { name: 'Safari PDF', filename: 'webkit-pdf', description: '', length: 1 },
-                ],
-                configurable: true,
-            });
-
-            // ============================================================
-            // 3. Chrome Runtime 模拟（掩盖 CDP / DevTools 痕迹）
-            // ============================================================
-            window.chrome = window.chrome || {};
-            window.chrome.runtime = {
-                id: '',
-                connect: function(){ return { onMessage: { addListener: function(){} }, onDisconnect: { addListener: function(){} }, postMessage: function(){} }; },
-                sendMessage: function(){},
-                onMessage: { addListener: function(){} },
-                onConnect: { addListener: function(){} },
-                onInstalled: { addListener: function(){} },
-            };
-
-            // ============================================================
-            // 4. 权限查询 — 返回移动端典型值
-            // ============================================================
-            const _origQuery = navigator.permissions.query.bind(navigator.permissions);
-            navigator.permissions.query = (params) => {
-                const denyList = ['camera', 'microphone', 'geolocation', 'notifications', 'persistent-storage'];
-                if (denyList.includes(params.name)) {
-                    return Promise.resolve({ state: 'denied', onchange: null });
-                }
-                if (params.name === 'clipboard-read' || params.name === 'clipboard-write') {
-                    return Promise.resolve({ state: 'granted', onchange: null });
-                }
-                return _origQuery(params);
-            };
-
-            // ============================================================
-            // 5. 移动端 4G 网络连接
-            // ============================================================
-            Object.defineProperty(navigator, 'connection', {
-                get: () => ({
-                    effectiveType: '4g',
-                    rtt: 60 + Math.floor(Math.random() * 80),
-                    downlink: 5 + Math.random() * 15,
-                    downlinkMax: 0,
-                    saveData: false,
-                    type: 'cellular',
-                    onchange: null,
-                    addEventListener: function(){},
-                    removeEventListener: function(){},
-                }),
-                configurable: true,
-            });
-
-            // ============================================================
-            // 6. 电池 API
-            // ============================================================
-            navigator.getBattery = function() {
-                return Promise.resolve({
-                    charging: false,
-                    chargingTime: Infinity,
-                    dischargingTime: 3600 + Math.floor(Math.random() * 7200),
-                    level: 0.5 + Math.random() * 0.5,
-                    onchargingchange: null,
-                    onchargingtimechange: null,
-                    ondischargingtimechange: null,
-                    onlevelchange: null,
-                    addEventListener: function(){},
-                    removeEventListener: function(){},
-                });
-            };
-
-            // ============================================================
-            // 7. 媒体设备列表（移动端有摄像头、麦克风等）
-            // ============================================================
-            navigator.mediaDevices.enumerateDevices = function() {
-                return Promise.resolve([
-                    { deviceId: 'audio-input-1', kind: 'audioinput', label: 'iPhone Microphone', groupId: 'group1' },
-                    { deviceId: 'video-input-1', kind: 'videoinput', label: 'iPhone Camera', groupId: 'group1' },
-                    { deviceId: 'audio-output-1', kind: 'audiooutput', label: 'iPhone Speaker', groupId: 'group1' },
-                ]);
-            };
-
-            // ============================================================
-            // 8. 移动设备特征 — navigator 属性
-            // ============================================================
-            Object.defineProperties(navigator, {
-                maxTouchPoints: { get: () => 5, configurable: true },
-                hardwareConcurrency: { get: () => 6, configurable: true },
-                deviceMemory: { get: () => 6, configurable: true },
-                platform: { get: () => 'iPhone', configurable: true },
-                languages: { get: () => ['zh-CN', 'zh', 'en'], configurable: true },
-                language: { get: () => 'zh-CN', configurable: true },
-            });
-
-            // ============================================================
-            // 9. 屏幕方向（竖屏）
-            // ============================================================
-            Object.defineProperty(screen, 'orientation', {
-                get: () => ({ type: 'portrait-primary', angle: 0, onchange: null }),
-                configurable: true,
-            });
-
-            // ============================================================
-            // 10. 窗口外尺寸（与 viewport 一致）
-            // ============================================================
-            Object.defineProperties(window, {
-                outerWidth: { get: () => 390, configurable: true },
-                outerHeight: { get: () => 844, configurable: true },
-                screenX: { get: () => 0, configurable: true },
-                screenY: { get: () => 0, configurable: true },
-                screenLeft: { get: () => 0, configurable: true },
-                screenTop: { get: () => 0, configurable: true },
-            });
-
-            // ============================================================
-            // 11. navigator 版本字符串（与 iPhone UA 一致）
-            // ============================================================
-            Object.defineProperties(navigator, {
-                appVersion: { get: () => '5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1', configurable: true },
-                appName: { get: () => 'Netscape', configurable: true },
-                appCodeName: { get: () => 'Mozilla', configurable: true },
-                product: { get: () => 'Gecko', configurable: true },
-                productSub: { get: () => '20030107', configurable: true },
-                vendor: { get: () => 'Google Inc.', configurable: true },
-                vendorSub: { get: () => '', configurable: true },
-                oscpu: { get: () => 'iPhone OS 17_4', configurable: true },
-            });
-        })();
-        """)
-
-    def _find_chrome(self) -> Optional[str]:
-        """查找系统安装的 Chrome 浏览器"""
-        candidates = [
-            "C:/Program Files/Google/Chrome/Application/chrome.exe",
-            "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
-            os.path.expanduser("~/AppData/Local/Google/Chrome/Application/chrome.exe"),
-        ]
-        for path in candidates:
-            if Path(path).exists():
-                return path
-        return None
 
     # ==================== Android 模拟器 ====================
 
     async def _start_emulator_mode(self) -> str:
-        """启动 Android 模拟器模式 — 编排器
-        支持: LDPlayer（雷电模拟器）和 Google AVD
+        """启动 Android 模拟器（Google AVD）
         Returns: "started" | "error:xxx"
         """
         adb = self._find_adb()
         if not adb:
             return "error:adb not found"
-        if EMULATOR_TYPE == "ldplayer":
-            return await self._start_ldplayer_mode(adb)
-        else:
-            return await self._start_avd_mode(adb)
-
-    async def _start_ldplayer_mode(self, adb: str) -> str:
-        """启动 LDPlayer 雷电模拟器模式
-        LDPlayer 自带窗口管理，只需 ADB 连接 + Chrome CDP
-        """
-        safe_print("  连接雷电模拟器...")
-        self._adb_serial = LDPLAYER_ADB_SERIAL
-
-        # 1. ADB 连接到 LDPlayer
-        connect_out = await self._run_adb(adb, "connect " + LDPLAYER_ADB_SERIAL, timeout=10)
-        if "connected" not in connect_out and "already" not in connect_out:
-            return f"error:ldplayer connect failed: {connect_out}"
-
-        # 2. 等待设备就绪
-        safe_print("  等待 LDPlayer 就绪...")
-        self._emulator_boot_start = time_module.time()
-        booted = await self._wait_for_boot(adb)
-        if not booted:
-            return "error:ldplayer boot timeout"
-
-        elapsed = int(time_module.time() - self._emulator_boot_start)
-        safe_print(f"  LDPlayer 已就绪（耗时 {elapsed}s）")
-
-        # 3. 配置系统参数
-        await self._configure_emulator(adb)
-
-        # 4. 连接 Chrome CDP
-        return await self._connect_chrome_cdp(adb)
+        return await self._start_avd_mode(adb)
 
     async def _start_avd_mode(self, adb: str) -> str:
         """启动 Google AVD 模拟器模式"""
@@ -541,11 +246,10 @@ class BrowserEngine:
         adb = shutil.which("adb")
         if adb:
             return adb
-        # 2. SDK / LDPlayer 目录中查找
+        # 2. SDK 目录中查找
         candidates = [
             ANDROID_SDK_ROOT / "platform-tools" / "adb.exe",
             ANDROID_SDK_ROOT / "platform-tools" / "adb",
-            LDPLAYER_ROOT / "adb.exe",
         ]
         for p in candidates:
             if p.exists():
@@ -556,8 +260,7 @@ class BrowserEngine:
         """运行 adb 命令，返回 stdout"""
         if timeout is None:
             timeout = ADB_TIMEOUT
-        default_serial = LDPLAYER_ADB_SERIAL if EMULATOR_TYPE == "ldplayer" else "emulator-5554"
-        serial = self._adb_serial or default_serial
+        serial = self._adb_serial or "emulator-5554"
         full_cmd = f'"{adb}" -s {serial} {cmd}'
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -577,7 +280,7 @@ class BrowserEngine:
     async def _wait_for_boot(self, adb: str) -> bool:
         """等待模拟器启动完成"""
         start = time_module.time()
-        expected_serial = self._adb_serial or (LDPLAYER_ADB_SERIAL if EMULATOR_TYPE == "ldplayer" else "emulator-5554")
+        expected_serial = self._adb_serial or "emulator-5554"
         while time_module.time() - start < EMULATOR_BOOT_TIMEOUT:
             # 检查设备是否在线
             devices = await self._run_adb(adb, "devices", timeout=5)
@@ -715,15 +418,11 @@ class BrowserEngine:
         if adb:
             # 移除端口转发
             await self._run_adb(adb, "forward --remove tcp:9222", timeout=5)
-            if EMULATOR_TYPE == "ldplayer":
-                # LDPlayer: 不断进程，只断开 ADB
-                await self._run_adb(adb, "disconnect " + LDPLAYER_ADB_SERIAL, timeout=5)
-            else:
-                # AVD: 发送优雅关闭命令
-                await self._run_adb(adb, "emu kill", timeout=10)
+            # 发送优雅关闭命令
+            await self._run_adb(adb, "emu kill", timeout=10)
 
-        # AVD 模式：管理模拟器进程
-        if EMULATOR_TYPE != "ldplayer" and self._emulator_process and self._emulator_process.returncode is None:
+        # 管理模拟器进程
+        if self._emulator_process and self._emulator_process.returncode is None:
             try:
                 await asyncio.wait_for(self._emulator_process.wait(), timeout=10)
             except asyncio.TimeoutError:
@@ -757,18 +456,17 @@ class BrowserEngine:
         self.page = None
         self.context = None
 
-        # AVD 模式：杀掉模拟器进程
-        if EMULATOR_TYPE != "ldplayer":
-            if self._emulator_process and self._emulator_process.returncode is None:
-                try:
-                    self._emulator_process.kill()
-                except Exception:
-                    pass
-                self._emulator_process = None
-            # 运行 adb emu kill 作为兜底
-            adb = self._find_adb()
-            if adb:
-                await self._run_adb(adb, "emu kill", timeout=5)
+        # 杀掉模拟器进程
+        if self._emulator_process and self._emulator_process.returncode is None:
+            try:
+                self._emulator_process.kill()
+            except Exception:
+                pass
+            self._emulator_process = None
+        # 运行 adb emu kill 作为兜底
+        adb = self._find_adb()
+        if adb:
+            await self._run_adb(adb, "emu kill", timeout=5)
 
         self._emulator_mode = False
         self._adb_serial = None
@@ -778,8 +476,8 @@ class BrowserEngine:
         if not self._emulator_mode:
             return True
 
-        # AVD 模式：检查进程是否还在运行
-        if EMULATOR_TYPE != "ldplayer" and self._emulator_process and self._emulator_process.returncode is not None:
+        # 检查模拟器进程是否还在运行
+        if self._emulator_process and self._emulator_process.returncode is not None:
             self.last_error = "模拟器进程已退出"
             return False
 
@@ -1021,7 +719,7 @@ class BrowserEngine:
                 return
 
             with open(path, "w", encoding="utf-8") as f:
-                json.dump(cookies, f, ensure_ascii=False, indent=2)
+                f.write(encrypt_text(json.dumps(cookies, ensure_ascii=False, indent=2)))
             safe_print(f"  Cookie 已保存: {path.name}")
         except Exception as e:
             safe_print(f"保存 Cookie 失败: {e}")
@@ -1033,7 +731,7 @@ class BrowserEngine:
             return False
         try:
             with open(path, "r", encoding="utf-8") as f:
-                cookies = json.load(f)
+                cookies = json.loads(decrypt_text(f.read().strip()))
 
             # 尝试用 context API
             if self.context:
@@ -1056,7 +754,7 @@ class BrowserEngine:
     # ==================== 拟人化操作 ====================
 
     async def human_scroll(self, min_times: int = 1, max_times: int = 4):
-        """模拟人类翻页：随机滚动一段距离，停一下，再看"""
+        """模拟翻页节奏：随机滚动一段距离，停一下，再看"""
         if not self.page:
             return
         times = random.randint(min_times, max_times)
@@ -1071,7 +769,7 @@ class BrowserEngine:
                 break
 
     async def human_pause(self, min_s: float = 1.0, max_s: float = 4.0):
-        """随机停顿，模拟人类的反应时间"""
+        """随机停顿，模拟自然的反应时间"""
         await asyncio.sleep(random.uniform(min_s, max_s))
 
     async def simulate_reading(self, min_s: float = 3.0, max_s: float = 10.0):
@@ -1084,7 +782,7 @@ class BrowserEngine:
         await asyncio.sleep(base)
 
     async def simulate_typing(self, input_element, text: str):
-        """模拟人类打字：真实按键间隔 + 偶尔打错 + 思考停顿"""
+        """模拟自然打字：真实按键间隔 + 偶尔打错 + 思考停顿"""
         if not text:
             return
 
@@ -1142,7 +840,7 @@ class BrowserEngine:
         if not ok:
             return []
 
-        # 假装在浏览搜索结果
+        # 先浏览搜索结果
         await self.human_scroll(2, 5)
         await self.simulate_reading(2, 5)
 
@@ -1274,7 +972,7 @@ class BrowserEngine:
         if not ok:
             return []
 
-        # 假装浏览主页，翻几屏让列表加载
+        # 先浏览主页，翻几屏让列表加载
         await self.human_scroll(3, 8)
         await self.simulate_reading(2, 5)
 
@@ -1352,7 +1050,7 @@ class BrowserEngine:
         return notes
 
     async def get_note_content(self, note_url: str) -> dict:
-        """获取单篇笔记内容（拟人化 + JS提取，绕过动态类名）"""
+        """获取单篇笔记内容（拟人化 + JS 提取，适配动态类名）"""
         ok = await self.safe_go_to(note_url)
         if not ok:
             return {"title": "", "content": "", "author": "", "_blocked": True}
@@ -1363,7 +1061,7 @@ class BrowserEngine:
 
         result = {"title": "", "content": "", "author": "", "_blocked": False}
         
-        # 用 JS 提取内容，绕过小红书动态类名
+        # 用 JS 提取内容，适配小红书动态类名
         try:
             page_data = await self.page.evaluate("""
                 () => {
@@ -1411,6 +1109,249 @@ class BrowserEngine:
             safe_print(f"获取笔记内容失败: {e}")
             
         return result
+
+    # ================= 全场景截流：采集原语 =================
+
+    @staticmethod
+    def _num_of(text: str) -> int:
+        """把小红书点赞/评论数字文本转成 int：'12'->12, '1.2万'->12000，空->0"""
+        if not text:
+            return 0
+        t = (text or "").replace(",", "").replace("，", "").strip()
+        if not t:
+            return 0
+        multi = 1
+        if "万" in t:
+            multi = 10000
+            t = t.replace("万", "")
+        try:
+            return int(float(t) * multi)
+        except Exception:
+            return 0
+
+    async def list_metrics(self, list_url: str, max_results: int = 20) -> list[dict]:
+        """列表级采集(L1)：打开一个列表页(搜索/发现/同城)，抓取笔记卡片。
+        列表页只能拿到 标题/作者/点赞/排名(顺序)，评论与收藏需点进(L2)。
+        Returns: [{title, url, author, likes, rank}, ...]
+        """
+        ok = await self.safe_go_to(list_url)
+        if not ok:
+            return []
+        await self.human_scroll(2, 5)
+        await self.simulate_reading(2, 5)
+        raw = []
+        try:
+            raw = await self.page.evaluate("""
+                () => {
+                    const cards = [];
+                    const seen = new Set();
+                    const nodes = document.querySelectorAll('a[href*="/explore/"]');
+                    let rank = 0;
+                    for (const a of nodes) {
+                        let href = a.getAttribute('href');
+                        if (!href) continue;
+                        let url = href.startsWith('/') ? 'https://www.xiaohongshu.com' + href : href;
+                        if (seen.has(url)) continue;
+                        seen.add(url);
+                        rank += 1;
+                        const idm = href.match(/\\/explore\\/([^\\/#\\?]+)/);
+                        const noteId = idm ? idm[1] : '';
+                        const card = a.closest('section, div, li');
+                        let title = (a.textContent || '').trim();
+                        let author = '';
+                        let likesText = '';
+                        if (card) {
+                            if (!title) {
+                                const t = card.querySelector('[class*="title"], h1, h2, h3');
+                                if (t) title = t.textContent.trim();
+                            }
+                            const au = card.querySelector('[class*="author"]');
+                            if (au) author = au.textContent.trim();
+                            // 点赞数：footer 里的数字/“xx赞”
+                            const footer = card.querySelector('[class*="footer"]');
+                            if (footer) {
+                                const likeEl = footer.querySelector('[class*="like"],[class*="count"] svg, [class*="count"]');
+                                if (likeEl) {
+                                    const parent = likeEl.closest('[class*="footer"] > div, div');
+                                    if (parent) likesText = parent.textContent.trim();
+                                    if (!likesText) likesText = footer.textContent.trim();
+                                }
+                                if (!likesText) likesText = footer.textContent.trim();
+                            }
+                        }
+                        cards.push({title: (title||'').slice(0,120), url, note_id: noteId, author: (author||'').slice(0,80), likesText, rank});
+                    }
+                    // 若没抓到点赞文本，回退取每个卡片 footer 里唯一的数字
+                    return cards;
+                }
+            """)
+        except Exception as e:
+            safe_print(f"列表级采集异常: {e}")
+        out = []
+        seen = set()
+        for it in raw:
+            url = it.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            out.append({
+                "title": it.get("title") or "",
+                "url": url,
+                "note_id": it.get("note_id") or "",
+                "author": it.get("author") or "",
+                "likes": self._num_of(it.get("likesText")),
+                "rank": int(it.get("rank") or 0),
+            })
+            if len(out) >= max_results:
+                break
+        return out
+
+    async def point_metrics(self, note_url: str) -> dict:
+        """点进级采集(L2)：进入单篇笔记，拿 点赞/评论/收藏/分享。返回 dict，失败时 likes=-1。"""
+        ok = await self.safe_go_to(note_url)
+        if not ok:
+            return {"likes": -1, "comments": -1, "collects": -1, "shares": -1, "_blocked": True}
+        await self.human_scroll(1, 3)
+        await self.simulate_reading(3, 6)
+        try:
+            data = await self.page.evaluate("""
+                () => {
+                    const txt = document.body.innerText || '';
+                    const m = (re) => { const v = txt.match(re); return v ? v[1] : ''; };
+                    return {
+                        likesText: m(/([\\d.,\\u4e07]+)\\s*(赞|次赞|喜欢)/),
+                        commentsText: m(/([\\d.,\\u4e07]+)\\s*(评论)/),
+                        collectsText: m(/([\\d.,\\u4e07]+)\\s*(收藏)/),
+                        sharesText: m(/([\\d.,\\u4e07]+)\\s*(分享)/),
+                        title: (document.querySelector('meta[property="og:title"]')||{}).content || document.title || '',
+                    };
+                }
+            """)
+            return {
+                "likes": self._num_of(data.get("likesText")),
+                "comments": self._num_of(data.get("commentsText")),
+                "collects": self._num_of(data.get("collectsText")),
+                "shares": self._num_of(data.get("sharesText")),
+                "title": (data.get("title") or "").replace(" - 小红书", "").strip(),
+                "_blocked": False,
+            }
+        except Exception as e:
+            safe_print(f"点进级采集异常: {e}")
+            return {"likes": -1, "comments": -1, "collects": -1, "shares": -1, "_blocked": True}
+
+    async def hot_comment_top(self, note_url: str) -> dict:
+        """取单篇笔记下点赞最高的热评(高V/话题用)。当前页须已停在笔记。"""
+        await self.human_scroll(1, 2)
+        try:
+            data = await self.page.evaluate("""
+                () => {
+                    const items = document.querySelectorAll('[class*="comment"]');
+                    let best = {likes: 0, author: '', content: '', found: false};
+                    for (const it of items) {
+                        const txt = it.textContent || '';
+                        if (!it.querySelector('[class*="content"]') && txt.length < 4) continue;
+                        const thumb = it.querySelector('[class*="like"],[class*="count"]');
+                        const likeTxt = thumb ? (thumb.textContent || '').trim() : '';
+                        const num = (() => { const v = likeTxt.replace(/[^0-9.\\u4e07]/g, ''); const mul = v.includes('万') ? 10000 : 1; const n = parseFloat(v) * mul; return isNaN(n) ? 0 : n; })();
+                        if (num >= best.likes && (it.querySelector('[class*="content"]') || txt.length > 10)) {
+                            best.likes = num;
+                            best.found = true;
+                            const c = it.querySelector('[class*="content"]');
+                            best.content = c ? c.textContent.trim().slice(0,120) : txt.trim().slice(0,120);
+                        }
+                    }
+                    return best;
+                }
+            """)
+            return data or {"found": False, "likes": 0, "author": "", "content": ""}
+        except Exception as e:
+            safe_print(f"热评采集异常: {e}")
+            return {"found": False, "likes": 0, "author": "", "content": ""}
+
+    async def my_comment_status(self, our_comment_text: str) -> dict:
+        """在已停在本笔记的页面上，按评论文本匹配查找我方评论，返回其 赞/回复/排序位置。
+        找不到返回 {found: False}。用于活水判死与已爆判断。"""
+        probe = (our_comment_text or "").strip()[:40]
+        try:
+            data = await self.page.evaluate("""
+                (probe) => {
+                    const items = Array.from(document.querySelectorAll('[class*="comment"]'));
+                    for (let i = 0; i < items.length; i++) {
+                        const it = items[i];
+                        // 只取真正的一级评论内容块
+                        const c = it.querySelector('[class*="content"]');
+                        if (!c) continue;
+                        const text = c.textContent.trim();
+                        if (text && probe && (text.includes(probe) || probe.includes(text.slice(0,20)))) {
+                            const thumb = it.querySelector('[class*="like"],[class*="count"]');
+                            const likeText = thumb ? (thumb.textContent||'').trim() : '';
+                            const v = likeText.replace(/[^0-9.\\u4e07]/g, '');
+                            const likes = v.includes('万') ? Math.round(parseFloat(v)*10000) : (parseInt(v.replace(/[.,]/g,''))||0);
+                            return {found: true, likes, replies: 0, rank: i+1, content: text.slice(0,60)};
+                        }
+                    }
+                    return {found: false};
+                }
+            """, probe)
+            return data or {"found": False}
+        except Exception:
+            return {"found": False}
+
+    async def delete_comment(self, text_match: str) -> bool:
+        """活水删除：在已停在本笔记的页面，定位匹配文本的评论并尝试删除。尽力而为。"""
+        probe = (text_match or "").strip()[:40]
+        try:
+            target = await self.page.evaluate_handle(
+                """(probe) => {
+                    const items = Array.from(document.querySelectorAll('[class*="comment"]'));
+                    for (const it of items) {
+                        const c = it.querySelector('[class*="content"]');
+                        if (!c) continue;
+                        const text = c.textContent.trim();
+                        if (text && probe && (text.includes(probe) || probe.includes(text.slice(0,20)))) {
+                            return it;
+                        }
+                    }
+                    return null;
+                }""", probe)
+        except Exception:
+            return False
+        if target is None:
+            return False
+        try:
+            # 尝试悬停弹出更多/删除入口
+            await target.hover()
+            await self.human_pause(0.5, 1.2)
+            clicked = False
+            for sel in ['[class*="delete"]', '[class*="more"]', 'text=删除', 'text=更多']:
+                btn = await self.page.query_selector(sel)
+                if btn:
+                    await btn.click()
+                    await self.human_pause(0.4, 1.0)
+                    clicked = True
+                    break
+            if not clicked:
+                return False
+            # 确认按钮
+            for sel in ['button:has-text("删除")', '[class*="confirm"]:has-text("删除")', 'text="删除"']:
+                try:
+                    btn = await self.page.query_selector(sel)
+                    if btn:
+                        await btn.click()
+                        await self.human_pause(1, 2)
+                        return True
+                except Exception:
+                    continue
+            return False
+        except Exception:
+            return False
+
+    async def latest_note_of_user(self, profile_url: str) -> dict:
+        """高V获取方式：取白名单用户主页最新一篇笔记。复用 get_user_notes，取第一篇。"""
+        notes = await self.get_user_notes(profile_url, max_results=3)
+        if not notes:
+            return {}
+        return notes[0]
 
     async def _find_comment_input(self):
         """多策略查找评论输入框（小红书动态类名兼容）"""
@@ -1488,11 +1429,13 @@ class BrowserEngine:
                 continue
         return False
 
-    async def comment_on_note(self, note_url: str, comment_text: str) -> bool:
-        """在笔记下评论（拟人化：阅读→思考→打字→检查→发布）"""
-        ok = await self.safe_go_to(note_url)
-        if not ok:
-            return False
+    async def comment_on_note(self, note_url: str, comment_text: str, skip_goto: bool = False) -> bool:
+        """在笔记下评论（拟人化：阅读→思考→打字→检查→发布）
+        skip_goto=True：页面已停在目标笔记（刚 get_note_content 过），跳过重复导航，避免同 URL 单周期重复加载"""
+        if not skip_goto:
+            ok = await self.safe_go_to(note_url)
+            if not ok:
+                return False
 
         # 1. 先阅读笔记内容
         await self.human_scroll(2, 4)
@@ -1529,7 +1472,7 @@ class BrowserEngine:
             except Exception:
                 pass
 
-            # 5. 模拟真人打字
+            # 5. 逐字输入
             await self.simulate_typing(comment_input, comment_text)
 
             # 6. 输入完后停顿检查
@@ -1699,17 +1642,6 @@ class BrowserEngine:
             pass
 
     # ==================== 工具 ====================
-
-    def _mobile_ua(self) -> str:
-        """手机版 User-Agent（iPhone + Chrome/Safari）"""
-        uas = [
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/125.0.6422.80 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0.6367.112 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
-            "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.6422.113 Mobile Safari/537.36",
-        ]
-        return random.choice(uas)
 
     async def random_delay(self, min_s: float = 2.0, max_s: float = 5.0):
         """随机延迟（比之前更慢）"""

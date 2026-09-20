@@ -26,6 +26,7 @@
         <li class="tab-group" data-group="auto" title="自动执行（点击展开/折叠）">⚙️ 自动执行</li>
         <li class="tab-item" data-tab="delays">⏱️ 停留时间</li>
         <li class="tab-item" data-tab="autowater">💧 一键灌水</li>
+        <li class="tab-item" data-tab="dailybrowse">🌿 日常浏览</li>
         <li class="tab-group" data-group="data" title="数据与高级（点击展开/折叠）">📈 数据与高级</li>
         <li class="tab-item" data-tab="backup">💾 备份/恢复</li>
         <li class="tab-item" data-tab="logs">📊 日志统计</li>
@@ -39,6 +40,17 @@
       <!-- 免责声明 -->
       <div style="margin:0 0 16px;padding:12px 16px;background:#fff4e8;border:1px solid #ffd9b3;border-radius:10px;font-size:13px;line-height:1.7;color:#7a4a1f;">
         <b>免责声明：</b>因使用本工具、操作过于频繁或任何平台原因导致的账号异常、限流或封禁，责任由使用者自担，作者与工具方概不负责。
+      </div>
+
+      <!-- 数据说明 -->
+      <div style="margin:0 0 16px;padding:12px 16px;background:#f0f6ff;border:1px solid #cfe0ff;border-radius:10px;font-size:13px;line-height:1.7;color:#2b4a7a;">
+        <b>数据说明：</b>你的全部数据——租户配置、知识库、话术、评论/私信同步记录、灌水与回复历史——都保存在本机（浏览器本地存储 + 本机 127.0.0.1 服务），不会上传到任何云端服务器；调用 AI 生成内容时，仅将生成所必需的文本发送给你在「AI 配置」中自行选择的 AI 服务商。
+        <div style="margin-top:8px;">
+          <b>加密：</b>AI 密钥、昵称、邮箱、会话与评论正文等敏感字段在本机<b>加密落盘</b>；导出的备份/知识库/AI 客服配置文件由你设置的口令整体加密，换机器导入时输入同一口令即可还原。
+        </div>
+        <div style="margin-top:6px;">
+          <b>保留期：</b><b>客户数据</b>（获客清单 / 私信往来 / 评论）自最后一次互动起静默满 <b>90 天</b>自动清除，<b>运行数据</b>（灌水历史 / AI 日志 / 回复流水）满 <b>30 天</b>自动清除；到期即删、不可恢复，成交客户同样按此规则处理。需要长期留存的内容请及时在「备份/恢复」里加密导出。
+        </div>
       </div>
 
       <!-- ── Tab: 租户/产品 ── -->
@@ -96,7 +108,7 @@
         </div>
         <div class="form-group">
           <label>我的小红书昵称（防重复灌水）</label>
-          <textarea id="myAccountNames" rows="2" placeholder="每行一个昵称，可填多个（如小号/曾用过的名字）。例：
+          <textarea id="myAccountNames" rows="2" placeholder="每行一个昵称，可填多个（如曾用昵称）。例：
 码农小张
 张工程师"></textarea>
           <span class="hint">扫描时若发现笔记里已有你这些名字的评论，会直接判定这篇已灌水、跳过 AI，并记入已灌水清单</span>
@@ -190,7 +202,7 @@
                 <option value="sell">🛍️ 卖产品（获客转化）——教程/避雷/对比优先，自然带产品</option>
                 <option value="brand">🏷️ 品牌种草（信任/口碑）——对比/补充/数据，立口碑不硬卖</option>
                 <option value="profile">👤 主页涨粉（引流主页）——给干货让人来主页</option>
-                <option value="likes">👍 互动涨赞（养号/数据）——金句/提问/玩梗，不谈产品</option>
+                <option value="likes">👍 互动涨赞（提升活跃）——金句/提问/玩梗，不谈产品</option>
                 <option value="trend">🔥 蹭热点（借话题/大V）——借势拉曝光</option>
                 <option value="auto">🧩 综合自动（每条看菜下饭）——AI 见什么评论就用什么打法，最像真人</option>
               </select>
@@ -469,7 +481,7 @@
       <section id="tab-delays" class="tab-panel">
         <div class="panel-header">
           <h2>⏱️ 停留时间</h2>
-          <p>统一配置各环节的拟人停留/间隔（单位：毫秒）。每项都是「最小 至 最大」区间，执行时在区间内<b>随机取值</b>（更像真人、更防爬）。默认 = 技术下限（能跑通的最快值）；批量操作建议点「填入拟人推荐值」。</p>
+          <p>统一配置各环节的拟人停留/间隔（单位：毫秒）。每项都是「最小 至 最大」区间，执行时在区间内<b>随机取值</b>（节奏更自然）。默认 = 最低值（能跑通的最快值）；批量操作建议点「填入拟人推荐值」。</p>
           <p style="margin-top:6px;">已全局生效：<b>评论灌水/回复、私信(DM)发送、通知页获取与回复、消息/会话读取</b> 的浏览/逐字打字/发送间隔都会走这里的挡位。值设 0 = 该项不拟人（最快）。</p>
         </div>
 
@@ -479,7 +491,7 @@
             <span style="font-size:11px;color:#bbb;">拖动挡位自动填下方区间，选完点「保存」生效</span>
           </div>
           <input type="range" id="delayPreset" min="0" max="5" step="1" value="2" style="width:100%;margin:12px 0 4px;">
-          <div style="display:flex;justify-content:space-between;color:#999;font-size:11px;margin-bottom:8px;"><span>0 极速·裸跑</span><span>1 轻装</span><span>2 标准拟人</span><span>3 保守</span><span>4 养号</span><span>5 极致防御</span></div>
+          <div style="display:flex;justify-content:space-between;color:#999;font-size:11px;margin-bottom:8px;"><span>0 极速·裸跑</span><span>1 轻装</span><span>2 标准拟人</span><span>3 保守</span><span>4 重度</span><span>5 极致从容</span></div>
           <div id="delayPresetName" style="font-weight:600;color:#1f6feb;font-size:13px;margin-bottom:2px;"></div>
           <div id="delayPresetDesc" style="font-size:12px;color:#555;"></div>
           <div style="margin-top:10px;font-size:13px;">
@@ -519,7 +531,7 @@
             <div style="font-size:10px;color:#aaa;margin-top:2px;">点赞间隔随机（毫秒）</div>
           </div>
           <div class="form-group">
-            <label>📜 加载评论·每轮懒加载等待 <span style="font-size:11px;color:#999;">（技术下限 300，太小抓不全评论）</span></label>
+            <label>📜 加载评论·每轮懒加载等待 <span style="font-size:11px;color:#999;">（最低值 300，太小抓不全评论）</span></label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="dl_lazyLoadWait_min" min="0" max="60000" step="100" value="300" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
@@ -528,7 +540,7 @@
             <div style="font-size:10px;color:#aaa;margin-top:2px;">加载评论等待随机（毫秒）</div>
           </div>
           <div class="form-group">
-            <label>↩️ 抓错页自愈·返回后停顿 <span style="font-size:11px;color:#999;">（技术下限 300）</span></label>
+            <label>↩️ 抓错页自愈·返回后停顿 <span style="font-size:11px;color:#999;">（最低值 300）</span></label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="dl_retryBackWait_min" min="0" max="60000" step="100" value="300" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
@@ -537,7 +549,7 @@
             <div style="font-size:10px;color:#aaa;margin-top:2px;">返回后停顿随机（毫秒）</div>
           </div>
           <div class="form-group">
-            <label>🔁 抓错页自愈·重开笔记等待 <span style="font-size:11px;color:#999;">（技术下限 800）</span></label>
+            <label>🔁 抓错页自愈·重开笔记等待 <span style="font-size:11px;color:#999;">（最低值 800）</span></label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="dl_retryOpenWait_min" min="0" max="60000" step="100" value="800" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
@@ -546,7 +558,7 @@
             <div style="font-size:10px;color:#aaa;margin-top:2px;">重开笔记等待随机（毫秒）</div>
           </div>
           <div class="form-group">
-            <label>🔗 列表打开笔记·就绪前缓冲 <span style="font-size:11px;color:#999;">（技术下限 300）</span></label>
+            <label>🔗 列表打开笔记·就绪前缓冲 <span style="font-size:11px;color:#999;">（最低值 300）</span></label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="dl_noteOpenBuffer_min" min="0" max="60000" step="100" value="300" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
@@ -564,19 +576,19 @@
             <div style="font-size:10px;color:#aaa;margin-top:2px;">关注前停顿随机（毫秒）</div>
           </div>
           <div class="form-group">
-            <label>📤 批量发送·每条之间间隔 <span style="font-size:11px;color:#999;">（评论/灌水之间，防连发风控）</span></label>
+            <label>📤 批量发送·每条之间间隔 <span style="font-size:11px;color:#999;">（评论/灌水之间，避免连发）</span></label>
             <div style="display:flex;gap:6px;align-items:center;">
               <input type="number" id="dl_batchItemGap_min" min="0" max="600000" step="500" value="0" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
               <input type="number" id="dl_batchItemGap_max" min="0" max="600000" step="500" value="0" style="flex:1;">
             </div>
-            <div style="font-size:10px;color:#aaa;margin-top:2px;">每条评论之间间隔随机（毫秒），建议 4000-8000 防连发</div>
+            <div style="font-size:10px;color:#aaa;margin-top:2px;">每条评论之间间隔随机（毫秒），建议 4000-8000</div>
           </div>
         </div>
 
         <div class="panel-header" style="margin-top:24px;">
           <h2 style="font-size:15px;">🤝 互动行为</h2>
-          <p>关注是风控权重最高的动作，可在这里关掉或降频；保存按钮在下方（与停留时间一起保存）</p>
+          <p>关注是这里最重的动作，可在这里关掉或降频；保存按钮在下方（与停留时间一起保存）</p>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="display:flex;align-items:center;">
@@ -600,7 +612,7 @@
         <div class="toolbar" style="margin-top:16px;display:flex;gap:8px;align-items:center;">
           <button class="btn-primary" id="delaySaveBtn">保存</button>
           <button class="btn-secondary btn-sm" id="delayRecommendBtn" title="填入历史版本的拟人节奏（不会自动保存，填入后需点保存）">填入拟人推荐值</button>
-          <button class="btn-secondary btn-sm" id="delayZeroBtn" title="恢复默认：各项回到技术下限（能跑通的最快值，不会自动保存，填入后需点保存）">恢复默认（最快）</button>
+          <button class="btn-secondary btn-sm" id="delayZeroBtn" title="恢复默认：各项回到最低值（能跑通的最快值，不会自动保存，填入后需点保存）">恢复默认（最快）</button>
           <span id="delaySaveMsg" class="save-msg"></span>
         </div>
       </section>
@@ -609,14 +621,14 @@
       <section id="tab-autowater" class="tab-panel">
         <div class="panel-header">
           <h2>💧 一键灌水</h2>
-          <p>搜索关键词请在插件弹窗左上角「关键词列表」里添加（可添加多个，存到 <上限> 个，回车或点＋添加）；搜索时按顺序逐个关键词搜索：第一个完成才开始第二个。此处查看灌水历史并设置「🔄 循环计划」度控制</p>
+          <p>搜索关键词请在插件弹窗左上角「关键词列表」里添加（可添加多个，存到 <上限> 个，回车或点＋添加）；搜索时按顺序逐个关键词搜索：第一个完成才开始第二个。此处设置灌水规则（上限 + 搜索筛选）并查看灌水历史</p>
         </div>
 
-        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">🔄 循环计划设置</h3>
-        <p style="font-size:11px;color:#888;margin:0 0 10px;">循环计划每隔一段时间自动搜索并挑选「点赞增长中」的笔记评论（无视已灌水标记，但受下方上限约束，防止打扰博主）</p>
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">💧 灌水规则</h3>
+        <p style="font-size:11px;color:#888;margin:0 0 10px;">挑哪篇、跑多久在插件弹窗列表头的执行器上选（口径：全部未灌过 / 只追涨势 × 节奏：一遍跑完 / 定时轮）。这里是各口径共用的上限与节奏。</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:560px;">
           <div>
-            <label style="font-size:12px;color:#555;">每轮最多评论（篇）</label>
+            <label style="font-size:12px;color:#555;">每轮最多处理（篇）</label>
             <input type="number" id="ntMaxPerRound" min="1" max="20" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
           </div>
           <div>
@@ -628,64 +640,41 @@
             <input type="number" id="ntCooldownHours" min="1" max="168" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
           </div>
           <div>
-            <label style="font-size:12px;color:#555;">扫描间隔（分钟）</label>
+            <label style="font-size:12px;color:#555;">扫过空手的复核冷却（小时）</label>
+            <input type="number" id="ntCheckedHours" min="1" max="168" title="打开后没有可发的评论：这段时间内不再重复评估它（不占评论次数、不占灌水冷却）" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">扫描间隔（分钟，循环用）</label>
             <input type="number" id="ntScanIntervalMin" min="5" max="240" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
           </div>
         </div>
-        <div style="margin-top:10px;">
-          <button class="btn-secondary btn-sm" id="ntSaveBtn">保存循环计划设置</button>
-          <span id="ntSaveMsg" class="save-msg"></span>
-        </div>
 
-        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">🎯 搜索排序 / 范围筛选</h3>
-        <p style="font-size:11px;color:#888;margin:0 0 10px;">自动灌水在搜索时，驱动小红书搜索页的「排序 + 筛选」。冷启动默认开启并在 点赞最多/收藏最多/评论最多 之间轮换，范围选「未看过」；循环默认关闭（用小红书默认顺序）。</p>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:640px;">
-          <div style="border:1px solid #eee;border-radius:8px;padding:10px;">
-            <label style="display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:6px;">
-              <input type="checkbox" id="awColdOn"> 冷启动筛选
-            </label>
-            <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
-              <span>排序</span>
-              <select id="awColdSort" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
-                <option value="rotate">轮换（点赞/收藏/评论最多）</option>
-                <option value="likes">点赞最多</option>
-                <option value="collects">收藏最多</option>
-                <option value="comments">评论最多</option>
-              </select>
-            </div>
-            <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
-              <span>范围</span>
-              <select id="awColdScope" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
-                <option value="unseen" selected>未看过</option>
-                <option value="">不筛范围</option>
-              </select>
-            </div>
+        <h4 style="font-size:13px;font-weight:600;margin:16px 0 6px;">🎯 搜索排序 / 范围（两种口径共用）</h4>
+        <div style="border:1px solid #eee;border-radius:8px;padding:10px;max-width:560px;">
+          <label style="display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:6px;">
+            <input type="checkbox" id="awFilterOn"> 启用排序 / 范围筛选
+          </label>
+          <p style="font-size:11px;color:#888;margin:0 0 6px;">自动灌水搜索时驱动小红书搜索页的排序与筛选；排序选「轮换」时按关键词在 点赞最多/收藏最多/评论最多 之间轮换。</p>
+          <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
+            <span>排序</span>
+            <select id="awFilterSort" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
+              <option value="rotate">轮换（点赞/收藏/评论最多）</option>
+              <option value="likes">点赞最多</option>
+              <option value="collects">收藏最多</option>
+              <option value="comments">评论最多</option>
+            </select>
           </div>
-          <div style="border:1px solid #eee;border-radius:8px;padding:10px;">
-            <label style="display:block;font-size:12px;font-weight:600;color:#333;margin-bottom:6px;">
-              <input type="checkbox" id="awCycOn"> 循环计划筛选（默认关）
-            </label>
-            <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
-              <span>排序</span>
-              <select id="awCycSort" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
-                <option value="likes">点赞最多</option>
-                <option value="collects">收藏最多</option>
-                <option value="comments">评论最多</option>
-                <option value="rotate">轮换</option>
-              </select>
-            </div>
-            <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
-              <span>范围</span>
-              <select id="awCycScope" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
-                <option value="unseen">未看过</option>
-                <option value="" selected>不筛范围</option>
-              </select>
-            </div>
+          <div style="display:flex;gap:10px;font-size:12px;color:#555;align-items:center;margin-top:6px;">
+            <span>范围</span>
+            <select id="awFilterScope" style="flex:1;padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
+              <option value="unseen">未看过</option>
+              <option value="">不筛范围</option>
+            </select>
           </div>
         </div>
         <div style="margin-top:10px;">
-          <button class="btn-secondary btn-sm" id="awFilterSaveBtn">保存搜索筛选设置</button>
-          <span id="awFilterSaveMsg" class="save-msg"></span>
+          <button class="btn-secondary btn-sm" id="awRulesSaveBtn">保存灌水规则</button>
+          <span id="awRulesSaveMsg" class="save-msg"></span>
         </div>
 
         <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">灌水历史</h3>
@@ -707,9 +696,85 @@
         </div>
       </section>
 
+      <!-- 🌿 日常浏览（全功能版专属）：按时段 + 每日配额，在首页推荐/关键词信息流里自动浏览 -->
+      <section id="tab-dailybrowse" class="tab-panel">
+        <div class="panel-header">
+          <h2>🌿 日常浏览</h2>
+          <p>按你设的时段与每日配额，自动在本机浏览器里浏览小红书（首页推荐或按关键词搜出来的内容）：逐篇滚动停留、按比例点开笔记、按比例点赞/收藏。全部动作只发生在你自己的浏览器里，不发送任何内容。</p>
+        </div>
+
+        <div style="background:#f0f6ff;border:1px solid #cfe0ff;border-radius:8px;padding:10px 12px;font-size:12px;color:#2b4a7a;line-height:1.7;margin-bottom:14px;">
+          📌 运行时会把这个小红书标签页切到前台（页面在后台会停止渲染，浏览动作会失效），<b>一轮跑完自动切回你原来在看的窗口</b>；你正在忙的时候可以随时点下方「停止」。
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:720px;">
+          <div style="grid-column:1/-1;display:flex;align-items:center;gap:8px;">
+            <label style="font-size:13px;font-weight:600;color:#333;">
+              <input type="checkbox" id="dbEnabled"> 开启日常浏览（到点自动跑，不用一直开着插件窗口）
+            </label>
+          </div>
+          <div style="grid-column:1/-1;">
+            <label style="font-size:12px;color:#555;">浏览时段（每行一段，格式 09:00-11:30；留空 = 全天都可以跑）</label>
+            <textarea id="dbWindows" rows="3" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;font-family:inherit;" placeholder="09:00-11:30&#10;14:00-17:30&#10;20:00-22:30"></textarea>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">每日浏览篇数上限</label>
+            <input type="number" id="dbDailyQuota" min="1" max="300" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">每轮浏览篇数</label>
+            <input type="number" id="dbPerRound" min="1" max="8" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">两轮之间间隔（分钟，会带随机浮动）</label>
+            <input type="number" id="dbIntervalMin" min="5" max="240" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <div style="flex:1;">
+              <label style="font-size:12px;color:#555;">单篇停留（秒）下限</label>
+              <input type="number" id="dbDwellMin" min="3" max="120" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+            </div>
+            <div style="flex:1;">
+              <label style="font-size:12px;color:#555;">上限</label>
+              <input type="number" id="dbDwellMax" min="3" max="300" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">点开笔记的比例（%）</label>
+            <input type="number" id="dbOpenRate" min="0" max="100" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">点赞比例（%）</label>
+            <input type="number" id="dbLikeRate" min="0" max="100" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">收藏比例（%）</label>
+            <input type="number" id="dbCollectRate" min="0" max="100" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+          </div>
+          <div style="grid-column:1/-1;">
+            <label style="font-size:12px;color:#555;">内容方向（每行一个关键词，会轮流用它们去搜；留空 = 只看首页推荐）</label>
+            <textarea id="dbKeywords" rows="3" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;font-family:inherit;" placeholder="装修避坑&#10;小户型收纳&#10;（也可以是和行业无关的内容）"></textarea>
+          </div>
+        </div>
+
+        <div class="toolbar" style="margin-top:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-primary" id="dbSaveBtn">保存</button>
+          <button class="btn-secondary btn-sm" id="dbRunBtn" title="立刻跑一轮（不受时段限制，但仍受每日上限约束）">▶ 立即运行一轮</button>
+          <button class="btn-secondary btn-sm" id="dbStopBtn" title="让正在跑的这轮尽快收尾">⏹ 停止</button>
+          <span id="dbSaveMsg" class="save-msg"></span>
+        </div>
+
+        <div id="dbStatus" style="margin-top:12px;font-size:12px;color:#555;line-height:1.8;"></div>
+
+        <h3 style="font-size:14px;font-weight:600;margin:16px 0 8px;">运行日志</h3>
+        <div id="dbLogs" style="max-height:240px;overflow-y:auto;font-size:12px;color:#666;line-height:1.9;background:#fafafb;border:1px solid #eee;border-radius:8px;padding:8px 10px;"></div>
+      </section>
+
       </main>
   </div>
 
+  <script src="lib/crypto-box.js"></script>
+  <script src="lib/data-privacy.js"></script>
   <script src="settings.js"></script>
 </body>
 </html>

@@ -14,6 +14,8 @@ class Scheduler:
     def __init__(self):
         self.scheduler = AsyncIOScheduler()
         self._started = False
+        self._wired_intercept = False
+        self._wired_retention = False
 
     def start(self):
         """启动调度器"""
@@ -25,6 +27,10 @@ class Scheduler:
 
         # 加载持久化的定时任务
         self._load_scheduled_tasks()
+        # 全场景截流循环
+        self._start_intercept_cycle()
+        # 过期数据清除
+        self._start_retention_cycle()
 
     def stop(self):
         """停止调度器"""
@@ -121,6 +127,62 @@ class Scheduler:
         job_id = f"publish_note_{schedule_id}"
         if self.scheduler.get_job(job_id):
             self.scheduler.remove_job(job_id)
+
+    def _start_intercept_cycle(self):
+        """注册全场景截流的周期任务：Radar 扫描 + Wash 清洗。"""
+        if self._wired_intercept:
+            return
+        self._wired_intercept = True
+        from app.core.radar_engine import radar_engine
+        from app.core.action_engine import action_engine
+        from app.core.wash_engine import wash_engine
+        # Radar 命中事件交给 ActionEngine 干预
+        radar_engine.action_cb = action_engine.on_event
+        # 每 5 分钟跑一轮雷达+清洗
+        self.scheduler.add_job(
+            func=self._intercept_cycle,
+            trigger="interval",
+            minutes=5,
+            id="intercept_cycle",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        print("[调度器] 已注册全场景截流周期任务")
+
+    async def _intercept_cycle(self):
+        from app.core.radar_engine import radar_engine
+        from app.core.wash_engine import wash_engine
+        try:
+            await radar_engine.run_once()
+        except Exception as e:
+            print(f"[截流] Radar 扫描失败: {e}")
+        try:
+            await wash_engine.sweep()
+        except Exception as e:
+            print(f"[截流] Wash 清洗失败: {e}")
+
+    def _start_retention_cycle(self):
+        """注册过期数据清除：每天 04:20 清一轮（客户数据 90 天 / 运行数据 30 天）"""
+        if self._wired_retention:
+            return
+        self._wired_retention = True
+        self.scheduler.add_job(
+            func=self._retention_job,
+            trigger=CronTrigger(hour=4, minute=20),
+            id="retention_sweep",
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+        )
+        print("[调度器] 已注册过期数据清除任务（每日 04:20）")
+
+    async def _retention_job(self):
+        from app.core.retention import sweep_expired
+        try:
+            sweep_expired()
+        except Exception as e:
+            print(f"[保留期] 过期数据清除失败: {e}")
 
     def get_jobs(self) -> list[dict]:
         """获取所有定时任务"""

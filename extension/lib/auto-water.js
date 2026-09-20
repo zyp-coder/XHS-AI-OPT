@@ -2,7 +2,7 @@
  * auto-water.js — 笔记搜索 + 已灌水状态检查
  * 运行在 background service worker 上下文
  * 职责：关键词搜索笔记、标记已灌水状态
- * 注意：自动灌水/AI筛选/调度功能已移除（防爬策略调整）；
+ * 注意：自动灌水/AI筛选/调度功能已移除（功能策略调整）；
  *       旧「会员密钥」卡密层已删除，灌水功能统一由版本开关（edition.js autoWater）管控
  */
 
@@ -30,7 +30,7 @@ const AutoWater = {
     };
   },
 
-  /* ── 搜索笔记：一次只搜“当前目标词”，不批量遍历所有关键词（避免反复刷新小红书页/被风控） ─── */
+  /* ── 搜索笔记：一次只搜“当前目标词”，不批量遍历所有关键词（避免反复刷新小红书页） ─── */
   async searchNotes() {
     const config = await Storage.getAutoWaterConfig();
     console.log('[一键灌水] searchNotes - 读取到配置:', JSON.stringify(config));
@@ -154,7 +154,7 @@ const AutoWater = {
         console.log('[一键灌水] 笔记就绪状态:', ready, '重试次数:', retries, '等待(ms):', waitedMs);
         return { ok: true, success: true, message: '已打开笔记', noteTitle: item.title, noteId: item.noteId, ready: ready, waitedMs: waitedMs };
       }
-      // ★ CTRL+F 三次都没点中：绝不降级为直接甩 URL（冷开 /explore/ 极易触发反爬），直接跳过本篇
+      // ★ CTRL+F 三次都没点中：绝不降级为直接甩 URL（冷开 /explore/ 极易出现异常页），直接跳过本篇
       console.log('[一键灌水] clickNoteLink 未命中，跳过本篇（不降级导航）');
       return { ok: false, skipped: true, error: '未定位到笔记（CTRL+F 试了 3 次仍未命中），已跳过', noteTitle: item.title, noteId: item.noteId };
     } catch (e) {
@@ -233,11 +233,10 @@ const AutoWater = {
       const keywords = state.searchState?.keywords || [];
       if (keywords.length === 0) return;
 
-      // ★ 筛选配置：按 activePlan 选（cold 默认开·三项轮换，cycle 默认关），sort 为 rotate 时逐词轮换
+      // ★ 筛选配置：灌水规则（排序/范围）两种口径共用；sort 为 rotate 时逐词轮换
       let cfg0 = {};
       try { cfg0 = await Storage.getAutoWaterConfig(); } catch (_) { cfg0 = {}; }
-      const activePlan = cfg0.activePlan === 'cycle' ? 'cycle' : 'cold';
-      const filterCfg = activePlan === 'cycle' ? (cfg0.cycleFilter || {}) : (cfg0.coldFilter || {});
+      const filterCfg = cfg0.filter || cfg0.coldFilter || {};   // ★ 兼容旧版 coldFilter（在设置页保存一次即迁移到 filter）
       const sortSeq = ['likes', 'collects', 'comments'];
       let rotIdx = parseInt(cfg0.sortRotateIdx, 10) || 0;
       const sortPerKw = {};
@@ -280,7 +279,7 @@ const AutoWater = {
           continue;
         }
 
-        // ★ 按当前计划应用小红书排序/范围筛选（冷启动开 / 循环默认关），失败只降级不阻塞
+        // ★ 按「灌水规则」里那套排序/范围筛选应用小红书搜索页（两种口径共用），失败只降级不阻塞
         const sortKey = sortPerKw[i] || '';
         if (sortKey || scope) {
           try {
@@ -441,7 +440,7 @@ const AutoWater = {
   },
 
   /* 停留时间配置（设置页「⏱️ 停留时间」，存 delay_config，默认 0）：
-   实际停留 = 区间随机 min~max（更防爬）；floor 为技术下限。
+   实际停留 = 区间随机 min~max（更自然）；floor 为技术下限。
    兼容旧数值 n → min=n、max≈n*1.6 */
   async _dwell(key, floor) {
     let c;

@@ -875,6 +875,11 @@
       border-right: none;
       padding: 0 16px 0 14px;
     }
+    /* 组内只剩一个按钮（搜索；冷启动/循环入口已并入下一行的执行器）时：恢复独立胶囊，不留连体缺口 */
+    .btn-group > .btn:only-child {
+      border-radius: 8px;
+      border-right: 1px solid var(--xhs-red);
+    }
     .btn-group > .caret-btn {
       width: 28px; flex: none; padding: 0 !important;
       border-radius: 0 8px 8px 0 !important;
@@ -920,11 +925,30 @@
     }
     .drop-item:hover .drop-ico { background: #ffe6eb; }
 
-    /* 隐藏原注入的机器人模式下拉 + 自动按钮（逻辑保留，入口迁移到搜索下拉） */
-    #leftBotSlot #botModeSelect,
-    #leftBotSlot #botToggleBtn {
-      display: none !important;
+    /* 灌水执行器：口径 × 节奏 两个参数直给 + 开始/停止。
+       flex-basis:100% 让它独占一行，不与「搜索」挤在一起（列宽最窄 320px 也不会挤爆） */
+    #leftBotSlot {
+      display: flex; gap: 6px; align-items: center;
+      flex-basis: 100%; min-width: 0;
     }
+    #leftBotSlot .bot-param {
+      flex: 1 1 0; min-width: 0;
+      padding: 3px 4px; font-size: 11px;
+      border: 1px solid #d0d0d0; border-radius: 6px;
+      background: #fff; color: #333; cursor: pointer;
+    }
+    #leftBotSlot .bot-param:disabled { opacity: .55; cursor: not-allowed; }
+    #leftBotSlot .bot-toggle {
+      flex: none;
+      padding: 4px 10px; font-size: 12px; font-weight: 600;
+      border: 1px solid #059669; background: #fff; color: #059669;
+      border-radius: 6px; cursor: pointer; white-space: nowrap;
+      transition: all .15s;
+    }
+    #leftBotSlot .bot-toggle:hover:not(:disabled) { background: #ecfdf5; }
+    #leftBotSlot .bot-toggle.running { border-color: #dc2626; background: #dc2626; color: #fff; }
+    #leftBotSlot .bot-toggle.running:hover:not(:disabled) { background: #b91c1c; }
+    #leftBotSlot .bot-toggle:disabled { opacity: .55; cursor: not-allowed; }
 
     /* ===== ✨ UI 打磨层（叠加统一，只做视觉不破坏布局） ===== */
     :root {
@@ -1048,7 +1072,7 @@
       <select id="tenantSwitcher" title="切换租户/产品" style="padding:5px 8px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);cursor:pointer;max-width:140px;outline:none;"></select>
       <button id="adminBtn" style="padding:5px 12px;font-size:12px;border:1px solid var(--xhs-red);background:#fff;color:var(--xhs-red);border-radius:8px;cursor:pointer;font-weight:600;" title="打开设置">⚙️ 设置</button>
       <span class="badge" id="statusBadge">检查中...</span>
-      <span title="后台自动扫：定时刷新通知+消息，把新进线/回复吸进清单，并顺带自动 AI 触达清单里合适的人（每日≤10条，防风控）；最低 20 分钟一次。选 2/10 也按 20 跑" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0e7490;font-weight:600;white-space:nowrap;">🤖
+      <span title="后台自动扫：定时刷新通知+消息，把新进线/回复吸进清单，并顺带自动 AI 触达清单里合适的人（每日≤10条，控制频率）；最低 20 分钟一次。选 2/10 也按 20 跑" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#0e7490;font-weight:600;white-space:nowrap;">🤖
         <select id="plScanFreq2" style="font-size:11px;padding:3px 6px;border:1px solid #b9e6ff;border-radius:6px;color:#0e7490;background:#ecfeff;font-weight:600;cursor:pointer;">
           <option value="off">自动扫：关</option>
           <option value="2">2 分</option>
@@ -1059,7 +1083,7 @@
         </select>
       </span>
       <label title="拟人化挡位：一键套用整套停留/间隔与每日上限，挡位越高越慢越安全" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#571f3d;font-weight:600;white-space:nowrap;">🕐
-        <select id="plDelayPreset" title="拟人化挡位（与设置页同步）：0极速~5极致防御，选完即时生效" style="font-size:11px;padding:3px 6px;border:1px solid #e3c7d6;border-radius:6px;color:#c2185b;background:#fff5f7;font-weight:600;cursor:pointer;max-width:150px;"></select>
+        <select id="plDelayPreset" title="拟人化挡位（与设置页同步）：0极速~5极致从容，选完即时生效" style="font-size:11px;padding:3px 6px;border:1px solid #e3c7d6;border-radius:6px;color:#c2185b;background:#fff5f7;font-weight:600;cursor:pointer;max-width:150px;"></select>
       </label>
     </div>
   </div>
@@ -1079,7 +1103,7 @@
   <!-- 主功能 Tab：一级（诊断/发笔记/获客/通知/消息）+ 获客二级 + 通知二级 + 消息二级 -->
   <div id="mainTabs" style="display:flex;gap:0;padding:0 10px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0;">
     <button id="tabDiagnose" class="main-tab active" title="账号诊断：抓取本人主页，头像/简介/笔记整改建议 + 结合产品与知识库的内容规划">🔍 账号诊断</button>
-    <button id="tabNotePublish" class="main-tab" title="发笔记：用知识库内容一键/定时发布小红书笔记">✍️ 发笔记</button>
+    <button id="tabNotePublish" class="main-tab" title="发笔记：AI 生成成稿与封面 → 一键发布小红书笔记">✍️ 发笔记</button>
     <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 灌水总结">🎯 获客</button>
     <button id="tabNotifGroup" class="main-tab" title="通知：按来源渠道看线索（赞/评/关/AI），进清单批量触达">🔔 通知</button>
     <button id="tabMsgGroup" class="main-tab" title="消息：对方进线/已在聊的人 → 去卖、成交维护">📨 消息</button>
@@ -1106,15 +1130,21 @@
     <div class="panel-left" id="panelLeft">
       <div class="left-header">
         <div class="btn-group" id="searchBtnGroup">
-          <button class="btn btn-primary btn-sm" id="btnSearch"><span class="drop-ico">🔎</span>搜索</button>
-          <button class="btn btn-primary btn-sm caret-btn" id="btnSearchCaret" title="更多操作">▾</button>
-          <div class="btn-dropdown" id="searchDropdown">
-            <a class="drop-item" data-action="cold"><span class="drop-ico">🧊</span>冷启动 · 自动灌水</a>
-            <a class="drop-item" data-action="cycle"><span class="drop-ico">🔄</span>循环 · 自动灌水</a>
-          </div>
+          <button class="btn btn-primary btn-sm" id="btnSearch" title="按关键词列表开始搜索（自动灌水在下方执行器：口径 × 节奏）"><span class="drop-ico">🔎</span>搜索</button>
         </div>
         <button class="btn btn-ghost btn-sm" id="btnCancelSearch" style="display:none;" title="取消当前搜索">✕ 取消</button>
-        <span id="leftBotSlot"></span>
+        <!-- 灌水执行器：口径 × 节奏两个参数直给（原「🧊冷启动 / 🔄循环计划」即这两参数的两个组合） -->
+        <span id="leftBotSlot">
+          <select id="botScopeSel" class="bot-param" title="口径：全部未灌过=看到就灌（已灌过/已打开过的跳过）；只追涨势=只挑点赞增长中的笔记（无视已灌水标记，受「💧 灌水规则」上限/冷却约束）">
+            <option value="all">全部未灌过</option>
+            <option value="growing">只追涨势</option>
+          </select>
+          <select id="botPaceSel" class="bot-param" title="节奏：一遍跑完=当前搜索结果处理完就停；定时轮=每隔「扫描间隔」分钟再开一轮，长期轮询">
+            <option value="once">一遍跑完</option>
+            <option value="interval">定时轮</option>
+          </select>
+          <button id="botToggleBtn" class="bot-toggle" title="启动/停止自动灌水（口径 × 节奏）">🤖 开始</button>
+        </span>
       </div>
       <!-- 灌水关键词列表：可添加多个（≤版本上限），逐个顺序搜索，第一个完成才搜第二个 -->
       <div class="kw-bar" id="kwBar" style="display:none;flex-direction:column;gap:6px;padding:7px 8px;border-bottom:1px solid var(--line,#eceef0);background:#fbfbfc;">
@@ -1270,6 +1300,8 @@
     </div>
   </div>
 
+  <script src="lib/crypto-box.js"></script>
+  <script src="lib/data-privacy.js"></script>
   <script src="lib/note-trend.js"></script>
   <script src="popup.js"></script>
   <script src="auto-water-app.js"></script>

@@ -124,7 +124,7 @@ async def active_comment(note_url: str, scene: str = "intercept_comment"):
     # 发布评论
     success = await browser_engine.comment_on_note(note_url, comment)
     if not success:
-        raise HTTPException(500, "发布评论失败（可能是风控或页面变化）")
+        raise HTTPException(500, "发布评论失败（可能是页面结构变化）")
 
     return {
         "comment": comment,

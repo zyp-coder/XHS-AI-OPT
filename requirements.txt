@@ -4,7 +4,6 @@ sqlalchemy
 pydantic
 pydantic-settings
 playwright
-playwright-stealth
 apscheduler
 openai
 aiofiles

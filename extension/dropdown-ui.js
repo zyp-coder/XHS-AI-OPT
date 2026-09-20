@@ -1,4 +1,4 @@
-/* ===== 下拉菜单交互（纯视觉整合，通过外链加载以规避 CSP 内联限制） ===== */
+/* ===== 下拉菜单交互（纯视觉整合，通过外链加载以符合 CSP 对内联脚本的限制） ===== */
 (function () {
   function init() {
     document.addEventListener('click', function (e) {
@@ -62,13 +62,6 @@
         var kb = document.getElementById('awKeywordPopup');
         var sr = document.getElementById('btnSearch');
         if (kb && sr) { if (kb.value.trim()) sr.click(); else kb.focus(); }
-        break;
-      case 'cold':
-      case 'cycle':
-        var sel = document.getElementById('botModeSelect');
-        var bb = document.getElementById('botToggleBtn');
-        if (sel) sel.value = (action === 'cycle') ? 'cycle' : 'cold';
-        if (bb && !bb.disabled) bb.click();
         break;
       case 'refresh':
         var rd = document.getElementById('refreshBtn');

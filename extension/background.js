@@ -4,6 +4,8 @@
  */
 
 importScripts(
+  'lib/crypto-box.js',
+  'lib/data-privacy.js',
   'lib/storage.js',
   'lib/edition.js',
   'lib/license-guard.js',
@@ -14,7 +16,8 @@ importScripts(
   'lib/knowledge-search.js',
   'lib/prompt-renderer.js',
   'lib/note-architecture.js',
-  'lib/auto-water.js'
+  'lib/auto-water.js',
+  'lib/daily-browse.js'
 );
 
 /* ─── 安装包预填：读取装包时写入的 install-config.json，首次运行时把非私密字段并入配置 ─── */
@@ -74,7 +77,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     }
     // 迁移旧版话术库数据到知识库（兼容 v3.8 及之前版本）
     try {
-      const { script_library } = await chrome.storage.local.get('script_library');
+      const raw = (await chrome.storage.local.get('script_library')).script_library;
+      const script_library = await DataPrivacy.unlock('script_library', raw);
       if (script_library && Array.isArray(script_library) && script_library.length > 0) {
         const migrated = script_library.map(s => ({
           id: Date.now().toString() + Math.random(),
@@ -88,7 +92,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
         }));
         const kb = await Storage.getKnowledgeBase();
         kb.push(...migrated);
-        await chrome.storage.local.set({ [Storage.KEYS.KNOWLEDGE_BASE]: kb });
+        await Storage.set(Storage.KEYS.KNOWLEDGE_BASE, kb);
         await chrome.storage.local.remove('script_library');
         console.log('[小红书助手] 已迁移话术库:', migrated.length, '条到知识库');
       }
@@ -137,6 +141,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       await chrome.storage.local.set({ [Storage.KEYS.PROMPTS]: existing });
       console.log('[小红书助手] 启动时同步提示词完成');
     }
+  } catch (_) {}
+  // 数据治理：存量明文加密升级 + 过期数据清除（每次 SW 唤醒跑一次，幂等）
+  try { await DataPrivacy.startup(); } catch (e) { console.warn('[隐私] 启动任务失败:', e); }
+  try {
+    chrome.alarms.create('privacy-sweep', { periodInMinutes: 1440, delayInMinutes: 30 });
   } catch (_) {}
 })();
 
@@ -249,6 +258,13 @@ async function requireAutoWater(fn) {
 async function requireProspectList(fn) {
   if (typeof Edition !== 'undefined' && !Edition.hasFeature('prospectList')) {
     throw new Error('当前版本未开通「获客清单」功能');
+  }
+  return await fn();
+}
+// dailyBrowse 版本闸门：日常浏览为「全功能版」专属
+async function requireDailyBrowse(fn) {
+  if (typeof Edition !== 'undefined' && !Edition.hasFeature('dailyBrowse')) {
+    throw new Error('当前版本未开通「日常浏览」功能');
   }
   return await fn();
 }
@@ -456,19 +472,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     openChat: (data) => requireProspectList(() => handleOpenChat(data)),
     chatSend: (data) => requireProspectList(() => handleChatSend(data)),
     scanChatReply: (data) => requireProspectList(() => handleScanChatReply(data || {})),
-    setAutoScanChat: (data) => handleSetAutoScanChat(data || {}),
-    // ── 消息中心：同步会话 与 出站发送 ──
-    messageCenterSync: (data) => handleMessageCenterSync(data || {}),
-    messageCenterFlushOutbox: (data) => handleMessageCenterFlushOutbox(data || {}),
-    // ── AI客服：场景+问答话术体系 ──
-    getAiCsConfig: () => handleGetAiCsConfig(),
-    saveAiCsConfig: (data) => handleSaveAiCsConfig(data || {}),
-    importAiCsConfig: (data) => handleImportAiCsConfig(data || {}),
-    aiCsRespond: (data) => handleAiCsRespond(data || {}),
-    aiCsTouch: (data) => handleAiCsTouch(data || {}),
+    setAutoScanChat: (data) => requireProspectList(() => handleSetAutoScanChat(data || {})),
+    // ── 消息中心：同步会话 与 出站发送（通知/私信，随 prospectList 收口到全功能版）──
+    messageCenterSync: (data) => requireProspectList(() => handleMessageCenterSync(data || {})),
+    messageCenterFlushOutbox: (data) => requireProspectList(() => handleMessageCenterFlushOutbox(data || {})),
+    // ── AI客服：场景+问答话术体系（通知/私信的内收应答，随 prospectList 收口）──
+    getAiCsConfig: () => requireProspectList(() => handleGetAiCsConfig()),
+    saveAiCsConfig: (data) => requireProspectList(() => handleSaveAiCsConfig(data || {})),
+    importAiCsConfig: (data) => requireProspectList(() => handleImportAiCsConfig(data || {})),
+    aiCsRespond: (data) => requireProspectList(() => handleAiCsRespond(data || {})),
+    aiCsTouch: (data) => requireProspectList(() => handleAiCsTouch(data || {})),
     getPendingNotifs: (data) => requireProspectList(() => handleGetPendingNotifs(data)),
     sendNotifReply: (data) => requireProspectList(() => handleSendNotifReply(data)),
-    qaToKb: (data) => handleQaToKb(data || {}),
+    qaToKb: (data) => requireProspectList(() => handleQaToKb(data || {})),
     exportAllData: () => handleExportAllData(),
     importAllData: (data) => handleImportAllData(data || {}),
     profileProspects: (data) => requireProspectList(() => handleProfileProspects(data)),
@@ -490,19 +506,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getEngineTabs: async () => await getEngineTabsStatus(),
     // ── 窗口形态：小窗(浮动) → 大窗(总览) 切换 ──
     openBigWindow: (data) => openBigWindow(data.senderTab),
-    // ── ✍️ 发笔记（受 knowledge 版本闸门控制）──
-    aiRewriteNote: (data) => requireKnowledge(() => aiRewriteNoteBg(data)),
+    // ── ✍️ 发笔记（受 notePublish 版本闸门控制；产品卖点/知识库等素材类仍走 knowledge）──
+    aiRewriteNote: (data) => requireNotePublish(() => aiRewriteNoteBg(data)),
     aiGenerateSellPoints: (data) => requireKnowledge(() => aiGenerateSellPointsBg(data)),
-    genDefaultAiCS: (data) => handleGenDefaultAiCS(data || {}),
-    optimizeDm: (data) => handleOptimizeDm(data || {}),
-    batchGenDmDrafts: (data) => handleBatchGenDmDrafts(data || {}),
+    genDefaultAiCS: (data) => requireProspectList(() => handleGenDefaultAiCS(data || {})),
+    optimizeDm: (data) => requireProspectList(() => handleOptimizeDm(data || {})),
+    batchGenDmDrafts: (data) => requireProspectList(() => handleBatchGenDmDrafts(data || {})),
     aiGenerateConcept: (data) => requireKnowledge(() => aiGenerateConceptBg(data)),
-    aiGenerateSelfComment: (data) => requireKnowledge(() => aiGenerateSelfCommentBg(data)),
-    generateNoteImage: (data) => requireKnowledge(() => generateNoteImageBg(data)),
-    aiCoverLayout: (data) => requireKnowledge(() => aiCoverLayoutBg(data || {})),
+    aiGenerateSelfComment: (data) => requireNotePublish(() => aiGenerateSelfCommentBg(data)),
+    generateNoteImage: (data) => requireNotePublish(() => generateNoteImageBg(data)),
+    aiCoverLayout: (data) => requireNotePublish(() => aiCoverLayoutBg(data || {})),
     aiKbTree: (data) => requireKnowledge(() => aiKbTreeBg(data || {})),
     genPromptPack: (data) => requireKnowledge(() => genPromptPackBg(data || {})),
-    genCoverTemplate: (data) => requireKnowledge(() => genCoverTemplateBg(data)),
+    genCoverTemplate: (data) => requireNotePublish(() => genCoverTemplateBg(data)),
+    // ── 🌿 日常浏览（受 dailyBrowse 版本闸门控制，全功能版专属）──
+    dailyBrowseStatus: () => requireDailyBrowse(() => DailyBrowse.getStatus()),
+    dailyBrowseSaveConfig: (data) => requireDailyBrowse(async () => ({ cfg: await DailyBrowse.saveConfig((data && data.config) || data || {}) })),
+    dailyBrowseRunNow: () => requireDailyBrowse(() => DailyBrowse.runRound({ force: true })),
+    dailyBrowseStop: () => requireDailyBrowse(() => DailyBrowse.stop()),
   };
 
   const handler = handlers[action];
@@ -594,7 +615,7 @@ const TACTICS = [
   { id: 'empathy', name: '共情共鸣流', strength: '弱', len: '40~140字', inst: '先用自己或身边人的经历接住对方的情绪（“给你说个我同事的例子”“我当时也纠结了半天”），把那种感受/纠结讲透让对方觉得你懂，再顺带说一句自己当时是怎么做的；可带产品就轻带一句，可用可不用的就放掉。' },
   { id: 'hot', name: '借势热点流', strength: '中', len: '40~140字', inst: '顺着笔记/评论区正在火的话题或某个反转点往外延伸，站在普通人视角说自己的观察或立场，借话题热度拉曝光；可以带一句自己的产品或经验，但重点是“聊到点子上”，不硬广也不跑题。' },
   { id: 'zandian', name: '情绪带赞流', strength: '无', len: '10~40字', inst: '输出一句话或两三句短金句，刺中大家的共同情绪（共鸣/好笑/解气），允许抽象玩梗、自嘲，主打“被说到心坎里”；完全不提产品、不导流，纯为点赞互动，要求短、准、有记忆点，不要正经长文。' },
-  { id: 'wenfa', name: '提问互动流', strength: '无', len: '15~60字', inst: '主动抛出一个有讨论度、对方或评论区能接得上的问题（“你们呢？是不是也这样？”“我好奇大家都是怎么处理的？”），轻巧撬动回复，不涉及产品，用来养号/涨互动。' },
+  { id: 'wenfa', name: '提问互动流', strength: '无', len: '15~60字', inst: '主动抛出一个有讨论度、对方或评论区能接得上的问题（“你们呢？是不是也这样？”“我好奇大家都是怎么处理的？”），轻巧撬动回复，不涉及产品，用来提升账号活跃与互动。' },
   { id: 'qiuzhu', name: '求教自嘲流', strength: '无', len: '30~120字', inst: '以“我好像也踩进去了/蹲一个懂的人”的自嘲姿态发问，戳中共同困惑引共鸣，让大家愿意在评论区展开（有风险，别在自己产品相关话题上装作没经验被识破，仅用于纯闲聊/搭话场景）。' },
 ];
 const TACTIC_MAP = Object.fromEntries(TACTICS.map((t, i) => [t.id, { ...t, idx: i }]));
@@ -617,7 +638,7 @@ const PURPOSE_META = {
     note: '目标是把关注/信任沉淀到你主页：先把对这条评论真正有用的干货给足，让人觉得“这人有东西”，再自然提一句主页或点头像；少纯营销。',
   },
   likes: {
-    name: '互动涨赞（养号/做数据）',
+    name: '互动涨赞（提升活跃）',
     bias: ['zandian', 'wenfa', 'qiuzhu', 'empathy', 'hot'],
     note: '目标是这条自身能涨赞、撬动互动，基本不谈产品；多用金句带赞、提问互动、求教自嘲、共情这类轻量打法。',
   },
@@ -778,7 +799,7 @@ async function handleAiKbSave(data) {
       createdAt: ts,
     });
   }
-  if (added) await chrome.storage.local.set({ knowledge_base: kc });
+  if (added) await Storage.set(Storage.KEYS.KNOWLEDGE_BASE, kc);
   return { ok: true, added };
 }
 
@@ -809,7 +830,7 @@ async function handleAiKbImport(data) {
       else push(s.slice(0, 12), '通用', s);
     });
   }
-  if (added) await chrome.storage.local.set({ knowledge_base: kc });
+  if (added) await Storage.set(Storage.KEYS.KNOWLEDGE_BASE, kc);
   return { ok: true, added, entries: kc.slice(-added) };
 }
 
@@ -1763,10 +1784,12 @@ async function handleGetProspectList(data) {
   // 【诊断】同时量"活动 key 原始 / 当前租户快照 / 返回 list"，定位数据到底在哪
   let rawActive = 0, snapCount = 0, curId = '';
   try {
-    rawActive = (Array.isArray((await chrome.storage.local.get('prospect_list'))['prospect_list']) ? (await chrome.storage.local.get('prospect_list'))['prospect_list'].length : 0);
+    const rawPl = await DataPrivacy.unlock('prospect_list', (await chrome.storage.local.get('prospect_list')).prospect_list);
+    rawActive = Array.isArray(rawPl) ? rawPl.length : 0;
     curId = await TenantManager.getCurrentId();
     const snap = (await chrome.storage.local.get(TenantManager.TENANT_KEYS.DATA_PREFIX + curId))[TenantManager.TENANT_KEYS.DATA_PREFIX + curId] || {};
-    snapCount = Array.isArray(snap.prospect_list) ? snap.prospect_list.length : 0;
+    const snapPl = await DataPrivacy.unlock('prospect_list', snap.prospect_list);
+    snapCount = Array.isArray(snapPl) ? snapPl.length : 0;
   } catch (_) {}
   return { ok: true, list, allTags, total: (await Storage.getProspectList()).length, _rawActive: rawActive, _snapCount: snapCount, _cur: curId };
 }
@@ -2333,7 +2356,7 @@ async function runAutoCycle() {
 }
 
 // ★ 自动跟单（写步骤）：并入 prospect-scan 合并周期 —— 读扫新的顺手对清单里合适的人自动 AI 触达。
-//   复用原 auto-touch 引擎的过滤条件与每日上限（默认 10/天），避免一次轰太多触发风控。
+//   复用原 auto-touch 引擎的过滤条件与每日上限（默认 10/天），避免一次发太多。
 const AUTO_TOUCH_MAX = 10;
 async function _touchDailyStat() {
   try {
@@ -2388,8 +2411,8 @@ async function runAutoTouchCycle() {
       const dr = await handleSendDm({ person: to, text, aiGenerated: true });
       if (dr && dr.ok !== false) sent++;
     } catch (_) {}
-    await _sleepBg(2500 + Math.floor(Math.random() * 6000));
-  }
+await _sleepBg(await _bgBatchGapMs()); // ★ 节奏控制：读拟人挡位条间隔 + 随机抖动（原来固定 2.5~6s）
+    }
   await _touchBumpDaily(daily + sent);
   console.log('[自动跟单] 本轮完成，实际发送 ' + sent + ' 条（今日累计 ' + (daily + sent) + '/' + AUTO_TOUCH_MAX + '）');
 }
@@ -2400,7 +2423,7 @@ async function _msgSend(convId, text) {
   let res = null;
   try { res = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 30000); } catch (e) { res = { success: false, error: e.message }; }
   const limited = !!(res && res.limited);
-  return { ok: !!(res && res.success), sent: !!(res && res.success), limited, error: (res && res.error) || '' };
+  return { ok: !!(res && res.success), sent: !!(res && res.success), limited, definitive: !!(res && res.definitive), error: (res && res.error) || '' };
 }
 
 /* ─── 消息中心：出站发送队列 —— 从后端拉取 Web 端"一键发送"指令，真实发出并回写 ─── */
@@ -2415,15 +2438,20 @@ async function handleMessageCenterFlushOutbox(data) {
       if (r.ok && r.sent) {
         await postMsgBackend('/outbox/' + t.id + '/done', { success: true });
         sent++;
-      } else {
+      } else if (r.definitive) {
+        // 明确未发出 → 标失败，允许下一轮重试
         await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: r.error || '发送失败' });
         failed++;
+      } else {
+        // ★ 防重复写：可能已发但未确认 → 直接标记完成，避免下一轮重拉同一任务再发（造成同一人收到两条私信）
+        await postMsgBackend('/outbox/' + t.id + '/done', { success: true, done: true, error: r.error || '发送未确认' });
+        sent++;
       }
     } catch (e) {
       await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: String((e && e.message) || e) });
       failed++;
     }
-    await _sleepBg(1200);
+    await _sleepBg(await _bgBatchGapMs()); // ★ 节奏控制：读拟人挡位条间隔 + 随机抖动（原来固定 1200ms）
   }
   return { ok: true, sent, failed };
 }
@@ -3027,6 +3055,28 @@ async function handleQaToKb(data) {
 
 /* ═══════════ 全量备份 / 恢复（合并保留）：所有租户 + 运行数据 ═══════════ */
 
+/** 导出口径：把快照里的落盘密文解成明文（文件本身再由用户口令整包加密），保证换机器也能还原 */
+async function _unlockSnapshotForExport(snap) {
+  const out = {};
+  for (const k of Object.keys(snap)) {
+    if (DataPrivacy.isEncKey(k)) out[k] = await DataPrivacy.unlock(k, snap[k]);
+    else out[k] = snap[k];
+  }
+  if (out.config && typeof out.config === 'object') out.config = await DataPrivacy.unlockConfig(out.config);
+  return out;
+}
+
+/** 导入口径：把备份里的明文按本机密钥重新加密后再落盘 */
+async function _lockSnapshotForImport(snap) {
+  const out = {};
+  for (const k of Object.keys(snap)) {
+    if (DataPrivacy.isEncKey(k)) out[k] = (snap[k] === undefined || snap[k] === null) ? snap[k] : await CryptoBox.lockJSON(snap[k]);
+    else out[k] = snap[k];
+  }
+  if (out.config && typeof out.config === 'object') out.config = await DataPrivacy.lockConfig(out.config);
+  return out;
+}
+
 // 导出：全部租户快照（含 config/知识库/话术库/提示词/获客清单等），当前租户用活动 key 覆盖（确保最新）
 async function handleExportAllData() {
   const pref = TenantManager.TENANT_KEYS.DATA_PREFIX;
@@ -3049,11 +3099,12 @@ async function handleExportAllData() {
 
   const data = {};
   const stored = await chrome.storage.local.get(list.map(t => pref + t.id));
-  for (const t of list) { data[t.id] = stored[pref + t.id] || {}; }
+  for (const t of list) { data[t.id] = await _unlockSnapshotForExport(stored[pref + t.id] || {}); }
   // 当前租户：再用活动 key 覆盖（含最新值，双保险）
   if (cur) {
     const curSnap = data[cur] = data[cur] || {};
     for (const k of TenantManager.TENANT_SCOPED_KEYS) if (active[k] !== undefined) curSnap[k] = active[k];
+    data[cur] = await _unlockSnapshotForExport(curSnap);
   }
   // 非破坏性摘要，方便直观确认知识库/话术库/卖点/人设都在包里
   // （同名租户用序号区分展示，避免多个「默认租户」叠成一个导致误判）
@@ -3082,10 +3133,10 @@ async function handleImportAllData(data) {
   if (!b || !b.tenants || !b.data) throw new Error('备份文件格式不对');
   const pref = TenantManager.TENANT_KEYS.DATA_PREFIX;
   const writes = {};
-  // 1) 合并每个备份租户的快照（备份覆盖、保留本地独有）
+  // 1) 合并每个备份租户的快照（备份覆盖、保留本地独有）；备份是明文，落盘前按本机密钥重新加密
   for (const bt of b.tenants) {
     const id = bt.id; if (!id) continue;
-    const snap = b.data[id] || {};
+    const snap = await _lockSnapshotForImport(b.data[id] || {});
     if (!Object.keys(snap).length) continue;
     const curSnap = (await chrome.storage.local.get(pref + id))[pref + id] || {};
     for (const k of Object.keys(snap)) curSnap[k] = snap[k];
@@ -3472,7 +3523,8 @@ async function handleSendDm(data) {
     // 首次发送；会话若没及时打开/发送失败 → 等一会儿重试一次
     let dmr = null;
     try { dmr = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 45000); } catch (_) { dmr = null; }
-    if (!dmr || !dmr.success) {
+    // ★ 防重复写：仅当第一次“明确未发出”(definitive) 才重发一次；超时(null)/“可能已发但未确认”绝不重发，避免同一条私信连发
+    if (dmr && dmr.definitive && !dmr.success) {
       await _sleepBg(2500);
       try { dmr = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 45000); } catch (_) { dmr = null; }
     }
@@ -3491,6 +3543,16 @@ async function handleSendDm(data) {
       throw le;
     }
     if (dmr && dmr.limited) { const le = new Error(dmr.error || '对方限制/需先关注，建议改为评论互动破冰'); le.limited = true; throw le; }
+    // ★ 防重复写：超时(null) 或 可能已发但未确认(非definitive) → 绝不进主页兜底再发一次（那会造成同条私信发两次）；
+    //   改标记为“已触达·待人工确认”（写入 lastDmAt 防止下次自动跟单再次触达），返回 pending 交由用户检查
+    if (!dmr || !dmr.definitive) {
+      try {
+        const _pl = await Storage.getProspectList();
+        const _pp = _pl.find(x => x.id === person.id);
+        if (_pp) await Storage.updateProspect(person.id, { dmStatus: (_pp.dmStatus || 'sent'), lastDmAt: Date.now(), dmNeedsConfirm: true });
+      } catch (_) {}
+      return { ok: true, pending: true, notice: '私信可能已发出但未获确认，已标记「待人工检查」（已防止重复发送，避免发出两条）。' };
+    }
     // 未能成功 → 落到旧流程（开主页 + 按钮兜底 / 手动发送），不直接报错
     try { await chrome.tabs.update(tab.id, { url: userLink }); await waitTabLoadBg(tab.id, 20000); } catch (_) {}
     try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
@@ -3689,7 +3751,7 @@ async function handleLocateDmButton(data) {
 }
 
 /* ─── 获客清单：定位用户 + 抓公开小红书号/主页昵称（A方案：已登录小红书 tab 内直达用户主页） ───
- * 以 person.source.userUrl 为准；在已登录 tab 内同域改址导航（不开新 tab，降低反爬触发率）。
+ * 以 person.source.userUrl 为准；在已登录 tab 内同域改址导航（不开新 tab，减少页面加载次数）。
  * 导航会卸载内容脚本 → 返回 navigating:true，由前端再点一次完成抓取；或等加载后自动重试。 */
 async function handleEnrichByProfile(data) {
   const person = (data && data.person) || {};
@@ -3802,6 +3864,21 @@ async function saveProfileToProspect(person, xhsId, name) {
 }
 
 function _sleepBg(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ★ 节奏控制：批量发送条间隔，读拟人挡位 delay_config.batchItemGap（区间随机）。
+ *   未配置时默认 3~8s；配置为 0/裸跑时给 3~6s 保底，避免固定 1.2s/2.5s 这种机械连发节拍 */
+async function _bgBatchGapMs() {
+  try {
+    const r = await chrome.storage.local.get('delay_config');
+    const c = (r && r.delay_config && r.delay_config.batchItemGap);
+    let lo = 0, hi = 0;
+    if (c && typeof c === 'object') { lo = Number(c.min) || 0; hi = Math.max(lo, Number(c.max) || 0); }
+    else if (typeof c === 'number' && c > 0) { lo = hi = Math.round(c * 1.1); }
+    let g = lo + Math.random() * Math.max(0, hi - lo);
+    if (g < 3000) g = 3000 + Math.floor(Math.random() * 3000);
+    return g;
+  } catch (_) { return 3000 + Math.floor(Math.random() * 3000); }
+}
 
 // ★ chrome.tabs.sendMessage 不支持 {timeout} 选项（传了会直接报错）。用 Promise.race 实现真实超时。
 function sendTabMsg(tabId, msg, timeoutMs) {
@@ -3940,6 +4017,18 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       _armProspectScan(); // 跑完再随机排下一次（无固定节拍、不重叠）
     }).catch(() => { _armProspectScan(); });
   }
+  // 🌿 日常浏览：跑完一轮再随机排下一轮（受 dailyBrowse 版本开关闸门控制）
+  if (alarm.name === 'daily-browse-tick') {
+    requireDailyBrowse(() => DailyBrowse.handleAlarm(alarm.name))
+      .catch(() => {
+        // 未授权版本不再续排，避免残留闹钟空转
+        if (typeof Edition === 'undefined' || Edition.hasFeature('dailyBrowse')) DailyBrowse.applySchedule();
+      });
+  }
+  // ★ 每日数据治理：过期数据清除（客户数据静默 90 天 / 运行数据 30 天）
+  if (alarm.name === 'privacy-sweep') {
+    DataPrivacy.sweepExpired().catch((e) => console.warn('[隐私] 定时清除失败:', e));
+  }
 });
 
 // 随机抖动：基准 base ± min(10, floor(base/2))，兜底 ≥1；2→±1，10→±5，≥20→±10
@@ -3986,10 +4075,26 @@ async function handleSetAutoScanChat(data) {
   } catch (_) {}
 })();
 
+// 🌿 日常浏览：service worker 启动时按已保存的开关重新排程（跑完再排下一次，不设固定节拍）
+(function scheduleDailyBrowse() {
+  try {
+    // 只有开通「日常浏览」的版本才在启动时续排闹钟（未开通版本配置恒为关闭，这里再兜一层）
+    if (typeof Edition !== 'undefined' && !Edition.hasFeature('dailyBrowse')) return;
+    DailyBrowse.applySchedule();
+  } catch (_) {}
+})();
+
 /* ═══════════ ✍️ 发笔记 · AI 生成文案（知识库参考 + 可选话题 → 小红书文案） ═══════════ */
 async function requireKnowledge(fn) {
   if (typeof Edition !== 'undefined' && !Edition.hasFeature('knowledge')) {
-    throw new Error('当前版本未开通「发笔记/知识库」功能');
+    throw new Error('当前版本未开通「知识库」功能');
+  }
+  return await fn();
+}
+// notePublish 版本闸门：无「发笔记」功能的版本（基础版/升级版）直接拦截
+async function requireNotePublish(fn) {
+  if (typeof Edition !== 'undefined' && !Edition.hasFeature('notePublish')) {
+    throw new Error('当前版本未开通「发笔记」功能');
   }
   return await fn();
 }

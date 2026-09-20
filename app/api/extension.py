@@ -63,7 +63,7 @@ def _build_threads_text(threads: list[dict]) -> str:
 
 
 def _call_ai(system_prompt: str, user_prompt: str, max_tokens: int = 1500) -> str:
-    """直接调用 AI（绕过模板系统）"""
+    """直接调用 AI（不经过模板系统）"""
     from openai import OpenAI
     from app.models.models import AIConfig, engine
     from sqlalchemy.orm import Session
