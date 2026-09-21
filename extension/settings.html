@@ -44,7 +44,7 @@
 
       <!-- 数据说明 -->
       <div style="margin:0 0 16px;padding:12px 16px;background:#f0f6ff;border:1px solid #cfe0ff;border-radius:10px;font-size:13px;line-height:1.7;color:#2b4a7a;">
-        <b>数据说明：</b>你的全部数据——租户配置、知识库、话术、评论/私信同步记录、灌水与回复历史——都保存在本机（浏览器本地存储 + 本机 127.0.0.1 服务），不会上传到任何云端服务器；调用 AI 生成内容时，仅将生成所必需的文本发送给你在「AI 配置」中自行选择的 AI 服务商。
+        <b>数据说明：</b>你的全部数据——租户配置、知识库、话术、评论/私信同步记录、灌水与回复历史——都保存在本机（浏览器本地存储 + 本机 127.0.0.1 服务），不会上传到任何云端服务器；本机运营后台只对本机开放，外部网站既打不开也读不到；调用 AI 生成内容时，仅将生成所必需的文本发送给你在「AI 配置」中自行选择的 AI 服务商。
         <div style="margin-top:8px;">
           <b>加密：</b>AI 密钥、昵称、邮箱、会话与评论正文等敏感字段在本机<b>加密落盘</b>；导出的备份/知识库/AI 客服配置文件由你设置的口令整体加密，换机器导入时输入同一口令即可还原。
         </div>
@@ -600,7 +600,7 @@
           <div class="form-group" style="display:flex;align-items:center;">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex-wrap:wrap;">
               <input type="checkbox" id="bhAutoScanChat">
-              🔁 后台定时扫描 /chat 私信 / 消息中心同步 <span style="font-size:11px;color:#999;">（默认关：不自动开消息页，也不定时刷消息中心。开启后才按随机 20~40 分钟后台静默扫一次「进线/回复」+ 每 20 分钟同步消息中心；不抢焦点、不碰你正在看的页）</span>
+              🔁 后台定时扫描 /chat 私信 <span style="font-size:11px;color:#999;">（默认关：不自动开消息页。开启后才按随机 20~40 分钟后台静默扫一次「进线/回复」；不抢焦点、不碰你正在看的页）</span>
             </label>
           </div>
           <div class="form-group">
@@ -696,7 +696,7 @@
         </div>
       </section>
 
-      <!-- 🌿 日常浏览（全功能版专属）：按时段 + 每日配额，在首页推荐/关键词信息流里自动浏览 -->
+      <!-- 🌿 日常浏览（②升级版/③全功能版可用，不列入对外功能清单）：按时段 + 每日配额，在首页推荐/关键词信息流里自动浏览 -->
       <section id="tab-dailybrowse" class="tab-panel">
         <div class="panel-header">
           <h2>🌿 日常浏览</h2>

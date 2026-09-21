@@ -240,7 +240,7 @@ window.AutoWaterApp = (function () {
     if (hint) {
       var lim = (max >= 8 ? 8 : max);
       var txt = (max === 1)
-        ? '❗ 本版本为「单关键词版」，只能添加 1 个关键词。'
+        ? '❗ 本版本关键词上限为 1 个，只能先加 1 个。'
         : ('共 ' + list.length + ' 个关键词 · 当前搜第 ' + (_kwIdx + 1) + ' 个 · 灌完当前词，点下一个词继续（不批量刷新）');
       hint.textContent = txt;
     }
@@ -285,6 +285,61 @@ window.AutoWaterApp = (function () {
     renderKwList(list, max);
   }
   window._addKwKeyword = addKwFromInput;
+
+  /* 批量把候选词补进关键词列表（去重、守本版本上限）；返回 {added,total,max} */
+  async function appendKwCandidates(cands, srcLabel) {
+    var max = await ensureKwMax();
+    var list = await loadKwList();
+    var added = 0;
+    for (var i = 0; i < (cands || []).length; i++) {
+      var k = String(cands[i] || '').trim();
+      if (!k || list.indexOf(k) !== -1) continue;
+      if (list.length >= max) break;
+      list.push(k);
+      added++;
+    }
+    if (added) { list = await saveKwList(list); renderKwList(list, max); }
+    if (typeof addLog === 'function') {
+      addLog(added
+        ? ('🏷 ' + srcLabel + '：新增 ' + added + ' 个关键词' + (list.length >= max ? '（已达本版本上限 ' + max + ' 个）' : ''))
+        : ('🏷 ' + srcLabel + '：没有可新增的词'), added ? 'success' : 'info');
+    }
+    return { added: added, total: list.length, max: max };
+  }
+
+  /* 🏷 话题：把笔记列表/笔记正文里采集到的 #话题，按出现次数转成搜索关键词 */
+  async function collectTopicKeywords() {
+    if (!window.NoteTags) { showError('话题采集未就绪，请重开弹窗再试'); return; }
+    var pool = [];
+    try { pool = await window.NoteTags.list(); } catch (_) { pool = []; }
+    if (!pool.length) {
+      showError('还没采集到 #话题：先搜索或点开几篇笔记，正文里的话题会自动收录（读得越多越准），再来点「🏷 话题」。');
+      return;
+    }
+    var r = await appendKwCandidates(pool.map(function (x) { return x.tag; }), '话题转关键词');
+    if (!r.added) showError('采集到的话题都已在列表里（或关键词已达 ' + r.max + ' 个上限）。');
+  }
+
+  /* ✨ 找词：AI 按账号诊断 + 产品库生成关键词，自动补到本版本上限 */
+  async function aiFindKeywords() {
+    var max = await ensureKwMax();
+    var list = await loadKwList();
+    var need = max - list.length;
+    if (need <= 0) { showError('关键词已达本版本上限（' + max + ' 个），先移除几个再找词。'); return; }
+    var btn = document.getElementById('btnKwFromAi');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 找词中'; }
+    try {
+      if (typeof addLog === 'function') addLog('✨ 正在按账号诊断 + 产品库找词…', 'info');
+      var r = await sendMsg('aiGenKeywords', { need: need, exclude: list }, 120000);
+      if (!r || r.ok === false) throw new Error((r && r.error) || 'AI 找词失败');
+      await appendKwCandidates(r.keywords || [], 'AI 找词');
+    } catch (e) {
+      if (typeof addLog === 'function') addLog('❌ AI 找词失败：' + (e.message || e), 'error');
+      showError('AI 找词失败：' + (e.message || e));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = '✨ 找词'; }
+    }
+  }
 
   /* ─── 搜索（按关键词列表：逐个顺序搜索，第一个完成才开始第二个） ─── */
   async function doSearch() {
@@ -371,6 +426,9 @@ window.AutoWaterApp = (function () {
     var sorted = (notes || []).slice().sort(function (a, b) {
       return getNoteCommentStat(b) - getNoteCommentStat(a);
     });
+
+    // 🏷 话题采集：搜索结果卡片的 #话题 入池（供「关键词维护 · 话题」一键转搜索词）
+    try { if (window.NoteTags) window.NoteTags.recordFromNotes(sorted); } catch (_) {}
     document.getElementById('resultsCount').textContent = '共 ' + sorted.length + ' 篇笔记' + (sorted.length > 1 ? '（按评论数降序）' : '');
     var list = document.getElementById('noteList');
     list.innerHTML = '';
@@ -747,6 +805,9 @@ window.AutoWaterApp = (function () {
     $('#btnRetrySearch')?.addEventListener('click', doSearch);
     // ＋ 添加关键词
     $('#btnAddKw')?.addEventListener('click', addKwFromInput);
+    // 🏷 话题：采集池 → 关键词；✨ 找词：AI 按诊断+产品库 → 关键词
+    $('#btnKwFromTopics')?.addEventListener('click', collectTopicKeywords);
+    $('#btnKwFromAi')?.addEventListener('click', aiFindKeywords);
     // 关键词输入框：回车 = 添加到列表（不直接搜索）
     $('#awKeywordPopup')?.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {

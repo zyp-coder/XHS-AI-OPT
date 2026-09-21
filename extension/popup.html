@@ -1104,13 +1104,14 @@
   <div id="mainTabs" style="display:flex;gap:0;padding:0 10px;background:#fff;border-bottom:1px solid var(--line);flex-shrink:0;">
     <button id="tabDiagnose" class="main-tab active" title="账号诊断：抓取本人主页，头像/简介/笔记整改建议 + 结合产品与知识库的内容规划">🔍 账号诊断</button>
     <button id="tabNotePublish" class="main-tab" title="发笔记：AI 生成成稿与封面 → 一键发布小红书笔记">✍️ 发笔记</button>
-    <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 灌水总结">🎯 获客</button>
+    <button id="tabHuoke" class="main-tab" title="获客：评论获客助手 / 截流 / 灌水总结">🎯 获客</button>
     <button id="tabNotifGroup" class="main-tab" title="通知：按来源渠道看线索（赞/评/关/AI），进清单批量触达">🔔 通知</button>
     <button id="tabMsgGroup" class="main-tab" title="消息：对方进线/已在聊的人 → 去卖、成交维护">📨 消息</button>
   </div>
   <!-- 二级 Tab（获客分组下） -->
   <div id="subTabs" style="display:none;flex-shrink:0;background:#fafafb;border-bottom:1px solid var(--line);">
     <button id="tabCommentAssistant" class="main-tab sub-tab active" title="当前笔记评论分析/商机挖掘/一键回复">📄 获客助手</button>
+    <button id="tabDrain" class="main-tab sub-tab" title="截流：笔记监控列表（监控→判断→截流评论→评论区转获客）">✂️ 截流</button>
     <button id="tabWaterSummary" class="main-tab sub-tab" title="灌水总结：今天/本周/累计灌水记录与话术">💧 灌水总结</button>
   </div>
   <!-- 二级 Tab（🔔 通知分组：合并为「用户清单」+ 配置） -->
@@ -1150,8 +1151,10 @@
       <div class="kw-bar" id="kwBar" style="display:none;flex-direction:column;gap:6px;padding:7px 8px;border-bottom:1px solid var(--line,#eceef0);background:#fbfbfc;">
         <div id="kwTags" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <input type="text" id="awKeywordPopup" class="search-input" placeholder="输入关键词，回车添加" title="添加一个灌水搜索关键词，可添加多个（<版本上限），回车或点＋" style="flex:1;">
+          <input type="text" id="awKeywordPopup" class="search-input" placeholder="输入关键词，回车添加" title="添加一个灌水搜索关键词，可添加多个（<版本上限），回车或点＋" style="flex:1;min-width:0;">
           <button class="btn btn-primary btn-sm" id="btnAddKw" title="添加到关键词列表">＋</button>
+          <button class="btn btn-ghost btn-sm" id="btnKwFromTopics" style="flex:none;" title="把读到的笔记 #话题 加为搜索关键词（搜笔记/打开笔记时自动收录，读得越多越准）">🏷 话题</button>
+          <button class="btn btn-ghost btn-sm" id="btnKwFromAi" style="flex:none;" title="AI 按你的账号诊断 + 产品库生成搜索关键词，自动补到本版本上限">✨ 找词</button>
         </div>
         <div id="kwHint" style="font-size:12px;color:var(--sub,#999);line-height:1.5;" title="按顺序逐个搜索：第一个关键词完成后才开始第二个"></div>
       </div>
@@ -1243,6 +1246,8 @@
       <div id="notePublishContent" class="content" style="display:none;"></div>
       <!-- 账号诊断独立视图（Tab 切换显示） -->
       <div id="diagnoseContent" class="content" style="display:none;"></div>
+      <!-- 截流独立视图（Tab 切换显示）：六场景在当前笔记上生成评论 -->
+      <div id="drainContent" class="content" style="display:none;"></div>
       <div id="logPanel" class="log-panel" style="display:none;">
         <div class="log-entry info">📋 操作日志将显示在这里</div>
       </div>
@@ -1303,7 +1308,9 @@
   <script src="lib/crypto-box.js"></script>
   <script src="lib/data-privacy.js"></script>
   <script src="lib/note-trend.js"></script>
+  <script src="lib/note-tags.js"></script>
   <script src="popup.js"></script>
+  <script src="lib/scenario-drain.js"></script>
   <script src="auto-water-app.js"></script>
 <script src="auto-bot.js"></script>
 <script src="dropdown-ui.js"></script>

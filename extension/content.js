@@ -672,13 +672,6 @@
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
-    // ── 消息中心：采集当前会话完整消息时间线 ──
-    if (request.action === 'collectChatMessages') {
-      runExclusive('collectChatMessages', () => collectChatMessages())
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
-      return true;
-    }
     // ── 获客·消息台：在 /chat 会话页发送消息 ──
     if (request.action === 'chatSendMessage') {
       runExclusive('chatSendMessage', () => chatSendMessage(request.text || ''))
@@ -1047,6 +1040,8 @@
     const description = ogDesc?.content || '';
     const author = authorMeta?.content || '';
     const url = window.location.href;
+    // 🏷 话题采集：标题 + 正文（og:description）里的 #话题，供关键词列表「采集话题」取用
+    const tags = pickHashTags((title || '') + ' ' + (description || ''), 12);
 
     // ★ 记住本篇笔记的标题/正文，供 parseCommentItem 过滤（避免把笔记标题当成评论拓下来）
     _noteTitleText = title || '';
@@ -1069,6 +1064,7 @@
 
     return {
       title, description, author, url,
+      tags,
       comments: best.comments || [],
       threads,
       _candidates: allCandidates,
@@ -3151,37 +3147,6 @@ const it = _likerFromContainer(container, name);
     };
   }
 
-  // ── 消息中心：结构化采集当前 /chat 会话页内的完整消息时间线（供后端回显 + AI理解） ──
-  //   DOM 启发式：与 scanChatConversation 相同，但逐条产出 {direction, text}，
-  //              只采集能明确归属 left/right 的气泡，外层容器去重。
-  async function collectChatMessages() {
-    if (!/\/chat/.test(location.href)) return { success: false, error: '不在会话页(/chat)，请先打开会话' };
-    _showStatus('采集完整会话…');
-    await sleep(dwellMs('browseDwell', 300)); // 拟人：读取会话前浏览停顿
-    const convId = location.pathname.split('/').filter(Boolean).pop() || '';
-    const rows = Array.from(document.querySelectorAll('[class*="message"], [class*="msg-item"], [class*="bubble"], [class*="im-msg"], [class*="conv-msg"], [class*="message-item"], [class*="item-container"], [class*="im-msg-block"]'));
-    const seen = new Set();
-    const messages = [];
-    for (const el of rows) {
-      const cls = String(el.className || '');
-      const text = (el.innerText || '').trim();
-      if (!text || text.length < 2) continue;
-      const left = /left|other|peer|friend|receiver|receive|对方|他们|they/i.test(cls);
-      const right = /right|self|mine|own|sender|send|me\b|我方|我们|朋友/i.test(cls);
-      let direction = '';
-      if (left || (!right && /left|other|peer|receiver/.test(cls))) direction = 'them';
-      else if (right) direction = 'me';
-      if (!direction) continue;
-      const key = direction + '|' + text;
-      if (seen.has(key)) continue;      // 外层容器含子气泡文本 → 精确去重
-      seen.add(key);
-      messages.push({ direction, author: direction === 'them' ? '' : '我', text, ai_generated: false });
-      if (messages.length >= 500) break;
-    }
-    _hideStatus();
-    return { success: true, convId, messages };
-  }
-
   /* ── 评论跟进：回复指定通知（★ 三重定位保障，用户核心要求：绝不能回错人/回错消息） ──
    * request: { idx, replyText, userId, userName, latestText }
    *   保障① idx 锚点：与提取时同一编号规则精确定位通知项
@@ -4395,6 +4360,24 @@ async function sendDmOnProfile(userLink, text) {
   // ============================
   // 一键灌水：搜索页抓取
   // ============================
+  // 🏷 话题抽取：从文本里挑 #话题（中英文/数字/Emoji，2~24 字），去重保序，最多 max 个
+  function pickHashTags(text, max) {
+    const out = [];
+    const s = String(text || '');
+    if (!s || s.indexOf('#') === -1) return out;
+    // 先整段取到分隔符为止，再用长度过滤：超长串（>24）整条丢弃，不截断成假话题
+    const re = /[#＃]([^\s#＃,，。；;!！?？、:："'“”（）()【】\[\]\/\\|<>@$%^&*+=~`]+)/g;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      const t = String(m[1]).replace(/[.。，,、;；:：]+$/, '').trim();
+      if (!t || t.length < 2 || t.length > 24) continue;
+      if (/^\d+$/.test(t)) continue;
+      if (out.indexOf(t) === -1) out.push(t);
+      if (out.length >= (max || 12)) break;
+    }
+    return out;
+  }
+
   function extractSearchResults() {
     const notes = [];
     const seen = new Set();
@@ -4490,6 +4473,7 @@ async function sendDmOnProfile(userLink, text) {
           author: author || '未知',
           likes,
           stats,
+          tags: pickHashTags(card.textContent, 6),
           searchIndex: searchIdx++,
           linkHref: href,
           rawLinkIndex: rawLinkIndex,
@@ -4527,6 +4511,7 @@ async function sendDmOnProfile(userLink, text) {
           author: '',
           likes: '',
           stats: [],
+          tags: pickHashTags(text, 6),
           searchIndex: searchIdx++,
           linkHref: href,
           rawLinkIndex: Array.from(allRawLinks).indexOf(link),
@@ -4844,7 +4829,7 @@ async function sendDmOnProfile(userLink, text) {
     return { clicked: false, reason: '未找到匹配笔记', totalLinks: allNoteLinks.length, noteId, title };
   }
 
-  // ═══════════ 🌿 日常浏览（全功能版）：在信息流/搜索结果里做普通浏览动作 ═══════════
+  // ═══════════ 🌿 日常浏览（②③可用，不列入对外功能清单）：在信息流/搜索结果里做普通浏览动作 ═══════════
   // 一个「单位」= 挑一篇笔记：向下滚一段 → 停留 → 按概率点开 → 停留阅读 → 按概率点赞/收藏 → 退回信息流。
   // 节奏（时段/配额/停留/概率）由设置页「🌿 日常浏览」配置，background 侧 lib/daily-browse.js 驱动。
   function _dbRand(min, max) {

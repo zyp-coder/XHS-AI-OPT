@@ -1720,7 +1720,7 @@ async function applyEditionToSettings() {
       panelId: 'tab-autowater',
       lockedLabel: '🔒 一键灌水',
       tabTitle: '一键灌水当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器）当前版本（' + esc(ed.label || '') + '）不可用。升级「评论助手·升级版」或更高版本解锁。',
+      notice: '🔒 一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器）当前版本（' + esc(ed.label || '') + '）不可用。升级「升级版」或更高版本解锁。',
     });
   }
 
@@ -1746,15 +1746,10 @@ async function applyEditionToSettings() {
     });
   }
 
-  // 日常浏览（全功能版独家）
+  // 日常浏览（②升级版/③全功能版可用，但不列入对外功能清单）：未开通版本整块隐藏，不留锁定入口
   if (!ed.features || !ed.features.dailyBrowse) {
-    lockSettingsTab({
-      tab: 'dailybrowse',
-      panelId: 'tab-dailybrowse',
-      lockedLabel: '🔒 日常浏览',
-      tabTitle: '日常浏览为「全功能版」专属，当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 日常浏览（按时段与每日配额自动浏览、可配点赞收藏）为「全功能版」专属功能，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
-    });
+    document.querySelector('.tab-item[data-tab="dailybrowse"]')?.remove();
+    document.getElementById('tab-dailybrowse')?.remove();
   }
 }
 
@@ -2313,7 +2308,7 @@ async function genAicsDefaults() {
 }
 async function testAics() { const inn = document.getElementById('aicsIn'); const out = document.getElementById('aicsOut'); if (!inn || !out) return; const q = inn.value.trim(); if (!q) return; out.textContent = '路由中…'; try { const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } }); out.innerHTML = r && r.ok ? ('🎯 ' + _ae(r.category) + ' · ' + (r.mode === 'ai' ? 'AI' : '模板') + '\n' + _ae(r.reply)) : ('❌ ' + _ae((r && r.error) || '失败')); } catch (e) { out.textContent = '❌ ' + e.message; } }
 
-/* ═══════════ 🌿 日常浏览（全功能版专属：时段 + 每日配额 + 按比例点赞收藏） ═══════════ */
+/* ═══════════ 🌿 日常浏览（②升级版/③全功能版可用，不列入对外功能清单：时段 + 每日配额 + 按比例点赞收藏） ═══════════ */
 function _dbParseWindows(text) {
   const out = [];
   String(text || '').split(/\r?\n|;/).forEach(line => {

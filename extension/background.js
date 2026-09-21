@@ -17,7 +17,8 @@ importScripts(
   'lib/prompt-renderer.js',
   'lib/note-architecture.js',
   'lib/auto-water.js',
-  'lib/daily-browse.js'
+  'lib/daily-browse.js',
+  'lib/scenario-drain.js'
 );
 
 /* ─── 安装包预填：读取装包时写入的 install-config.json，首次运行时把非私密字段并入配置 ─── */
@@ -261,7 +262,7 @@ async function requireProspectList(fn) {
   }
   return await fn();
 }
-// dailyBrowse 版本闸门：日常浏览为「全功能版」专属
+// dailyBrowse 版本闸门：日常浏览（②③可用，不列入对外功能清单）
 async function requireDailyBrowse(fn) {
   if (typeof Edition !== 'undefined' && !Edition.hasFeature('dailyBrowse')) {
     throw new Error('当前版本未开通「日常浏览」功能');
@@ -439,6 +440,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     cancelSearch: () => requireAutoWater(() => AutoWater.cancelSearch()),
     advanceResults: () => requireAutoWater(() => AutoWater.advanceResults()),
     openNote: (data) => requireAutoWater(() => AutoWater.openNote(data.note)),
+    aiGenKeywords: (data) => requireAutoWater(() => handleAiGenKeywords(data || {})),
     // ── 版本/授权 ──
     getEdition: async () => { return await LicenseGuard.checkLicenseStatus(); },
     // ── 账号绑定 ──
@@ -473,9 +475,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chatSend: (data) => requireProspectList(() => handleChatSend(data)),
     scanChatReply: (data) => requireProspectList(() => handleScanChatReply(data || {})),
     setAutoScanChat: (data) => requireProspectList(() => handleSetAutoScanChat(data || {})),
-    // ── 消息中心：同步会话 与 出站发送（通知/私信，随 prospectList 收口到全功能版）──
-    messageCenterSync: (data) => requireProspectList(() => handleMessageCenterSync(data || {})),
-    messageCenterFlushOutbox: (data) => requireProspectList(() => handleMessageCenterFlushOutbox(data || {})),
     // ── AI客服：场景+问答话术体系（通知/私信的内收应答，随 prospectList 收口）──
     getAiCsConfig: () => requireProspectList(() => handleGetAiCsConfig()),
     saveAiCsConfig: (data) => requireProspectList(() => handleSaveAiCsConfig(data || {})),
@@ -519,11 +518,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     aiKbTree: (data) => requireKnowledge(() => aiKbTreeBg(data || {})),
     genPromptPack: (data) => requireKnowledge(() => genPromptPackBg(data || {})),
     genCoverTemplate: (data) => requireNotePublish(() => genCoverTemplateBg(data)),
-    // ── 🌿 日常浏览（受 dailyBrowse 版本闸门控制，全功能版专属）──
+    // ── 🌿 日常浏览（受 dailyBrowse 版本闸门控制）──
     dailyBrowseStatus: () => requireDailyBrowse(() => DailyBrowse.getStatus()),
     dailyBrowseSaveConfig: (data) => requireDailyBrowse(async () => ({ cfg: await DailyBrowse.saveConfig((data && data.config) || data || {}) })),
     dailyBrowseRunNow: () => requireDailyBrowse(() => DailyBrowse.runRound({ force: true })),
     dailyBrowseStop: () => requireDailyBrowse(() => DailyBrowse.stop()),
+    // ── ✂️ 全场景截流：六场景在当前笔记上生成评论 ──
+    drainComment: (data) => handleDrainComment(data || {}),
+    drainScenarios: async () => { return { scenarios: (typeof SCENARIO_DRAIN !== 'undefined') ? SCENARIO_DRAIN : [] }; },
   };
 
   const handler = handlers[action];
@@ -964,6 +966,70 @@ async function handleAiNotePlan(data) {
   // ★ 持久化内容规划（含 photoPlans），供发笔记时逐张配图取建议；租户作用域
   try { await chrome.storage.local.set({ note_plan: d }); } catch (_) {}
   return { plan: d, raw };
+}
+
+/* ═══════════ 关键词维护：AI 找词（账号诊断成果 + 产品库 → 搜索关键词候选） ═══════════ */
+// 诊断成果里可持久读到的是：人设（config.persona）、内容规划（note_plan）、产品库、知识库
+async function handleAiGenKeywords(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const need = Math.min(20, Math.max(1, parseInt(data && data.need, 10) || 8));
+  const exclude = (Array.isArray(data && data.exclude) ? data.exclude : [])
+    .map(x => String(x || '').trim()).filter(Boolean).slice(0, 40);
+
+  const profile = (data && data.profile) || {};
+  const persona = String((config.persona && config.persona.text) || '').trim();
+  const { name: prodName, desc: prodDesc, kbText } = await _npProductContext(config);
+  const _p = config.product || {};
+  const _s = config.scriptStyle || {};
+  const prodKws = Array.isArray(_p.targetKeywords) ? _p.targetKeywords.filter(Boolean).slice(0, 20) : [];
+  // 内容规划（账号诊断④的落库结果）：账号类型 / 讲什么 / 给谁看 / 选题
+  let plan = null;
+  try { const d = await chrome.storage.local.get('note_plan'); plan = (d && d['note_plan']) || null; } catch (_) {}
+  const topics = (plan && Array.isArray(plan.topics) ? plan.topics : [])
+    .map(t => String((t && (t.title || t.angle)) || '').trim()).filter(Boolean).slice(0, 10);
+
+  const ctx = [
+    '【账号】' + [profile.name ? '昵称:' + profile.name : '', profile.desc ? '简介:' + profile.desc : '', profile.fans ? '粉丝:' + profile.fans : ''].filter(Boolean).join('；'),
+    persona ? '【账号人设】\n' + persona : '',
+    plan ? '【内容规划】' + [plan.accountType ? '账号类型:' + plan.accountType : '', plan.contentFocus ? '主要讲:' + plan.contentFocus : '', plan.targetPeople ? '人群:' + plan.targetPeople : ''].filter(Boolean).join('；') : '',
+    topics.length ? '【已定选题】' + topics.join('；') : '',
+    '【我的产品】' + (prodName || '（未填）'),
+    prodDesc ? '【产品卖点】' + prodDesc : '',
+    prodKws.length ? '【收录关键词】' + prodKws.join('、') : '',
+    (_s.personaIntro ? '【我的情况】' + _s.personaIntro : ''),
+    kbText ? '【我的知识库】\n' + kbText : '',
+  ].filter(Boolean).join('\n\n');
+
+  const system = [
+    '你是小红书获客关键词规划师。根据这个账号的人设、内容规划、产品与卖点，产出客户会主动搜索、且我们能提供帮助的【搜索关键词】——用于在搜索页找“值得去评论互动”的笔记。',
+    '要求：',
+    '1. 站在客户视角：写他们真会打进搜索框的说法（疑问句/口语/场景词/痛点词/人群词/同城词都可以），不要行业黑话、不要广告腔。',
+    '2. 词要短：2~12 个字；纯词，不带 # 号、不带标点、不带引号、不带解释。',
+    '3. 与产品/人设强相关，分散在不同角度；不要品牌名、不要竞品名、不要违法违规或平台不允许的内容。',
+    '4. 不重复已有词：' + (exclude.length ? '已有「' + exclude.join('、') + '」' : '暂无'),
+    '5. 只输出严格 JSON，不要用代码块，结构必须是：{"keywords":["词1","词2",...]}，共 ' + need + ' 个。',
+  ].join('\n');
+
+  const raw = await _chatAi(config, system, ctx, 1200);
+  const d = parseJsonObject(raw);
+  if (!d || !Array.isArray(d.keywords)) throw new Error('AI 返回无法解析：' + String(raw).slice(0, 160));
+
+  // 清洗：去 # / 去首尾标点引号 / 限长 2~12 / 去重（含与已有词去重）/ 截到 need 个
+  const seen = Object.create(null);
+  exclude.forEach(k => { seen[k] = 1; });
+  const out = [];
+  for (const raw0 of d.keywords) {
+    let k = String(raw0 == null ? '' : raw0).replace(/^[#＃\s]+/, '').replace(/^[「『"“'‘【\[(（]+|[」』"”'’】\])）]+$/g, '').replace(/\s+/g, '').trim();
+    if (!k || k.length < 2 || k.length > 12) continue;
+    if (!/[\u4e00-\u9fa5a-zA-Z0-9]/.test(k)) continue; // 只由标点组成的不算词
+    if (seen[k]) continue;
+    seen[k] = 1;
+    out.push(k);
+    if (out.length >= need) break;
+  }
+  if (!out.length) throw new Error('AI 未给出可用关键词，请重试');
+  return { keywords: out, raw };
 }
 
 /* ═══════════ 账号诊断工作流⑤：深度评估报告（综合所有信息 → 完整整改方案） ═══════════ */
@@ -1436,66 +1502,6 @@ function buildChatFollowConversations(items) {
   return conversations;
 }
 
-/* ─── 客户留邮箱检测 + 上报后端（供后续打包资料给客户 / 通知客户） ─── */
-const CUSTOMER_EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/;
-const CUSTOMER_API_BASE = 'http://127.0.0.1:8000/api/customers';
-const MESSAGE_API_BASE = 'http://127.0.0.1:8000/api/messages';
-
-// ── 消息中心：通用 POST 到本地后端（失败静默，不阻塞核心链路）──
-function postMsgBackend(path, body, timeoutMs) {
-  return new Promise((resolve) => {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
-    fetch(MESSAGE_API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-      signal: ctrl.signal,
-    }).then(r => r.json()).then(resolve).catch(() => resolve(null)).finally(() => clearTimeout(t));
-  });
-}
-function getMsgBackend(path, timeoutMs) {
-  return new Promise((resolve) => {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), timeoutMs || 6000);
-    fetch(MESSAGE_API_BASE + path, { signal: ctrl.signal })
-      .then(r => r.json()).then(resolve).catch(() => resolve(null)).finally(() => clearTimeout(t));
-  });
-}
-
-// 扫描 AI客服会话里「对方(user)发送的消息」，发现含邮箱 → 上报本地后端（去重；失败静默）
-function reportCustomerEmails(config, conversations) {
-  const product = (config && config.product && config.product.name) || '';
-  const seen = new Set();
-  for (const [userId, conv] of Object.entries(conversations || {})) {
-    const texts = [];
-    for (const m of (conv.history || [])) {
-      if (m && m.role === 'user' && m.content) texts.push(m.content);
-    }
-    if (conv.pendingIncoming) texts.push(conv.pendingIncoming);
-    for (const t of texts) {
-      const m = (String(t) || '').match(CUSTOMER_EMAIL_RE);
-      if (!m) continue;
-      const email = m[0].toLowerCase();
-      if (seen.has(email)) continue;
-      seen.add(email);
-      const body = {
-        email,
-        xhs_user_id: userId || '',
-        nickname: (conv && conv.userName) || '',
-        text: String(t).slice(0, 200),
-        scene: 'chat_follow',
-        product,
-      };
-      fetch(CUSTOMER_API_BASE + '/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json()).catch(() => {});
-    }
-  }
-}
-
 /* ─── 评论跟进：同步通知页 → 重建会话并落库 ─── */
 async function handleChatFollowSync(data) {
   const rebuilt = buildChatFollowConversations((data && data.items) || []);
@@ -1536,12 +1542,6 @@ async function handleChatFollowSync(data) {
   state.conversations = conversations;
   state.lastSyncAt = Date.now();
   await Storage.setChatFollowState(state);
-
-  // ★ 检测客户是否已留邮箱 → 上报本地后端（供后续打包资料/通知客户；失败静默不阻塞）
-  try {
-    const cfg = await Storage.getConfig();
-    reportCustomerEmails(cfg, conversations);
-  } catch (_) {}
 
   // （AI客服并入消息台后，不再自动把通知对话塞进展获客清单——通知只喂线索池，由 collectLikers 统一采集）
 
@@ -2166,33 +2166,6 @@ async function _chatTab() {
 }
 function _chatUrlFor(convId) { return 'https://www.xiaohongshu.com/chat/' + String(convId || ''); }
 
-/* ─── 消息中心：专属「消息」标签页（独立于 灌水 water / 客服 touch）───
- * 消息中心的 读会话/读明细/发私信 全部走这个专属 tab，
- * 绝不占用「客服/触达」tab（否则会自动把通知页导航到 /chat，
- * 导致用户刷新通知时被劫持跳转、并触发 bfcache 的 port 关闭报错）。
- */
-async function _msgTab() {
-  let tab = null;
-  try { tab = await getEngineTab('msg'); } catch (_) { tab = null; }
-  if (!tab) {
-    try { const tabs = await chrome.tabs.query({ url: ['*://*.xiaohongshu.com/*', '*://www.xiaohongshu.com/*'] }); tab = tabs[0]; } catch (_) {}
-  }
-  if (!tab) throw new Error('未找到小红书标签页，请先打开小红书网页版');
-  return tab;
-}
-
-/* 在专属消息 tab 里导航到目标 URL 并注入 content.js
- * activate=true 用于主动发送(需要 tab 可见焦点利于 contenteditable 输入)；
- * 后台同步/采集默认 activate=false，静默导航，不打断用户当前操作。 */
-async function _msgNav(url, delayMs, activate) {
-  const tab = await _msgTab();
-  try { await chrome.tabs.update(tab.id, { url, active: !!activate }); await waitTabLoadBg(tab.id, 15000); } catch (_) {}
-  try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
-  if (activate) await chrome.tabs.update(tab.id, { active: true }).catch(() => {});
-  await _sleepBg(delayMs || 900);
-  return tab;
-}
-
 /* 读消息中心会话列表（导航到 /chat 再采集；返回与获客清单按昵称预匹配的结果） */
 async function handleGetChatConversations(data) {
   const silent = !!(data && data.silent);
@@ -2273,70 +2246,8 @@ async function handleChatSend(data) {
   return { ok: true, via: res.via, sent: true };
 }
 
-/* ─── 消息中心：增量同步 小红书 /chat 会话 → 本地后端 ───
- * 轻量只读会话列表(不点开任何人) POST /sync → 后端 diff 返回需要完整同步的 convId(通常很少)，
- * 只对这些会话点开采集完整消息时间线上报 POST /messages。
- */
-// 远程落地：把"已读回的 /chat 会话摘要"上报到后端 /sync；后端要完整时间线的（need_full）才展开单条
-async function _syncChatRemote(items, productHint) {
-  const cfg = await Storage.getConfig();
-  const product = String(productHint || (cfg && cfg.product && cfg.product.name) || '');
-  const payload = (items || []).map((c) => ({
-    conv_id: c.convId || '',
-    partner_id: '',
-    partner_name: c.partnerName || '',
-    avatar: c.avatar || '',
-    last_msg: c.lastMsg || '',
-    last_from: c.lastFrom || '',
-    last_at: c.time ? String(c.time) : '',
-    unread_count: c.unreadCount || 0,
-    source: '消息',
-    fp: String(c.lastMsg || '') + (c.time || '') + (c.unreadCount || 0) + (c.lastFrom || ''),
-  }));
-  const synced = await postMsgBackend('/sync', { product, items: payload }, 8000);
-  const needFull = (synced && Array.isArray(synced.need_full)) ? synced.need_full : [];
-  let full = 0;
-  for (const convId of needFull) {
-    try {
-      const col = await collectFullConversation(convId, product);
-      if (col && col.added !== undefined) full++;
-    } catch (_) {}
-  }
-  return { items: payload.length, needFull: needFull.length, full, created: (synced && synced.created) || 0, updated: (synced && synced.updated) || 0 };
-}
-
-async function handleMessageCenterSync(data) {
-  let collectRes = [];
-  try { collectRes = await collectConversationListBg(); } catch (_) {}
-  const r = await _syncChatRemote(collectRes, data && data.product);
-  console.log('[消息中心] 同步完成 上报=' + r.items + ' 需展开=' + r.needFull + ' 已见消息=' + r.full);
-  return { ok: true, list: r.items, synced: r.updated, newly: r.created, needFull: r.needFull, full: r.full };
-}
-
-// 在专属消息 tab 里读 /chat 会话列表（背景侧，不碰其他工作台 tab）
-async function collectConversationListBg() {
-  const tab = await _msgNav('https://www.xiaohongshu.com/chat', 800, false);
-  let knownConvIds = [];
-  try { knownConvIds = (await Storage.getProspectList()).filter(p => p && p.convId).map(p => String(p.convId)).filter(Boolean); } catch (_) {}
-  let res = null;
-  try { res = await sendTabMsg(tab.id, { action: 'collectChatConversations', knownConvIds }, 60000); } catch (e) { res = { success: false, error: e.message }; }
-  if (!res || !res.success) return [];
-  return res.items || [];
-}
-
-// 打开专属消息 tab 的指定会话 → 采集完整消息时间线 → 上报
-async function collectFullConversation(convId, product) {
-  const tab = await _msgNav(_chatUrlFor(convId), 900, false);
-  let res = null;
-  try { res = await sendTabMsg(tab.id, { action: 'collectChatMessages' }, 16000); } catch (e) { res = { success: false, error: e.message }; }
-  if (!res || !res.success || !res.messages) return null;
-  return postMsgBackend('/' + encodeURIComponent(convId) + '/messages', { product, messages: res.messages }, 8000);
-}
-
-// ★ 合并周期（prospect-scan 每次触发它）：读 /chat 列表一次（撞到已知即停）→ 同一份摘要「本地消息桶」+「远程后端 /sync(含 need_full 展开)」双落地。
+// ★ 合并周期（prospect-scan 每次触发它）：读 /chat 列表一次（撞到已知即停）→ 落地「本地消息桶」。
 async function runMsgCenterCycle() {
-  // 出站发送（仅在有待发送指令时才去 /chat 发）
-  try { await handleMessageCenterFlushOutbox({ limit: 10 }); } catch (_) {}
   let items = [];
   try {
     const g = await handleGetChatConversations({ silent: true }); // 单次列表扫描（后台 tab，不抢焦点/不碰你正在看的页）
@@ -2344,14 +2255,13 @@ async function runMsgCenterCycle() {
   } catch (_) { items = []; }
   let local = { added: 0, updated: 0, unread: 0 };
   try { local = await _mergeChatListLocal(items); } catch (_) {}   // 本地落地（只增/改，不删）
-  try { await _syncChatRemote(items); } catch (_) {}                // 远程落地
   console.log('[消息中心] 合并周期：读列表=' + items.length + ' 本地：新增=' + local.added + ' 更新=' + local.updated + ' 未读=' + local.unread);
 }
 
-// ★ 统一自动周期（prospect-scan 每次触发）：先静默刷新通知，再跑消息+消息中心合并周期
+// ★ 统一自动周期（prospect-scan 每次触发）：先静默刷新通知，再跑消息合并周期
 async function runAutoCycle() {
   try { await handleCollectLikersFromNotif({ silent: true }); } catch (_) {} // 通知刷新（后台 tab，不抢前台）
-  try { await runMsgCenterCycle(); } catch (_) {}                            // 消息 + 消息中心
+  try { await runMsgCenterCycle(); } catch (_) {}                            // 消息（本地落地）
   try { await runAutoTouchCycle(); } catch (_) {}                            // 写：对清单里合适的人自动 AI 触达（并入同一周期）
 }
 
@@ -2415,45 +2325,6 @@ await _sleepBg(await _bgBatchGapMs()); // ★ 节奏控制：读拟人挡位条�
     }
   await _touchBumpDaily(daily + sent);
   console.log('[自动跟单] 本轮完成，实际发送 ' + sent + ' 条（今日累计 ' + (daily + sent) + '/' + AUTO_TOUCH_MAX + '）');
-}
-
-// 在专属消息 tab 里打开会话并真实发送一条私信（发送需要激活 focus 利于 contenteditable 输入）
-async function _msgSend(convId, text) {
-  const tab = await _msgNav(_chatUrlFor(convId), 1100, true);
-  let res = null;
-  try { res = await sendTabMsg(tab.id, { action: 'chatSendMessage', text }, 30000); } catch (e) { res = { success: false, error: e.message }; }
-  const limited = !!(res && res.limited);
-  return { ok: !!(res && res.success), sent: !!(res && res.success), limited, definitive: !!(res && res.definitive), error: (res && res.error) || '' };
-}
-
-/* ─── 消息中心：出站发送队列 —— 从后端拉取 Web 端"一键发送"指令，真实发出并回写 ─── */
-async function handleMessageCenterFlushOutbox(data) {
-  const out = await getMsgBackend('/outbox?limit=' + ((data && data.limit) || 10), 6000);
-  const tasks = (out && Array.isArray(out.tasks)) ? out.tasks : [];
-  let sent = 0, failed = 0;
-  for (const t of tasks) {
-    if (!t.conv_id) { await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: '缺conv_id' }); failed++; continue; }
-    try {
-      const r = await _msgSend(t.conv_id, t.text);       // 走专属消息 tab，不碰客服/通知 tab
-      if (r.ok && r.sent) {
-        await postMsgBackend('/outbox/' + t.id + '/done', { success: true });
-        sent++;
-      } else if (r.definitive) {
-        // 明确未发出 → 标失败，允许下一轮重试
-        await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: r.error || '发送失败' });
-        failed++;
-      } else {
-        // ★ 防重复写：可能已发但未确认 → 直接标记完成，避免下一轮重拉同一任务再发（造成同一人收到两条私信）
-        await postMsgBackend('/outbox/' + t.id + '/done', { success: true, done: true, error: r.error || '发送未确认' });
-        sent++;
-      }
-    } catch (e) {
-      await postMsgBackend('/outbox/' + t.id + '/done', { success: false, error: String((e && e.message) || e) });
-      failed++;
-    }
-    await _sleepBg(await _bgBatchGapMs()); // ★ 节奏控制：读拟人挡位条间隔 + 随机抖动（原来固定 1200ms）
-  }
-  return { ok: true, sent, failed };
 }
 
 // ★ 私信进线同步：拉 /chat 会话，未收录的人自动收进商机池(对方主动找你=已接触)，已匹配的更新未读/最近消息 ───
@@ -4718,23 +4589,3 @@ async function handleNotePlan(data) {
   return { plan: d, raw };
 }
 
-
-/* ─── 消息中心：周期自愈循环(MV3 alarms)。全程 try/catch 静默，不影响其它功能 ─── */
-function startMessageCenterLoop() {
-  return (async () => {
-    // 出站发送：任何时刻都可拉取(仅在有待发送指令时才打开 /chat 去发)
-    try { await handleMessageCenterFlushOutbox({ limit: 10 }); } catch (_) {}
-    // Web 端点了「同步小红书」→ 有同步信号 → 主动同步
-    try {
-      const sig = await getMsgBackend('/sync-request', 5000);
-      if (sig && sig.pending) {
-        await handleMessageCenterSync({});
-        await postMsgBackend('/sync-ack', {});
-      }
-    } catch (_) {}
-    // 常规增量同步：消息中心用专属「消息」标签页(绝不碰通知/灌水/手头页)，所以不依赖用户是否开着小红书页面
-    try { await handleMessageCenterSync({}); } catch (e) { console.log('[消息中心] 常规同步失败', e && e.message); }
-  })();
-}
-
-/* （消息中心同步已并入 prospect-scan 合并周期 runMsgCenterCycle，不再单独定时） */

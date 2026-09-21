@@ -369,6 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('tabWaterSummary')?.addEventListener('click', () => switchMainTab('waterSummary'));
   document.getElementById('tabNotePublish')?.addEventListener('click', () => switchMainTab('notePublish'));
   document.getElementById('tabDiagnose')?.addEventListener('click', () => switchMainTab('diagnose'));
+  document.getElementById('tabDrain')?.addEventListener('click', () => switchMainTab('scenarioDrain'));
   document.getElementById('tabHuoke')?.addEventListener('click', () => switchMainTab('comment'));
   // ★ 默认落到「账号诊断」Tab（与按钮高亮一致；小窗模式后续仍强制收敛为状态卡）
   switchMainTab('diagnose');
@@ -613,6 +614,7 @@ function switchMainTab(name) {
   const tabWater = document.getElementById('tabWaterSummary');
   const tabNote = document.getElementById('tabNotePublish');
   const tabDiag = document.getElementById('tabDiagnose');
+  const tabDrain = document.getElementById('tabDrain');
   const tabHuoke = document.getElementById('tabHuoke');
   const tabNotifGroup = document.getElementById('tabNotifGroup');
   const tabMsgGroup = document.getElementById('tabMsgGroup');
@@ -633,11 +635,12 @@ function switchMainTab(name) {
   const wc = document.getElementById('waterSummaryContent');
   const nc = document.getElementById('notePublishContent');
   const dc = document.getElementById('diagnoseContent');
+  const src2 = document.getElementById('drainContent');
   const scc = document.getElementById('aiCsSceneContent');
   const qcc = document.getElementById('aiCsQaContent');
-  const _hideAll = () => { [mc, fc, pc, wc, nc, dc, scc, qcc].forEach(el => { if (el) el.style.display = 'none'; }); };
+  const _hideAll = () => { [mc, fc, pc, wc, nc, dc, src2, scc, qcc].forEach(el => { if (el) el.style.display = 'none'; }); };
   const _markTop = (el) => {
-    [tabComment, tabWater, tabNote, tabDiag, tabHuoke, tabNotifGroup, tabMsgGroup, tabProspectList, tabQa, tabNotifAll, tabNotifComment, tabNotifLike, tabNotifFollow, tabNotifAi, tabNotifConfig].forEach(t => { if (t) t.classList.remove('active'); });
+    [tabComment, tabWater, tabNote, tabDiag, tabDrain, tabHuoke, tabNotifGroup, tabMsgGroup, tabProspectList, tabQa, tabNotifAll, tabNotifComment, tabNotifLike, tabNotifFollow, tabNotifAi, tabNotifConfig].forEach(t => { if (t) t.classList.remove('active'); });
     if (el) el.classList.add('active');
   };
   const _hideSub = () => { if (subTabs) subTabs.style.display = 'none'; if (subTabs2) subTabs2.style.display = 'none'; if (subTabs3) subTabs3.style.display = 'none'; };
@@ -699,6 +702,15 @@ function switchMainTab(name) {
     if (dc && !_diagLoaded) { _diagLoaded = true; renderDiagnosis(dc); }
     return;
   }
+  if (name === 'scenarioDrain') {
+    // 截流：归入 🎯 获客分组（获客：分析+截流+灌水总结）
+    _markTop(tabHuoke); _showSubHuoke();
+    if (tabComment) tabComment.classList.remove('active'); if (tabWater) tabWater.classList.remove('active'); if (tabDrain) tabDrain.classList.add('active');
+    _hideAll(); if (src2) src2.style.display = '';
+    _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
+    if (src2 && !_drainLoaded) { _drainLoaded = true; renderScenarioDrain(src2); }
+    return;
+  }
   // comment（获客助手）或默认
   _markTop(tabHuoke); _showSubHuoke(); if (tabComment) tabComment.classList.add('active'); _hideAll(); if (mc) mc.style.display = '';
   _setPanelLeftVisible(true); _setToolbarMode('comment'); _setProspectCleanMode(false);
@@ -721,6 +733,7 @@ function _setProspectCleanMode(on) {
 let _waterSummaryLoaded = false;
 let _notePublishLoaded = false;
 let _diagLoaded = false;
+let _drainLoaded = false;
 
 /* ═══════════ ✍️ 发笔记（知识库 → AI 生成成稿 → 一键发布小红书笔记） ═══════════ */
 function _npEl(container, id) { return container ? container.querySelector('#' + id) : null; }
@@ -5014,6 +5027,9 @@ async function startup() {
 
   showNoteInfo(pageData);
   hideStatus();
+
+  // 🏷 话题采集：笔记正文里的 #话题 入池（供「关键词维护 · 话题」一键转搜索词）
+  try { if (window.NoteTags) window.NoteTags.recordFromPage(pageData); } catch (_) {}
 
   // ★ 防重复灌水：若笔记里已有“我的名字”的评论 → 直接判定已灌水、跳过 AI、记入清单
   try {
