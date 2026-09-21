@@ -5,9 +5,9 @@
  *       再打成可直接「加载已解压的扩展 / 上传」的 zip 包。
  *
  * 用法（在项目根目录执行）：
- *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月，全部功能 + 日常浏览）
- *   node build.js comment --licensee "李四"       # 评论助手·基础版（¥239/月，手动评论，无自动化）
- *   node build.js comment-multi --licensee "王五" # 评论助手·升级版（¥399/月，一键灌水 + 笔记列表 + 多关键词）
+ *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月，全部功能）
+ *   node build.js comment --licensee "李四"       # 基础版（¥239/月，手动评论，无自动化）
+ *   node build.js comment-multi --licensee "王五" # 升级版（¥399/月，一键灌水 + 笔记列表 + 多关键词）
  *   node build.js pro                            # 自用版（全功能、零等待，自用）
  *
  * 可选参数：
@@ -39,7 +39,7 @@ const PRESETS = {
   },
 
   // ── 对外销售的三档（按月收费：默认有效期 30 天，打包时可用 --days 覆盖）──
-  // ③ 全功能版：② + 通知/私信（获客清单）+ 发送笔记 + 日常浏览（独家）；定价 539/月
+  // ③ 全功能版：② + 通知/私信（获客清单 / 线索触达）+ 笔记生成；定价 539/月
   full: {
     label: '全功能版',
     validDays: 30,
@@ -47,21 +47,22 @@ const PRESETS = {
     keywordMax: 8,
     features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true },
   },
-  // ① 评论助手·基础版：手动 AI 评论（含整页一键发送）+ 账号诊断 + 产品库/知识库/多产品；无任何自动化；定价 239/月
+  // ① 基础版：手动 AI 评论（含整页一键发送）+ 账号诊断 + 产品库/知识库/多产品；无任何自动化；定价 239/月
   comment: {
-    label: '评论助手·基础版',
+    label: '基础版',
     validDays: 30,
     price: 239,
     keywordMax: 1,
     features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: false, dailyBrowse: false },
   },
-  // ② 评论助手·升级版：① + 一键灌水/笔记列表（找该去评论的笔记）+ 多关键词；获客清单 2026-09-20 按老板口径挪到③；定价 399/月
+  // ② 升级版：① + 一键灌水/笔记列表（找该去评论的笔记）+ 多关键词；获客清单 2026-09-20 按老板口径挪到③；定价 399/月
+  // 日常浏览 2026-09-20 起 ②③ 都开（不列入对外功能清单：物料与说明书都不写这条）
   'comment-multi': {
-    label: '评论助手·升级版',
+    label: '升级版',
     validDays: 30,
     price: 399,
     keywordMax: 8,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: false, dailyBrowse: false },
+    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: false, dailyBrowse: true },
   },
 };
 
@@ -269,7 +270,7 @@ if (typeof module !== 'undefined') { module.exports = Edition; }
 function patchManifest(destDir, cfg) {
   const mp = path.join(destDir, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
-  // 源 manifest 名称带「· 全功能版」后缀（开发环境自用），打包时压回产品名再拼当前档位，避免出现两个档位名
+  // 源 manifest 名称带「· 开发版」后缀（开发环境自用），打包时压回产品名再拼当前档位，避免出现两个档位名
   const baseName = String(manifest.name || '').split('·')[0].trim() || '小红书评论助手';
   const suffix = cfg.licensee ? `${cfg.label}·${cfg.licensee}` : cfg.label;
   manifest.name = `${baseName} · ${suffix}`;
@@ -342,20 +343,22 @@ function buildRecordHtml(list) {
 }
 
 // ── 极简三步使用说明（生成 txt + html 双份） ───────────────
-// 本版本功能清单：按 preset 开关生成（对外用词避开禁用词表）
+// 本版本功能清单：按 preset 开关生成（对外用词避开禁用词表；表述从简，一行一项）
 function featureLines(cfg) {
   const f = cfg.features || {};
   const out = [];
-  if (f.tenant) out.push('多产品（多租户）切换');
-  if (f.productLib) out.push('产品库');
-  if (f.knowledge) out.push('知识库');
-  if (f.batchSend) out.push('整页发送：同一篇笔记的多条评论一键发完');
-  if (f.autoWater) out.push('一键灌水：冷启动 / 循环计划 + 笔记列表');
-  if (f.prospectList) out.push('通知 / 私信：用户线索汇成清单，可批量触达');
-  if (f.notePublish) out.push('发送笔记：AI 选题 → 生成图文 → 发布');
-  if (f.dailyBrowse) out.push('日常浏览：按时段与每日配额自动浏览，可配点赞、收藏');
-  out.push('账号诊断：头像 / 简介 / 笔记整改建议 + 选题规划');
-  out.push('评论助手：评论刷新 → 商机分析 → 一键回复');
+  out.push('账号诊断（整改建议 + 选题规划）');
+  out.push('评论助手（AI 帮你写评论、回评论）');
+  if (f.batchSend) out.push('整页发送（多条评论一次发完）');
+  const basics = [];
+  if (f.productLib) basics.push('产品库');
+  if (f.knowledge) basics.push('知识库');
+  if (f.tenant) basics.push('多产品切换');
+  if (basics.length) out.push(basics.join(' · '));
+  if (f.autoWater) out.push('一键灌水 + 笔记列表（关键词维护：自动找词、搜笔记）');
+  if (f.prospectList) out.push('通知 / 私信');
+  if (f.notePublish) out.push('发送笔记');
+  // 日常浏览：②③ 已开通，但按老板口径不列入对外功能清单（物料/说明书都不写），故这里有意不生成条目
   return out;
 }
 
@@ -373,7 +376,7 @@ function writeStepsManual(stageDir, cfg) {
 ================================================
 版本：${cfg.label}　｜　授权：${lc}　｜　有效期：${validStr}
 ${boundLine ? boundLine + '\n' : ''}────────────────────────────────────────
-本版本已开通的功能：
+已开通功能：
 ${featsTxt}
 
 本工具只要 3 步就会用：
@@ -427,7 +430,7 @@ ${featsTxt}
   <div class="auth">版本：${escHtml(cfg.label)}　｜　授权：${escHtml(lc)}　｜　有效期：${escHtml(validStr)}${bound.xhsId ? '　｜　绑定：' + escHtml(bound.xhsId) : ''}</div>
 
   <div class="step">
-    <h2>本版本已开通的功能</h2>
+    <h2>已开通功能</h2>
     <ol>${featsHtml}</ol>
   </div>
 

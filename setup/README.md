@@ -33,7 +33,11 @@ Chrome **从系统层面禁止普通用户免开发者模式静默安装第三�
 生成 `setup\小红书评论助手-setup.exe` 即安装包。
 
 ## 四、要不要预填更多
-想给不同顾客预填不同产品/绑定号：直接改 `setup\install-config.json` 再打包即可（Key 等私密字段不预填，让用户在向导里填）。
+`setup\install-config.json` **是入库的空白模板**（`licensee` / `boundXhsId` 一律留空），扩展首次运行只读其中的产品名等非私密字段。
+
+- 顾客的**绑定小红书号 / 授权名**不写这里：打包时用 `build.js` 的 `--licensee` / `--xhs-id` 参数注入授权文件即可。
+- 若确实要按顾客预填，写到 `setup\installdef.json`（已在 `.gitignore` 里，不会进仓库）；C# 安装器会读它。
+- **别把真实顾客的姓名/小红书号填回 `install-config.json`**——这个文件是提交进 git 的。
 
 ## 五、想要"免开发者模式"
 把扩展上架 Chrome 网上应用店。这是唯一真正免开发者模式的方式，如需我配合整理上架清单/截图可再说。

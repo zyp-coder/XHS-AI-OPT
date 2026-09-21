@@ -59,9 +59,9 @@ const PAGE = `<!DOCTYPE html>
    <div class="field">
      <label>版本档位</label>
 <select name="type">
-       <option value="full">全功能版（发笔记 + 日常浏览 + 通知/私信 · ¥539/月）</option>
-       <option value="comment-multi">评论助手·升级版（一键灌水 + 笔记列表 · ¥399/月）</option>
-       <option value="comment">评论助手·基础版（手动评论 · ¥239/月）</option>
+       <option value="full">全功能版（笔记生成 + 线索触达 + 获客清单 · ¥539/月）</option>
+       <option value="comment-multi">升级版（一键灌水 + 笔记列表 · ¥399/月）</option>
+       <option value="comment">基础版（手动评论 · ¥239/月）</option>
        <option value="pro">自用版（内部·零等待·全功能）</option>
      </select>
    </div>
