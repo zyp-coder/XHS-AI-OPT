@@ -517,6 +517,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     aiCoverLayout: (data) => requireNotePublish(() => aiCoverLayoutBg(data || {})),
     aiKbTree: (data) => requireKnowledge(() => aiKbTreeBg(data || {})),
     genPromptPack: (data) => requireKnowledge(() => genPromptPackBg(data || {})),
+    voiceRewrite: (data) => requireVideoFilm(() => voiceRewriteBg(data || {})),
     genCoverTemplate: (data) => requireNotePublish(() => genCoverTemplateBg(data)),
     // ── 🌿 日常浏览（受 dailyBrowse 版本闸门控制）──
     dailyBrowseStatus: () => requireDailyBrowse(() => DailyBrowse.getStatus()),
@@ -525,6 +526,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     dailyBrowseStop: () => requireDailyBrowse(() => DailyBrowse.stop()),
     // ── ✂️ 全场景截流：六场景在当前笔记上生成评论 ──
     drainComment: (data) => handleDrainComment(data || {}),
+    drainTrackNote: (data) => handleDrainTrackNote(data || {}),
+    drainScan: (data) => handleDrainScan(data || {}),
+    drainGetScanCfg: () => handleDrainGetScanCfg(),
+    drainSaveScanCfg: (data) => handleDrainSaveScanCfg(data || {}),
+    drainReplenish: (data) => handleDrainReplenish(data || {}),
+    drainGetReplenishCfg: () => handleDrainGetReplenishCfg(),
+    drainSaveReplenishCfg: (data) => handleDrainSaveReplenishCfg(data || {}),
     drainScenarios: async () => { return { scenarios: (typeof SCENARIO_DRAIN !== 'undefined') ? SCENARIO_DRAIN : [] }; },
   };
 
@@ -744,7 +752,7 @@ const KB_QUESTIONS = [
   '有没有具体的数字、价格、政策或行业数据，客户需要知道的？',
   '你最想让大家记住你的 2-3 个专业观点或干货结论是什么？',
 ];
-const KB_CATEGORIES = ['产品介绍', '客户痛点', '避坑经验', '数据·价格', '使用技巧', '行业干货'];
+const KB_CATEGORIES = ['产品介绍', '玩法与机制', '数据·成本', '客户痛点', '避坑经验', '个人经历', '使用技巧', '笔记架构'];
 
 async function handleAiKbBuild(data) {
   const cfg = await Storage.getConfig();
@@ -757,10 +765,14 @@ async function handleAiKbBuild(data) {
   }).join('\n\n');
   const system = `你是小红书账号的专业知识库整理师。根据用户对几个问题的回答，整理出一份可直接用于写评论/文案的知识库条目。
 要求：
-1. 每条包含三个字段：标题(30字内)、分类(仅从：${KB_CATEGORIES.join('/')} 中选)、内容(1-4句，具体、带数字/结论/可引用，别空话)。
+1. 每条包含四个字段：
+   - 标题：30字内，带钩子
+   - 分类：仅从这8类中选（${KB_CATEGORIES.join(' / ')}）。产品介绍=产品是什么/卖点；玩法与机制=功能怎么用/怎么跑/SOP；数据·成本=数字/价格/政策/比例；客户痛点=客户最担心最常问的；避坑经验=踩过的坑和纠正；个人经历=真实故事人设素材；使用技巧=操作方法路径；笔记架构=内容与笔记结构的搭配
+   - 内容：1-4句，具体、带数字/结论/可引用，别空话
+   - 标签：3~6个，写用户真的会打出来的词（如"月供""提前还款""公积金"），不要写"产品""干货"这类泛词，不要写整句话
 2. 一共生成 3~8 条；优先把用户明确给的经验、数字、案例、结论拆成独立条目，不要重复。
 3. 内容用第二人称中立专业、可直接引用，不要带"我"的语气（人设才需要"我"）。
-4. 只输出一个 JSON 数组，形如 [{"title":"提前还房贷怎么选","category":"避坑经验","content":"…"}]，不要任何其他文字或代码块标记。`;
+4. 只输出一个 JSON 数组，形如 [{"title":"提前还房贷怎么选","category":"避坑经验","content":"…","tags":["提前还款","违约金","省息"]}]，不要任何其他文字或代码块标记。`;
   const user = `【我回答的几个问题】\n${ansText}\n\n请据此整理成我的知识库。`;
   const r = await AiClient.chatCompletion({ ...cfg.ai, maxTokens: 2048 }, system, user);
   let txt = String(r.content || '').trim();
@@ -771,6 +783,7 @@ async function handleAiKbBuild(data) {
     title: String((e && e.title) || '').trim().slice(0, 40),
     category: KB_CATEGORIES.includes((e && e.category)) ? e.category : (KB_CATEGORIES.find(c => String((e && e.category) || '').includes(c)) || '通用'),
     content: String((e && e.content) || '').trim(),
+    tags: [...new Set((Array.isArray(e && e.tags) ? e.tags : []).map(t => String(t || '').trim()).filter(Boolean))].slice(0, 6),
   })).filter(e => e.title && e.content).slice(0, 8);
   if (!entries.length) throw new Error('AI 未生成有效条目，请把回答写具体些再试');
   return { ok: true, entries };
@@ -1095,6 +1108,69 @@ function pickToneWords(scriptStyle) {
   return picked.join('、');
 }
 
+/* ─── 同城挡位（设置→话术风格）：
+ *   force=①同城就回 / priority=②同城优先 / off=③关闭。非法值一律按 ②（不强制）。
+ *   off 时不把属地喂给 AI，也不做任何同城处理。 */
+function getSameCityMode(config) {
+  const m = String((config && config.sameCityMode) || '').trim();
+  return ['force', 'priority', 'off'].includes(m) ? m : 'priority';
+}
+const SAME_CITY_MODE_NAMES = { force: '①同城就回', priority: '②同城优先', off: '③已关闭' };
+
+/** 生成同城相关的注入上下文：{ my_city, same_city_rule, same_city_screen_rule, loc_on } */
+function buildSameCityRules(config) {
+  const mc = (config && config.myCity && typeof config.myCity === 'object') ? config.myCity : {};
+  const myCity = String(mc.city || '').trim();
+  const myZone = String(mc.ipLocation || '').trim();
+  const known = !!(myCity || myZone);
+  const shown = myCity || myZone;
+  const zoneHint = (myZone && myCity && myZone !== myCity) ? ('（主页 IP 属地：' + myZone + '）') : '';
+  const mode = getSameCityMode(config);
+
+  // ③ 关闭 / 没记录城市：不做同城判断（两种情况都连属地都不喂给 AI，避免出现"看得到属地却没规则"的漂移）
+  if (mode === 'off' || !known) {
+    const why = mode === 'off'
+      ? '本次「同城挡位」为③已关闭（可在「设置 → 话术风格 → 同城挡位」重新开启）'
+      : '本次未设置「我的城市」（可在「账号诊断 → ①抓取主页」里读取或手填）';
+    return {
+      my_city: mode === 'off' ? '（同城挡位已关闭）' : '（未设置）',
+      same_city_rule: `【同城判定】${why} → 不做同城判断，所有 same_city 一律返回 false。`,
+      same_city_screen_rule: '',
+      loc_on: false,
+    };
+  }
+
+  const geo = `我的城市：${shown}${zoneHint}；评论列表里每条评论都标了评论人的「属地」（如：广东 / 上海 / 日本 等）
+- 属地与我的城市同省（直辖市同名、自治区按所在省份算）即算同城；跨省不算。例：我的城市=深圳 → 属地「广东」算同城，属地「广西」不算
+- 属地对不上、或没读到属地的，一律按非同城处理（same_city=false）`;
+
+  if (mode === 'force') {
+    return {
+      my_city: shown + zoneHint,
+      same_city_rule: `【★ 同城挡位①：同城就回（与商机并行的第二条主线，强制）】
+${geo}
+- ★ 强制纳入：同城评论只要是真人的正常评论（排除广告/纯表情/纯符号/明显灌水），不管看不看得出需求，一律纳入返回列表，并在该条的 same_city 标 true
+- ★ 条数上限只管"商机"那部分；同城评论不吃这个上限（上面的"最多 N 条"是指商机数），该收的都收，别为了凑上限把同城挤掉
+- 同城评论的话术走同城口径：优先用同城案例/本地经验的角度切入（如"我这边也一样""同在XX""我们这边的做法"），知识库/人设里有本地的数据、案例就优先用上；没有就自然带一句本地口吻，别硬贴、别每条都喊
+- 非同城的评论仍按原口径判断（只回有价值的），不受影响`,
+      same_city_screen_rule: `- ★★ 同城挡位①「同城就回」：评论列表每条都标了评论人的「属地」，我的城市：${shown}（同省即算同城）。同城评论只要是真人的正常评论（排除广告/纯表情/纯符号/明显灌水），必须选进 valuable_indexes，哪怕看不出需求——后面会按同城口径回`,
+      loc_on: true,
+    };
+  }
+
+  return {
+    my_city: shown + zoneHint,
+    same_city_rule: `【★ 同城挡位②：同城优先（不强制纳入）】
+${geo}
+- 优先级：属地对得上的评论（same_city=true）排序时往前放，同等价值下同城优先返回；same_city 照着标
+- 但仍是"值得回才回"：不看价值硬收就变成刷屏了——同城但完全没话题、没价值的（纯表情/纯符号/广告/灌水）不因为同城就收进来
+- 同城评论的话术尽量用同城案例/本地经验的角度切入（如"我这边也一样""同在XX""我们这边的做法"），知识库/人设里有本地的数据、案例就优先用上，把地域信任感自然揉进一句人话，别硬贴
+- 非同城的评论按原口径判断，不受影响`,
+    same_city_screen_rule: `- ★ 同城挡位②「同城优先」：评论列表每条都标了评论人的「属地」，我的城市：${shown}（同省即算同城）。同城评论只要不是纯垃圾（纯表情/纯符号/广告/明显灌水），宁可先选进来别漏（后面会往前排）；确实一点话题都没有的可以不选`,
+    loc_on: true,
+  };
+}
+
 /* ─── 商机挖掘 ─── */
 async function handleFindProspects(data) {
   const config = await Storage.getConfig();
@@ -1111,8 +1187,17 @@ async function handleFindProspects(data) {
   // 全部评论直接送入后续环节（关键词过滤已移除：规则容易误伤真需求，商机判断交给 AI 更准）
   let visible = comments.map((c, i) => ({ ...c, _idx: i }));
 
+  // ★ 同城挡位：决定评论列表是否带「属地」、以及三级同城规则怎么注入（off 挡位下完全不喂属地）
+  const sameCityCfg = buildSameCityRules(config);
+
+  // ★ 评论列表统一格式化：每条带上评论人的「属地」（content.js 抓的 IP 显示地区），
+  //   供 AI 做「同城」判定（我的城市在账号诊断①记录；挡位③关闭时不再标注）
+  const _fmtComments = (list) => list.map(c =>
+    `${c._idx}. @${c.author || '匿名'}${sameCityCfg.loc_on ? '（属地：' + (c.location || '未知') + '）' : ''}: ${c.content || ''}`
+  ).join('\n');
+
   // 构建评论文本（编号用原始 0-based 索引）
-  const commentsText = visible.map(c => `${c._idx}. @${c.author || '匿名'}: ${c.content || ''}`).join('\n');
+  const commentsText = _fmtComments(visible);
 
   // ★ 商机数量按评论总数动态决定（看菜下饭），而非写死 3 条
   //   大致每 8 条评论允许 1 条商机，下限 3 、上限 12；评论多就尽量挖满
@@ -1146,6 +1231,11 @@ async function handleFindProspects(data) {
     persona_sample: (config.scriptStyle?.personaSample || '').trim(),
     persona_intro: getPersonaText(config),
     account_nickname: (Array.isArray(config.myAccountNames) && config.myAccountNames.length && String(config.myAccountNames[0] || '').trim()) ? String(config.myAccountNames[0]).trim() : '',
+    // ★ 同城（第二条主线）：我的城市来自「账号诊断①抓本人主页」（可在诊断页手填/改），
+    //   挡位在「设置→话术风格→同城挡位」切：①同城就回 / ②同城优先 / ③关闭
+    my_city: sameCityCfg.my_city,
+    same_city_rule: sameCityCfg.same_city_rule,
+    same_city_screen_rule: sameCityCfg.same_city_screen_rule,
     // 字数控制（评论目的版：单范围；兼容旧统一 minChars/maxChars）
     purpose_min_chars: String(config.scriptStyle?.purposeMinChars ?? config.scriptStyle?.minChars ?? 20),
     purpose_max_chars: String(config.scriptStyle?.purposeMaxChars ?? config.scriptStyle?.maxChars ?? 260),
@@ -1266,7 +1356,7 @@ async function handleFindProspects(data) {
         console.log(`[小红书助手] 快筛选中 ${kept.length}/${visible.length} 条，只把选中的送入大分析`);
         visible = kept;
         // 同步刷新依赖 visible 的上下文字段（后续知识库路由/大 prompt 都用它）
-        context.comments_text = visible.map(c => `${c._idx}. @${c.author || '匿名'}: ${c.content || ''}`).join('\n');
+        context.comments_text = _fmtComments(visible);
         context.comment_count = String(visible.length);
         maxOpp = Math.max(3, Math.min(12, Math.ceil(visible.length / 8)));
         context.max_opportunities = String(maxOpp);
@@ -1373,6 +1463,9 @@ async function handleFindProspects(data) {
       author: p.author || '未知',
       original_comment: String((p.original_comment && String(p.original_comment).slice(0, 30)) || p.original_comment || '').slice(0, 30),
       interest_reason: p.opportunity || p.interest_reason || '',
+      // ★ 同城：location=评论人属地（AI 照抄评论列表里的属地），same_city=与我城市同省（AI 按【同城挡位】判）
+      location: String(p.location || '').trim(),
+      same_city: p.same_city === true || String(p.same_city || '').toLowerCase() === 'true',
       suggested_copies: rawCopies,
       copy_labels,
       best_index: 0,
@@ -3968,6 +4061,46 @@ async function requireNotePublish(fn) {
     throw new Error('当前版本未开通「发笔记」功能');
   }
   return await fn();
+}
+// videoFilm 版本闸门：口播稿改写出片这一路（全功能版起）
+async function requireVideoFilm(fn) {
+  if (typeof Edition !== 'undefined' && !Edition.hasFeature('videoFilm')) {
+    throw new Error('当前版本未开通「视频出片」功能');
+  }
+  return await fn();
+}
+
+/* ⚙️ 口播稿改写：拿【整合资料】当事实底子，按用户一句话要求重写一版可直接念的旁白 */
+async function voiceRewriteBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 API Key，请先到设置页填写');
+  const script = String((data && data.script) || '').trim();
+  if (!script) throw new Error('还没有口播稿可改');
+  const ask = String((data && data.ask) || '').trim();
+  if (!ask) throw new Error('先说一句想怎么改');
+  const guide = String(config.product.guideText || config.product.cta || '私信我').trim().slice(0, 20);
+  const system = [
+    '你是小红书口播短视频的撰稿人。用户手里有一段【现有口播稿】，提一句修改要求，你按这个要求重写一版。',
+    '硬要求：',
+    '1) 只输出改好的旁白正文——不要标题、不要解释、不要 markdown、不要分点、不要用引号把整段包起来；',
+    '2) 全稿口语化、短句，能直接照着念；念出来要顺，别堆书面词；',
+    '3) 承接只用「' + guide + ' / 私信我」，绝不写微信/小程序/公众号/加V/链接/二维码/电话；',
+    '4) 不承诺效果、不报数字化成效、不做保证性表述；',
+    '5) 原文已经讲对的卖点与事实要保留，别编资料里没有的东西；',
+    '6) 按意思分段，一段一行（一段＝将来视频里的一幕），总长度别比原文长太多。'
+  ].join('\n');
+  const user = [
+    (data && data.ctx) ? '【整合资料（事实来源，别编）】\n' + String(data.ctx).trim() : '',
+    '【现有口播稿】\n' + script,
+    '【这次要怎么改】' + ask,
+  ].filter(Boolean).join('\n\n---\n\n');
+  const raw = await _chatAi(config, system, user, 1600);
+  const out = String(raw || '')
+    .replace(/```[a-zA-Z]*\n?/g, '')
+    .replace(/^\s*(改好的?)?(口播稿|旁白|正文)\s*[：:]\s*/, '')
+    .trim();
+  if (!out) throw new Error('AI 没给出内容，换个说法再试');
+  return { script: out };
 }
 
 // ✍️ AI 生成笔记文案：按【引导话题（可选）】写一篇小红书笔记，并引用选中的知识库条目作素材

@@ -708,7 +708,7 @@ function switchMainTab(name) {
     if (tabComment) tabComment.classList.remove('active'); if (tabWater) tabWater.classList.remove('active'); if (tabDrain) tabDrain.classList.add('active');
     _hideAll(); if (src2) src2.style.display = '';
     _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
-    if (src2 && !_drainLoaded) { _drainLoaded = true; renderScenarioDrain(src2); }
+    if (src2) renderScenarioDrain(src2); // 每次切入都重渲染，实时反映获客刚登记/更新的笔记
     return;
   }
   // comment（获客助手）或默认
@@ -753,9 +753,14 @@ async function npAddUsed(text) {
 // ✍️ 发笔记：AI 四层选题向导（卖点 → 人群 → 话题 → 成稿），不知识库先行
 async function renderNotePublish(container) {
   _npWiz = { step: 0, sellPoints: [], chosen: [], concept: null, chosenTopicIdx: -1, chosenPeople: [], loading: false, prodName: '', sellImages: [] };
+  // 出片台入口（独立按钮，不进工作流）：装了发送笔记的档位才有，全功能版起
+  const filmBtn = editionFeatureOn('videoFilm')
+    ? '<button type="button" class="np-film" style="border:1px solid #ff2442;border-radius:8px;background:#fff;color:#ff2442;font-size:11px;font-weight:700;cursor:pointer;padding:5px 12px;white-space:nowrap;">🎬 出视频</button>'
+    : '';
   container.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);">
       <span>✍️ 发笔记 · AI 四层选题</span>
+      ${filmBtn}
     </div>
     <div id="npSteps" style="padding:10px 14px;border-bottom:1px solid var(--line);font-size:11px;"></div>
     <div id="npWizBody" style="padding:12px 14px;"></div>
@@ -765,6 +770,52 @@ async function renderNotePublish(container) {
   ensureNpDelegation();
   _npWiz.prodName = await getProductName();
   await npWizRender(container);
+}
+
+/** 打开出片台：带着口播稿过去（刚生成的稿子直接能用），没稿子就沿用上次的 */
+function npOpenFilm(script) {
+  const s = String(script || '').trim();
+  const open = () => chrome.tabs.create({ url: chrome.runtime.getURL('video.html'), active: true });
+  if (!s) { open(); return; }
+  try { chrome.storage.local.set({ xhsFilmScript: s }, open); } catch (_) { open(); }
+}
+
+/** 提示词包里那段「口播稿」——出片台要的就是它；没生成过就返回空，到出片台里自己粘 */
+function npPickVoiceScript() {
+  const ta = document.querySelector('.np-pack-voice');
+  const live = ta ? String(ta.value || '').trim() : '';
+  return live || String((_npPackResult && _npPackResult.voice) || '').trim();
+}
+
+/* 口播稿改写：拿「整合资料」当事实底子，一句话让 AI 重写一版；改过的稿子就是出视频带过去的那份 */
+let _npVoicePrev = '';   // 上一版（只留一层，够回退就行）
+async function npVoiceRewrite(card) {
+  if (!card) return;
+  const ta = card.querySelector('.np-pack-voice');
+  const askEl = card.querySelector('.np-vr-ask');
+  const btn = card.querySelector('.np-vr-go');
+  const msg = card.querySelector('.np-vr-msg');
+  const undo = card.querySelector('.np-vr-undo');
+  const say = (s, color) => { if (msg) { msg.textContent = s; msg.style.color = color || '#9aa0ac'; } };
+  const script = ta ? String(ta.value || '').trim() : '';
+  const ask = askEl ? String(askEl.value || '').trim() : '';
+  if (!script) { say('还没有稿子可改——先点上面的「🤖 生成提示词包」', '#d33'); return; }
+  if (!ask) { if (askEl) askEl.focus(); say('先说一句想怎么改（下面也有常用改法，点一下就行）', '#d33'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 改稿中…'; }
+  say('AI 正在改…');
+  try {
+    const ctxEl = document.querySelector('.np-pack-ctx');
+    const r = await chrome.runtime.sendMessage({ action: 'voiceRewrite', data: { script, ask, ctx: ctxEl ? String(ctxEl.value || '') : '' } });
+    if (!r || !r.ok || !r.script) throw new Error((r && r.error) || '改稿失败');
+    _npVoicePrev = script;
+    if (ta) ta.value = r.script;
+    if (_npPackResult) _npPackResult.voice = r.script;   // 出视频读的就是这份，别只改显示
+    if (undo) undo.hidden = false;
+    say('✅ 改好了——不满意点「↩ 改回上一版」，或换个说法再改一次', '#2e7d32');
+  } catch (e) {
+    say('改稿失败：' + ((e && e.message) || e), '#d33');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '🤖 AI 改一版'; }
 }
 
 function npStepBar(container) {
@@ -1028,6 +1079,11 @@ let _npDelegated = false;
 function ensureNpDelegation() {
   if (_npDelegated) return;
   _npDelegated = true;
+  // 手改口播稿也要回写：出视频和「复制」读的都是 _npPackResult.voice 这份
+  document.addEventListener('input', function (ev) {
+    const t = ev.target;
+    if (t && t.classList && t.classList.contains('np-pack-voice') && _npPackResult) _npPackResult.voice = t.value;
+  });
   document.addEventListener('click', function (ev) {
     const t = ev.target;
     const nc = document.getElementById('notePublishContent') || _npActiveContainer;
@@ -1052,6 +1108,11 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-mm-copy')) { const cv = _npMindCanvas; if (cv) { copyImageToClipboard(cv.toDataURL('image/png')).then(ok => { if (typeof toast === 'function') toast(ok ? '思维导图已复制，去小红书粘贴' : '复制失败，请点「下载」'); }).catch(() => { if (typeof toast === 'function') toast('复制失败，请点「下载」'); }); } return; }
     if (t && t.closest('.np-mm-dl')) { const cv = _npMindCanvas; if (cv) downloadImageDataUrl(cv.toDataURL('image/png'), 'mindmap.png'); return; }
     if (t && t.closest('.np-pack-gen')) { npPackGen(nc); return; }
+    if (t && t.closest('.np-vr-go')) { npVoiceRewrite(t.closest('.np-vcard')); return; }
+    if (t && t.closest('.np-vr-chip')) { const c = t.closest('.np-vr-chip'); const card = c.closest('.np-vcard'); const askEl = card && card.querySelector('.np-vr-ask'); if (askEl) askEl.value = c.getAttribute('data-ask') || ''; npVoiceRewrite(card); return; }
+    if (t && t.closest('.np-vr-undo')) { const card = t.closest('.np-vcard'); const ta = card && card.querySelector('.np-pack-voice'); if (ta && _npVoicePrev) { ta.value = _npVoicePrev; if (_npPackResult) _npPackResult.voice = _npVoicePrev; } const u = card && card.querySelector('.np-vr-undo'); if (u) u.hidden = true; return; }
+    if (t && t.closest('.np-film')) { npOpenFilm(npPickVoiceScript()); return; }
+    if (t && t.closest('.np-pack-film')) { npOpenFilm(npPickVoiceScript()); return; }
     if (t && t.closest('.np-pack-copy')) { const k = t.closest('.np-pack-copy').getAttribute('data-k') || ''; const v = (_npPackResult && _npPackResult[k]) || ''; if (v && typeof copyToClipboard === 'function') copyToClipboard(v).then(() => { if (typeof toast === 'function') toast('已复制「' + ({ copy: '文案', cover: '封面配图', voice: '口播稿', video: '视频稿' }[k] || k) + '」提示词，去粘贴使用'); }).catch(() => {}); return; }
     if (t && t.closest('.np-cover-ai')) { npAiLayoutCover(nc); return; }
     if (t && t.closest('.np-cover-copy')) { const cv = _npCoverCanvas; if (cv) { copyImageToClipboard(cv.toDataURL('image/png')).then(ok => { if (typeof toast === 'function') toast(ok ? '封面已复制，去小红书粘贴' : '复制失败，请点「下载」'); }).catch(() => { if (typeof toast === 'function') toast('复制失败，请点「下载」'); }); } return; }
@@ -1333,7 +1394,9 @@ function renderNpPromptPack(container) {
     '③ 上传「思维导图」配图（🧠 配图区块 复制/下载）；<br>' +
     '④ 贴上标题 + 正文 + 话题标签，发布；<br>' +
     '⑤ 发布后 1 小时内贴「置顶自评」；<br>' +
-    '⑥ 想发视频/更精配图：用下面 封面&配图/口播/视频 提示词 → 去 千问/即梦/可灵/剪映 生成 → 按视频或图文发布。' +
+    (editionFeatureOn('videoFilm')
+      ? '⑥ 想发视频：点右上角「🎬 出视频」，口播稿直接配成一条带配音的竖版视频（就在本机出，不用装别的软件）；想更精的配图/分镜，再用下面 封面&配图/视频 提示词去 千问/即梦/可灵 生成。'
+      : '⑥ 想发视频/更精配图：用下面 封面&配图/口播/视频 提示词 → 去 千问/即梦/可灵/剪映 生成 → 按视频或图文发布。') +
     '</div>' +
     '<div id="npPackRes" style="margin-top:10px;"></div>' +
     '</div></div>';
@@ -1419,13 +1482,36 @@ async function npPackGen(container) {
 
 function npPackResHtml(k, title, icon) {
   const txt = (_npPackResult && _npPackResult[k]) || '';
-  return '<div style="margin:8px 0;border:1px solid #f1d9c0;border-radius:8px;padding:8px 10px;background:#fff;">' +
+  // 口播稿这段多一条出路：能原地用 AI 改，改完直接拿去出视频；其余三段仍只是拿去别处用的提示词
+  const asFilm = (k === 'voice' && editionFeatureOn('videoFilm'));
+  const body = asFilm
+    ? voiceBlock(txt)
+    : (txt ? '<pre style="font-size:11.5px;color:#333;background:#fff7f0;border-radius:6px;padding:6px 8px;margin:0;white-space:pre-wrap;word-break:break-all;font-family:inherit;">' + esc(txt) + '</pre>'
+           : '<div style="font-size:11px;color:#999;">（未生成）</div>');
+  return '<div class="' + (asFilm ? 'np-vcard ' : '') + '" style="margin:8px 0;border:1px solid #f1d9c0;border-radius:8px;padding:8px 10px;background:#fff;">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px;">' +
     '<div style="font-size:12px;font-weight:700;color:#f97316;">' + icon + ' ' + title + '</div>' +
+    '<span style="display:flex;gap:6px;align-items:center;">' +
+    (asFilm ? '<button type="button" class="np-pack-film" style="border:none;border-radius:6px;background:#ff2442;color:#fff;font-size:11px;font-weight:700;cursor:pointer;padding:3px 10px;">🎬 拿这篇出视频</button>' : '') +
     '<button type="button" class="np-pack-copy" data-k="' + k + '" style="border:1px solid #f97316;border-radius:6px;background:#fff;color:#f97316;font-size:11px;cursor:pointer;padding:2px 10px;">📋 复制</button>' +
-    '</div>' +
-    (txt ? '<pre style="font-size:11.5px;color:#333;background:#fff7f0;border-radius:6px;padding:6px 8px;margin:0;white-space:pre-wrap;word-break:break-all;font-family:inherit;">' + esc(txt) + '</pre>' : '<div style="font-size:11px;color:#999;">（未生成）</div>') +
+    '</span>' +
+    '</div>' + body +
     '</div>';
+}
+
+/** 口播稿那段的本体：能直接改的稿子 + 「一句话让 AI 改」 */
+function voiceBlock(txt) {
+  return '<textarea class="np-pack-voice" rows="6" spellcheck="false" style="width:100%;box-sizing:border-box;font-size:11.5px;color:#333;background:#fff7f0;border:1px solid #f1d9c0;border-radius:6px;padding:6px 8px;margin:0;line-height:1.7;resize:vertical;font-family:inherit;">' + esc(txt) + '</textarea>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px;">' +
+    '<input type="text" class="np-vr-ask" placeholder="想怎么改？例：再短一点，压到 15 秒内" style="flex:1;min-width:150px;box-sizing:border-box;padding:4px 8px;border:1px solid #f1d9c0;border-radius:6px;font-size:11.5px;">' +
+    '<button type="button" class="np-vr-go" style="border:1px solid #f97316;border-radius:6px;background:#fff;color:#f97316;font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 12px;white-space:nowrap;">🤖 AI 改一版</button>' +
+    '<button type="button" class="np-vr-undo" hidden style="border:1px solid #ccc;border-radius:6px;background:#fff;color:#777;font-size:11.5px;cursor:pointer;padding:4px 10px;white-space:nowrap;">↩ 改回上一版</button>' +
+    '</div>' +
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;">' +
+    ['再短一点', '更口语一点', '换个开头钩子', '结尾引导再强一点', '更专业一些']
+      .map(a => '<button type="button" class="np-vr-chip" data-ask="' + a + '" style="border:1px solid #f1d9c0;border-radius:20px;background:#fff;color:#a5561c;font-size:11px;cursor:pointer;padding:2px 10px;">' + a + '</button>').join('') +
+    '</div>' +
+    '<div class="np-vr-msg" style="font-size:10.5px;color:#9aa0ac;margin-top:5px;line-height:1.6;min-height:14px;">改稿子就是改稿子，不会动你已经填的 <b>整合资料</b>；改到满意再点「🎬 拿这篇出视频」，稿子原样带过去。</div>';
 }
 function renderNpPackResults(container, result) {
   const box = _npEl(container, 'npPackRes');
@@ -2059,7 +2145,7 @@ const StepFlow = {
           <div class="step2-stat green"><div class="num">${done}</div><div class="lbl">已处理</div></div>
         </div>
         <button class="step2-start-btn" id="step2Start" ${total === 0 ? 'disabled' : ''}>🎯 开始逐条处理（${total} 条）</button>
-        <div style="font-size:11px;color:#888;margin-top:10px;text-align:center;">优先处理 AI 判定为商机的评论</div>
+        <div style="font-size:11px;color:#888;margin-top:10px;text-align:center;">优先处理 AI 判定为商机的评论${this.prospects.filter(p => p.same_city === true).length ? ` · 其中 🏙 同城 ${this.prospects.filter(p => p.same_city === true).length} 条` : ''}</div>
       </div>`;
     document.getElementById('step2Back')?.addEventListener('click', () => {
       showEmpty();
@@ -2116,6 +2202,14 @@ const StepFlow = {
     const labels = (item.copy_labels && item.copy_labels.length ? item.copy_labels : []).map(s => String(s || '').trim());
     const defaultCopy = copies[0] || '';
     const isProspect = !!this.prospects.some(p => p.index === idx || p.author === author);
+    // ★ 同城标记：same_city 由 AI 按「我的城市 vs 评论人属地」判定；属地优先读商机条目，兜底读原始评论
+    const _matched = this.prospects.find(p => p.index === idx || p.author === author);
+    const _loc = String(item.location || ((pageData && pageData.comments && pageData.comments[idx] && pageData.comments[idx].location) || '')).trim();
+    const sameCity = !!(_matched && _matched.same_city === true);
+    const _locStyle = 'display:inline-block;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle;';
+    const locChip = sameCity
+      ? `<span style="${_locStyle}background:#e3f2fd;color:#1565c0;font-weight:600;">🏙 同城${_loc ? ' · ' + esc(_loc) : ''}</span>`
+      : (_loc ? `<span style="${_locStyle}background:#f2f2f2;color:#888;">${esc(_loc)}</span>` : '');
 
     const mc = document.getElementById('mainContent');
     mc.innerHTML = `
@@ -2126,7 +2220,7 @@ const StepFlow = {
       </div>
       <div class="step3-wrap">
         <div class="step3-card">
-          <div class="step3-author">@${esc(author)}</div>
+          <div class="step3-author">@${esc(author)}${locChip}</div>
           <div class="step3-quote">“${esc(quote.slice(0, 200))}${quote.length > 200 ? '…' : ''}”</div>
           <div class="step3-tabs" id="step3Tabs"></div>
           <textarea class="step3-textarea" id="step3Text" placeholder="输入回复内容...">${esc(defaultCopy)}</textarea>
@@ -5903,13 +5997,30 @@ async function loadProspecting(container, skipScreen) {
     try {
       const _shown = filteredComments.slice(0, 30);
       addLog(`🔍 本次共拓到 ${(pageData.comments || []).length} 条评论（过滤已回复后待分析 ${filteredComments.length} 条），下面逐条列出让你核对：`, 'info');
+      // ★ 同城挡位状态：把「关没关 / 城市记没记」明确报出来，避免以为同城没生效
+      try {
+        const _cfg = await readConfigPlain();
+        const _mc = (_cfg && _cfg.myCity && typeof _cfg.myCity === 'object') ? _cfg.myCity : {};
+        const _myCity = String(_mc.city || '').trim();
+        const _myZone = String(_mc.ipLocation || '').trim();
+        const _mode = ['force', 'priority', 'off'].includes(_cfg && _cfg.sameCityMode) ? _cfg.sameCityMode : 'priority';
+        const _modeName = { force: '①同城就回', priority: '②同城优先', off: '③已关闭' }[_mode];
+        if (_mode === 'off') {
+          addLog('🏙 同城挡位③已关闭：属地不参与判断（可在「设置 → 话术风格 → 同城挡位」开启）', 'info');
+        } else if (_myCity || _myZone) {
+          addLog(`🏙 同城挡位${_modeName}：我的城市 = ${_myCity || _myZone}${(_myZone && _myCity && _myZone !== _myCity) ? '（主页 IP 属地：' + _myZone + '）' : ''} · 同省即算同城`, 'info');
+        } else {
+          addLog(`🏙 同城挡位${_modeName}，但还没记录你的城市 → 去「账号诊断 → ①抓取主页」读取或手填，否则同城不会生效`, 'warn');
+        }
+      } catch (_) {}
       let _numLike = 0;
       _shown.forEach((c, i) => {
         const body = (c.content || '').trim();
         const isNumLike = /^[\d,\.\s万k＋+]+$/i.test(body); // 正文只剩数字/万/k → 很可能是点赞数
         if (isNumLike) _numLike++;
         const flag = isNumLike ? ' ⚠️疑似点赞数而非正文' : '';
-        addLog(`  ${i + 1}. @${esc(c.author || '?')}: ${esc(body.slice(0, 60))}${body.length > 60 ? '…' : ''}${flag}`, isNumLike ? 'warn' : 'info');
+        const locTag = c.location ? `[${c.location}]` : '';
+        addLog(`  ${i + 1}. @${esc(c.author || '?')}${locTag}: ${esc(body.slice(0, 60))}${body.length > 60 ? '…' : ''}${flag}`, isNumLike ? 'warn' : 'info');
       });
       if (filteredComments.length > _shown.length) {
         addLog(`  …其余 ${filteredComments.length - _shown.length} 条未列出`, 'info');
@@ -6034,7 +6145,8 @@ async function loadProspecting(container, skipScreen) {
 
     kbImages = result.images || []; // 存储知识库匹配的图片（已按标签筛选）
     const kbMatchedEntries = result.matchedEntries || []; // 匹配的知识库条目
-    addLog(`✅ AI分析完成：发现 ${prospects.length} 个潜在客户`, 'success');
+    const sameCityCount = prospects.filter(p => p.same_city === true).length;
+    addLog(`✅ AI分析完成：发现 ${prospects.length} 个潜在客户${sameCityCount ? `（其中 🏙 同城 ${sameCityCount} 个）` : ''}`, 'success');
     
     // 日志：显示匹配的知识库条目
     if (kbMatchedEntries.length > 0) {
@@ -6258,6 +6370,9 @@ async function loadProspecting(container, skipScreen) {
       const content = actualComment || p.original_comment || p.content || '';
       // 获取用户主页链接（用于精准定位）
       const userLink = (pageData.comments && pageData.comments[idx] && pageData.comments[idx].userLink) || '';
+      // ★ 属地 / 同城：属地来自评论区（content.js 抓的 IP 显示地区），same_city 由 AI 按「我的城市」判定
+      const loc = String(p.location || (pageData.comments && pageData.comments[idx] && pageData.comments[idx].location) || '').trim();
+      const sameCity = p.same_city === true;
       // 清洗 AI 可能在内容里附带的版本前缀（"版本A：" / "A：" / "（版本A正文，...）"等），并剔除空串话术
       const copies = (p.suggested_copies && p.suggested_copies.length > 0
         ? p.suggested_copies
@@ -6300,9 +6415,13 @@ async function loadProspecting(container, skipScreen) {
         : p._wasFixed
           ? '<span style="display:inline-block;font-size:10px;background:#fff3cd;color:#856404;padding:1px 6px;border-radius:3px;margin-left:4px;">已修正</span>'
           : '<span style="display:inline-block;font-size:10px;background:#fce4e4;color:#c62828;padding:1px 6px;border-radius:3px;margin-left:4px;">⚠️ 索引异常</span>';
+      // ★ 同城徽标（AI 判定）优先，其余显示属地灰标
+      const locBadge = sameCity
+        ? `<span style="display:inline-block;font-size:10px;background:#e3f2fd;color:#1565c0;font-weight:600;padding:1px 6px;border-radius:3px;margin-left:4px;">🏙 同城${loc ? ' · ' + esc(loc) : ''}</span>`
+        : (loc ? `<span style="display:inline-block;font-size:10px;background:#f2f2f2;color:#888;padding:1px 6px;border-radius:3px;margin-left:4px;">${esc(loc)}</span>` : '');
 
       card.innerHTML = `
-        <div class="prospect-badge">潜在客户 #${i + 1}${verifiedBadge}</div>
+        <div class="prospect-badge">潜在客户 #${i + 1}${verifiedBadge}${locBadge}</div>
         <div class="prospect-meta">
           <span class="prospect-author comment-clickable" data-idx="${idx}">@${esc(author)}</span>
           <span style="font-size:11px;color:#999;">${esc(p.approach || '回复')}</span>
@@ -7401,6 +7520,15 @@ function showNoteInfo(data) {
   if (window._notifyNoteOpened && noteId) {
     window._notifyNoteOpened(noteId);
   }
+  // ✂️ 截流：获客里打开/分析一篇笔记 → 立即登记/更新进截流监控池（fire-and-forget）
+  try {
+    chrome.runtime.sendMessage({
+      action: 'drainTrackNote',
+      noteId, url: data.url, title: data.title, author: data.author,
+      likes: (data && typeof data.likes === 'number') ? data.likes : undefined,
+      commentsCount: (data && data.comments && data.comments.length) || 0,
+    }, function () {});
+  } catch (_) {}
 }
 function setBadge(text, cls) {
   const el = document.getElementById('statusBadge');
@@ -7480,6 +7608,25 @@ function broadcastAiScanDone(ok) {
   stopScanHeartbeat();
   try { window.dispatchEvent(new CustomEvent('xhsAiScanDone', { detail: { ok: !!ok, noteId: _scanCurNoteId || '' } })); } catch (_) {}
   noteDone(null, { sent: false, reason: 'scan_done' }); // 扫描结束·无需发送 → 本篇"处理完"
+  // ✂️ 截流：本轮操作停一下后，自动对"本轮未打开"的池内笔记按决策配置表补开刷新（算进 bot 一轮完成）
+  drainScheduleReplenishAfterRound();
+}
+
+// 截流补开：获客一轮处理完后自动触发（防抖：本轮静默 8s 才当一轮结束，避免逐篇间隙误触发）
+let _drainReplenishTimer = null;
+function drainScheduleReplenishAfterRound() {
+  if (window._drainReplenishBusy) return;
+  if (_drainReplenishTimer) clearTimeout(_drainReplenishTimer);
+  _drainReplenishTimer = setTimeout(async () => {
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'drainReplenish', round: true });
+      if (r && r.ok && r.summary) {
+        try {
+          console.log('[截流] 本轮补开完成:', JSON.stringify(r.summary));
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }, 8000);
 }
 
 // ═══ 统一"本篇处理完成"信号（严格自动灌水用）═══
@@ -7592,6 +7739,14 @@ function _dBtn(id, label, sub, color) {
 }
 async function _diagSay(method, data) { return await chrome.runtime.sendMessage({ action: method, data: data || {} }); }
 async function _diagGetCfg() { return await readConfigPlain(); }
+// 读取已记录的同城城市（账号诊断①记录，也可手填）
+async function _diagGetMyCity() {
+  try {
+    const cfg = await _diagGetCfg();
+    const mc = cfg && cfg.myCity;
+    return (mc && typeof mc === 'object') ? mc : { city: '', ipLocation: '', source: '', updatedAt: 0 };
+  } catch (_) { return { city: '', ipLocation: '', source: '', updatedAt: 0 }; }
+}
 async function _diagSaveCfg(cfg) { await chrome.storage.local.set({ config: (typeof DataPrivacy !== 'undefined') ? await DataPrivacy.lockConfig(cfg) : cfg }); }
 function _diagCard(innerHtml) { return '<div style="border:1px solid #e7eaf0;border-radius:12px;padding:14px 16px;background:#fff;box-shadow:0 1px 3px rgba(24,24,40,.05);">' + innerHtml + '</div>'; }
 function _diagLabel(txt) { return '<div style="font-size:12px;color:#333;margin-bottom:4px;">' + txt + '</div>'; }
@@ -7662,7 +7817,23 @@ async function diagFetchProfile() {
   try {
     const r = await _diagSay('extractOwnProfile');
     if (!r || !r.ok || !r.profile) throw new Error((r && (r.reason || r.error)) || '抓取失败');
-_diagState.profile = r.profile;
+    	_diagState.profile = r.profile;
+    // ★ 同城城市：把主页读到的城市/IP 属地记进配置（供评论助手做「同城」判定）；
+    //   手填过的以手填为准，抓取不覆盖；主页上读不到就不动已有值
+    try {
+      const mc = await _diagGetMyCity();
+      const city = String(r.profile.city || '').trim();
+      const ip = String(r.profile.ipLocation || '').trim();
+      if ((city || ip) && mc.source !== 'manual') {
+        const cfg = await _diagGetCfg();
+        cfg.myCity = { city: city || ip, ipLocation: ip, source: 'auto', updatedAt: Date.now() };
+        await _diagSaveCfg(cfg);
+        addLog('📍 同城城市已记录：' + (city || ip) + (ip ? ('（主页 IP 属地：' + ip + '）') : ''), 'info');
+      } else if (!city && !ip) {
+        addLog('📍 主页上没读到城市/属地，可在本页手填（评论助手「同城」判定用）', 'warn');
+      }
+    } catch (_) {}
+
     // ★ 防重复灌水：默认用抓到的号主个人身份（昵称优先，其次小红书号）兜底
     try {
       const cfg = await _diagGetCfg();
@@ -7688,11 +7859,54 @@ function diagRenderProfile(body) {
     '<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:15px;">' + _dEsc(p.name || '未命名') + '</div>' +
     '<div style="font-size:11px;color:#999;">小红书号：' + _dEsc(p.xhsId || '-') + '</div>' +
     '<div style="font-size:12px;color:#666;margin-top:2px;white-space:pre-wrap;word-break:break-word;">' + _dEsc(p.desc || '（暂无简介）') + '</div></div></div>' +
-    '<div style="display:flex;margin:10px 0 4px;">' + stat(p.fans, '粉丝') + stat(p.follows, '关注') + stat(p.likes, '获赞') + '</div>'
+    '<div style="display:flex;margin:10px 0 4px;">' + stat(p.fans, '粉丝') + stat(p.follows, '关注') + stat(p.likes, '获赞') + '</div>' +
+    // ★ 同城城市：评论助手扫评论时用它与评论人属地匹配（同省即算同城）；抓不到可手填
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e7eaf0;">' +
+    '<div style="font-size:12px;color:#333;margin-bottom:4px;">📍 同城城市 <span style="color:#999;font-size:11px;">（评论助手用它筛同城评论，同省即算同城；手填如：深圳）</span></div>' +
+    '<div style="display:flex;gap:6px;align-items:center;">' +
+    '<input id="diagCityInp" style="flex:1;box-sizing:border-box;padding:5px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;" placeholder="城市或省份，留空=不做同城判断">' +
+    '<button id="diagCitySave" class="btn btn-outline" style="margin:0;">💾 保存城市</button>' +
+    '<span id="diagCityMsg" style="font-size:11px;color:#0a7b5a;"></span>' +
+    '</div>' +
+    '<div id="diagCityHint" style="font-size:11px;color:#999;margin-top:3px;"></div>' +
+    '</div>'
   ) + '<div style="margin-top:12px;border:1px solid #eee;border-radius:8px;padding:10px;background:#fafbfc;"><b style="font-size:13px;">发过的笔记 (' + (p.notes || []).length + ')</b><div style="white-space:pre-wrap;font-size:12px;color:#555;margin-top:4px;">' + _dEsc(notes || '（未读到）') + '</div></div>' +
 '<div style="margin-top:14px;">' + _dBtn('diagNextBtn', '下一步：② 问卷', '', 'btn-primary') + _dBtn('diagRefetchBtn', '重新抓取', '', 'btn-outline') + '</div>';
   document.getElementById('diagNextBtn')?.addEventListener('click', function () { diagGo(2); });
   document.getElementById('diagRefetchBtn')?.addEventListener('click', function () { _diagState.profile = null; diagGo(1); });
+  // 回填已记录的城市（抓取/手填）+ 显示当前同城挡位
+  (async function () {
+    const mc = await _diagGetMyCity();
+    const inp = document.getElementById('diagCityInp');
+    if (inp) inp.value = mc.city || mc.ipLocation || '';
+    const hint = document.getElementById('diagCityHint');
+    if (hint) {
+      const src = mc.source === 'manual' ? '你手填的' : (mc.updatedAt ? '从主页读到的' : '');
+      let modeName = '';
+      try {
+        const cfg = await _diagGetCfg();
+        const m = ['force', 'priority', 'off'].includes(cfg && cfg.sameCityMode) ? cfg.sameCityMode : 'priority';
+        modeName = { force: '①同城就回', priority: '②同城优先', off: '③已关闭' }[m];
+      } catch (_) {}
+      hint.textContent = (src ? '当前：' + (mc.city || '-') + '（' + src + '）' : '还没记录城市——在下面的输入框手填，或重新抓取主页') +
+        (mc.ipLocation ? ' · 主页 IP 属地：' + mc.ipLocation : '') +
+        (modeName ? ' · 同城挡位：' + modeName + '（在「设置 → 话术风格 → 同城挡位」切换）' : '');
+    }
+  })();
+  document.getElementById('diagCitySave')?.addEventListener('click', async function () {
+    const inp = document.getElementById('diagCityInp');
+    const msg = document.getElementById('diagCityMsg');
+    const val = inp ? String(inp.value || '').trim() : '';
+    try {
+      const cfg = await _diagGetCfg();
+      const old = (cfg.myCity && typeof cfg.myCity === 'object') ? cfg.myCity : {};
+      cfg.myCity = { city: val, ipLocation: old.ipLocation || '', source: 'manual', updatedAt: Date.now() };
+      await _diagSaveCfg(cfg);
+      if (msg) msg.textContent = val ? ('✅ 已保存：' + val + '（评论助手将按同省判定同城）') : '✅ 已清空（不做同城判断）';
+      const hint = document.getElementById('diagCityHint');
+      if (hint) hint.textContent = val ? ('当前：' + val + '（你手填的）' + (old.ipLocation ? ' · 主页 IP 属地：' + old.ipLocation : '')) : '还没记录城市——在下面的输入框手填，或重新抓取主页';
+    } catch (e) { if (msg) msg.textContent = '❌ 保存失败：' + (e.message || e); }
+  });
 }
 
 /* ── ② 问卷（10问统一收集：人设/产品/内容规划只答一次，后续步骤复用） ── */

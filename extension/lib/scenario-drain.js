@@ -187,7 +187,16 @@ async function renderScenarioDrain(container) {
       .sx-out-text{font-size:12px;color:#334155;white-space:pre-wrap;line-height:1.8;background:#f9fafb;border:1px solid #eef0f3;border-radius:8px;padding:8px 10px;}
     </style>
     <div class="sx-wrap">
-      <div class="sx-hint">扫到/加入的笔记统一进本列表维护（归入 🎯 获客）：选择场景 → 抓取/粘贴加入 → 逐条「刷新判断」打状态 → 对该笔记「生成该场景评论」截流，或「评论区转获客」把互动/求助评论者送进获客清单触达。</div>
+      <div class="sx-hint">获客＝扫描笔记列表→进监控池→逐篇判断→截流/转获客。点「🔍 扫描一轮」按来源抓列表并入池；扫描会做存量对账——这次没被打开的老笔记按ID/标题补开刷新，不丢失。来源在「⚙️ 扫描来源」里配（关键词/城市/高V）。</div>
+      <div class="sx-bar">
+        <button type="button" class="btn btn-sm btn-primary" id="sxScan">🔍 扫描一轮</button>
+        <button type="button" class="btn btn-sm" id="sxScanCfg">⚙️ 扫描来源</button>
+        <button type="button" class="btn btn-sm" id="sxReplenish">🔁 补开未打开</button>
+        <button type="button" class="btn btn-sm" id="sxReplCfg">🧮 决策配置表</button>
+        <span class="sx-count" id="sxLastScan"></span>
+      </div>
+      <div id="sxScanCfgPanel" style="display:none;border:1px solid #eef0f3;border-radius:10px;padding:10px;margin-bottom:10px;"></div>
+      <div id="sxReplCfgPanel" style="display:none;border:1px solid #eef0f3;border-radius:10px;padding:10px;margin-bottom:10px;"></div>
       <div class="sx-bar">
         <select id="sxFilter" class="sx-in">
           <option value="all">全部场景</option>
@@ -204,6 +213,155 @@ async function renderScenarioDrain(container) {
       <div id="sxOut" class="sx-out" style="display:none;"></div>
     </div>
   `;
+
+  /* ---- 扫描来源配置面板 ---- */
+  const renderScanCfg = async () => {
+    const r = await chrome.runtime.sendMessage({ action: 'drainGetScanCfg' });
+    const cfg = (r && r.ok && r.cfg) || { sources: [] };
+    const panel = _sel('sxScanCfgPanel');
+    if (!panel) return;
+    panel.innerHTML = `
+      <div style="font-size:12px;font-weight:600;color:#1f2937;margin-bottom:6px;">扫描来源（关键词/城市/高V）</div>
+      <div id="sxSrcList" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+        ${(cfg.sources || []).map((s, i) => {
+          const sc = SCENARIO_DRAIN.find(x => x.scenario === s.scenario);
+          return `<span style="display:inline-flex;align-items:center;gap:4px;background:#fff0f3;color:#d64052;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;">
+            ${sc ? sc.icon + ' ' + sc.label : s.kind} · ${escHtml(s.term)}
+            <button data-srcdel="${i}" style="border:none;background:none;cursor:pointer;color:#d64052;font-size:12px;">✕</button>
+          </span>`;
+        }).join('') || '<span style="color:#9ca3af;font-size:11px;">暂无来源，加一个（会自动用现有关键词种子）</span>'}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <select class="sx-in" id="sxSrcScenario" style="flex:0 0 120px;padding:6px;">
+          ${SCENARIO_DRAIN.map(s => `<option value="${s.scenario}">${s.icon} ${s.label}</option>`).join('')}
+        </select>
+        <input class="sx-in" id="sxSrcTerm" placeholder="关键词 / 城市词 / 高V主页链接" style="flex:1;margin-top:0;">
+        <button type="button" class="btn btn-sm btn-primary" id="sxSrcAdd">＋ 加来源</button>
+      </div>
+    `;
+    panel.querySelectorAll('[data-srcdel]').forEach(b => b.onclick = async () => {
+      const i = parseInt(b.getAttribute('data-srcdel'), 10);
+      cfg.sources.splice(i, 1);
+      await chrome.runtime.sendMessage({ action: 'drainSaveScanCfg', cfg });
+      renderScanCfg();
+    });
+    _sel('sxSrcAdd').onclick = async () => {
+      const term = _sel('sxSrcTerm').value.trim();
+      if (!term) { drainToast('请输入来源词/链接', 'warn'); return; }
+      cfg.sources.push({ scenario: _sel('sxSrcScenario').value, term, kind: String(term).startsWith('http') ? 'profile' : 'search' });
+      _sel('sxSrcTerm').value = '';
+      await chrome.runtime.sendMessage({ action: 'drainSaveScanCfg', cfg });
+      renderScanCfg();
+    };
+  };
+
+  /* ---- 扫描一轮 ---- */
+  const runScan = async () => {
+    const btn = _sel('sxScan');
+    btn.disabled = true; btn.textContent = '⏳ 扫描中(后台开小红书页)...';
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'drainScan' });
+      if (r && r.ok) {
+        const s = r.summary || {};
+        drainToast(`扫描完成：新${s.foundNew} 并入获客${s.imported || 0} 补开${s.backfilled}（共${s.total}）`);
+        notes.length = 0; notes.push(...await drainLoad());
+        // 如果没有扫到任何新笔记，把诊断写到标签/提示里，方便定位
+        if (!s.foundNew) {
+          const dl = (s.detail || []).map(d => `${d.term}: ${d.got}篇${d.err ? ' [' + d.err + ']' : ''}`).join('\n');
+          const sv = _sel('sxLastScan');
+          if (sv) sv.textContent = '⚠️ 本次未发现新笔记。来源明细：\n' + (dl || '(无来源)') + (s.note ? '\n' + s.note : '');
+          sv.style.whiteSpace = 'pre-line'; sv.style.color = '#d97706';
+        } else {
+          const sv = _sel('sxLastScan'); if (sv) sv.textContent = `本次扫描：新${s.foundNew} 刷${s.refreshed} 补${s.backfilled} 共${s.total}`;
+        }
+        await renderScanCfg();
+      } else {
+        drainToast('扫描失败：' + ((r && r.error) || '未知'), 'error');
+      }
+    } catch (e) { drainToast('扫描失败：' + (e.message || e), 'error'); }
+    btn.disabled = false; btn.textContent = '🔍 扫描一轮';
+    render();
+  };
+
+  _sel('sxScan').onclick = runScan;
+  _sel('sxScanCfg').onclick = () => { const p = _sel('sxScanCfgPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none'; if (p.style.display === 'block') renderScanCfg(); };
+  renderScanCfg();
+
+  /* ---- 决策配置表（补开：哪些场景打开/不开/淘汰） ---- */
+  const MODE_LABEL = { always: '总开', ttl: 'TTL内开', interval: '按间隔开' };
+  const renderReplCfg = async () => {
+    const r = await chrome.runtime.sendMessage({ action: 'drainGetReplenishCfg' });
+    const repl = (r && r.ok && r.repl) || {};
+    const panel = _sel('sxReplCfgPanel');
+    if (!panel || !SCENARIO_DRAIN) return;
+    panel.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:600;color:#1f2937;">🧮 补开决策配置表</span>
+        <label style="font-size:11px;color:#374151;display:inline-flex;align-items:center;gap:4px;">
+          <input type="checkbox" id="replEnabled" ${repl.enabled !== false ? 'checked' : ''}> 启用自动补开
+        </label>
+        <span class="sx-count" id="replLast"></span>
+      </div>
+      ${SCENARIO_DRAIN.map(s => {
+        const sc = repl.strategy && repl.strategy[s.scenario] || { mode: 'interval', intervalHours: 12 };
+        const m = sc.mode || 'interval';
+        return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#374151;padding:4px 0;border-bottom:1px solid #f6f7f9;">
+          <span style="width:74px;font-weight:600;">${s.icon} ${s.label}</span>
+          <select id="repl-${s.scenario}-mode" style="font-size:11px;padding:4px 6px;border:1px solid #e5e7eb;border-radius:6px;">
+            <option value="always" ${m === 'always' ? 'selected' : ''}>总开</option>
+            <option value="ttl" ${m === 'ttl' ? 'selected' : ''}>TTL内开</option>
+            <option value="interval" ${m === 'interval' ? 'selected' : ''}>按间隔开</option>
+          </select>
+          <span style="opacity:.7;">TTL(时)<input id="repl-${s.scenario}-ttl" type="number" min="1" value="${sc.ttlHours || 24}" style="width:44px;margin:0 4px;padding:3px;border:1px solid #e5e7eb;border-radius:6px;"></span>
+          <span style="opacity:.7;">间隔(时)<input id="repl-${s.scenario}-iv" type="number" min="1" value="${sc.intervalHours || 12}" style="width:44px;margin:0 4px;padding:3px;border:1px solid #e5e7eb;border-radius:6px;"></span>
+          ${s.scenario === 'topic' ? `<span style="opacity:.7;">热度阈值<input id="repl-topic-emo" type="number" step="0.1" min="0.1" value="${sc.emotionRatio != null ? sc.emotionRatio : 1.0}" style="width:48px;margin:0 4px;padding:3px;border:1px solid #e5e7eb;border-radius:6px;"></span>` : ''}
+        </div>`;
+      }).join('')}
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button type="button" class="btn btn-sm btn-primary" id="replSave">保存决策表</button>
+      </div>`;
+    _sel('replSave').onclick = async () => {
+      const repl2 = { enabled: _sel('replEnabled').checked, strategy: {}, lastReplenishAt: repl.lastReplenishAt, lastReplenishSummary: repl.lastReplenishSummary };
+      SCENARIO_DRAIN.forEach(s => {
+        const m = _sel(`repl-${s.scenario}-mode`).value;
+        const o = { mode: m };
+        if (m === 'ttl') o.ttlHours = parseInt(_sel(`repl-${s.scenario}-ttl`).value, 10) || 24;
+        if (m === 'interval') o.intervalHours = parseInt(_sel(`repl-${s.scenario}-iv`).value, 10) || 12;
+        if (s.scenario === 'topic') o.emotionRatio = parseFloat(_sel('repl-topic-emo').value) || 1.0;
+        repl2.strategy[s.scenario] = o;
+      });
+      await chrome.runtime.sendMessage({ action: 'drainSaveReplenishCfg', repl: repl2 });
+      drainToast('决策配置表已保存');
+    };
+    const sm = repl.lastReplenishSummary;
+    if (sm) _sel('replLast').textContent = `上次补开：开${sm.opened} 淘汰${sm.expired} 失败${sm.failed}`;
+  };
+
+  /* ---- 补开本轮未打开 ---- */
+  const runReplenish = async (fromAuto) => {
+    const btn = _sel('sxReplenish');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ 补开中...'; }
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'drainReplenish', round: true });
+      if (r && r.ok && r.disabled) {
+        drainToast('补开未启用（决策配置表里开关）', 'warn');
+      } else if (r && r.ok && r.busy) {
+        drainToast('补开正在进行中，稍等…', 'info');
+      } else if (r && r.ok) {
+        const s = r.summary || {};
+        drainToast(`补开完成：开${s.opened} 跳${s.skipped} 淘汰${s.expired} 失败${s.failed}`);
+        notes.length = 0; notes.push(...await drainLoad());
+      } else {
+        drainToast('补开失败：' + ((r && r.error) || '未知'), 'error');
+      }
+    } catch (e) { drainToast('补开失败：' + (e.message || e), 'error'); }
+    if (btn) { btn.disabled = false; btn.textContent = '🔁 补开未打开'; }
+    render(); await renderReplCfg();
+  };
+  _sel('sxReplenish').onclick = () => runReplenish();
+  _sel('sxReplCfg').onclick = () => { const p = _sel('sxReplCfgPanel'); p.style.display = p.style.display === 'none' ? 'block' : 'none'; if (p.style.display === 'block') renderReplCfg(); };
+  renderReplCfg();
+  (async () => { const r = await chrome.runtime.sendMessage({ action: 'drainGetScanCfg' }); const sm = r && r.ok && r.cfg.lastScanSummary; if (sm) _sel('sxLastScan').textContent = `上次扫描：新${sm.foundNew} 并入获客${sm.imported || 0} 补${sm.backfilled} 共${sm.total}`; })();
 
   const render = () => {
     const lst = notes.filter(n => (st.scenario === 'all' || n.scenario === st.scenario));
@@ -472,23 +630,54 @@ async function drainReadTabMetrics(tabId) {
  *  扫描完做「存量对账补齐」：本次没被打开的存量笔记按 noteId/标题补开刷新
  * ===================================================================== */
 async function _scanExtractList(tab, url) {
+  if (!tab) return { notes: [], ok: false, err: '未找到小红书标签页' };
   try {
     await chrome.tabs.update(tab.id, { url });
     await AutoWater._waitForTabLoad(tab.id, 15000);
     await AutoWater._sleep(1300);
-    let res;
+    let res, triedInject = false;
     try {
       res = await AutoWater._send(tab.id, { action: 'extractSearchResults' }, 15000);
     } catch (e) {
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+      triedInject = true;
+      try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); } catch (_) {}
       await AutoWater._sleep(800);
-      res = await AutoWater._send(tab.id, { action: 'extractSearchResults' }, 15000);
+      try { res = await AutoWater._send(tab.id, { action: 'extractSearchResults' }, 15000); } catch (e2) { res = null; }
     }
-    return (res && res.notes) || [];
+    const notes = (res && res.notes) || [];
+    if (!notes.length) {
+      return { notes: [], ok: true, err: (triedInject ? '已重注入内容脚本；' : '') + '未提取到笔记（多半是未登录/风控/页面没加载出来）' };
+    }
+    return { notes, ok: true, err: '' };
   } catch (e) {
-    return [];
+    return { notes: [], ok: false, err: e && e.message || String(e) };
   }
 }
+async function _mergeAutoWaterFound() {
+  // 把获客/办公自动灌水扫描已发现的笔记并入截流池（去重按 noteId）
+  let imported = 0;
+  try {
+    const st = await Storage.getAutoWaterState();
+    const found = (st && st.searchState && st.searchState.foundNotes) || [];
+    if (!found.length) return 0;
+    const notes = await drainLoad();
+    const add = [];
+    for (const n of found) {
+      if (!n || !n.noteId) continue;
+      if (notes.some(x => x.noteId === n.noteId)) continue;
+      add.push({
+        id: _uid(), scenario: 'burst', noteId: n.noteId,
+        url: n.url || 'https://www.xiaohongshu.com/explore/' + n.noteId,
+        title: n.title || '（待抓取标题）', author: n.author || '',
+        signals: { likes: n.likes || 0, rank: 0, delta: 0 }, state: 'monitoring',
+        addedAt: Date.now(), lastSeenAt: Date.now(), lastJudgedAt: Date.now(), missRounds: 0,
+      });
+    }
+    if (add.length) { notes.push.apply(notes, add); await drainSave(notes); imported = add.length; }
+  } catch (e) {}
+  return imported;
+}
+
 async function _scanBackfill(note, tab) {
   try {
     if (note.noteId) {
@@ -505,7 +694,8 @@ async function _scanBackfill(note, tab) {
       return true;
     }
     if (note.title) {
-      const list = await _scanExtractList(tab, DRAIN_SEARCH_URL(note.title));
+      const r = await _scanExtractList(tab, DRAIN_SEARCH_URL(note.title));
+      const list = r.notes || [];
       const hit = list.find(x => x.noteId && note.noteId === x.noteId) ||
                   list.find(x => x.title && note.title && String(x.title).replace(/\s+/g, '') === String(note.title).replace(/\s+/g, ''));
       if (hit) { note.noteId = hit.noteId; note.url = hit.url || note.url; note.missRounds = 0; note.lastSeenAt = Date.now(); return true; }
@@ -515,6 +705,40 @@ async function _scanBackfill(note, tab) {
   } catch (e) { return false; }
 }
 
+/* 在获客里打开/分析一篇笔记 → 登记/更新进截流监控池
+   （获客是主要使用路径：打开一篇就该出现在截流列表，增或更新） */
+async function handleDrainTrackNote(data) {
+  data = data || {};
+  const url = String(data.url || '').split('#')[0];
+  let noteId = data.noteId || (url && (url.match(/\/explore\/([a-f0-9]+)/) || url.match(/\/note\/([a-f0-9]+)/) || [])[1]) || '';
+  if (!noteId && !url) return { ok: false, error: '缺笔记信息' };
+  const notes = await drainLoad();
+  const norm = (s) => String(s || '').replace(/[?#].*$/, '');
+  const exist = notes.find(x =>
+    (noteId && x.noteId === noteId) ||
+    (url && x.url && norm(x.url) === norm(url)));
+  if (exist) {
+    if (data.title) exist.title = data.title;
+    if (data.author) exist.author = data.author;
+    if (!exist.noteId && noteId) exist.noteId = noteId;
+    exist.signals = Object.assign({}, exist.signals, {
+      likes: (data.likes != null) ? data.likes : exist.signals.likes,
+      comments: (data.commentsCount != null) ? data.commentsCount : exist.signals.comments,
+    });
+    exist.lastSeenAt = Date.now();
+    if (exist.missRounds) exist.missRounds = 0;
+  } else {
+    notes.unshift({
+      id: _uid(), scenario: 'burst', noteId: noteId || '', url: url || ('https://www.xiaohongshu.com/explore/' + noteId),
+      title: data.title || '（待抓取标题）', author: data.author || '',
+      signals: { likes: data.likes || 0, comments: data.commentsCount || 0, rank: 0, delta: 0 },
+      state: 'monitoring', addedAt: Date.now(), lastSeenAt: Date.now(), lastJudgedAt: Date.now(), missRounds: 0,
+    });
+  }
+  await drainSave(notes);
+  return { ok: true, total: notes.length };
+}
+
 async function handleDrainScan(data) {
   let cfg = await drainGetScanCfg();
   // 首次：从现有关键词种子扫描来源
@@ -522,23 +746,33 @@ async function handleDrainScan(data) {
     const config = await Storage.getConfig();
     const kws = (config.keywords || []).filter(Boolean).slice(0, 10);
     cfg.sources = kws.map(k => ({ scenario: 'burst', term: k, kind: 'search' }));
-    if (!cfg.sources.length) cfg.sources = [{ scenario: 'burst', term: '测试', kind: 'search' }];
+    if (!cfg.sources.length) cfg.sources = [{ scenario: 'burst', term: '金融理财', kind: 'search' }];
   }
+
+  // ★ 先并入获客/灌水已扫到的笔记（auto-water foundNotes），让"获客扫完→截流可见"成立
+  const importedWater = await _mergeAutoWaterFound();
+
   const notes = await drainLoad();
   const seen = new Set();
-  const tab = await AutoWater._getXhsTab();
+
+  // ★ 扫描只用【专用小红书标签页】并按来源逐词导航搜索 —— 绝不抓用户当前正看的任意页面。
+  let tab = await AutoWater._getXhsTab();
   if (!tab) throw new Error('未找到小红书标签页，请先打开一个小红书页面');
-  const busy = data && data.busy;
 
   let foundNew = 0, refreshed = 0;
+  let allEmpty = 0, anyFail = false;
+  const detail = [];
   const srcs = cfg.sources || [];
   for (let i = 0; i < srcs.length; i++) {
-    console.log('[截流扫描] 来源(' + (i + 1) + '/' + srcs.length + '):', srcs[i].term);
     const src = srcs[i];
     const url = src.kind === 'profile'
       ? (String(src.term).startsWith('http') ? src.term : 'https://www.xiaohongshu.com' + String(src.term))
       : DRAIN_SEARCH_URL(src.term);
-    const list = await _scanExtractList(tab, url);
+    const r = await _scanExtractList(tab, url);
+    const list = r.notes || [];
+    if (!r.ok) anyFail = true;
+    if (!list.length) allEmpty++;
+    detail.push({ term: src.term, kind: src.kind || 'search', got: list.length, ok: r.ok, err: r.err || '' });
     for (const n of list) {
       const noteId = n.noteId;
       if (!noteId) continue;
@@ -581,7 +815,13 @@ async function handleDrainScan(data) {
   await drainSave(notes);
 
   cfg.lastScanAt = Date.now();
-  cfg.lastScanSummary = { foundNew, refreshed, backfilled, missDiscarded, total: notes.length, at: Date.now() };
+  let note = '';
+  if (foundNew === 0 && !notes.length) {
+    note = allEmpty >= srcs.length
+      ? '所有来源都未提取到笔记：多半是浏览器未登录小红书，或那个标签页没在有结果的搜索页。请登录后重试。'
+      : '没有新笔记（本轮来源已扫描）。详情见下方。';
+  }
+  cfg.lastScanSummary = { foundNew, refreshed, backfilled, missDiscarded, total: notes.length, at: Date.now(), detail, note, imported: importedWater };
   if ((data && data.autoScanMin) != null) cfg.autoScanMin = data.autoScanMin;
   await drainSaveScanCfg(cfg);
 
@@ -599,6 +839,124 @@ async function handleDrainSaveScanCfg(data) {
   await drainSaveScanCfg(cfg);
   return { ok: true, cfg };
 }
+
+/* =====================================================================
+ * 补开对账引擎（每轮获客后：对本轮未打开的池内笔记，按决策配置表决定开/不开并更新）
+ * ===================================================================== */
+function _drainReplenishDefaults() {
+  return {
+    enabled: true,
+    strategy: {
+      evergreen: { mode: 'always' },
+      highv: { mode: 'always' },
+      burst: { mode: 'ttl', ttlHours: 24 },
+      city: { mode: 'ttl', ttlHours: 24 },
+      pain: { mode: 'interval', intervalHours: 12 },
+      topic: { mode: 'interval', intervalHours: 6, emotionRatio: 1.0 },
+    },
+    lastReplenishAt: 0,
+    lastReplenishSummary: null,
+  };
+}
+async function drainGetReplenishCfg() {
+  const cfg = await drainGetScanCfg();
+  return Object.assign(_drainReplenishDefaults(), cfg.replenish || {});
+}
+async function drainSaveReplenishCfg(repl) {
+  const cfg = await drainGetScanCfg();
+  cfg.replenish = repl || _drainReplenishDefaults();
+  await drainSaveScanCfg(cfg);
+  return cfg.replenish;
+}
+
+/* 决策：根据场景策略返回 'open' | 'skip' | 'expire' */
+function drainDecideOpen(scenario, note, now, stratCfg) {
+  const last = Number(note.replenishedAt || note.lastSeenAt || 0);
+  const mode = (stratCfg && stratCfg.mode) || 'interval';
+  const ivMs = ((stratCfg && stratCfg.intervalHours) || 12) * 3600 * 1000;
+  const ttlMs = ((stratCfg && stratCfg.ttlHours) || 24) * 3600 * 1000;
+  if (mode === 'always') return 'open';
+  if (mode === 'ttl') {
+    // 只在 TTL 内打开刷新；超期且已被打开过 → 淘汰（不再开）
+    if (last > 0 && (now - last) > ttlMs) return 'expire';
+    return 'open';
+  }
+  // interval
+  if (last === 0) return 'open';
+  return (now - last) >= ivMs ? 'open' : 'skip';
+}
+
+/* 打开一篇待补笔记刷新指标；topic 打开后若热度跌破则淘汰 */
+async function _drainReopenNote(note, tab, strategCfg) {
+  try {
+    if (!note.noteId) return { ok: false };
+    await chrome.tabs.update(tab.id, { url: 'https://www.xiaohongshu.com/explore/' + note.noteId });
+    await AutoWater._waitForTabLoad(tab.id, 15000);
+    await AutoWater._sleep(1800);
+    const m = await drainReadTabMetrics(tab.id);
+    if (!m || m.likes == null) return { ok: false };
+    const prev = (note.signals && note.signals.likes) || 0;
+    note.signals = Object.assign({}, note.signals, m, { delta: (m.likes != null && prev != null) ? (m.likes - prev) : 0 });
+    if (m.title) note.title = m.title;
+    // topic：打开后重判情绪，跌破阈值 → 淘汰
+    if (note.scenario === 'topic') {
+      const likes = m.likes || 1, comments = m.comments || 0;
+      const ratio = likes > 0 ? comments / likes : 0;
+      const need = Number((strategCfg && strategCfg.emotionRatio) != null ? strategCfg.emotionRatio : 1.0);
+      if (ratio < need) return { ok: true, expire: true };
+    }
+    note.replenishedAt = Date.now();
+    note.lastSeenAt = Date.now();
+    note.lastJudgedAt = Date.now();
+    note.missRounds = 0;
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
+}
+
+let _drainReplenishing = false;
+async function handleDrainReplenish(data) {
+  if (_drainReplenishing) return { ok: true, busy: true };
+  _drainReplenishing = true;
+  try {
+    let repl = await drainGetReplenishCfg();
+    if (repl.enabled === false) return { ok: true, disabled: true };
+    const strat = repl.strategy || _drainReplenishDefaults().strategy;
+    const notes = await drainLoad();
+    const now = Date.now();
+    const tab = await AutoWater._getXhsTab();
+    let opened = 0, skipped = 0, expired = 0, failed = 0, candidates = 0;
+    const seen = new Set(); // 本轮已补开的 noteId 去重
+
+    for (const note of notes) {
+      if (note.state === 'expired' || note.is_active === false) continue;
+      const sc = note.scenario || 'burst';
+      const scStrat = strat[sc] || { mode: 'interval', intervalHours: 12 };
+      const decision = drainDecideOpen(sc, note, now, scStrat);
+      if (decision === 'skip') { skipped++; continue; }
+      if (decision === 'expire') { note.state = 'expired'; note.exit_reason = 'no_potential'; note.exitedAt = now; expired++; continue; }
+      // open
+      candidates++;
+      if (!note.noteId || seen.has(note.noteId)) { skipped++; continue; }
+      seen.add(note.noteId);
+      const r = await _drainReopenNote(note, tab, scStrat);
+      if (r && r.ok) {
+        if (r.expire) { note.state = 'expired'; note.exit_reason = 'topic_cold'; note.exitedAt = now; expired++; }
+        else opened++;
+      } else { note.missRounds = (note.missRounds || 0) + 1; failed++; }
+    }
+    await drainSave(notes);
+
+    repl.lastReplenishAt = now;
+    repl.lastReplenishSummary = { opened, skipped, expired, failed, candidates, at: now };
+    await drainSaveReplenishCfg(repl);
+
+    return { ok: true, summary: repl.lastReplenishSummary };
+  } finally {
+    _drainReplenishing = false;
+  }
+}
+async function handleDrainGetReplenishCfg() { return { ok: true, repl: await drainGetReplenishCfg() }; }
+async function handleDrainSaveReplenishCfg(data) { const repl = await drainSaveReplenishCfg(data && data.repl); return { ok: true, repl }; }
 
 /* =====================================================================
  * background 侧：真正调 AI 生成某场景评论（onMessage 'drainComment'）
