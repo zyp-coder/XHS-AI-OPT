@@ -271,8 +271,8 @@ s = add_slide('''2026了，还在为获客发愁？
 我用AI雕兄跑通从0到1，纯内容获客，15天承接1000+真人。
 效果因人而异。
 
-9.9试用，先做账号诊断。
-方向对不对，先诊断了才知道。
+联系我免费做个测评。
+方向对不对，做一次就知道。
 不合适，不勉强。''')
 box = s.shapes.add_textbox(Inches(1.2), Inches(1.4), Inches(11), Inches(5))
 tf = box.text_frame; tf.word_wrap = True
@@ -280,8 +280,8 @@ title(tf, '2026 了，还在为获客发愁？')
 para(tf, '前大厂码农，江湖散人', size=26, color=DIM, space_before=20)
 para(tf, 'AI 雕兄 · 纯内容获客 · 15 天承接 1000+ 真人', size=32, color=WHITE, bold=True, space_before=18)
 para(tf, '效果因人而异', size=20, color=GRAY, space_before=8)
-para(tf, '9.9 试用 —— 先做账号诊断', size=40, color=GOLD, bold=True, space_before=34)
-para(tf, '方向对不对，先诊断了才知道 · 不合适，不勉强', size=24, color=DIM, space_before=12)
+para(tf, '联系我免费做个测评', size=40, color=GOLD, bold=True, space_before=34)
+para(tf, '方向对不对，做一次就知道 · 不合适，不勉强', size=24, color=DIM, space_before=12)
 
 out = r'd:\AIproject\小红书运营\资料\视频\AI雕兄口播稿\AI雕兄-演讲稿.pptx'
 prs.save(out)

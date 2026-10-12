@@ -1,0 +1,407 @@
+# -*- coding: utf-8 -*-
+"""发笔记「真接口那一跳」自检：本地起一个假的 AI HTTP 接口，把 popup → 背景 → fetch → 回填整条真的跑一遍。
+
+桩测（在 service worker 里替掉 AI 返回的那批 check_*.py）验的是界面状态机；这一支验的是它够不着的那半条链：
+提示词到底组装成什么样（规矩 / 画面流派 / 配文方式那一档 / 合规句带没带上）、返回的 JSON 清洗对不对、
+接口挂掉时错误落到哪一格。覆盖 ④ 成稿、⑤ 整篇改稿 + 回退、⑤b 逐句改、
+造图片 ② 🔮 建议断点、③ 🔁 照这一派重出分镜，以及顶上那格文案手改 → 档案 → 出片台。
+五十九改后做料的入口只剩档案那颗「🎬 出片台」：在那张表上「＋ 一套图」加一行 →「🖼 出图」才进造图片那四档（① 风格／② 断句／③ 分镜／④ 预览）。
+五十四改后「AI 出口播稿 / 口播稿 AI 改一版 / 拿去出片」整块下线（出片台念的就是人打的那格文案），这一支不再打那条死路。
+假接口只对「临时副本」生效（往副本 manifest 里加 127.0.0.1 权限），不动 extension/ 本体。
+用法：python3 -X utf8 scripts/dev/check_voice_rewrite.py
+"""
+import http.server
+import json
+import os
+import pathlib
+import re
+import shutil
+import sys
+import tempfile
+import threading
+import time
+
+from playwright.sync_api import expect, sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(os.environ.get('TEMP', '/tmp')) / 'xhs_voice_rewrite'
+OUT.mkdir(parents=True, exist_ok=True)
+PROFILE = OUT / 'profile'
+EXT2 = pathlib.Path(tempfile.gettempdir()) / 'xhs_ext_voice_rewrite'
+
+BODY_IN = '开场钩子。\n\n第一段干货。\n\n结尾引导。'
+ASK = '再短一点'
+# 改稿那两发是 JSON：整篇那一发故意套 ```json 围栏，验 parseJsonObject 照样取得出来
+REVISE_IN = '```json\n{"content":"改好的正文第一段。\\n改好的正文第二段。"}\n```'
+REVISE_WANT = '改好的正文第一段。\n改好的正文第二段。'
+SENT_REVISED = '改短了的那一句。'
+# 造图片 ② 顶上那格文案＝人自己打的字：断句收的是它、出片台念的还是它
+VOICE_EDIT = '钩子重写了。\n\n中间这段换了说法。\n\n结尾指到主页简介。'
+MOTIF = '抽象图形符号'          # 这一套自己挑的一派（跟内置打底那一派不同，点了才算「这一套定的」）
+MOTIF_DEF = '真人工作场景'     # 内置统一小红书打底那一派（六十二改＝实拍）：没自己挑过时照它
+CUT_WHY = '这句说完了，下一句另起一张'
+DESC_TAG = '照这一派摆的一张'
+
+DRAFT = json.dumps({'titles': ['标题A', '标题B', '标题C'], 'content': BODY_IN,
+                    'tags': ['效率', '省时间'], 'timeTip': '12:00-13:00'}, ensure_ascii=False)
+PEOPLE = json.dumps({'people_options': [{'name': f'测试人群{i}', 'pain': '选择困难', 'scene': '准备购买', 'timing': '购买前'} for i in (1, 2, 3)]}, ensure_ascii=False)
+TOPICS = json.dumps({'topics': [{'topic': '测试话题', 'angle': '角度', 'target': '人群', 'rationale': '理由'}]}, ensure_ascii=False)
+
+LAST = {}
+COUNT = {}
+
+
+class MockAi(http.server.BaseHTTPRequestHandler):
+    def _json(self, obj, code=200):
+        data = json.dumps(obj).encode('utf-8')
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.end_headers()
+
+    def do_POST(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        try:
+            body = json.loads(self.rfile.read(n).decode('utf-8'))
+        except Exception:
+            body = {}
+        msgs = body.get('messages') or []
+        LAST['path'] = self.path
+        LAST['system'] = msgs[0].get('content', '') if msgs else ''
+        LAST['user'] = msgs[1].get('content', '') if len(msgs) > 1 else ''
+        sysmsg, user = LAST['system'], LAST['user']
+        # 逐句改的 system 里也带「【现有正文】」那句角色话，必须先按「要点的那一句」分出去
+        if '要点的那一句' in sysmsg:
+            leg, content = 'revise-sent', json.dumps({'sentence': SENT_REVISED}, ensure_ascii=False)
+        elif '【现有正文】' in sysmsg:
+            leg, content = 'revise', REVISE_IN
+        elif '你在帮一条' in sysmsg:            # 🔮 建议断点：断点里的「句」＝清单里方括号那个编号，照抄回来
+            ids = re.findall(r'^\s*\d+\.\s*\[([^\]]+)\]', user, re.M)
+            leg, content = 'cuts', json.dumps(
+                {'断点': [{'句': sid, '理由': CUT_WHY} for sid in ids[:2]]}, ensure_ascii=False)
+        elif '你在改一条' in sysmsg:            # 🔁 重出分镜：「句」＝那段原文，一字不差照抄回来对号
+            segs = re.findall(r'^本段（要写的就是它）：(.+)$', user, re.M)
+            leg, content = 'descs', json.dumps(
+                {'风格': '', '画面': [{'句': t, '分镜': DESC_TAG + '：' + t} for t in segs]},
+                ensure_ascii=False)
+        elif '爆款图文笔记写手' in sysmsg:
+            leg, content = 'draft', DRAFT
+        elif '候选话题' in sysmsg:
+            leg, content = 'topics', TOPICS
+        else:
+            leg, content = 'people', PEOPLE
+        LAST['leg'] = leg
+        COUNT[leg] = COUNT.get(leg, 0) + 1
+        self._json({'choices': [{'message': {'role': 'assistant', 'content': content}}],
+                    'usage': {'prompt_tokens': 11, 'completion_tokens': 22}})
+
+    def log_message(self, *a):
+        pass
+
+
+# ── 临时副本：加一条 127.0.0.1 的域名权限，别动交付目录 ──
+if EXT2.exists():
+    shutil.rmtree(EXT2, ignore_errors=True)
+shutil.copytree(EXT, EXT2, ignore=shutil.ignore_patterns('.DS_Store'))
+mf = EXT2 / 'manifest.json'
+m = json.loads(mf.read_text(encoding='utf-8'))
+hosts = list(m.get('host_permissions') or [])
+if 'http://127.0.0.1/*' not in hosts:
+    hosts.append('http://127.0.0.1/*')
+m['host_permissions'] = hosts
+mf.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding='utf-8')
+
+srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), MockAi)
+PORT = srv.server_address[1]
+threading.Thread(target=srv.serve_forever, daemon=True).start()
+print(f'假 AI 接口 = http://127.0.0.1:{PORT}/v1', flush=True)
+
+if PROFILE.exists():
+    shutil.rmtree(PROFILE, ignore_errors=True)
+
+
+def boot(p, ext):
+    """起浏览器 + 装真扩展（临时副本）。
+
+    playwright 默认要往命令行里塞 --disable-extensions（它自己起持久化档时也会摘掉这个），
+    跟 --load-extension 撞在一起会时灵时不灵——扩展会装不上（service_workers 一直空），
+    所以摘掉那个默认开关，起不来就整个重来一趟（每趟全新档，免得读到上版 background.js 的缓存）。
+    """
+    for i in range(5):
+        prof = PROFILE if i == 0 else PROFILE.with_name('profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={ext}', f'--load-extension={ext}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+def state(pg):
+    """台面上这一行图的状态：句子 / 段（含段文本与分镜）/ 建议断点"""
+    return json.loads(pg.evaluate('''() => {
+        const w = npS() || {}, s = w.shots || {};
+        return JSON.stringify({
+            voice: String(w.voice || ''), motif: String(((s.look || {}).motif) || ''),
+            sents: (s.sents || []).map(x => x.text),
+            items: (s.items || []).map(it => ({ sids: (it.sids || []).slice(),
+                                                text: String(it.text || ''), desc: String(it.desc || '') })),
+            suggest: (s.suggest || []).length,
+        });
+    }'''))
+
+
+def archive(pg, ar_id):
+    return json.loads(pg.evaluate('''(id) => chrome.storage.local.get('np_notes').then(d => {
+        const n = (d.np_notes || []).find(x => x.id === id) || {};
+        return JSON.stringify({ voice: String(n.voice || ''),
+            imgDocs: (n.imgDocs || []).map(r => ({ motif: String((((r.shots || {}).look) || {}).motif) || '',
+                descs: (r.shots.items || []).map(it => String(it.desc || '')) })) });
+    })''', ar_id))
+
+
+def poll(expr, arg=None, timeout=20):
+    """涉及 chrome.storage 的回写是延时的：Python 侧轮询，别用 wait_for_function 猜"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        got = pg.evaluate(expr, arg) if arg is not None else pg.evaluate(expr)
+        if got:
+            return got
+        time.sleep(0.25)
+    raise AssertionError('等不到：%s' % expr[:80])
+
+
+with sync_playwright() as p:
+    ctx = boot(p, EXT2)
+    sw = ctx.service_workers[0]
+    eid = sw.url.split('/')[2]
+    sw.evaluate('''async (base) => {
+        await Storage.initializeDefaults(DEFAULT_PROMPTS);
+        await ensureTenantInit();
+        const c = await Storage.getConfig();
+        c.product.name = '流程测试产品';
+        c.product.sellPoints = [{title: '省时间', content: '简化重复步骤'}];
+        c.ai = Object.assign({}, c.ai, {apiKey: 'sk-mock-local', apiBaseUrl: base, model: 'mock-model', _modelLocked: true});
+        await Storage.setConfig(c);
+    }''', f'http://127.0.0.1:{PORT}/v1')
+    pg = ctx.new_page()
+    pg.set_default_timeout(20000)
+    errs = []
+    pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+    pg.wait_for_function('typeof _npWiz !== "undefined" && typeof switchMainTab === "function"')
+    if pg.locator('#fsClose').is_visible():
+        pg.locator('#fsClose').click()
+
+    # ── 1) 写文案 ④→⑤：成稿那一发走真 HTTP ─────────────────────────────────
+    pg.evaluate('() => switchMainTab("notePublish", "new")')   # 发笔记二级只剩 档案+素材库：写文案从这儿进
+    pg.wait_for_function('() => document.getElementById("notePublishContent").offsetWidth > 0 && !!document.querySelector(".np-spk")')
+    pg.locator('.np-spk').first.check()
+    pg.locator('.np-wiz-next').click()
+    pg.locator('.np-ppc').first.check()
+    pg.locator('.np-wiz-next').click()
+    pg.wait_for_function('() => !!document.querySelector(".np-tpc:checked")')
+    pg.locator('.np-wiz-next').click()            # ③ → ④ 挑稿
+    pg.wait_for_function('() => _npWiz.step === 3')
+    # ④ 的前进路只剩「点中某台样稿」（这台假接口不会回那批发稿）→ 直接落到 ⑤，让「没成稿就自己补写」打这一发
+    pg.evaluate('() => { _npWiz.step = 4; _npWiz.draft = null; return npWizRender(npActiveC()); }')
+    pg.wait_for_function('() => !!(_npWiz.draft || {}).content', timeout=30000)
+    assert LAST['leg'] == 'draft', LAST
+    assert pg.evaluate('_npWiz.draft.content') == BODY_IN, pg.evaluate('_npWiz.draft.content')
+    print('PASS: 成稿那发走的是真接口（假接口收到 leg=%s）' % LAST['leg'], flush=True)
+
+    # ── 2) ⑤ 整篇改稿：真按钮 → 背景 → 假接口 → 原位回填 + 回退 ───────────────
+    pg.fill('#npReviseAsk', ASK)
+    pg.locator('.np-rv-go').click()
+    pg.wait_for_function('(w) => _npWiz.draft.content === w', arg=REVISE_WANT, timeout=25000)
+    assert LAST['leg'] == 'revise', LAST
+    assert '只输出改好的正文' in LAST['system'] and '主页简介' in LAST['system'] and '不承诺效果' in LAST['system'], LAST['system'][:120]
+    assert '【现有正文】' in LAST['user'] and ASK in LAST['user'] and '开场钩子' in LAST['user'], LAST['user'][:160]
+    print('PASS: 改稿带回规矩（只输出正文/承接只走主页简介/不承诺效果）与原文+要求，```json 围栏也照样解析', flush=True)
+    pg.locator('.np-rv-undo').click()
+    assert pg.evaluate('_npWiz.draft.content') == BODY_IN, '「改回上一版」要还原原文'
+    print('PASS: 改回上一版正常', flush=True)
+
+    # ── 3) ⑤b 逐句改：点正文里某一句 → 只改那一句，其余一字不动 ────────────────
+    first_sent = pg.evaluate('npSplitSents(_npWiz.draft.content)[0].t')
+    pg.locator('#npWizBody .np-sent-row').first.click()
+    pg.wait_for_selector('#npSentAsk')
+    pg.fill('#npSentAsk', ASK)
+    pg.locator('.np-sent-go').click()
+    pg.wait_for_function('() => _npWiz.draft.content.indexOf("改短了的那一句。") === 0', timeout=25000)
+    assert LAST['leg'] == 'revise-sent', LAST
+    assert '【要点的那一句】' + first_sent in LAST['user'] and '【整篇正文（只当上下文，别重写）】' in LAST['user'], LAST['user'][:220]
+    assert pg.evaluate('_npWiz.draft.content') == BODY_IN.replace(first_sent, SENT_REVISED, 1), \
+        '逐句改只许换那一句：%s' % pg.evaluate('_npWiz.draft.content')
+    print('PASS: 逐句改走真接口（leg=%s），只换点的那一句、其余一字不动' % LAST['leg'], flush=True)
+    pg.evaluate('(b) => { _npWiz.draft.content = b; npSentPaint(npActiveC()); npArchiveTouch(_npWiz); }', BODY_IN)
+    assert pg.evaluate('_npWiz.draft.content') == BODY_IN
+    pg.wait_for_function('() => !!_npWiz.arId', timeout=15000)
+    ar_id = pg.evaluate('_npWiz.arId')
+
+    # ── 4) 出片台那张表「＋ 一套图」加一行 → 点那一行「🖼 出图」进造图片：一次 AI 都不烧 ──
+    BLOCKS = {'look': '#npLookBox', 'cut': '#npCutWrap', 'desc': '#npShotTable', 'preview': '#npPreviewBox'}
+
+    def go_table():
+        """档案那一行的「🎬 出片台」→ 这一篇的任务表（旧的 .npar-out / .npar-film 两颗已并进来）"""
+        pg.locator('#tabNoteArchive').click()
+        pg.wait_for_function('''(id) => !!document.querySelector('#noteArchiveContent .npar-task[data-id="' + id + '"]')''',
+                             arg=ar_id, timeout=15000)
+        pg.locator('#noteArchiveContent .npar-task[data-id="%s"]' % ar_id).click()
+        pg.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent .np-img-addopen")')
+
+    def to_tab(t):
+        """造图片那四档（① 风格／② 断句／③ 分镜／④ 预览）：一次只摊一档，切档要跟着切"""
+        pg.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t).click()
+        pg.wait_for_function('(b) => !!document.querySelector(b)', arg=BLOCKS[t])
+
+    def gut_drag(i, dy=6):
+        """按住第 i 行（0 起）的行号拖一下松开＝这几句圈成一段；没跨过别的行＝这一行单独一段"""
+        b = pg.locator('#npCutWrap .np-cut-gut[data-i="%d"]' % i).bounding_box()
+        x, y = b['x'] + b['width'] / 2, b['y'] + b['height'] / 2
+        pg.mouse.move(x, y)
+        pg.mouse.down()
+        pg.mouse.move(x, y + dy, steps=2)
+        pg.mouse.up()
+
+    go_table()
+    b_cut, b_desc = COUNT.get('cuts', 0), COUNT.get('descs', 0)
+    pg.locator('#noteTaskContent .np-img-addopen').click()
+    pg.wait_for_function('() => !!document.querySelector("#noteTaskContent .np-img-add")')
+    pg.locator('#noteTaskContent .np-img-add[data-k=""]').click()          # 先「跟账号默认」＝这一行还没定流派
+    pg.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-img").length === 1')
+    rid = pg.evaluate('() => (npS().imgDocs || [])[0].id')
+    assert [COUNT.get('cuts', 0), COUNT.get('descs', 0)] == [b_cut, b_desc], '表上加一行不该烧 AI'
+    pg.locator('#noteTaskContent .np-task-img[data-id="%s"]' % rid).click()
+    pg.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+    assert pg.evaluate('() => npS().uiTab') == 'cut', '这一段都还没圈：进造图片直接落在 ② 断句（① 有打底，不作关卡）'
+    assert pg.evaluate('() => npLookOf(npS()).motif') == MOTIF_DEF, '没自己挑过流派＝生效那派落回内置统一小红书打底'
+    to_tab('look')
+    pg.locator('#npLookBox .np-motif[data-k="%s"]' % MOTIF).click()
+    pg.wait_for_function('(k) => npLookOf(npS()).motif === k', arg=MOTIF)
+    assert state(pg)['motif'] == MOTIF, state(pg)
+    assert [COUNT.get('cuts', 0), COUNT.get('descs', 0)] == [b_cut, b_desc], '挑一派也不该烧 AI'
+    print('PASS: 表上「＋ 一套图」加一行（零 AI）→「🖼 出图」进造图片落在 ②，挑「%s」也零 AI' % MOTIF, flush=True)
+
+    # ── 5) ② 顶上那格文案手改 → ⟳ 重列句子（零 AI）→ 当场回写档案 voice ────────
+    to_tab('cut')
+    pg.evaluate('() => { const d = document.querySelector("#npCutWrap details.np-cutsrc"); if (d) d.open = true; }')
+    assert pg.locator('#npVoiceTa').input_value() == BODY_IN, pg.locator('#npVoiceTa').input_value()
+    pg.fill('#npVoiceTa', VOICE_EDIT)
+    pg.wait_for_function('() => !document.getElementById("npSrcStale").hasAttribute("hidden")')
+    pg.locator('#npCutWrap .np-cut-relest').click()
+    pg.wait_for_function('() => document.querySelectorAll("#npCutWrap .np-cutline").length === 3')
+    st5 = state(pg)
+    assert st5['sents'] == ['钩子重写了。', '中间这段换了说法。', '结尾指到主页简介。'], st5['sents']
+    assert st5['items'] == [], '重列句子只管把句子摆出来，不许替人把段绑上：%s' % st5
+    poll('''(a) => chrome.storage.local.get('np_notes').then(d => {
+        const n = (d.np_notes || []).find(x => x.id === a.id) || {}; return n.voice === a.v; })''',
+        {'id': ar_id, 'v': VOICE_EDIT})
+    print('PASS: ② 那格文案（折叠块里）手改 → ⟳ 重列出 3 行（零 AI）、旧分组没被替人绑上、改完当场回写档案 voice', flush=True)
+
+    # ── 6) ② 🔮 建议断点：真接口 → 每一刀要点一下才生效；最后一行自己按行号圈成一段 ──
+    pg.locator('#npCutWrap .np-cut-suggest').click()
+    pg.wait_for_function('() => document.querySelectorAll(".np-cut-adopt").length === 2', timeout=30000)
+    assert LAST['leg'] == 'cuts', LAST
+    sysmsg, user = LAST['system'], LAST['user']
+    assert '你在帮一条' in sysmsg and '不许改写句子、不许合并、不许删句' in sysmsg, sysmsg[:160]
+    assert '【本次画面流派】' + MOTIF in sysmsg and '【这一套图的取材路子】' in sysmsg, sysmsg[-400:]
+    assert '配文方式' in sysmsg and '这一档图上放的是另写的字' in sysmsg, sysmsg[:220]
+    assert '只输出一个 JSON 对象' in sysmsg, sysmsg[:220]
+    assert '主页简介' in sysmsg and '不许出现二维码' in sysmsg, '切点建议也吃合规口径'
+    assert '【句子清单（按文案先后）】' in user and '【台面上还没切出任何一段' in user, user[:220]
+    assert '钩子重写了。' in user and '结尾指到主页简介。' in user, user
+    assert state(pg)['items'] == [], 'AI 只给建议：没点「🔮 在第 N 行后面断一刀」之前一段都不许成'
+    print('PASS: 🔮 建议断点这发带齐（流派取材 + 配文方式那一档 + 合规句 + 逐行清单），回来 2 刀、一段都没自动成', flush=True)
+
+    pg.locator('.np-cut-adopt').first.click()
+    pg.wait_for_function('() => document.querySelectorAll(".np-cut-adopt").length === 1')
+    pg.locator('.np-cut-adopt').first.click()
+    pg.wait_for_function('() => document.querySelectorAll("#npCutWrap .np-cutseg").length === 2')
+    gut_drag(2)                                    # 第三行还没归段：按住它的行号就地松手＝自己成一段
+    pg.wait_for_function('() => document.querySelectorAll("#npCutWrap .np-cutseg").length === 3')
+    st6 = state(pg)
+    assert [len(x['sids']) for x in st6['items']] == [1, 1, 1], st6
+    assert [x['text'] for x in st6['items']] == st6['sents'], '段文本＝句子拼出来的：%s' % st6
+    assert st6['suggest'] == 0
+    assert [COUNT.get('cuts', 0), COUNT.get('descs', 0)] == [b_cut + 1, b_desc], '采纳两刀＋按行号圈一段＝零 AI，不再补发'
+    print('PASS: 两刀各点一下才成段、最后一行按行号圈成新段＝3 段（全程只有那一发建议断点）', flush=True)
+
+    # ── 7) ③ 🔁 照这一派重出分镜：段文本 / 顺序不动，只换分镜那一格 ──────────
+    to_tab('desc')
+    pg.locator('#npShotTable .np-desc-regen').click()
+    pg.wait_for_function('(t) => Array.from(document.querySelectorAll(".np-shot-desc"))'
+                         '.every(x => x.value.indexOf(t) === 0)', arg=DESC_TAG, timeout=30000)
+    assert LAST['leg'] == 'descs', LAST
+    sysmsg, user = LAST['system'], LAST['user']
+    assert '你在改一条' in sysmsg and '一个字都别改' in sysmsg, sysmsg[:160]
+    assert '【这一套图的取材路子】' in sysmsg and '【本次画面流派】' + MOTIF in sysmsg, sysmsg[-400:]
+    assert '条数＝3' in sysmsg and '【画面尺寸】' in user, '一批 3 段：条数与尺寸都要带给 AI'
+    assert '【整篇原文（只重写下面列出的那几段' in user and '钩子重写了。' in user, user[:260]
+    assert '—— 第 1 张 / 共 3 张 ——' in user and '前一段：（这就是第一张）' in user, user[:300]
+    assert '—— 第 3 张 / 共 3 张 ——' in user and '后一段：（这就是最后一张）' in user, user[-400:]
+    st7 = state(pg)
+    assert [x['text'] for x in st7['items']] == st7['sents'], '段文本一个字不许被重出带跑：%s' % st7
+    assert [x['desc'] for x in st7['items']] == [DESC_TAG + '：' + t for t in st7['sents']], st7
+    pouts = pg.evaluate('''() => Array.from(document.querySelectorAll('.np-shot-pout')).map(x => x.textContent)''')
+    assert len(pouts) == 3 and all(DESC_TAG in x for x in pouts), '③ 那一列的提示词要跟着重排：%s' % pouts
+    rec = archive(pg, ar_id)
+    assert rec['imgDocs'] and rec['imgDocs'][0]['motif'] == MOTIF, rec
+    assert rec['imgDocs'][0]['descs'] == [x['desc'] for x in st7['items']], '重出的分镜要落进这一档那一行：%s' % rec
+    assert COUNT.get('descs', 0) == b_desc + 1, '3 段＝一批一发，不该分段各烧一次：%s' % COUNT
+    print('PASS: 🔁 这发把流派取材 + 整篇原文 + 第几张/前后段带齐，只换 3 格分镜、段文本与顺序不动、提示词当场重排并落档', flush=True)
+
+    # ── 8) 接口挂掉：错误要落到 ② 那一块上，不能只转圈 ────────────────────────
+    srv.shutdown()
+    srv.server_close()
+    to_tab('cut')
+    pg.locator('#npCutWrap .np-cut-suggest').click()
+    expect(pg.locator('#npCutWrap')).to_contain_text('建议断点没回来', timeout=30000)
+    pg.wait_for_function('() => !document.querySelector(".np-cut-suggest[disabled]")')
+    print('PASS: 接口挂掉时 ② 断句台报「建议断点没回来」，那颗按钮还能再点：%s' %
+          pg.evaluate('() => npS().shots.cutErr')[:40], flush=True)
+
+    # ── 9) 回那张表「＋ 一片」挑一种成片形式 → 点「🎬 出片」：念的就是 ② 那格文案 ──
+    go_table()
+    pg.locator('#noteTaskContent .np-task-filmopen').click()
+    pg.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-kind").length === 5')
+    pg.locator('#noteTaskContent .np-task-kind[data-k="PPT字体动效"]').click()
+    pg.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-film").length === 1')
+    fid = pg.evaluate('() => (npS().filmDocs || [])[0].id')
+    pg.locator('#noteTaskContent .np-task-film[data-id="%s"]' % fid).click()
+    pg.wait_for_function('''() => { const f = document.getElementById('filmFrame');
+        return !!(f && f.contentWindow && f.contentWindow.Film)
+            && getComputedStyle(document.getElementById('filmGate')).display === 'none'; }''', timeout=30000)
+    vf = [f for f in pg.frames if 'video.html' in f.url][0]
+    assert vf.locator('#script').input_value() == VOICE_EDIT, vf.locator('#script').input_value()[:80]
+    assert vf.evaluate('() => Film.scenes.length') >= 3, '稿子三句该分得出幕：%s' % vf.evaluate('() => Film.scenes.length')
+    assert [COUNT.get('cuts', 0), COUNT.get('descs', 0)] == [b_cut + 1, b_desc + 1], '加片／进台子都不该再补打 AI'
+    print('PASS: 表上「＋ 一片」挑形式 →「🎬 出片」进台子，念的是 ② 那格手改文案（原样带进、AI 出口播稿那条死路已下线）', flush=True)
+
+    assert not errs, errs
+    print('PASS: 无 pageerror', flush=True)
+    print('\n全绿：真接口那一跳（成稿 / 整篇改 / 逐句改 / 🔮 建议断点 / 🔁 重出分镜 / 那格文案进片台 / 挂了报错）', flush=True)
+    ctx.close()

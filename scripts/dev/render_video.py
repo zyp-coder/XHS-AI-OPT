@@ -296,11 +296,30 @@ def mux(video, audio, out_mp4, lead_in, bgm=None, bgm_db=18.0):
          '-movflags', '+faststart', str(out_mp4)])
 
 
+def probe_audio_start(path):
+    """量音轨的起点偏移（秒）——封面首帧版成片的旁白就是靠这个偏移做到「画面先出、旁白晚进」。"""
+    log = run([FF, '-hide_banner', '-i', str(path), '-f', 'null', '-']).stderr
+    m = re.search(r'Audio:.*?start ([\d.]+)', log)
+    return float(m.group(1)) if m else 0.0
+
+
 def add_bgm(video, bgm, out_mp4, bgm_db=18.0):
-    """只给已有成片补 BGM（不重渲染画面，约 1 分钟）。"""
+    """只给已有成片补 BGM（不重渲染画面，约 1 分钟）。
+
+    封面首帧版成片的旁白是「音轨整体后移」实现的（音轨 start_time ≈ 2.28s）。滤镜会把这个
+    偏移归零、又在写文件时扣掉，结果是旁白提前、片尾少一截。所以先把音轨时间戳显式压到 0
+    （asetpts），再按偏移补 adelay —— 这样人声位置和总长都对得上。
+    """
     dur = probe_duration(video)
+    gain = bgm_gain(video, bgm, bgm_db)
+    off = probe_audio_start(video)
+    if off > 0.02:
+        print(f'音轨起点偏移 {off:.2f}s —— 按原时间轴补回，旁白不提前、片尾不丢')
+        voice = f'[0:a]asetpts=N/SR/TB,adelay={int(off * 1000)}:all=1[voice];'
+    else:
+        voice = '[0:a]asetpts=N/SR/TB[voice];'
     run([FF, '-hide_banner', '-y', '-i', str(video), '-stream_loop', '-1', '-i', str(bgm),
-         '-filter_complex', bgm_graph('0:a', '1:a', dur, bgm_gain(video, bgm, bgm_db)),
+         '-filter_complex', voice + bgm_graph('voice', '1:a', dur, gain),
          '-map', '0:v', '-map', '[aout]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k',
          '-movflags', '+faststart', str(out_mp4)])
 

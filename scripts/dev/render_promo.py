@@ -6,9 +6,9 @@
         A4传单-黑白.pdf / -黑白-{正面,背面}.png     ← 默认主题，白底黑字
         A4传单-彩色.pdf / -彩色-{正面,背面}.png     ← 深色底 + 金色
         A4传单-出血版.pdf                           ← 彩色 + 四周各加 3mm 出血
-    名片 —— 默认彩色（走快印店，彩印不加钱），黑白是备选（<body> 加 class="bw"）：
-        名片-彩色.pdf / -彩色-{正面,背面}.png       ← 默认主题，深色底 + 金色
-        名片-出血版.pdf                             ← 彩色 + 四周各加 3mm 出血
+    名片 —— 默认白底黑字（<body> 自带 class="bw"），深色底 + 金色是备选（去掉 body 的 class）：
+        名片-白底.pdf / -白底-{正面,背面}.png       ← 默认主题，白底黑字
+        名片-出血版.pdf                             ← 白底 + 四周各加 3mm 出血
 
 改完 HTML 或换完二维码，重跑本脚本即可：
     python3 scripts/dev/render_promo.py
@@ -16,6 +16,7 @@
 import os
 import pathlib
 import re
+import time
 
 from playwright.sync_api import sync_playwright
 
@@ -23,8 +24,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SRC = ROOT / '资料' / '推广物料'
 OUT = SRC / '输出'
 SCALE = 300 / 96   # 300dpi
+PNG_ONLY = bool(os.environ.get('PROMO_PNG_ONLY'))   # 置 1 只出预览 PNG、不写 PDF（二维码未齐时用）
 
-A4_BLEED = ':root{--pw:216mm;--ph:303mm;--px:17mm;--py:16mm;}@page{size:216mm 303mm;}'
+A4_BLEED = ':root{--pw:216mm;--ph:303mm;--px:15mm;--py:14mm;}@page{size:216mm 303mm;}'
 CARD_BLEED = ':root{--cw:96mm;--ch:60mm;--cx:7.6mm;--cy:7mm;}@page{size:96mm 60mm;}'
 
 # (源文件, 输出前缀, 正反面标签, 变体清单)
@@ -36,8 +38,8 @@ JOBS = [
         ('出血版', A4_BLEED, 'color', False),   # 出血只对彩色版有意义（满版深色底）
     ]),
     ('名片.html', '名片', ('正面', '背面'), [
-        ('彩色', None, None, True),            # 名片默认（不加任何类）就是彩色版
-        ('出血版', CARD_BLEED, None, False),   # 彩色 + 出血，印刷厂用
+        ('白底', None, None, True),            # 名片默认（HTML 的 <body> 已带 class="bw"）就是白底版
+        ('出血版', CARD_BLEED, None, False),   # 白底 + 出血，印刷厂用
     ]),
 ]
 
@@ -46,18 +48,40 @@ def pdf_pages(path: pathlib.Path) -> int:
     return len(re.findall(rb'/Type\s*/Page[^s]', path.read_bytes()))
 
 
+def save_png(locator, path: pathlib.Path) -> None:
+    """截图写 PNG。整轮渲染中偶发 OSError(Errno 22)（文件没锁、单跑正常），
+    退回内存缓冲写盘并重试，别让一个文件中断整轮渲染。"""
+    try:
+        locator.screenshot(path=str(path))
+        return
+    except OSError:
+        data = locator.screenshot()
+    for attempt in range(3):
+        try:
+            path.write_bytes(data)
+            return
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(1.0)
+
+
 def save_pdf(page, path: pathlib.Path) -> pathlib.Path:
-    """PDF 被阅读器（如 WPS）占用时写 .new，已关掉的走替换，返回最新内容所在的文件。"""
+    """PDF 被阅读器（如 WPS）占用时写 .new，已关掉的走替换，返回最新内容所在的文件。
+
+    占用时抛的异常不固定：独占锁是 PermissionError，WPS 打开中的文件是 OSError(Errno 22)，
+    两种都按「被占用」处理，别让一个文件中断整轮渲染。
+    """
     try:
         page.pdf(path=str(path), prefer_css_page_size=True, print_background=True)
         return path
-    except PermissionError:
+    except OSError:
         tmp = path.with_suffix('.pdf.new')
         page.pdf(path=str(tmp), prefer_css_page_size=True, print_background=True)
         try:
             os.replace(tmp, path)
             return path
-        except PermissionError:
+        except OSError:
             print('  ！%s 被占用，新内容已写到 %s（关掉占用程序后改回原名即可）' % (path.name, tmp.name))
             return tmp
 
@@ -91,8 +115,13 @@ def main() -> None:
                 if want_png:
                     for i in range(n):
                         label = sides[i] if i < len(sides) else str(i + 1)
-                        images.nth(i).screenshot(
-                            path=str(OUT / ('%s-%s-%s.png' % (out_name, tag, label))))
+                        save_png(images.nth(i),
+                                 OUT / ('%s-%s-%s.png' % (out_name, tag, label)))
+                if PNG_ONLY:
+                    print('%s-%s: %d 面, 仅出 PNG（PROMO_PNG_ONLY=1）%s'
+                          % (out_name, tag, n, '' if not overflow else ' ！有溢出'))
+                    page.close()
+                    continue
                 pdf = OUT / ('%s-%s.pdf' % (out_name, tag))
                 written = save_pdf(page, pdf)
                 pages = pdf_pages(written)

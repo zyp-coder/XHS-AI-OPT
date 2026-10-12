@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>调风格 · 客户模板</title>
+<style>
+  :root{ --ink:#17171b; --panel:#202026; --line:#33333c; --txt:#d9d9de; --dim:#8b8b96; --hit:#f97316; }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; background:var(--ink); color:var(--txt);
+    font:13px/1.6 "Microsoft YaHei","HarmonyOS Sans SC",sans-serif; overflow:hidden; }
+  header{ height:56px; display:flex; align-items:center; gap:14px; padding:0 18px;
+    border-bottom:1px solid var(--line); background:#141418; }
+  header h1{ font-size:15px; margin:0; font-weight:600; letter-spacing:1px; }
+  header .sp{ flex:1; }
+  main{ display:flex; height:calc(100vh - 56px - 64px); }
+  .stage{ flex:0 0 auto; padding:14px 18px; display:flex; flex-direction:column; align-items:center; gap:10px;
+    border-right:1px solid var(--line); overflow:auto; }
+  #cv{ display:block; height:min(70vh,720px); width:auto; border-radius:6px; box-shadow:0 8px 30px rgba(0,0,0,.55); background:#000; }
+  .transport{ display:flex; align-items:center; gap:8px; width:100%; max-width:440px; }
+  #scrub{ flex:1; accent-color:var(--hit); }
+  #clock{ font:12px/1 Consolas,monospace; color:var(--dim); white-space:nowrap; }
+  .jumps{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; max-width:440px; }
+  .panel{ flex:1; overflow:auto; padding:10px 18px 28px; }
+  .row{ display:flex; align-items:flex-start; gap:12px; padding:7px 0; border-bottom:1px dashed #2a2a31; }
+  .row .lab{ flex:0 0 62px; color:var(--dim); padding-top:5px; }
+  .row .vals{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  button{ font:inherit; color:var(--txt); background:#2a2a31; border:1px solid var(--line);
+    border-radius:6px; padding:5px 11px; cursor:pointer; }
+  button:hover{ background:#35353d; }
+  button.on{ background:var(--hit); border-color:var(--hit); color:#fff; }
+  .chip{ display:inline-flex; align-items:center; gap:6px; padding:5px 10px; }
+  .chip i{ width:15px; height:15px; display:inline-block; border:1px solid rgba(255,255,255,.28); }
+  .chip i.dot{ border-radius:50%; }
+  .chip i.box{ border-radius:3px; }
+  input[type=text],textarea,select{ font:inherit; color:var(--txt); background:#191920; border:1px solid var(--line);
+    border-radius:6px; padding:5px 9px; }
+  input[type=text],textarea{ width:100%; }
+  textarea{ resize:vertical; line-height:1.5; }
+  .sec{ margin-top:18px; border-top:1px solid var(--line); padding-top:10px; }
+  .sech{ color:var(--dim); margin-bottom:8px; display:flex; gap:10px; align-items:baseline; }
+  .sc{ margin:0 0 14px; padding:10px 12px; background:#1c1c22; border:1px solid #2a2a31; border-radius:8px; }
+  .sc .sh{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }
+  .sc .sh b{ color:var(--hit); font-weight:600; cursor:pointer; }
+  .sc .sh b:hover{ text-decoration:underline; }
+  .sc .sh span{ color:var(--dim); font-size:12px; }
+  .lays{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:7px; }
+  .lays button{ padding:3px 10px; font-size:12px; }
+  .sc input{ margin-top:6px; }
+  footer{ height:64px; display:flex; align-items:center; gap:10px; padding:0 18px;
+    border-top:1px solid var(--line); background:#141418; }
+  #cfgline{ flex:1; font:12px/1.4 Consolas,monospace; color:#9ad0a0; background:#191920; border:1px solid var(--line);
+    border-radius:6px; padding:8px 10px; white-space:nowrap; overflow:auto; }
+  #msg{ color:var(--dim); font:12px/1 Consolas,monospace; min-width:150px; }
+  .hint{ color:var(--dim); font-size:12px; }
+  #voices{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; }
+  .vd{ color:var(--dim); font-size:11px; margin-left:7px; }
+  .chip.on .vd{ color:#fff; opacity:.85; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>调风格</h1>
+  <select id="script" title="换一套稿子看模板承载力"></select>
+  <span class="hint">左边边拨边放 · 拨好了点右下「复制配置」发我</span>
+  <span class="sp"></span>
+  <span class="hint">一键套用：</span>
+  <span id="presets"></span>
+  <button id="reset">回到默认</button>
+</header>
+
+<main>
+  <section class="stage">
+    <canvas id="cv" width="1080" height="1920"></canvas>
+    <div class="transport">
+      <button id="play">⏸</button>
+      <button id="again">⏮</button>
+      <input type="range" id="scrub" min="0" max="1000" value="0">
+      <span id="clock">0.0 / 0.0s</span>
+      <label class="hint"><input type="checkbox" id="snd" checked> 配音</label>
+    </div>
+    <div class="jumps" id="jumps"></div>
+  </section>
+
+  <section class="panel">
+    <div class="sec" style="margin-top:0;border-top:0;padding-top:0">
+      <div class="sech">口播稿 · 新笔记从这儿起
+        <span class="hint">粘进来点「生成分幕」；分幕和时间轴都按这份稿子重算</span></div>
+      <textarea id="script-text" rows="3" placeholder="把口播稿整段粘进来"></textarea>
+      <div class="lays" style="margin-top:7px">
+        <button id="gen">生成分幕</button>
+        <button id="copy-scenes">复制分幕</button>
+        <button id="dl-scenes">下载分幕 JSON</button>
+      </div>
+      <div class="hint" id="gmsg"></div>
+    </div>
+    <div id="controls"></div>
+    <div class="sec">
+      <div class="sech">配音 · 音色
+        <span class="hint">点一下＝选中并试听（样音读的就是第 1–2 幕原文）</span></div>
+      <div id="voices"></div>
+      <div class="hint" id="vmsg"></div>
+    </div>
+    <div class="sec">
+      <div class="sech">分幕 · 版式是逐幕定的
+        <span class="hint">点幕号跳到那一幕；点版式立刻看效果</span></div>
+      <div id="scenes"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <code id="cfgline"></code>
+  <span id="msg"></span>
+  <button id="still">导出静帧</button>
+  <button id="export">导出这条 MP4（无声）</button>
+  <button id="copy" class="on">复制配置</button>
+</footer>
+
+<script src="fonts.js"></script>
+<script src="mp4-muxer.js"></script>
+<script src="voices.js"></script>
+<script src="scenes.js"></script>
+<script src="styles.js"></script>
+<script src="encoder.js"></script>
+<script src="timeline.js"></script>
+<script src="timeline-demo.js"></script>
+<script>
+const cv  = document.getElementById('cv');
+const ctx = cv.getContext('2d', { alpha: false });
+const $ = id => document.getElementById(id);
+
+/* 两套稿子：demo 覆盖全部版式，sample 就是已出那 4 条样片 */
+const SCRIPTS = {
+  demo:   { l: '6 幕演示（看全部版式）', tl: () => window.TIMELINE_DEMO, vo: '配音-演示-晓晓.m4a' },
+  sample: { l: '3 幕样片（原来那 4 条）', tl: () => window.TIMELINE,      vo: '配音-样片-晓晓.m4a' },
+};
+
+let cfg = Object.assign({}, Renderer.DEFAULT_CFG);
+let style = Renderer.buildStyle(cfg);
+let TL = null, skey = 'demo';
+let t = 0.15, playing = true, last = performance.now();
+
+const audio = new Audio();
+let audioOk = false;
+audio.addEventListener('loadedmetadata', () => { audioOk = true; });
+audio.addEventListener('error', () => { audioOk = false; });
+const seekAudio = () => {
+  if (!audioOk) return;
+  try { audio.currentTime = Math.max(0, t - TL.head); } catch (e) {}
+};
+/* 浏览器不许无交互自动出声，第一次点哪儿都把配音接上 */
+const resumeAudio = () => {
+  if ($('snd').checked && playing && audioOk) audio.play().catch(() => {});
+};
+
+function configLine() {
+  const lay = TL ? '; layouts=' + TL.scenes.map(s => s.layout || 'center').join(',') : '';
+  return Renderer.cfgLine(cfg) + lay;
+}
+
+/* ---------------- 全局旋钮（按 Renderer.FIELDS 自动生成） ---------------- */
+function renderControls() {
+  const box = $('controls');
+  box.innerHTML = '';
+  Renderer.FIELDS.forEach(f => {
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('div'); lab.className = 'lab'; lab.textContent = f.t;
+    const vals = document.createElement('div'); vals.className = 'vals';
+
+    if (f.type === 'text') {
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.value = cfg[f.k]; inp.style.width = '190px';
+      inp.oninput = () => { cfg[f.k] = inp.value; apply(); };
+      vals.appendChild(inp);
+    } else {
+      f.opts.forEach(o => {
+        const on = String(cfg[f.k]) === String(o.v);
+        const b = document.createElement('button');
+        b.className = (f.type === 'chip' ? 'chip ' : '') + (on ? 'on' : '');
+        if (f.type === 'chip') {
+          const d = document.createElement('i');
+          d.className = f.shape === 'dot' ? 'dot' : 'box';
+          d.style.background = o.c || o.v;
+          b.appendChild(d);
+        }
+        b.appendChild(document.createTextNode(o.l));
+        b.onclick = () => { cfg[f.k] = o.v; apply(true); };
+        vals.appendChild(b);
+      });
+    }
+    row.appendChild(lab); row.appendChild(vals); box.appendChild(row);
+  });
+}
+
+function apply(rebuild) {
+  style = Renderer.buildStyle(cfg);
+  $('cfgline').textContent = configLine();
+  if (rebuild) { renderControls(); buildVoices(); }
+}
+
+/* ---------------- 配音：音色选择 + 试听 ---------------- */
+const aud = new Audio();
+aud.onended = () => { if (playing) { seekAudio(); resumeAudio(); } };
+
+function buildVoices() {
+  const box = $('voices');
+  box.innerHTML = '';
+  VOICES.list.forEach(o => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (cfg.voice === o.v ? ' on' : '');
+    b.appendChild(document.createTextNode(o.n));
+    const d = document.createElement('span');
+    d.className = 'vd'; d.textContent = o.d;
+    b.appendChild(d);
+    b.onclick = () => { cfg.voice = o.v; apply(true); audition(o); };
+    box.appendChild(b);
+  });
+}
+
+/* 试听＝放这条音色念前两幕的样音；放的时候把整片预览的音轨压住，免得两条声音打架 */
+function audition(o) {
+  try { audio.pause(); } catch (e) {}
+  aud.src = VOICES.sample(o.n);
+  $('vmsg').textContent = '试听「' + o.n + '」…';
+  aud.play().then(() => { $('vmsg').textContent = '试听「' + o.n + '」· ' + o.d; })
+    .catch(() => { $('vmsg').textContent = '「' + o.n + '」的样音还没生成，说一声我补上'; });
+}
+
+/* ---------------- 口播稿 → 分幕（新笔记现生成，不沿用上一支片子的分幕） ---------------- */
+function applyScenes(list) {
+  const H = TL.head, T = TL.tail, GAP = 0.5;
+  let t0 = H;
+  list.forEach((s, i) => {
+    const est = s.estSec || Math.max(1.2, [...s.text].length / 4.5);
+    s.label = String(i + 1).padStart(2, '0');
+    s.cta = i === list.length - 1;
+    s.start = +t0.toFixed(2);
+    t0 += est + GAP;
+    s.end = +t0.toFixed(2);
+  });
+  TL.scenes = list;
+  TL.audio = +(t0 - GAP).toFixed(2);          // 最后一幕不留幕间，直接接片尾留白
+  TL.dur = +(t0 - GAP + T).toFixed(2);
+  t = 0.15;
+  buildScenes(); buildJumps();
+  $('cfgline').textContent = configLine();
+}
+const scenesJSON = () => JSON.stringify(Scenes.toJSON(TL.scenes), null, 1);
+
+$('gen').onclick = () => {
+  const txt = $('script-text').value.trim();
+  if (!txt) { $('gmsg').textContent = '先把口播稿粘进来'; return; }
+  applyScenes(Scenes.fromScript(txt));
+  $('gmsg').textContent = '已生成 ' + TL.scenes.length + ' 幕 · 时间是按字数估的，出片时按真配音重算';
+};
+$('copy-scenes').onclick = () => copyText(scenesJSON(), '✅ 分幕已复制，发我就行');
+$('dl-scenes').onclick = () => {
+  const b = new Blob([scenesJSON()], { type: 'application/json' });
+  Encoder.dl(b, '分幕-' + new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '') + '.json');
+  $('gmsg').textContent = '分幕 JSON 已下载（发我就能出片）';
+};
+
+/* file:// 下 navigator.clipboard 不给用，退回 execCommand */
+async function copyText(s, ok) {
+  try { await navigator.clipboard.writeText(s); }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = s; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove();
+  }
+  $('gmsg').textContent = ok;
+}
+
+/* ---------------- 分幕：版式 + 文案 ---------------- */
+function jumpTo(sec) { t = sec; seekAudio(); resumeAudio(); }
+
+function buildScenes() {
+  const box = $('scenes');
+  box.innerHTML = '';
+  TL.scenes.forEach((sc, si) => {
+    const d = document.createElement('div'); d.className = 'sc';
+
+    const h = document.createElement('div'); h.className = 'sh';
+    const no = document.createElement('b'); no.textContent = sc.label;
+    const nm = document.createElement('span');
+    nm.textContent = '· ' + sc.name + '（' + sc.start.toFixed(1) + '–' + sc.end.toFixed(1) + 's）';
+    no.onclick = nm.onclick = () => jumpTo(sc.start + 1.2);
+    h.appendChild(no); h.appendChild(nm);
+
+    const lays = document.createElement('div'); lays.className = 'lays';
+    const paint = () => {
+      [...lays.children].forEach(b => b.classList.toggle('on', b.dataset.k === (sc.layout || 'center')));
+    };
+    Object.keys(Renderer.LAYOUTS).forEach(k => {
+      const b = document.createElement('button');
+      b.textContent = Renderer.LAYOUTS[k].l; b.dataset.k = k;
+      b.onclick = () => { sc.layout = k; paint(); jumpTo(sc.start + 1.2); $('cfgline').textContent = configLine(); };
+      lays.appendChild(b);
+    });
+    paint();
+
+    const ta = document.createElement('textarea');
+    ta.rows = Math.max(2, sc.lines.length);
+    ta.value = sc.lines.join('\n');
+    ta.placeholder = '一行屏幕上的一句话（配音不受影响）';
+    const em = document.createElement('input');
+    em.type = 'text'; em.value = sc.em.map(m => m.t).join('，');
+    em.placeholder = '重点词，逗号分隔（画面里会变色 / 划记号）';
+    const upd = () => {
+      const lines = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!lines.length) return;
+      sc.lines = lines;
+      sc.em = em.value.split(/[，,、\s]+/).map(s => s.trim()).filter(Boolean)
+        .map(t2 => ({ l: lines.findIndex(l => l.indexOf(t2) >= 0), t: t2 }))
+        .filter(m => m.l >= 0);
+    };
+    ta.oninput = upd; em.oninput = upd;
+
+    d.appendChild(h); d.appendChild(lays); d.appendChild(ta); d.appendChild(em);
+    box.appendChild(d);
+  });
+}
+
+/* ---------------- 预设 ---------------- */
+(function presets() {
+  const box = $('presets');
+  Object.keys(Renderer.PRESETS).forEach(k => {
+    const P = Renderer.PRESETS[k];
+    const b = document.createElement('button');
+    b.textContent = P.name;
+    b.onclick = () => {
+      const keep = { brand: cfg.brand, voice: cfg.voice };
+      cfg = Object.assign({}, Renderer.DEFAULT_CFG, P.cfg, keep);
+      apply(true);
+    };
+    box.appendChild(b);
+  });
+})();
+$('reset').onclick = () => { cfg = Object.assign({}, Renderer.DEFAULT_CFG); apply(true); };
+
+/* ---------------- 稿子切换 ---------------- */
+function buildJumps() {
+  const box = $('jumps');
+  box.innerHTML = '';
+  const add = (name, at) => {
+    const b = document.createElement('button');
+    b.textContent = name;
+    b.onclick = () => jumpTo(at);
+    box.appendChild(b);
+  };
+  add('片头', 0.2);
+  TL.scenes.forEach(sc => add(sc.label + ' ' + sc.name, sc.start + 1.2));
+  add('片尾', TL.dur - 1.6);
+}
+
+function loadScript(k) {
+  skey = k;
+  TL = JSON.parse(JSON.stringify(SCRIPTS[k].tl()));
+  audio.src = SCRIPTS[k].vo;
+  audioOk = false;
+  try { audio.load(); } catch (e) {}
+  t = 0.15;
+  if ($('snd').checked && playing) audio.play().catch(() => {});
+  $('script-text').value = TL.scenes.map(s => s.text || s.lines.join('')).join('\n');   // 口播稿进输入框：改完再生成就是新分幕
+  buildScenes();
+  buildJumps();
+  $('cfgline').textContent = configLine();
+}
+
+(function initScriptChooser() {
+  const sel = $('script');
+  Object.keys(SCRIPTS).forEach(k => {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = SCRIPTS[k].l;
+    sel.appendChild(o);
+  });
+  sel.value = skey;
+  sel.onchange = () => loadScript(sel.value);
+})();
+
+/* ---------------- 播放（rAF 按真实时间轴跑，配音只在跳转时对齐） ---------------- */
+function play() {
+  playing = true; last = performance.now(); $('play').textContent = '⏸';
+  if ($('snd').checked && audioOk) audio.play().catch(() => {});
+}
+function pause() {
+  playing = false; $('play').textContent = '▶';
+  try { audio.pause(); } catch (e) {}
+}
+$('play').onclick = () => playing ? pause() : play();
+$('again').onclick = () => { t = 0; seekAudio(); play(); };
+$('snd').onchange = () => {
+  if ($('snd').checked) { seekAudio(); if (playing) audio.play().catch(() => {}); }
+  else try { audio.pause(); } catch (e) {}
+};
+$('scrub').oninput = e => { t = TL.dur * e.target.value / 1000; seekAudio(); };
+document.addEventListener('pointerdown', resumeAudio, { once: true });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') {
+    e.preventDefault(); playing ? pause() : play();
+  }
+});
+
+function tick(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (playing) {
+    t += dt;
+    if (t >= TL.dur) { t = 0; seekAudio(); }
+  }
+  Renderer.renderFrame(ctx, t, TL, style);
+  $('scrub').value = Math.round(t / TL.dur * 1000);
+  $('clock').textContent = t.toFixed(1) + ' / ' + TL.dur.toFixed(1) + 's';
+  requestAnimationFrame(tick);
+}
+
+/* ---------------- 导出 ---------------- */
+let busy = false;
+$('export').onclick = async () => {
+  if (busy) return;
+  busy = true; pause();
+  const m = $('msg');
+  try {
+    m.textContent = '等内置字体就绪…';
+    await (window.Fonts ? Fonts.ready : 0);   // 字体没到位就开始编码，整片会用回退字体画，没法补
+    const blob = await Encoder.encode({
+      canvas: cv, dur: TL.dur,
+      draw: (c, tt) => Renderer.renderFrame(c, tt, TL, style),
+      onProgress: (i, n, s) => { m.textContent = '编码 ' + i + '/' + n + ' · ' + s.toFixed(0) + 's'; },
+    });
+    Encoder.dl(blob, '样片-调风格.mp4');
+    m.textContent = '✅ ' + (blob.size / 1048576).toFixed(1) + 'MB 已下载（无声，配音我这边合）';
+  } catch (e) {
+    m.textContent = '❌ ' + (e.message || e);
+  }
+  busy = false;
+};
+
+$('still').onclick = () => {
+  Renderer.renderFrame(ctx, t, TL, style);
+  cv.toBlob(b => Encoder.dl(b, '画面-' + t.toFixed(1) + 's.png'), 'image/png');
+  $('msg').textContent = '静帧已下载';
+};
+
+$('copy').onclick = () => copyText(configLine(), '✅ 已复制，发我就行');
+
+/* ---------------- 起手 ---------------- */
+renderControls();
+apply(true);
+loadScript(skey);
+requestAnimationFrame(tick);
+
+/* 给自动化测试用的钩子（页面上用不到） */
+window._pause = pause;
+window._useTL = tl => {   // 换成外面挂上来的时间轴（render_style_film.py 出客户稿子用）
+  TL = tl; skey = '外部稿';
+  buildScenes(); buildJumps();
+  $('cfgline').textContent = configLine();
+  return true;
+};
+window._draw = (tv, c) => {
+  if (c) { cfg = Object.assign({}, cfg, c); style = Renderer.buildStyle(cfg); if ($('cfgline')) { $('cfgline').textContent = configLine(); renderControls(); } }
+  if (tv != null) t = tv;
+  Renderer.renderFrame(ctx, t, TL, style);
+  return true;
+};
+window._state = () => ({ t, cfg, style, audioOk, playing, skey });
+window._TL = () => TL;
+window._fonts = () => (window.Fonts ? Fonts.ready : Promise.resolve());
+</script>
+</body>
+</html>

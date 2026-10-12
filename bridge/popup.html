@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>手机看板 · 配对</title>
+<style>
+  :root { --ink:#141414; --muted:#6b7280; --line:#e5e7eb; --green:#0a8f4c; --red:#dc2626; --amber:#d97706; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:14px; width:360px; font:13px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; color:var(--ink); background:#fff; }
+  h1 { margin:0 0 2px; font-size:15px; }
+  .sub { color:var(--muted); font-size:12px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:10px; }
+  .row { display:flex; align-items:baseline; gap:8px; }
+  .row + .row { margin-top:4px; }
+  .k { color:var(--muted); font-size:12px; min-width:64px; }
+  .v { flex:1; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:#9ca3af; vertical-align:1px; }
+  .dot.on { background:var(--green); } .dot.warn { background:var(--amber); } .dot.err { background:var(--red); }
+  .num { font-variant-numeric:tabular-nums; }
+  .qr { text-align:center; margin-top:8px; }
+  .qr canvas { display:block; margin:0 auto; background:#fff; border-radius:6px; }
+  .code { font-size:22px; letter-spacing:4px; font-weight:700; margin-top:8px; }
+  .tip { color:var(--muted); font-size:12px; margin-top:6px; }
+  .tip.warn { color:var(--amber); } .tip.err { color:var(--red); } .tip.ok { color:var(--green); }
+  input { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+  label { display:block; color:var(--muted); font-size:12px; margin:8px 0 2px; }
+  button { font:inherit; padding:7px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; }
+  button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+  button.link { border:0; padding:4px 0; color:var(--muted); text-decoration:underline; }
+  .btns { display:flex; gap:8px; margin-top:10px; align-items:center; }
+  .btns .grow { flex:1; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+  <h1>📱 手机看板</h1>
+  <div class="sub">只读：队列剩几格 · 正在跑什么 · 今日刷了多少 · ⏰自动跑实况。不含客户资料。</div>
+
+  <div class="card">
+    <div class="row"><span class="k">中转</span><span class="v" id="relayLine"><span class="dot"></span>检查中…</span></div>
+    <div class="row"><span class="k">主扩展</span><span class="v" id="mainLine"><span class="dot"></span>查找中…</span></div>
+    <div class="row"><span class="k">最近上报</span><span class="v num" id="lastLine">还没上报过</span></div>
+  </div>
+
+  <div class="card" id="pairBox">
+    <div class="tip" id="pairHint">手机和电脑连同一个 Wi-Fi，用手机扫下面的码就能看队列。</div>
+    <div class="qr hidden" id="qrWrap"><canvas id="qr" width="240" height="240"></canvas></div>
+    <div class="code hidden" id="codeLine"></div>
+    <div class="tip hidden" id="urlLine"></div>
+    <div class="tip hidden" id="ttlLine"></div>
+    <div class="btns">
+      <button class="primary grow" id="btnPair">生成配对二维码</button>
+      <button class="link hidden" id="btnRebind">重新生成</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="nameIn">这台电脑在手机上叫什么</label>
+    <input id="nameIn" maxlength="20" placeholder="这台电脑">
+    <label for="baseIn">中转地址（本机版默认 8788；上了云就改这里）</label>
+    <input id="baseIn" placeholder="http://127.0.0.1:8788">
+    <label for="mainIdIn">主扩展 ID（只在上面那行「主扩展」是红的时才填，chrome://extensions 里点开主扩展能看到）</label>
+    <input id="mainIdIn" placeholder="留空＝自动找">
+    <div class="btns">
+      <button id="btnSave">保存</button>
+      <button id="btnPush">立即上报一次</button>
+      <button class="link hidden" id="btnUnbind" style="margin-left:auto;">解绑这台手机</button>
+    </div>
+    <div class="tip" id="saveTip"></div>
+  </div>
+
+  <script src="lib/qr.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

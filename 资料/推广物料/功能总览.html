@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI雕兄 · 功能总览</title>
+<style>
+  :root{
+    --ink:#1a1a1a;--body:#333;--gray:#909090;--red:#e0493c;
+    --line:#ececec;--soft:#faf5f4;--softline:#f0dcd8;--dgray:#5a5a5a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#fff;font-family:"Microsoft YaHei","微软雅黑",system-ui,sans-serif;}
+  .sheet{width:960px;padding:46px 52px 40px;background:#fff;}
+  .kicker{text-align:center;font-size:13.5px;color:var(--gray);letter-spacing:.14em;margin-bottom:13px;}
+  .title{text-align:center;font-size:36px;font-weight:800;color:var(--ink);letter-spacing:.04em;margin-bottom:12px;}
+  .sub{text-align:center;font-size:15.5px;color:var(--body);margin-bottom:28px;}
+  .sub i{font-style:normal;color:var(--red);font-weight:700;margin:0 3px;}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .col{border:1.5px solid var(--line);border-radius:16px;padding:16px 18px 15px;}
+  .chead{display:flex;align-items:baseline;gap:9px;}
+  .chead .no{font-size:20px;font-weight:800;color:var(--red);}
+  .chead .mname{font-size:19px;font-weight:800;color:var(--ink);}
+  .crole{font-size:12.5px;color:var(--gray);margin-top:6px;}
+
+  .fs{margin-top:12px;display:flex;flex-direction:column;gap:9px;}
+  .f{font-size:13px;color:#3d3d3d;line-height:1.58;}
+  .f b{color:var(--ink);font-weight:800;}
+  .f .hl{color:var(--red);font-weight:800;}
+  .lab{font-size:12.5px;font-weight:800;color:var(--ink);margin-top:1px;}
+  .lab span{font-weight:400;color:var(--gray);margin-left:7px;font-size:12px;}
+
+  .it{border:1.5px solid var(--line);border-radius:12px;padding:9px 12px 8px;}
+  .it .t{font-size:13.5px;font-weight:800;color:var(--ink);}
+  .it .t .hl{color:var(--red);}
+  .it .d{font-size:12.5px;color:var(--dgray);line-height:1.55;margin-top:3px;}
+  .it .cap{margin-top:5px;font-size:11.5px;color:var(--gray);}
+  .it.star{background:var(--soft);border-color:var(--softline);}
+  .it.star .t{color:var(--red);}
+
+  .bar{margin-top:20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;background:var(--soft);border:1px solid var(--softline);border-radius:16px;padding:15px 26px;}
+  .bar b{font-size:15.5px;font-weight:800;color:var(--red);}
+  .bar span{font-size:14.5px;color:var(--body);}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="kicker">AI雕兄 · 小红书评论区获客系统</div>
+  <div class="title">功能总览</div>
+  <div class="sub">四个模块，一条链：发内容 <i>→</i> 捞客户 <i>→</i> 跟客户 <i>→</i> 管账号</div>
+
+  <div class="cols">
+    <div class="col">
+      <div class="chead"><span class="no">①</span><span class="mname">发笔记</span></div>
+      <div class="crole">您要发的，就 3 类，各有各的活</div>
+      <div class="fs">
+        <div class="it">
+          <div class="t">知识笔记 <span class="hl">＝立专业</span></div>
+          <div class="d">拿您的知识库讲一条——怎么选、怎么避坑、多少钱算合理；让搜这类问题的客户先搜到您、先信您。</div>
+          <div class="cap">能出：思维导图 / 竖版视频 / 口播稿</div>
+        </div>
+        <div class="it">
+          <div class="t">引流笔记 <span class="hl">＝抓流量</span></div>
+          <div class="d">借大家正在聊的话头——热点、热梗、情绪、感悟，把还不认识您的路人吸引进来。</div>
+          <div class="cap">能出：图文 / 竖版视频</div>
+        </div>
+        <div class="it">
+          <div class="t">案例笔记 <span class="hl">＝加信度</span></div>
+          <div class="d">实拍、完工现场、真实结果丢进去——快速切片、每段配一句讲解、拼成成片；一条案例拆成多条视频讲。</div>
+          <div class="cap">能出：竖版视频</div>
+        </div>
+        <div class="f"><b>AI 出稿，您把关</b>——一次出 18 版，挑一版改顺就发。</div>
+        <div class="f"><b>发布台</b>——AI 排期 · 排队到点自己发 · 素材自动归位 · 每篇留档；一篇定稿，各平台各出各的版本（小红书 / 抖音 / 视频号）。</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="chead"><span class="no">②</span><span class="mname">评论区获客</span></div>
+      <div class="crole">去客户正在看的地方接——就干 3 件事</div>
+      <div class="fs">
+        <div class="f"><b>找对地方</b>——AI 找词 · 刷笔记采词 · 自己维护，都进一个词池。</div>
+        <div class="lab">接对话<span>5 种笔记，5 种聊法</span></div>
+        <div class="it">
+          <div class="t">正在上涨的笔记 <span class="hl">＝抢前排</span></div>
+          <div class="d">流量正在往上走的笔记——露脸的话抢先评一条，占住前排。</div>
+        </div>
+        <div class="it">
+          <div class="t">搜索老帖 <span class="hl">＝占深度</span></div>
+          <div class="d">长期有人搜得到——写一条够专业的深度解答，长期排前面。</div>
+        </div>
+        <div class="it">
+          <div class="t">同城帖 <span class="hl">＝拉近乎</span></div>
+          <div class="d">用本地口吻聊一句——让同城客户觉得「是自己人」。</div>
+        </div>
+        <div class="it">
+          <div class="t">求助帖 <span class="hl">＝给方案</span></div>
+          <div class="d">主动求助的就是最准的客户——一个个给解答、给方案。</div>
+        </div>
+        <div class="it">
+          <div class="t">大V帖 <span class="hl">＝补干货</span></div>
+          <div class="d">大博主流量大——去评论区补一条内行干货，借流量露个脸。</div>
+        </div>
+        <div class="f"><b>说对话</b>——12 种评论打法，看菜下饭；只跟主动问「哪家好」的人聊，不该评的自动跳过。</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="chead"><span class="no">③</span><span class="mname">AI 客服</span></div>
+      <div class="crole">捞到的人，不漏</div>
+      <div class="fs">
+        <div class="it star">
+          <div class="t">AI 主动私信</div>
+          <div class="d">评论区捞到的人找上去——按对方情况拟好，您点头才发。</div>
+        </div>
+        <div class="f"><b>客户名单</b>——谁走到哪一步、谈没谈成，一眼看清。</div>
+        <div class="f"><b>通知回访</b>——有人回您了，替您盯着；该接的话一个不落。</div>
+        <div class="f"><b>自动接待</b>——来问的按您话术库先聊上；新消息有角标提醒。</div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="chead"><span class="no">④</span><span class="mname">账号诊断与配置</span></div>
+      <div class="crole">先把您的号照一遍</div>
+      <div class="fs">
+        <div class="it">
+          <div class="t">账号诊断</div>
+          <div class="d">6 个维度把您的号照一遍：定位 · 人群 · 频率 · 选题 · 内容硬伤 · 历史归因——交您一张「这个号该怎么做」的施工图。</div>
+          <div class="cap">交您四样：人设方向 / 笔记结构 / 选题清单 / 发布节奏</div>
+        </div>
+        <div class="f"><b>再配置</b>——人设（说话风格）· 卖点库（卖什么、凭什么）· 知识库（只引您的真资料）· 内容规划（一周几篇怎么搭）。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar"><b>所有档位都带：</b><span>多产品切换 · 数据只存本机 · 发送间隔与停留时间自己设</span></div>
+</div>
+</body>
+</html>

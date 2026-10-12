@@ -159,13 +159,13 @@ SCENES = '''
   <div class="kicker anim">AI 雕兄</div>
   <div class="inner" style="gap:34px">
     <div class="brand a-fade" style="--d:.1s">前大厂码农 · 江湖散人</div>
-    <div class="a-zoom" style="--d:.5s;--t:.9s;line-height:1.25"><span class="sheen impact" style="font-size:104px">9.9<br>先做个账号诊断</span></div>
-    <div class="sub a-fade" style="--d:1.15s">方向对不对，诊断了才知道 · 不合适，不勉强</div>
+    <div class="a-zoom" style="--d:.5s;--t:.9s;line-height:1.25"><span class="sheen impact" style="font-size:104px">免费<br>先做个测评</span></div>
+    <div class="sub a-fade" style="--d:1.15s">方向对不对，做一次就知道 · 不合适，不勉强</div>
     <div class="guide a-fade" style="--d:1.7s">看<b>主页简介</b> / <b>私信我</b></div>
-    <div class="tiny a-fade" style="--d:2.2s">一顿外卖钱，换一套跑通的打法 · 效果因人而异</div>
+    <div class="tiny a-fade" style="--d:2.2s">不花一分钱，换一套跑通的打法 · 效果因人而异</div>
   </div>
   <div class="notes-src">
-    <p>想跑通这套，9.9做次账号诊断——前大厂码农，方向对不对，诊断了才知道。私信我。</p>
+    <p>想跑通这套，联系我免费做个测评——前大厂码农，方向对不对，做一次就知道。私信我。</p>
   </div>
 </section>
 '''

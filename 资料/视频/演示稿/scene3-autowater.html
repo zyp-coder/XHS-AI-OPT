@@ -2,130 +2,85 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>一键灌水 · 自动运行中</title>
+<title>队列 · 自动跑位中</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .q-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .q-head .sel { border: 1px solid #e5e5e5; border-radius: 6px; padding: 7px 10px; font-size: 12.5px; color: #333; background: #fff; flex: 1; }
+  .q-head .run { background: #ff2442; color: #fff; border-radius: 6px; font-size: 12.5px; font-weight: 600; padding: 7px 16px; }
+  .q-sum { font-size: 12px; color: #999; margin-bottom: 14px; }
+  .q-th { display: flex; font-size: 11.5px; color: #999; padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+  .q-th .c1 { flex: 1; }
+  .q-th .c2 { width: 110px; }
+  .q-th .c3 { width: 110px; }
+  .q-org { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 8px 8px 4px; }
+  .q-org .type { font-size: 10px; font-weight: 400; color: #fff; background: #6b7280; border-radius: 3px; padding: 1px 5px; }
+  .q-row { display: flex; align-items: center; font-size: 12.5px; padding: 7px 8px; border-bottom: 1px solid #f7f7f7; }
+  .q-row .c1 { flex: 1; min-width: 0; }
+  .q-row .c2, .q-row .c3 { width: 110px; color: #999; font-size: 11.5px; }
+  .q-row.now { background: #fff8e1; border-radius: 6px; }
+  .q-row.now .c1 { color: #c62828; font-weight: 600; }
+  .q-live { background: #fff3e0; border: 1px solid #ffe0b2; border-radius: 6px; padding: 7px 10px; font-size: 12px; color: #e65100; line-height: 1.7; margin: 6px 8px; }
+  .q-sub { display: flex; align-items: center; font-size: 12.5px; color: #555; padding: 5px 8px 5px 22px; }
+  .q-sub .dot { color: #ff2442; margin-right: 6px; }
+  .q-sub .c3 { margin-left: auto; color: #bbb; font-size: 11.5px; }
+  .q-sec { font-size: 12.5px; color: #666; padding: 12px 8px 4px; font-weight: 600; }
+  .q-muted { color: #bbb; font-weight: 400; font-size: 11.5px; }
+</style>
 </head>
 <body>
-<div class="page">
+<div class="page" style="min-height:640px;">
   <div class="xhs-main">
-    <div class="note-author">
-      <div class="avatar" style="background:linear-gradient(135deg,#81d4fa,#4fc3f7);">💧</div>
-      <div class="author-info">
-        <div class="name">灌水机器人 · 房贷利率 任务</div>
-        <div class="meta">运行中 · 已执行 13/20 篇</div>
-      </div>
-      <button class="follow-btn" style="background:#ff5722;">⏹ 停止</button>
+    <div class="q-head">
+      <div class="sel">全部未灌过</div>
+      <div class="sel">一遍跑完</div>
+      <div class="run">▶ 开始</div>
     </div>
+    <div class="q-sum">待跑 11 项 · 还没到点 3 项 · 今日评论 7/30 &nbsp;·&nbsp; 按每天约 3 项估，这一圈约 5 天</div>
 
-    <div class="water-status">
-      <div class="ws-title">🚀 自动灌水进行中 · 任务进度</div>
-      <div class="ws-progress"><div class="ws-bar" style="width:65%;"></div></div>
-      <div class="ws-text">
-        <span>13 / 20 篇笔记已处理</span>
-        <span>成功 11 · 跳过 2 · 失败 0</span>
-      </div>
-    </div>
+    <div class="q-th"><span class="c1">来源 / 类型</span><span class="c2">计划时间</span><span class="c3">执行时间</span></div>
 
-    <div class="input-row">
-      <input type="text" value="房贷利率" placeholder="输入关键词，如：房贷利率/装修/育儿">
-      <button class="btn-primary">🎯 开始灌水</button>
-    </div>
+    <div class="q-org">▶ 正在跑</div>
+    <div class="q-row now"><span class="c1">房贷计算 <span class="type">最新</span></span><span class="c2">—</span><span class="c3">22:13 开始</span></div>
+    <div class="q-live">📄 第 2/5 篇《月供 8000 怎么提前还款最省——把两个坑先避开》· 本条已发 3/7 · 正在发 <b>@小柚子妈妈</b>（刚刚还在发，页面可能有点慢）</div>
 
-    <div class="tag-row">
-      <span class="tag">🏠 房贷利率</span>
-      <span class="tag">💰 提前还款</span>
-      <span class="tag">📉 利率下调</span>
-      <span class="tag">🏦 公积金贷款</span>
-    </div>
+    <div class="q-sec">⏳ 待跑 11 项 · 从上往下跑</div>
+    <div class="q-sub"><span class="dot">·</span>装修报价 3 项 · 全到点</div>
+    <div class="q-sub"><span class="dot">·</span>提前还款划算吗 3 项 · 全到点<span class="c3">最近 21:54</span></div>
+    <div class="q-sub"><span class="dot">·</span>公积金贷款额度 3 项 · 全到点</div>
 
-    <div style="font-size:13px;font-weight:600;margin:16px 0 10px;">📋 本轮结果</div>
+    <div class="q-sec">👤 盯的账号</div>
+    <div class="q-row"><span class="c1">房奴自救指南 <span class="type">账号</span></span><span class="c2">现在该跑</span><span class="c3">还没跑过</span></div>
+    <div class="q-row"><span class="c1">深圳楼市观察 <span class="type">账号</span></span><span class="c2">20:16</span><span class="c3">14:16 · 欠 2 小时</span></div>
 
-    <div class="note-item">
-      <div class="ni-cover" style="background:linear-gradient(135deg,#ffab91,#ff8a65);"></div>
-      <div class="ni-info">
-        <div class="ni-title">首套房贷款避坑指南｜我就是这样少付了30万利息</div>
-        <div class="ni-meta">486条评论 · 商机7条 · 已发布1条评论</div>
-        <span class="ni-status status-success">✅ 发布成功</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:linear-gradient(135deg,#a5d6a7,#81c784);"></div>
-      <div class="ni-info">
-        <div class="ni-title">2026年最新房贷利率表｜全国主要城市对比</div>
-        <div class="ni-meta">312条评论 · 商机5条 · 已发布1条评论</div>
-        <span class="ni-status status-success">✅ 发布成功</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:linear-gradient(135deg,#b39ddb,#9575cd);"></div>
-      <div class="ni-info">
-        <div class="ni-title">提前还款到底划不划算？银行经理偷偷告诉我…</div>
-        <div class="ni-meta">658条评论 · 商机3条 · 已发布1条评论</div>
-        <span class="ni-status status-success">✅ 发布成功</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:linear-gradient(135deg,#ffe082,#ffd54f);"></div>
-      <div class="ni-info">
-        <div class="ni-title">公积金贷款全攻略｜这样贷最划算</div>
-        <div class="ni-meta">245条评论 · 商机2条 · 已发布1条评论</div>
-        <span class="ni-status status-success">✅ 发布成功</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:linear-gradient(135deg,#90caf9,#64b5f6);"></div>
-      <div class="ni-info">
-        <div class="ni-title">LPR又降了！你的房贷能省多少钱？算一下就知道</div>
-        <div class="ni-meta">处理中 · AI正在扫描评论区...</div>
-        <span class="ni-status status-pending">⏳ 处理中</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:#eee;"></div>
-      <div class="ni-info">
-        <div class="ni-title">二套房贷政策最新解读</div>
-        <div class="ni-meta">等待队列</div>
-        <span class="ni-status status-skipped">⏸ 待处理</span>
-      </div>
-    </div>
-
-    <div class="note-item">
-      <div class="ni-cover" style="background:#eee;"></div>
-      <div class="ni-info">
-        <div class="ni-title">买房选等额本金还是等额本息？看完这篇就懂了</div>
-        <div class="ni-meta">等待队列</div>
-        <span class="ni-status status-skipped">⏸ 待处理</span>
-      </div>
-    </div>
+    <div class="q-sec q-muted">🔁 还没到点 3 项 · 到点自动进待跑</div>
+    <div class="q-sec q-muted">✅ 已完成 今天 3 项</div>
   </div>
 
   <div class="side-info">
     <div class="card">
-      <div class="card-title">⚙️ 本轮设置</div>
-      <div class="kv"><span>关键词</span><span class="v">房贷利率</span></div>
-      <div class="kv"><span>目标数量</span><span class="v">20 篇</span></div>
-      <div class="kv"><span>话术风格</span><span class="v">朋友分享型</span></div>
-      <div class="kv"><span>拟人模式</span><span class="v" style="color:#4caf50;">开启</span></div>
-      <div class="kv"><span>自动关注</span><span class="v">每5篇1次</span></div>
+      <div class="card-title">⚙️ 灌水规则</div>
+      <div class="kv"><span>每轮最多处理</span><span class="v">20 篇</span></div>
+      <div class="kv"><span>每篇最多总评论</span><span class="v">7 次</span></div>
+      <div class="kv"><span>同一篇冷却时间</span><span class="v">12 小时</span></div>
+      <div class="kv"><span>扫过空手复核</span><span class="v">24 小时</span></div>
+      <div class="kv"><span>扫描间隔（循环）</span><span class="v">60 分钟</span></div>
     </div>
     <div class="card">
-      <div class="card-title">📈 数据统计</div>
+      <div class="card-title">📈 本轮数据</div>
       <div class="kv"><span>本轮已发</span><span class="v">11 条评论</span></div>
       <div class="kv"><span>商机发现</span><span class="v">32 个</span></div>
       <div class="kv"><span>平均字数</span><span class="v">128 字</span></div>
       <div class="kv"><span>AI 消耗</span><span class="v">~8K tokens</span></div>
     </div>
     <div class="card">
-      <div class="card-title">⏱️ 拟人延迟</div>
-      <div class="kv"><span>浏览停留</span><span class="v">3-6 秒</span></div>
-      <div class="kv"><span>打字速度</span><span class="v">80 ms/字</span></div>
-      <div class="kv"><span>发送间隔</span><span class="v">15-30 秒</span></div>
-      <p style="font-size:11px;color:#999;margin-top:8px;">拟人档推荐值，节奏更自然</p>
+      <div class="card-title">⏱️ 停留 &amp; 拟人化</div>
+      <div class="kv"><span>当前挡位</span><span class="v" style="color:#4caf50;">2 标准拟人</span></div>
+      <div class="kv"><span>浏览停留</span><span class="v">1.2~2 秒/段</span></div>
+      <div class="kv"><span>逐字输入</span><span class="v">15~30 ms/字</span></div>
+      <div class="kv"><span>条间停顿</span><span class="v">4~8 秒</span></div>
+      <div class="kv"><span>每日上限</span><span class="v">≤10 篇</span></div>
+      <p style="font-size:11px;color:#999;margin-top:8px;">点「填入拟人推荐值」一键套用；日常挂挡位 2，新号从挡位 4 起步</p>
     </div>
   </div>
 </div>

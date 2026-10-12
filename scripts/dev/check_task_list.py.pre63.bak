@@ -1,0 +1,327 @@
+# -*- coding: utf-8 -*-
+"""「🎬 出片台」这一页的自检（老板 2026-10-02 五十九改：任务表改名出片台 + 加「笔记」列 + 跨篇列表 + 缺口按成片形式分）.
+
+口径：
+  1) 档案那颗入口按钮改名「🎬 出片台」（旧的 🖼 造图片 / 🎥 出片台 两颗早下线），没正文那篇是灰态＋原因；
+  2) 这张表多一列「笔记」：从档案某一篇进＝只看这一篇（表头那颗＝「📋 全部笔记」），从「发笔记 → 出片台」二级 tab 进＝全部笔记；
+     图＝一行「平台 × 画面流派」，片＝一行「平台 × 成片形式」；同篇别的平台那版摆只读行，点它的「笔记」格切过去编辑；
+  3) 「出片风格」这一列只读——改流派回造图片 ①，改形式就删行再重加，表上不给就地编辑的口子；
+  4) 「🖼 出图」→ 造图片（四档横置工作流）、「🎬 出片」→ 出片台；加行/删行都是零 AI；
+  5) 缺口列跟着这一片自己走（老板点5）：字体动效／实拍／数字人 有口播稿（＝正文，同文）就够，缺的只是分幕；
+     卡片画面叙事／动态视频 要先出图——画面表没配齐前那颗出片压暗、缺口写「先出图」；
+  6) 任务表 ↔ 造图片 来回切不抹台上的空行（新加那一行还没内容，本来不落档）。
+
+跑法：python3 -X utf8 scripts/dev/check_task_list.py
+临时 profile 加载真扩展（msedge headful），全程 AI 走桩；这条路一次都不该烧。
+"""
+import json
+import pathlib
+import shutil
+import sys
+import tempfile
+import time
+
+from playwright.sync_api import sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(tempfile.gettempdir())
+ERRORS = []
+
+BODY = '\n\n'.join([
+    '很多人一上来就对着表格一条条手改，改到半夜还漏了好几处没有对上。',
+    '第一步先把要改的东西按类别拆开，桌面上能够一眼看清哪一类最费时间。',
+    '第二步拿固定的模板去套，重复出现的那几段直接复用，不用每次重新敲。',
+    '第三步让工具自己跑一遍校验，跑完只留给你一小段要人工确认的清单。',
+])
+VOICE = '别再一条条手改了。\n第一步按类别拆开。\n第二步拿模板套。'
+MOTIF_A = '方案页'
+KIND_PPT = 'PPT字体动效'        # 本机出片、只要口播稿（=正文）就够，缺的只是分幕
+KIND_CARD = '卡片画面叙事'      # 要先出图：画面表没配齐前那颗出片是压暗的
+HEAD = ['要出什么', '笔记', '平台', '出片风格', '到哪一步', '还缺什么', '更新', '']
+
+NOTES = "async () => (await chrome.storage.local.get('np_notes')).np_notes || []"
+
+SEED = r'''async (payload) => {
+    await Storage.initializeDefaults(DEFAULT_PROMPTS);
+    await ensureTenantInit();
+    const cfg = await Storage.getConfig();
+    cfg.product.name = '任务表测试产品';
+    cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
+    cfg.ai.apiKey = 'test-local-only';
+    cfg.imgLook = null;
+    cfg.imgMotifs = [];
+    await Storage.setConfig(cfg);
+    const legacy = { style: '', cover: '', seed: '', items: [
+        { id: 'x1', text: '开场钩子那一句。', desc: '中心思想：钩子', off: false, imgs: [] },
+        { id: 'x2', text: '第二段干货那一句。', desc: '中心思想：第二条', off: false, imgs: [] },
+    ] };
+    await chrome.storage.local.set({
+        np_notes: [
+            { id: 'task-1', title: '省时间三步', status: '待发', platform: 'xhs',
+              form: '图文', style: '', draft: payload.body, createdAt: Date.now() },
+            { id: 'task-2', title: '省时间三步（抖音版）', status: '待发', platform: 'douyin',
+              derivedFrom: 'task-1', derivedFromTitle: '省时间三步',
+              form: '图文', style: '清单卡片式', draft: payload.body, shots: legacy, createdAt: Date.now() },
+            { id: 'task-3', title: '还没正文的那篇', status: '草稿', platform: 'xhs',
+              form: '图文', style: '', draft: '', createdAt: Date.now() },
+        ],
+        np_assets: [],
+    });
+    self.ai = {cut: 0, desc: 0};
+    self.other = [];
+    AiClient.chatCompletion = async (cfg2, system, user) => {
+        const sys = String(system || '');
+        if (sys.indexOf('你在帮一条') >= 0) { self.ai.cut++; return {content: '{"断点":[]}'}; }
+        if (sys.indexOf('你在改一条') >= 0) { self.ai.desc++; return {content: '{"画面":[]}'}; }
+        self.other.push(sys.slice(0, 24));
+        return {content: '{"__stub":"这一页不该烧的这一发"}'};
+    };
+    return true;
+}'''
+
+
+def boot(p):
+    for i in range(5):
+        prof = OUT / ('tasklist-profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+def main():
+    with sync_playwright() as p:
+        ctx = boot(p)
+        try:
+            run(ctx)
+        finally:
+            ctx.close()
+
+
+def run(ctx):
+    sw = ctx.service_workers[0]
+    assert sw.evaluate('chrome.runtime.onMessage.hasListeners()'), '后台路由没注册上'
+    sw.evaluate(SEED, {'body': BODY})
+
+    page = ctx.new_page()
+    page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
+    page.on('dialog', lambda d: d.accept())
+    page.set_viewport_size({'width': 1220, 'height': 940})
+    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    page.wait_for_function('typeof switchMainTab === "function" && typeof npTaskListHtml === "function"'
+                           ' && typeof npTaskPaint === "function" && typeof npFilmBackToTask === "function"')
+    page.set_default_timeout(25000)
+
+    def burned():
+        return (sw.evaluate('() => self.ai.cut'), sw.evaluate('() => self.ai.desc'))
+
+    def note(ar_id):
+        return next((x for x in page.evaluate(NOTES) if x and x.get('id') == ar_id), None)
+
+    def poll(fn, msg, timeout=20.0):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            v = fn()
+            if v:
+                return v
+            page.wait_for_timeout(250)
+        raise AssertionError('等不到：%s' % msg)
+
+    def st(expr):
+        return page.evaluate('() => (%s)' % expr)
+
+    def T(sel):
+        return page.locator('#noteTaskContent ' + sel)
+
+    def row_of(cls, i=0):
+        return T('.' + cls).nth(i).locator('xpath=ancestor::tr').inner_text()
+
+    def open_task(ar_id='task-1'):
+        page.evaluate('() => switchMainTab("noteArchive")')
+        page.wait_for_function('() => !!document.querySelector("#noteArchiveContent .npar-task[data-id=\\"%s\\"]") && '
+                               'document.querySelector("#noteArchiveContent").offsetParent !== null' % ar_id)
+        page.locator('#noteArchiveContent .npar-task[data-id="%s"]' % ar_id).click()
+        page.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent table")')
+
+    # ── 1) 档案入口改名「🎬 出片台」＋没正文那篇灰态；出片台这颗二级 tab 挂上 ──
+    page.evaluate('() => switchMainTab("noteArchive")')
+    page.wait_for_function('() => document.querySelectorAll("#noteArchiveContent .npar-task").length === 3')
+    assert page.locator('#noteArchiveContent .npar-out').count() == 0
+    assert page.locator('#noteArchiveContent .npar-film').count() == 0
+    lab = page.locator('#noteArchiveContent .npar-task[data-id="task-1"]').inner_text().replace(' ', '')
+    assert '出片台' in lab and '出图/出片' not in lab, '档案入口要跟这一页同名「出片台」：%s' % lab
+    assert page.locator('#tabNoteFilm').count() == 1, '发笔记二级要有「出片台」这一 tab'
+    btn = page.locator('#noteArchiveContent .npar-task[data-id="task-3"]')
+    assert 'npar-dim' in (btn.get_attribute('class') or ''), '没正文那篇这颗要压暗'
+    assert '还没有正文' in (btn.get_attribute('title') or ''), '灰态要带原因'
+    btn.click()
+    page.wait_for_timeout(400)
+    assert st('_npMode') == 'wizard', '灰态那颗点下去不该跳页'
+    assert st('document.querySelector("#noteTaskContent").style.display') == 'none'
+    print('PASS: 档案入口改名「🎬 出片台」（🖼 造图片 / 🎥 出片台 两颗下线）、二级多一颗「出片台」；没正文那篇压暗带原因、点了不跳页', flush=True)
+
+    # ── 2) 从档案进＝只看这一篇：多一列「笔记」＋同篇别的平台那版摆只读行 ──
+    open_task()
+    assert '🎬 出片台' in page.locator('#noteTaskContent').inner_text()
+    heads = T('thead th').evaluate_all(r'els => els.map(x => x.innerText.replace(/\s/g, ""))')
+    assert heads == HEAD, heads
+    assert st('_npTaskAll') is False, '从档案进默认只看这一篇'
+    cells = T('tbody').first.inner_text()
+    assert '省时间三步（抖音版）' in cells and '旧：清单卡片式' in cells, cells
+    assert '· 另一档' not in cells, '只读行改用「笔记」列认人，不再挂「· 另一档」'
+    assert T('.np-task-note[data-ar="task-2"]').count() >= 1, '同篇别的平台那一版要摆成只读行（笔记格可点切过去）'
+    assert T('.np-task-sib').count() == 0, '旧的「过去 →」那颗下线，改用「笔记」格'
+    assert T('.np-task-img').count() == 0 and T('.np-task-film').count() == 0, '这一档一行活都还没有（只读行不给可点按钮）'
+    assert '还没有一个活' not in page.locator('#noteTaskContent').inner_text(), '有只读行时不该说“还没有一个活”'
+    assert '📋 全部笔记' in T('.np-task-scope').inner_text(), '只看这一篇时表头那颗＝切到全部笔记'
+    assert '＋ 一套图' in page.locator('#noteTaskContent').inner_text()
+    assert T('.np-img-addopen').count() == 1 and T('.np-img-add').count() == 0, '加图那排 chips 要点开才铺'
+    assert T('.np-task-filmopen').count() == 1 and T('.np-task-kind').count() == 0, '加片那排 chips 要点开才铺'
+    assert burned() == (0, 0), '打开出片台不该烧 AI'
+    print('PASS: 只看这一篇那张表 %s；多一列「笔记」认人，同篇别的平台那版以只读行并进，加行两排 chips 都点了才铺' % ' · '.join(HEAD[:6]), flush=True)
+
+    # ── 3) ＋ 一套图：零 AI 加一行，就地多摆一行活（不跳页）──
+    T('.np-img-addopen').click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-img-add").length > 1')
+    T('.np-img-add[data-k="%s"]' % MOTIF_A).click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-img").length === 1')
+    assert st('_npMode') == 'task', '加完还站在这张表上：要点那一行的「🖼 出图」才进造图片'
+    assert burned() == (0, 0), '加一行一次 AI 都不烧'
+    assert '还没断句' in row_of('np-task-img'), '活跃那篇新加的行自己认得出「还没断句」'
+    img_id = st('(npS().imgDocs[0] || {}).id')
+    print('PASS: ＋ 一套图（%s）＝表上多一行可点的「🖼 出图」，不跳页、零 AI；那一行「还没断句」' % MOTIF_A, flush=True)
+
+    # ── 4) ＋ 一片：字体动效有正文就够（缺口＝还没分幕、出片按钮是亮的）；卡片画面叙事要先出图（压暗＋缺口「先出图」）──
+    T('.np-task-filmopen').click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-kind").length === 5')
+    T('.np-task-kind[data-k="%s"]' % KIND_PPT).click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-film").length === 1')
+    fb = T('.np-task-film').first
+    assert st('getComputedStyle(document.querySelector("#noteTaskContent .np-task-film")).opacity') != '0.5', '字体动效有正文＝不该压暗（口播稿＝正文同文）'
+    assert '先整口播稿' not in row_of('np-task-film'), '别再误报缺稿'
+    assert '还没分幕' in row_of('np-task-film'), row_of('np-task-film')
+    assert st('(npS().filmDocs || []).length') == 1 and st('npS().filmKind') == KIND_PPT
+    assert note('task-1').get('filmDocs'), '片那一行要落进档案'
+
+    T('.np-task-filmopen').click()
+    T('.np-task-kind[data-k="%s"]' % KIND_CARD).click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-film").length === 2')
+    assert '先出图' in row_of('np-task-film', 1), row_of('np-task-film', 1)
+    assert st('getComputedStyle(document.querySelectorAll("#noteTaskContent .np-task-film")[1]).opacity') == '0.5', '卡片画面叙事没出图＝那颗出片要压暗'
+    T('.np-task-film-del').nth(1).click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-film").length === 1')
+    assert st('(npS().filmDocs || []).length') == 1 and st('npS().filmDocs[0].kind') == KIND_PPT, '删掉卡片那行只删那一行'
+    assert burned() == (0, 0)
+    print('PASS: ＋ 一片缺口按成片形式分——字体动效（%s）有正文＝「还没分幕」且亮，卡片画面叙事要先出图＝「先出图」且压暗（已删回剩 1 片）' % KIND_PPT, flush=True)
+
+    # ── 5) 「🖼 出图」→ 造图片：四档横置工作流，摊的就是刚那一行；回程那颗改名「← 出片台」──
+    T('.np-task-img').first.click()
+    page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+    keys = page.locator('#npImgTabs .np-imgtab').evaluate_all('els => els.map(x => x.getAttribute("data-t"))')
+    labels = page.locator('#npImgTabs .np-imgtab span:first-child').evaluate_all('els => els.map(x => x.innerText.replace(/\\s/g, ""))')
+    assert keys == ['look', 'cut', 'desc', 'preview'], keys
+    for i, word in enumerate(['风格', '断句', '分镜', '图文对照']):
+        assert word in labels[i] and labels[i][0] == '①②③④'[i], '第 %d 档该叫「%s」：%s' % (i + 1, word, labels)
+    assert st("npS().uiTab") == 'cut' and st('npS().imgOpen') == img_id, '点哪一行就摊开哪一行、有派没段落在 ② 断句'
+    assert page.locator('#npCutWrap .np-cutline').count() == 4, '加行＝本地把文案按标点逐行列好（一行一句）'
+    assert '← 出片台' in page.locator('#noteOutputContent').inner_text()
+    assert burned() == (0, 0)
+    print('PASS: 「🖼 出图」进造图片——四档 %s，摊开就是表上点的那一行、落在 ② 断句；造图片页回程改名「← 出片台」' % ' → '.join(labels), flush=True)
+
+    # ── 6) 在这一行干活：按住行号从第 1 行拖到第 2 行＝圈成一段，再整一份口播稿（都零 AI）──
+    def gut_box(n):
+        return page.locator('#npCutWrap .np-cutline').nth(n).locator('.np-cut-gut').bounding_box()
+
+    b0, b1 = gut_box(0), gut_box(1)
+    page.mouse.move(b0['x'] + b0['width'] / 2, b0['y'] + b0['height'] / 2)
+    page.mouse.down()
+    page.mouse.move(b1['x'] + b1['width'] / 2, b1['y'] + b1['height'] / 2, steps=6)
+    page.mouse.up()
+    page.wait_for_function('() => (npS().shots.items || []).length === 1 && (npS().shots.items[0].sids || []).length === 2')
+    head = page.locator('#npCutWrap .np-cutseg').first.inner_text().replace(' ', '')
+    assert '第1段' in head and '第1–2行' in head and '2句' in head, head
+    page.locator('#npCutWrap details.np-cutsrc > summary').click()
+    page.locator('#npVoiceTa').fill(VOICE)
+    poll(lambda: (note('task-1') or {}).get('voice') == VOICE, '口播稿没落进档案')
+    assert burned() == (0, 0), '圈段 / 手改文案都在本地'
+
+    # ── 7) 「← 出片台」回表：台上的空行没被档案重读抹掉，缺口列跟着新 ──
+    page.locator('#noteOutputContent .np-out-back').click()
+    page.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent table")')
+    assert st('(npS().imgDocs || []).length') == 1 and st('(npS().filmDocs || []).length') == 1
+    assert '1 段 / 1 张' in row_of('np-task-img') and '还缺 1 张' in row_of('np-task-img')
+    assert '还没分幕' in row_of('np-task-film') and '先整口播稿' not in row_of('np-task-film')
+    print('PASS: 回表不抹台上的行（1 段 / 1 张 · 还缺 1 张；片那行缺口＝「还没分幕」，不再误报缺稿）', flush=True)
+
+    # ── 8) 「🎬 出片」→ 出片台：有正文＝不压暗、直接进台子（形式跟着这一行）──
+    T('.np-task-film').first.click()
+    page.wait_for_function('() => document.getElementById("filmGate").style.display === "none" '
+                           '&& document.getElementById("filmBar").style.display === "flex"')
+    assert page.locator('#filmBar .np-film-list').count() == 0, '「📋 这一篇的片」那一层下线'
+    film = st('JSON.stringify({id: _npFilmNote.id, kind: _npFilmNote.kind, rows: _npFilmNote.rows.length, open: _npFilmNote.openId})')
+    assert json.loads(film)['id'] == 'task-1' and json.loads(film)['kind'] == KIND_PPT, film
+    assert json.loads(film)['rows'] == 1 and json.loads(film)['open'], film
+    assert burned() == (0, 0)
+    print('PASS: 字体动效有正文＝那颗出片是亮的、点了直接进台子（成片形式跟着这一行、不盖五选一）', flush=True)
+
+    # ── 9) 台子 → 回那张表：两份列表都还在 ──
+    page.locator('#filmBar .np-film-task').click()
+    page.wait_for_function('() => _npMode === "task" && document.querySelectorAll("#noteTaskContent .np-task-img").length === 1')
+    assert st('(npS().filmDocs || []).length') == 1
+    assert page.locator('#noteTaskContent').is_visible() and page.locator('#noteOutputContent').is_hidden()
+    print('PASS: 台子顶上那颗「← 出片台」回到任务表，图与片两行活都还在', flush=True)
+
+    # ── 10) 表头切「全部笔记」：多篇各一组、别篇只读；点非活跃篇的「笔记」格＝切过去编辑（仍留在全部笔记）──
+    T('.np-task-scope').click()
+    page.wait_for_function('() => _npTaskAll === true && document.querySelectorAll("#noteTaskContent .np-task-img").length >= 1')
+    assert '👤 只看这一篇' in T('.np-task-scope').inner_text(), '全部笔记时表头那颗＝切回只看这一篇'
+    tbl = page.locator('#noteTaskContent').inner_text()
+    assert '省时间三步（抖音版）' in tbl, 'task-2 作为独立一篇要出现在这张表上'
+    assert T('.np-task-img').count() == 1 and T('.np-task-film').count() == 1, '只有活跃那篇（task-1）的行带得出图 / 出片按钮'
+    assert T('.np-task-note[data-ar="task-2"]').count() >= 1, '别篇那组行的「笔记」格要点得动'
+    T('.np-task-note[data-ar="task-2"]').first.click()
+    page.wait_for_function('() => _npTaskAll === true && String(npS().arId) === "task-2"')
+    assert T('.np-task-img').count() == 1 and T('.np-task-film').count() == 0, '切过去后带按钮的＝task-2 那一行（task-1 变只读，没片行只剩它的图行）'
+    assert T('.np-task-note[data-ar="task-1"]').count() >= 1, '原活跃篇 task-1 变只读，点它笔记格能切回去'
+    # 再切回「只看这一篇」——现在这一篇＝刚点过去的 task-2
+    T('.np-task-scope').click()
+    page.wait_for_function('() => _npTaskAll === false && String(npS().arId) === "task-2"')
+    assert '📋 全部笔记' in T('.np-task-scope').inner_text()
+    assert '省时间三步' in page.locator('#noteTaskContent').inner_text()
+    assert burned() == (0, 0), '跨篇查看 / 切篇全程零 AI'
+    print('PASS: 表头「📋 全部笔记 ↔ 👤 只看这一篇」切换；别篇以只读行并进来、点它的「笔记」格切过去编辑仍留在全部笔记', flush=True)
+
+    # ── 11) ✕ 删行只删那一行（图行删了片行不动、档案跟着空）──
+    open_task('task-1')
+    assert T('.np-task-img').count() == 1 and T('.np-task-film').count() == 1
+    T('.np-img-del').first.click()
+    page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-img").length === 0')
+    assert T('.np-task-film').count() == 1, '删图那一行不该把片那行一起带走'
+    assert not (note('task-1') or {}).get('imgDocs'), '图行删掉要落档'
+    print('PASS: ✕ 删一行只删那一行（片那行不动、档案 imgDocs 跟着空）', flush=True)
+
+    other = sw.evaluate('() => self.other')
+    assert not other, '烧了不该烧的 AI：%s' % other
+    assert burned() == (0, 0), '全程零 AI'
+    assert not ERRORS, '页面报错：%s' % ERRORS[:3]
+    print('\nALL PASS: 🎬 出片台（改名 + 笔记列 + 跨篇切换 + 缺口按成片形式分）—— 全程 AI 一发没烧', flush=True)
+
+
+if __name__ == '__main__':
+    main()

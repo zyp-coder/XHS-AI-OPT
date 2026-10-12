@@ -17,7 +17,7 @@ function esc(str) {
  * 兼容：纯 JSON、```json ... ``` 代码块、混有说明文字的情况
  * 支持修复被截断的 JSON（自动补全缺失的括号）
  */
-function extractJson(text) {
+function extractJson(text, repair = true) {
   if (!text) return null;
 
   // 尝试直接解析
@@ -33,15 +33,36 @@ function extractJson(text) {
     } catch (_) {}
   }
 
-  // 提取第一个 { ... } 块（贪婪匹配最外层）
-  const braceStart = text.indexOf('{');
-  const braceEnd = text.lastIndexOf('}');
-  if (braceStart !== -1 && braceEnd > braceStart) {
-    try {
-      return JSON.parse(text.slice(braceStart, braceEnd + 1));
-    } catch (_) {}
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== '[' && text[start] !== '{') continue;
+    const stack = [];
+    let inString = false, escaped = false, end = start;
+    for (; end < text.length; end++) {
+      const ch = text[end];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '[') stack.push(']');
+      else if (ch === '{') stack.push('}');
+      else if (ch === ']' || ch === '}') {
+        if (stack.pop() !== ch) break;
+        if (!stack.length) {
+          try { return JSON.parse(text.slice(start, end + 1)); } catch (_) {}
+          break;
+        }
+      }
+    }
+    // 数组截断时不把其中一条误当作全部结果。
+    if (end === text.length && text[start] === '[') return null;
+    start = end;
   }
 
+  if (!repair) return null;
   // 尝试修复被截断的 JSON（AI 回复过长时被 max_tokens 截断）
   const repaired = tryRepairTruncatedJson(text);
   if (repaired) return repaired;

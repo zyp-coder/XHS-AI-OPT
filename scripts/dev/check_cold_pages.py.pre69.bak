@@ -1,0 +1,121 @@
+"""#12 冷载点检（2026-10-09）：免打包加载 extension/ 的冷环境，把「发笔记」这几处逐页过一遍——
+都能渲染、页头是新叫法、可见文本里没有旧叫法（写文案 / 造图片 / 出片台 / 划重点）。
+
+覆盖（#12 清单）：笔记档案 +「下一步」、🎬 渲染任务、🖼 出图（画面页）、字效编辑器、📖 发布教程、资料/名词解析.html。
+用法：python3 scripts/dev/check_cold_pages.py（弹一个独立 Edge 窗口，跑完自关；截图落 tmp/cold12_*.png）
+"""
+import pathlib
+import sys
+import tempfile
+
+from playwright.sync_api import expect, sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OLD_WORDS = ['写文案', '造图片', '出片台', '划重点']
+
+with tempfile.TemporaryDirectory(prefix='xhs-cold-') as profile, sync_playwright() as p:
+    ctx = p.chromium.launch_persistent_context(
+        profile, headless=False, channel='msedge',
+        args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+    try:
+        sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event('serviceworker')
+
+        # 种好配置再开页：有假 AI key 才不铺全屏首次设置面板（会把所有点击挡住）
+        sw.evaluate('''async () => {
+            await Storage.initializeDefaults(DEFAULT_PROMPTS);
+            await ensureTenantInit();
+            const cfg = await Storage.getConfig();
+            cfg.ai.apiKey = 'test-local-only';
+            cfg.product.name = '冷载点检产品';
+            cfg.product.sellPoints = [{ title: '省时间', content: '把重复步骤压掉' }];
+            await Storage.setConfig(cfg);
+            await chrome.storage.local.set({ np_notes: [{
+                id: 'cold_k1', title: '冷载点检·知识篇', dir: 'k', status: '草稿',
+                voice: '', form: '图文', kb: [], updatedAt: Date.now(), createdAt: Date.now(),
+            }] });
+        }''')
+
+        page = ctx.new_page()
+        errors = []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.set_default_timeout(15000)
+        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        page.wait_for_function('typeof switchMainTab === "function"')
+        if page.locator('#firstSetupPanel').count():      # 保险：首次设置面板要是还铺着，点掉它
+            page.locator('#fsClose').click()
+            page.wait_for_function('() => !document.getElementById("firstSetupPanel")')
+
+        def no_old(label, txt):
+            hit = [w for w in OLD_WORDS if w in txt]
+            assert not hit, f'{label}: 可见文本还有旧叫法 {hit}'
+            print(f'PASS: {label}：可见文本无旧叫法')
+
+        def shot(name):
+            page.screenshot(path=str(ROOT / 'tmp' / f'cold12_{name}.png'))
+
+        # ① 笔记档案：行 +「下一步」都在，点它进写稿
+        page.locator('#tabNotePublish').click()
+        page.wait_for_function('() => !!document.querySelector("#noteArchiveContent .npar-next")')
+        no_old('笔记档案', page.evaluate('document.body.innerText'))
+        nx = page.locator('#noteArchiveContent .npar-next')
+        lab = nx.inner_text().strip()
+        tip = nx.get_attribute('title') or ''
+        assert lab == '✏️ 编辑' and '还没正文' in tip, f'知识篇没正文：按钮该是「✏️ 编辑」、title 说还没正文，实际「{lab}」/「{tip}」'
+        shot('1_archive')
+        nx.click()
+        page.wait_for_function('() => { const nc = document.getElementById("notePublishContent"); return nc && nc.style.display !== "none" && nc.innerText.trim().length > 50; }')
+        no_old('档案→下一步（编辑）', page.evaluate('document.body.innerText'))
+        print('PASS: 档案「下一步」（%s）点了已进写稿并渲染' % lab)
+        shot('2_write')
+
+        # ② 🎬 渲染任务（全部笔记那张表）
+        page.evaluate('switchMainTab("noteTask")')
+        expect(page.locator('#noteTaskContent')).to_contain_text('🎬 渲染任务')
+        no_old('🎬 渲染任务', page.locator('#noteTaskContent').inner_text())
+        shot('3_task')
+
+        # ③ 🖼 出图（画面页，按这篇）
+        page.evaluate('async () => { const l = await npNotesAll(); switchMainTab("noteOut", l[0]); }')
+        expect(page.locator('#noteOutputContent')).to_contain_text('🖼 出图')
+        no_old('🖼 出图（画面页）', page.locator('#noteOutputContent').inner_text())
+        shot('4_out')
+
+        # ④ 字效编辑器（内嵌 video.html?embed=1）：带一篇走真实通路 npGoFilm，盖板该让开露出台子
+        page.evaluate('() => npGoFilm({ noteId: "cold_k1", title: "冷载点检·知识篇", kind: "PPT字体动效" })')
+        fr = page.frame_locator('#filmFrame')
+        expect(fr.locator('header b')).to_contain_text('字效编辑器')
+        page.wait_for_function('() => { const g = document.getElementById("filmGate"); return g && g.style.display === "none"; }')
+        no_old('字效编辑器', fr.locator('body').inner_text())
+        shot('5_film')
+
+        # ⑤ 📖 发布教程
+        page.evaluate('async () => { const l = await npNotesAll(); switchMainTab("noteGuide", l[0]); }')
+        expect(page.locator('#noteGuideContent')).to_contain_text('📖 发布教程')
+        expect(page.locator('#noteGuideContent')).to_contain_text('发出去之后，这篇在档案里标「已发」')   # #24 脚注
+        print('PASS: 发布教程页脚注在（#24：发出去之后，这篇在档案里标「已发」）')
+        no_old('📖 发布教程', page.locator('#noteGuideContent').inner_text())
+        shot('6_guide')
+
+        # ⑥ 名词解析页（资料/名词解析.html，独立页）
+        doc = ctx.new_page()
+        doc.on('pageerror', lambda e: errors.append('名词解析: ' + str(e)))
+        doc.goto((ROOT / '资料' / '名词解析.html').as_uri())
+        doc.wait_for_timeout(800)
+        gtxt = doc.evaluate('document.body.innerText')
+        no_old('名词解析页', gtxt)
+        assert '名词' in gtxt, '名词解析页没渲染出内容'
+        doc.screenshot(path=str(ROOT / 'tmp' / 'cold12_7_glossary.png'))
+        print('PASS: 名词解析页已渲染且无旧叫法')
+
+        assert not errors, 'pageerror：' + ' | '.join(errors[:5])
+        print('PASS: 全程零 pageerror')
+        print('ALL PASS')
+    finally:
+        ctx.close()

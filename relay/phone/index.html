@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<meta name="robots" content="noindex, nofollow">
+<title>手机看板 · 队列进度</title>
+<style>
+  :root { --tx: #14171a; --tx2: #6b7280; --tx3: #9aa1a9; --line: #e8eaed; --card: #f7f8f9; --ok: #0a8f4c; --warn: #d97706; --err: #dc2626; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; padding: 0 0 env(safe-area-inset-bottom); background: #fff; color: var(--tx);
+    font: 16px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif; }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 18px 16px 40px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  h1 { font-size: 19px; margin: 0; letter-spacing: .3px; }
+  .sub { color: var(--tx2); font-size: 13px; margin-top: 4px; }
+  button { font: inherit; border: 1px solid var(--line); background: #fff; color: var(--tx);
+    border-radius: 10px; padding: 9px 14px; cursor: pointer; }
+  button:active { background: var(--card); }
+  button.ghost { border-color: transparent; color: var(--tx2); padding: 6px 8px; }
+  button.danger { color: var(--err); border-color: #f3d4d4; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tx3); margin-right: 6px; vertical-align: 1px; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--err); } .dot.warn { background: var(--warn); }
+  .card { border: 1px solid var(--line); border-radius: 14px; padding: 14px 15px; margin-top: 12px; }
+  .card.hero { border-color: var(--line); background: var(--card); }
+  .lab { color: var(--tx2); font-size: 13px; }
+  .big { font-size: 21px; font-weight: 700; margin-top: 3px; word-break: break-all; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px dashed var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row .k { color: var(--tx2); flex: none; }
+  .row .v { text-align: right; font-weight: 600; }
+  .v small, .big small { font-weight: 400; color: var(--tx2); font-size: 13px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .mute { color: var(--tx3); }
+  .foot { margin-top: 18px; color: var(--tx3); font-size: 12px; text-align: center; }
+  .pair { margin-top: 14px; }
+  .pair input { font: inherit; width: 100%; padding: 12px; border: 1px solid var(--line);
+    border-radius: 10px; letter-spacing: 3px; text-transform: uppercase; text-align: center; }
+  .pair button { width: 100%; margin-top: 10px; }
+  .err-line { color: var(--err); font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .tip { color: var(--tx2); font-size: 13px; margin-top: 10px; }
+  details { margin-top: 14px; } summary { color: var(--tx2); font-size: 13px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>队列进度</h1>
+      <div class="sub" id="host">还没有配对电脑</div>
+    </div>
+    <button class="ghost" id="refresh">刷新</button>
+  </header>
+
+  <div id="body">
+    <div class="card"><div class="lab">正在加载…</div></div>
+  </div>
+
+  <!-- 未配对：扫码之外的兜底（把电脑上的 8 位码填进来） -->
+  <div class="pair" id="pairBox" style="display:none">
+    <div class="card">
+      <div class="lab">还没有连上电脑</div>
+      <div class="big" style="font-size:17px;font-weight:400;color:var(--tx2)">在电脑上点开「手机看板」扩展，用手机扫它显示的二维码。</div>
+      <input id="code" inputmode="latin" autocomplete="off" placeholder="或把手上的 8 位码填这里">
+      <button id="claim">连上电脑</button>
+      <div class="err-line" id="pairErr"></div>
+    </div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+(function () {
+  var LS = 'xhs_bridge_pair';
+  var body = document.getElementById('body');
+  var pairBox = document.getElementById('pairBox');
+  var hostEl = document.getElementById('host');
+  var footEl = document.getElementById('foot');
+  var refreshBtn = document.getElementById('refresh');
+  var timer = null, ticker = null, lastAt = 0, lastSnapAt = 0;
+  /* 电脑推快照：跑着时最快约 1 分钟一次、闲时 5 分钟一次心跳；12 分钟没动静才算离线 */
+  var FRESH_MS = 12 * 60 * 1000;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function api(pathname, opts) {
+    opts = opts || {};
+    var h = { 'Content-Type': 'application/json' };
+    if (opts.token) h['Authorization'] = 'Bearer ' + opts.token;
+    return fetch(pathname, { method: opts.method || 'GET', headers: h, body: opts.body ? JSON.stringify(opts.body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: 'bad_json' }; }); });
+  }
+  function read() { try { return JSON.parse(localStorage.getItem(LS) || 'null'); } catch (e) { return null; } }
+  function write(v) { try { localStorage.setItem(LS, JSON.stringify(v)); } catch (e) {} }
+  function clear() { try { localStorage.removeItem(LS); } catch (e) {} }
+
+  function ago(ms) {
+    if (!ms) return '还没同步过';
+    var s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+    if (s < 60) return s + ' 秒前';
+    if (s < 3600) return Math.round(s / 60) + ' 分钟前';
+    return Math.round(s / 3600) + ' 小时前';
+  }
+
+  /* 主包推上来的快照（白名单字段）——少哪个都按 "—" 显示，不报错 */
+  function render(d) {
+    var snap = d.snapshot;
+    lastAt = d.at || 0;
+    var online = lastAt && (Date.now() - lastAt) < FRESH_MS;
+
+    if (d.host) hostEl.textContent = '电脑：' + d.host + (d.ver ? ' · v' + d.ver : '');
+    if (!snap) {
+      body.innerHTML = '<div class="card"><div class="dot ' + (online ? 'warn' : 'off') + '"></div>' +
+        '<span class="lab">' + (online ? '电脑在线，但还没有可显示的数据' : '电脑最近没有上报（' + esc(ago(lastAt)) + '）') + '</span>' +
+        '<div class="tip">电脑要开着、浏览器别关、手机桥扩展在运行——它每隔几分钟会上报一次。</div></div>';
+      return;
+    }
+
+    var q = snap.queue || {}, run = snap.run || {}, day = snap.daily || {}, au = snap.autorun || {};
+    var dirs = Array.isArray(day.dirs) ? day.dirs : [];
+    var html = '';
+
+    /* 在跑什么 */
+    var running = !!run.running;
+    html += '<div class="card hero">' +
+      '<div class="lab"><span class="dot ' + (running ? 'on' : (online ? '' : 'off')) + '"></span>' +
+      (running ? (run.auto ? '自动跑（后台拉起的）' : '手动跑') : (online ? '停着' : '电脑离线')) + '</div>' +
+      '<div class="big">' + (running ? esc(q.current || '正在跑…') : '队列没在跑') + '</div>' +
+      (online ? '<div class="sub">电脑上报：' + esc(ago(lastAt)) + '</div>' : '<div class="sub err">最后一次上报：' + esc(ago(lastAt)) + '</div>') +
+      '</div>';
+
+    /* 队列 */
+    html += '<div class="card">' +
+      '<div class="row"><span class="k">队列</span><span class="v num">待跑 ' + (q.todo == null ? '—' : q.todo) +
+      (q.waiting ? ' · 还没到点 ' + q.waiting : '') + '</span></div>' +
+      '<div class="row"><span class="k">已完成</span><span class="v num">' + (q.done == null ? '—' : q.done) +
+      (q.total ? ' / ' + q.total : '') + (q.carry ? '　<small class="warn">欠账 ' + q.carry + '</small>' : '') + '</span></div>' +
+      (q.live ? '<div class="row"><span class="k">这一项</span><span class="v num">' + esc(q.live) + '</span></div>' : '') +
+      '</div>';
+
+    /* 日常浏览 */
+    if (day.on) {
+      html += '<div class="card">' +
+        '<div class="row"><span class="k">今日刷</span><span class="v num">' + (day.views || 0) + ' 篇' +
+        (dirs.length ? '　<small>' + dirs.map(function (x) { return esc(x.name) + ' ' + (x.used || 0) + '/' + (x.quota || 0); }).join(' · ') + '</small>' : '') + '</span></div>' +
+        '<div class="row"><span class="k">顺手互动</span><span class="v num">评论 ' + (day.comments || 0) + ' · 回复 ' + (day.replies || 0) + ' · 关注 ' + (day.follows || 0) + '</span></div>' +
+        '</div>';
+    }
+
+    /* ⏰ 每天自动跑 */
+    if (au.on) {
+      var st, cls = 'ok';
+      if (run.running) { st = '正在跑'; }
+      else if (au.hold) { st = '被「停止本轮」按住，今天不再自动拉起'; cls = 'warn'; }
+      else if (au.broken) { st = '连续几次没跑起来，正在冷却'; cls = 'err'; }
+      else if (au.inWindow) { st = '时段内，到点会自己拉起队列'; }
+      else { st = '还没到时段'; cls = 'mute'; }
+      html += '<div class="card"><div class="row"><span class="k">⏰ 每天自动跑</span>' +
+        '<span class="v num">' + esc(au.from || '') + '–' + esc(au.to || '') + '</span></div>' +
+        '<div class="tip ' + cls + '">' + esc(st) + '</div></div>';
+    }
+
+    if (snap.err) html += '<div class="card"><div class="lab err">最近一次报错</div><div class="tip">' + esc(snap.err) + '</div></div>';
+
+    body.innerHTML = html;
+  }
+
+  function load() {
+    var p = read();
+    if (!p) { pairBox.style.display = ''; body.innerHTML = ''; footEl.textContent = ''; return Promise.resolve(); }
+    pairBox.style.display = 'none';
+    return api('/api/snap?d=' + encodeURIComponent(p.deviceId), { token: p.token }).then(function (d) {
+      if (!d.ok && d.error === 'unauthorized') { clear(); pairBox.style.display = ''; body.innerHTML = ''; footEl.textContent = '电脑那边已解绑，需要重新配对。'; return; }
+      lastSnapAt = Date.now();
+      render(d);
+      footEl.innerHTML = '配对设备 ' + esc(String(p.deviceId).slice(0, 8)) + ' · <a href="#" id="unbind" style="color:inherit">解绑</a>';
+      var ub = document.getElementById('unbind');
+      if (ub) ub.onclick = function (e) {
+        e.preventDefault();
+        if (!confirm('解绑后这台手机就看不到电脑了，要重新扫码。')) return;
+        api('/api/unbind', { method: 'POST', token: p.token, body: { deviceId: p.deviceId } })
+          .then(function () { clear(); pairBox.style.display = ''; body.innerHTML = ''; footEl.textContent = '已解绑。'; });
+      };
+      /* 本地计时器：只改时间字样，不重新请求 */
+      if (!ticker) ticker = setInterval(function () {
+        if (!lastAt) return;
+        var subs = document.querySelectorAll('.card .sub');
+        if (subs.length) subs[0].textContent = (Date.now() - lastAt) < FRESH_MS ? ('电脑上报：' + ago(lastAt)) : ('最后一次上报：' + ago(lastAt));
+      }, 5000);
+    }).catch(function () {
+      body.innerHTML = '<div class="card"><div class="dot off"></div><span class="lab">连不上中转</span>' +
+        '<div class="tip">检查这台手机的网络；如果中转换成云上了，地址也要跟着换。</div></div>';
+    });
+  }
+
+  /* 扫码进来的：地址上带着一次性配对码 */
+  function claimFromHash() {
+    var m = String(location.hash || '').match(/[#&]p=([A-Za-z0-9]{6,32})/);
+    if (!m) return Promise.resolve(false);
+    var code = m[1];
+    history.replaceState(null, '', location.pathname + location.search);
+    return api('/api/pair/claim', { method: 'POST', body: { pairCode: code } }).then(function (d) {
+      if (d.ok) { write({ deviceId: d.deviceId, token: d.token }); return true; }
+      document.getElementById('pairErr').textContent = d.error === 'expired' ? '这个码过期了，回电脑上重新生成一个。' : '这个码已经用过了，回电脑上重新生成一个。';
+      pairBox.style.display = '';
+      return false;
+    });
+  }
+
+  document.getElementById('claim').onclick = function () {
+    var v = String(document.getElementById('code').value || '').trim().toUpperCase();
+    var err = document.getElementById('pairErr');
+    if (!/^[A-Za-z0-9]{6,32}$/.test(v)) { err.textContent = '请填电脑上显示的 8 位码'; return; }
+    err.textContent = '正在连…';
+    api('/api/pair/claim', { method: 'POST', body: { pairCode: v } }).then(function (d) {
+      if (d.ok) { write({ deviceId: d.deviceId, token: d.token }); pairBox.style.display = 'none'; err.textContent = ''; load(); }
+      else err.textContent = d.error === 'expired' ? '码过期了，回电脑上重新生成。' : '没找到这个码，检查一下。';
+    });
+  };
+  refreshBtn.onclick = function () { load(); };
+
+  function startPolling() {
+    load().then(function () {
+      if (timer) clearInterval(timer);
+      timer = setInterval(function () { if (!document.hidden) load(); }, 15000);
+    });
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+
+  claimFromHash().then(function (paired) { if (paired) startPolling(); else startPolling(); });
+})();
+</script>
+</body>
+</html>

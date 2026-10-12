@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>服务器控制台 · 远程指挥演示</title>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--line:#2a2f3a;--fg:#e6e9ef;--dim:#8b93a3;--green:#4ade80;--blue:#60a5fa;--amber:#fbbf24;--grey:#94a3b8}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.7 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:22px 20px 60px}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .btns{display:flex;gap:10px;flex-wrap:wrap}
+  button{background:#1d2330;color:var(--fg);border:1px solid #354055;border-radius:10px;padding:11px 16px;font-size:14px;cursor:pointer}
+  button:hover{background:#243049;border-color:#4a5a7a}
+  button:active{transform:translateY(1px)}
+  .hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+  #stream{height:340px;overflow:auto;font:12.5px/1.8 ui-monospace,Consolas,monospace;background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .row{display:flex;gap:10px;padding:1px 0;white-space:pre-wrap;word-break:break-all}
+  .tag{flex:0 0 52px;text-align:center;border-radius:6px;height:20px;line-height:20px;font-size:11px;margin-top:2px}
+  .k-WEB{background:#334155}.k-SRV{background:#1e3a8a}.k-EXT{background:#14532d}.k-PAGE{background:#713f12}
+  .txt-WEB{color:var(--grey)}.txt-SRV{color:var(--blue)}.txt-EXT{color:var(--green)}.txt-PAGE{color:var(--amber)}
+  .t{color:#55607a;flex:0 0 84px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🖥 服务器控制台（模拟）</h1>
+  <p class="sub">你在这里点的每个按钮，都会先到“服务器”，再由服务器隔空递给浏览器里的那个小扩展——真正动手的是扩展。<br>
+  旁边那个「目标页面」标签页的名字会当场被改；每一步都排在下面的证据流里。</p>
+
+  <div class="card">
+    <div class="btns">
+      <button onclick="send('改标题|📡 服务器远程改名 ' + clock())">① 叫扩展改“目标页面”的标题</button>
+      <button onclick="send('报告标签页')">② 让扩展报告当前标签页</button>
+      <button onclick="send('开新标签页')">③ 让扩展开个新标签页</button>
+    </div>
+    <p class="hint">提示：切到“目标页面”那个标签时，能看到黑底绿字的横幅——那是扩展当场挂上去的；连浏览器最上面的标签名字也会跟着变。</p>
+  </div>
+
+  <div class="card">
+    <p class="sub" style="margin:0 0 10px">📜 证据流（服务器时间戳；WEB=你点的 · SRV=服务器下发 · EXT=扩展回报 · PAGE=目标页面自报）</p>
+    <div id="stream"></div>
+  </div>
+</div>
+<script>
+  const clock = () => new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  async function send(text) {
+    await fetch('/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+  }
+  let shown = 0;
+  const stream = document.getElementById('stream');
+  async function poll() {
+    try {
+      const rows = await (await fetch('/log')).json();
+      for (const r of rows.slice(shown)) {
+        const div = document.createElement('div');
+        div.className = 'row';
+        div.innerHTML = `<span class="t">${r.t}</span><span class="tag k-${r.kind}">${r.kind}</span><span class="txt-${r.kind}"></span>`;
+        div.lastChild.textContent = r.text;
+        stream.appendChild(div);
+      }
+      if (rows.length !== shown) { shown = rows.length; stream.scrollTop = stream.scrollHeight; }
+    } catch {}
+    setTimeout(poll, 800);
+  }
+  poll();
+</script>
+</body>
+</html>

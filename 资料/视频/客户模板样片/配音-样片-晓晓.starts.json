@@ -1,0 +1,20 @@
+{
+ "voice": "zh-CN-XiaoxiaoNeural",
+ "rate": "+20%",
+ "gap": 0.5,
+ "gaps": [
+  0.5,
+  0.5
+ ],
+ "total": 15.74,
+ "starts": [
+  0.0,
+  3.55,
+  8.37
+ ],
+ "durations": [
+  3.05,
+  4.32,
+  7.37
+ ]
+}

@@ -12,7 +12,7 @@ const NoteTrend = (function () {
   const TRENDS_KEY = 'note_trends';
   const CONFIG_KEY = 'note_trend_config';
 
-  // 度控制默认值（可在设置页「💧 一键灌水 → 循环计划设置」调整）
+  // 额度控制默认值（可在「🤖 拟人化与触达 → 💧 灌水频率与去重」调整）
   const DEFAULT_CONFIG = {
     maxPerRound: 3,      // 每轮最多评论几篇
     maxPerNote: 2,       // 每篇笔记最多总评论次数
@@ -93,7 +93,9 @@ const NoteTrend = (function () {
     var clean = {};
     ['maxPerRound', 'maxPerNote', 'cooldownHours', 'checkedHours', 'scanIntervalMin'].forEach(function (k) {
       var v = parseInt(cfg && cfg[k], 10);
-      if (!isNaN(v) && v > 0) clean[k] = v;
+      if (isNaN(v)) return;
+      if (k === 'maxPerRound') { if (v >= 0) clean[k] = v; }   // 0=不限，要显式存下来
+      else if (v > 0) clean[k] = v;
     });
     await set(CONFIG_KEY, clean);
     return clean;
@@ -192,7 +194,7 @@ const NoteTrend = (function () {
   }
 
   /* 循环计划（追涨口径）挑笔记：只看增长中/快速增长的，且满足度控制（总次数上限 / 同篇冷却 / 扫过复核冷却），
-     按增速降序取前 maxPerRound 篇；判定全部走 explainPick，与列表徽标同源 */
+     按增速降序取前 maxPerRound 篇（0=不限）；判定全部走 explainPick，与列表徽标同源 */
   function pickCycleNotes(trends, config, now, allowedIds) {
     now = now || Date.now();
     var out = [];
@@ -205,7 +207,9 @@ const NoteTrend = (function () {
       out.push(t);
     }
     out.sort(function (a, b) { return growthRate(b) - growthRate(a); });
-    return out.slice(0, ((config && config.maxPerRound) || DEFAULT_CONFIG.maxPerRound));
+    var cap = (config && config.maxPerRound != null) ? Number(config.maxPerRound) : DEFAULT_CONFIG.maxPerRound;
+    if (!(cap > 0)) return out;   // 0=不限
+    return out.slice(0, cap);
   }
 
   return {

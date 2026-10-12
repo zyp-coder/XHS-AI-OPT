@@ -5,9 +5,9 @@
  *       再打成可直接「加载已解压的扩展 / 上传」的 zip 包。
  *
  * 用法（在项目根目录执行）：
- *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月，全部功能）
- *   node build.js comment --licensee "李四"       # 基础版（¥239/月，手动评论，无自动化）
- *   node build.js comment-multi --licensee "王五" # 升级版（¥399/月，一键灌水 + 笔记列表 + 多关键词）
+ *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月；② + 线索）
+ *   node build.js comment --licensee "李四"       # 基础版（¥239/月；共有 + 发笔记）
+ *   node build.js comment-multi --licensee "王五" # 升级版（¥399/月；① + 获客）
  *   node build.js pro                            # 自用版（全功能、零等待，自用）
  *
  * 可选参数：
@@ -29,40 +29,45 @@ const ROOT = __dirname;
 const SRC = path.join(ROOT, 'extension');
 
 // ── 版本预设 ───────────────────────────────────────────────
+// 三档边界（2026-10-09 老板定：一个模块一条线，累进开通，共有部分不动）
+//   ① 基础版 = 共有 + 发笔记    ② 升级版 = ① + 获客    ③ 全功能版 = ② + 线索
+//   共有（三档都有）：账号诊断&配置 / 产品库·知识库 / 多产品切换 / 整页发送
+//   关键词上限：三档一律不限（keywordMax: 0 → 运行时折算成 Infinity）
+const KEYWORD_MAX_UNLIMITED = 0; // 0 = 不限
 const PRESETS = {
   // 自用版（内部）：永不过期、所有功能全开、零等待（noDelay）
   pro: {
     label: '自用版',
     validDays: 0,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true },
-    keywordMax: 8, price: 0, noDelay: true,
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true },
+    keywordMax: KEYWORD_MAX_UNLIMITED, price: 0, noDelay: true,
   },
 
   // ── 对外销售的三档（按月收费：默认有效期 30 天，打包时可用 --days 覆盖）──
-  // ③ 全功能版：② + 通知/私信（获客清单 / 线索触达）+ 笔记生成；定价 539/月
+  // ③ 全功能版：② + 线索（通知 / 私信 + 获客清单 + 客服话术）；定价 539/月
   full: {
     label: '全功能版',
     validDays: 30,
     price: 539,
-    keywordMax: 8,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true },
+    keywordMax: KEYWORD_MAX_UNLIMITED,
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true },
   },
-  // ① 基础版：手动 AI 评论（含整页一键发送）+ 账号诊断 + 产品库/知识库/多产品；无任何自动化；定价 239/月
+  // ① 基础版：共有 + 发笔记（AI 写笔记稿 / 素材库 / 笔记档案 / 字效编辑器）；无获客、无线索；定价 239/月
   comment: {
     label: '基础版',
     validDays: 30,
     price: 239,
-    keywordMax: 1,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: false, dailyBrowse: false },
+    keywordMax: KEYWORD_MAX_UNLIMITED,
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: true, dailyBrowse: false, videoFilm: true },
   },
-  // ② 升级版：① + 一键灌水/笔记列表（找该去评论的笔记）+ 多关键词；获客清单 2026-09-20 按老板口径挪到③；定价 399/月
-  // 日常浏览 2026-09-20 起 ②③ 都开（不列入对外功能清单：物料与说明书都不写这条）
+  // ② 升级版：① + 获客（一键灌水/笔记列表/关键词维护）；无线索；定价 399/月
+  // 日常浏览随获客走（② 起开）；照旧不列入对外功能清单：物料与说明书都不写这条
   'comment-multi': {
     label: '升级版',
     validDays: 30,
     price: 399,
-    keywordMax: 8,
-    features: { batchSend: true, productLib: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: false, dailyBrowse: true },
+    keywordMax: KEYWORD_MAX_UNLIMITED,
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: true, dailyBrowse: true, videoFilm: true },
   },
 };
 
@@ -108,7 +113,7 @@ function obfuscatePayload(payloadObj) {
 // 说明：敏感项（boundAccount / builtAt / expireAt / validDays）以混淆载荷形式嵌入，
 //       不直接明文裸露绑定号；并写入 integrity 校验，运行时校验失败即视为被篡改。
 function genEditionJs(cfg) {
-  const featuresStr = `{\n    batchSend: ${cfg.features.batchSend},\n    productLib: ${cfg.features.productLib},\n    tenant: ${cfg.features.tenant},\n    knowledge: ${cfg.features.knowledge},\n    autoWater: ${cfg.features.autoWater},\n    prospectList: ${cfg.features.prospectList},\n    notePublish: ${cfg.features.notePublish},\n    dailyBrowse: ${cfg.features.dailyBrowse},\n  }`;
+  const featuresStr = `{\n    batchSend: ${cfg.features.batchSend},\n    tenant: ${cfg.features.tenant},\n    knowledge: ${cfg.features.knowledge},\n    autoWater: ${cfg.features.autoWater},\n    prospectList: ${cfg.features.prospectList},\n    notePublish: ${cfg.features.notePublish},\n    dailyBrowse: ${cfg.features.dailyBrowse},\n    videoFilm: ${cfg.features.videoFilm},\n  }`;
   const bound = cfg.boundAccount || { xhsId: '', name: '' };
 
   // 敏感载荷（重要值不落明文）
@@ -173,7 +178,10 @@ EDITION.boundAccount = (_edData && _edData.boundAccount && Object.assign({ xhsId
 EDITION.builtAt = (_edData && _edData.builtAt) || 0;
 EDITION.expireAt = (_edData && _edData.expireAt) || 0;
 EDITION.validDays = (_edData && _edData.validDays) || 0;
-EDITION.keywordMax = (_edData && _edData.keywordMax) || 8;
+EDITION.keywordMax = (function () {
+  const v = parseInt(_edData && _edData.keywordMax, 10);
+  return (isFinite(v) && v >= 0) ? v : 0; // 0 = 不限
+})();
 EDITION.price = (_edData && _edData.price) || 0;
 
 function editionHasFeature(name) {
@@ -194,10 +202,10 @@ function editionBoundXhsId() {
   return editionHasBinding() ? String(EDITION.boundAccount.xhsId).trim() : '';
 }
 
-/** 一键灌水允许的最大关键词数量（1=单关键词；8=多关键词） */
+/** 一键灌水允许的最大关键词数量（0＝不限；非法值按不限处理） */
 function editionKeywordMax() {
   const v = parseInt(EDITION.keywordMax, 10);
-  return (isFinite(v) && v >= 1) ? v : 8;
+  return (isFinite(v) && v >= 0) ? v : 0;
 }
 
 /** 授权文件完整性校验：载荷被改动（含绑定号/有效期）则判定为被篡改 */
@@ -344,21 +352,21 @@ function buildRecordHtml(list) {
 
 // ── 极简三步使用说明（生成 txt + html 双份） ───────────────
 // 本版本功能清单：按 preset 开关生成（对外用词避开禁用词表；表述从简，一行一项）
+// 三档边界（2026-10-09 老板定）：① 基础版＝共有+发笔记 ② 升级版＝①+获客 ③ 全功能版＝②+线索
 function featureLines(cfg) {
   const f = cfg.features || {};
   const out = [];
   out.push('账号诊断（整改建议 + 选题规划）');
   out.push('评论助手（AI 帮你写评论、回评论）');
   if (f.batchSend) out.push('整页发送（多条评论一次发完）');
-  const basics = [];
-  if (f.productLib) basics.push('产品库');
+  const basics = ['产品库'];
   if (f.knowledge) basics.push('知识库');
   if (f.tenant) basics.push('多产品切换');
-  if (basics.length) out.push(basics.join(' · '));
-  if (f.autoWater) out.push('一键灌水 + 笔记列表（关键词维护：自动找词、搜笔记）');
-  if (f.prospectList) out.push('通知 / 私信');
-  if (f.notePublish) out.push('发送笔记');
-  // 日常浏览：②③ 已开通，但按老板口径不列入对外功能清单（物料/说明书都不写），故这里有意不生成条目
+  out.push(basics.join(' · '));
+  if (f.autoWater) out.push('获客（一键灌水 + 笔记列表；关键词维护：自动找词、搜笔记 · 关键词不限量）');
+  if (f.prospectList) out.push('线索（通知 / 私信 + 获客清单）');
+  if (f.notePublish) out.push('发笔记（AI 写笔记稿 + 素材库 / 笔记档案' + (f.videoFilm ? '；字效编辑器：口播稿配成竖版视频，带配音' : '') + '）');
+  // 日常浏览：随获客 ② 起开通，但按老板口径不列入对外功能清单（物料/说明书都不写），故这里有意不生成条目
   return out;
 }
 
@@ -370,6 +378,16 @@ function writeStepsManual(stageDir, cfg) {
   const feats = featureLines(cfg);
   const featsTxt = feats.map((x, i) => '  ' + (i + 1) + ') ' + x).join('\n');
   const featsHtml = feats.map((x) => '<li>' + escHtml(x) + '</li>').join('');
+  // 带出片的档位：整份说明都指到 Edge（配音走微软给 Edge 的免费通道，别的浏览器念不出声）
+  const useEdge = !!(cfg.features && cfg.features.videoFilm);
+  const brName = useEdge ? 'Edge' : 'Chrome';
+  const brUrl = useEdge ? 'edge://extensions' : 'chrome://extensions';
+  const edgeTip = useEdge
+    ? '  ※ 请务必用 Edge：里面的配音走的是微软给 Edge 的免费通道，换 Chrome 念不出声（苹果电脑下载 Edge 即可）。\n'
+    : '';
+  const edgeTipHtml = useEdge
+    ? '<li style="color:#888">※ 请务必用 Edge：里面的配音走的是微软给 Edge 的免费通道，换 Chrome 念不出声（苹果电脑下载 Edge 即可）。</li>'
+    : '';
 
   const txt = `================================================
    小红书评论助手 · ${cfg.label}  使用说明
@@ -388,11 +406,11 @@ ${featsTxt}
   ※ API 按用量计费，用之前可根据需求充值一点
 
 【第②步】加载浏览器扩展
-  1) 打开 Chrome，地址栏输入 chrome://extensions 回车
+  1) 打开 ${brName}，地址栏输入 ${brUrl} 回车
   2) 打开右上角「开发者模式」
   3) 点「加载已解压的扩展程序」→ 选本压缩包解压后的这个文件夹
   4) 右上角出现插件图标即可（建议点 📌 固定）
-
+${edgeTip}
 【第③步】激活使用
   1) 打开小红书网页 → 点插件图标 → 进入「首次设置」向导
   2) 向导第①步：选 DeepSeek，粘贴刚复制的 API Key
@@ -447,10 +465,11 @@ ${featsTxt}
   <div class="step">
     <h2>② 加载浏览器扩展</h2>
     <ol>
-      <li>打开 Chrome，地址栏输入 <code>chrome://extensions</code> 回车。</li>
+      <li>打开 ${brName}，地址栏输入 <code>${brUrl}</code> 回车。</li>
       <li>打开右上角「开发者模式」。</li>
       <li>点「加载已解压的扩展程序」→ 选本压缩包解压后的这个文件夹。</li>
       <li>右上角出现插件图标即可（建议点 📌 固定）。</li>
+      ${edgeTipHtml}
     </ol>
   </div>
 
@@ -505,7 +524,7 @@ function main() {
     builtAt,
     expireAt,
     validDays,
-    keywordMax: preset.keywordMax || 8,
+    keywordMax: Number(preset.keywordMax) || 0, // 0＝不限量（别用 || 兜 8，0 是有效值）
     price: preset.price || 0,
     noDelay: !!preset.noDelay,
     boundAccount: { xhsId: (opts.xhsId || '').trim(), name: (opts.xhsName || '').trim() },
@@ -543,7 +562,7 @@ function main() {
       if (src === SRC) return true;
       if (src.includes('node_modules')) return false;
       const name = path.basename(src);
-      if (name.endsWith('.backup')) return false;
+      if (name.endsWith('.backup') || name.includes('.bak')) return false;   // .bak / .backup 备份文件不进包
       return !name.startsWith('_');
     },
   });
@@ -575,7 +594,7 @@ function main() {
   console.log('   授权对象 :', opts.licensee || '(无)');
   console.log('   绑定账号 :', cfg.boundAccount.xhsId ? `${cfg.boundAccount.xhsId}${cfg.boundAccount.name ? '（' + cfg.boundAccount.name + '）' : ''}` : '(未绑定)');
   console.log('   定价     :', cfg.price > 0 ? ('¥' + cfg.price + ' / 月') : '(自用/试用不标价)');
-  console.log('   灌水关键词上限 :', cfg.keywordMax, '个');
+  console.log('   灌水关键词上限 :', cfg.keywordMax >= 1 ? (cfg.keywordMax + ' 个') : '不限量');
   console.log('   有效天数 :', validDays > 0 ? validDays + ' 天' : '永久');
   console.log('   到期时间 :', expireAt ? new Date(expireAt).toLocaleString('zh-CN') : '永不过期');
   console.log('   功能开关 :', JSON.stringify(preset.features));

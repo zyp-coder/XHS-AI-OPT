@@ -34,10 +34,13 @@ def cover_clip(cover, hold, out):
 
 def concat_copy(parts, out):
     lst = out.with_suffix('.concat.txt')
-    lst.write_text(''.join(f"file '{p.as_posix()}'\n" for p in parts), encoding='utf-8')
-    run([FF, '-hide_banner', '-y', '-f', 'concat', '-safe', '0', '-i', str(lst),
-         '-c', 'copy', '-movflags', '+faststart', str(out)])
+    # 清单里的相对路径按清单所在目录解析，必须写绝对路径，否则后一个文件静默打开失败（只留封面 1.5s）
+    lst.write_text(''.join(f"file '{p.resolve().as_posix()}'\n" for p in parts), encoding='utf-8')
+    p = run([FF, '-hide_banner', '-y', '-f', 'concat', '-safe', '0', '-i', str(lst),
+             '-c', 'copy', '-movflags', '+faststart', str(out)])
     lst.unlink()
+    if 'Impossible to open' in p.stderr:
+        sys.exit(f'concat 有文件没打开，清单：\n{lst.name}\n{p.stderr[-800:]}')
 
 
 def main():
@@ -64,7 +67,8 @@ def main():
     dur_src = probe_duration(src)
     cover_clip(cover, a.hold, clip)
 
-    head = OUTDIR / 'AI雕兄-竖屏-成片-封面首帧-无声.mp4'
+    out = Path(a.out) if a.out else OUTDIR / 'AI雕兄-竖屏-成片-封面首帧-带BGM.mp4'
+    head = out.with_name(out.stem + '-无声.mp4')
     concat_copy([clip, src], head)
     got = probe_duration(head)
     plan = dur_src + a.hold
@@ -72,8 +76,8 @@ def main():
     if abs(got - plan) > 0.15:
         sys.exit('拼接后时长对不上，检查 concat 是否吞帧')
 
-    out = Path(a.out) if a.out else OUTDIR / 'AI雕兄-竖屏-成片-封面首帧-带BGM.mp4'
-    mux(head, Path(a.voice), out, a.hold + a.lead_in, Path(a.bgm), a.bgm_db)
+    mux(head, Path(a.voice), out, a.hold + a.lead_in,
+        Path(a.bgm) if a.bgm else None, a.bgm_db)
     clip.unlink()
     print(f'成片：{out}  ({out.stat().st_size / 1048576:.1f} MB) · '
           f'封面 {a.hold:g}s + 原片 · 旁白延后 {a.hold + a.lead_in:g}s')

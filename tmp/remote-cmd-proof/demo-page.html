@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>（目标页面 · 还没被改）</title>
+<style>
+  body{margin:0;background:#f7f7f8;color:#1f2329;font:15px/1.9 system-ui,"Microsoft YaHei",sans-serif}
+  .wrap{max-width:720px;margin:60px auto;padding:0 20px}
+  h1{font-size:22px}
+  .cur{font-size:16px;background:#fff;border:1px solid #e3e6ea;border-radius:10px;padding:14px 16px;margin:18px 0}
+  .cur b{color:#c2410c}
+  .note{color:#6b7280;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>我 是 被 指 挥 的 那 个 页 面</h1>
+  <p>这页自己不会动——它连改自己标题的代码都没有。<br>
+  改它的，是浏览器里那个小扩展；而扩展，是收到了服务器的命令才动手的。</p>
+  <div class="cur">我的标题现在是：<b id="cur">…</b></div>
+  <p class="note">☝️ 盯一下浏览器最上面这个标签页的名字——服务器一点按钮，它就会自己变。<br>
+  每次变化，我都会主动向服务器打一份“小报告”（证据流里的 PAGE 那行），跟扩展的报告正好对得上。</p>
+</div>
+<script>
+  let last = document.title;
+  const el = document.getElementById('cur');
+  el.textContent = last;
+  setInterval(() => {
+    if (document.title !== last) {
+      last = document.title;
+      el.textContent = last;
+      fetch('/page-say', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: last }) });
+    }
+  }, 600);
+</script>
+</body>
+</html>

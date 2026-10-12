@@ -20,6 +20,11 @@ const PROVIDER_CONFIG = {
     baseUrl: 'https://api.siliconflow.cn/v1',
     models: ['deepseek-ai/DeepSeek-V4-Flash', 'Qwen/Qwen3.5-397B-A17B'],
   },
+  // 火山方舟 Coding Plan：必须用 /api/coding/v3（用 /api/v3 不吃套餐、会另计费）
+  ark: {
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    models: ['deepseek-v4-flash', 'doubao-seed-2.1-pro', 'glm-5.3'],
+  },
 };
 
 async function testConnection(provider, apiKey, modelIndex = 0) {

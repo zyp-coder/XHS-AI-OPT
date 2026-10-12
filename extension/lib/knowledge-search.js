@@ -19,10 +19,33 @@
  */
 function searchKnowledgeBase(knowledgeBase, context, roleKeywords = {}) {
   const emptyResult = { text: '', images: [] };
-  if (!knowledgeBase || knowledgeBase.length === 0) return emptyResult;
-  
+  const TOP_N = 5;
+
+  // ── 0~4. 打分排序取前 TOP_N 条 ──
+  const scored = selectRelevant(knowledgeBase, context, roleKeywords, TOP_N);
+  if (scored.length === 0) return emptyResult;
+
+  const selectedEntries = scored.map(s => s.entry);
+  console.log('[知识库检索] 匹配条目:', selectedEntries.map(e => e.title).join(', '));
+  console.log('[知识库检索] 评分详情:', JSON.stringify(
+    scored.map(s => ({ title: s.entry.title, score: s.score, titleMatch: s.titleTagScore, contentMatch: s.contentScore }))
+  ));
+
+  // ── 5. 构建注入文本 + 图片 + 匹配详情（与 AI 快筛预选共用同一构建器）──
+  return buildKbContext(selectedEntries);
+}
+
+/**
+ * 只做「挑条目」这一半：本地关键词两阶段打分 → 按相关度降序取前 limit 条
+ * （与 searchKnowledgeBase 同源，供不需要注入整段正文、只要"拿什么当线索"的场景复用，
+ *   例如发笔记用「选定的卖点」筛一遍知识库，而不是把整库背进提示词）
+ * @returns {Array} [{ entry, score, titleTagScore, contentScore }] 已按分数降序，无命中则 []
+ */
+function selectRelevant(knowledgeBase, context, roleKeywords = {}, limit = 5) {
+  if (!knowledgeBase || knowledgeBase.length === 0) return [];
+
   const activeEntries = knowledgeBase.filter(e => e.isActive !== false);
-  if (activeEntries.length === 0) return emptyResult;
+  if (activeEntries.length === 0) return [];
 
   // ── 0. 构建搜索文本 ──
   const searchText = [
@@ -32,18 +55,18 @@ function searchKnowledgeBase(knowledgeBase, context, roleKeywords = {}) {
     context.comments_text || '',    // 评论区所有文本（最低权重）
   ].join(' ');
 
-  if (!searchText.trim()) return emptyResult;
+  if (!searchText.trim()) return [];
 
   // ── 1. 提取关键词 ──
   const keywords = extractKeywords(searchText);
-  if (keywords.length === 0) return emptyResult;
+  if (keywords.length === 0) return [];
 
   // ── 2. 检测角色 ──
   const detectedRoles = detectRoles(searchText, roleKeywords);
 
   // ── 3. 两阶段评分 ──
   const scored = [];
-  
+
   for (const entry of activeEntries) {
     let score = 0;
 
@@ -69,20 +92,9 @@ function searchKnowledgeBase(knowledgeBase, context, roleKeywords = {}) {
     }
   }
 
-  // ── 4. 排序，只取 TOP 5 ──
+  // ── 4. 排序，取前 limit 条 ──
   scored.sort((a, b) => b.score - a.score);
-  const TOP_N = 5;
-  const selectedEntries = scored.slice(0, TOP_N).map(s => s.entry);
-
-  if (selectedEntries.length === 0) return emptyResult;
-
-  console.log('[知识库检索] 匹配条目:', selectedEntries.map(e => e.title).join(', '));
-  console.log('[知识库检索] 评分详情:', JSON.stringify(
-    scored.slice(0, TOP_N).map(s => ({ title: s.entry.title, score: s.score, titleMatch: s.titleTagScore, contentMatch: s.contentScore }))
-  ));
-
-  // ── 5. 构建注入文本 + 图片 + 匹配详情（与 AI 快筛预选共用同一构建器）──
-  return buildKbContext(selectedEntries);
+  return scored.slice(0, Math.max(1, limit));
 }
 
 /**
@@ -220,7 +232,7 @@ function detectRoles(text, roleKeywords) {
   return detected;
 }
 
-const KnowledgeSearch = { searchKnowledgeBase, buildKbContext, extractKeywords, matchTitleTags, matchContent, detectRoles };
+const KnowledgeSearch = { searchKnowledgeBase, selectRelevant, buildKbContext, extractKeywords, matchTitleTags, matchContent, detectRoles };
 
 if (typeof module !== 'undefined') {
   module.exports = KnowledgeSearch;

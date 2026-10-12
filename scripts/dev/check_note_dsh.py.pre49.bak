@@ -1,0 +1,376 @@
+# 三十改自检：引流图文线「造图片并进写稿流」——写稿 ⑤ 🖋 分镜确认 ＋ ⑥ 👀 预览（不再切独立出图页）
+# 四十四改（2026-10-12）：逐行提示词 → 整套拼成一条「整组提示词」（#npDshGroup）自动重拼
+# 四十八改（2026-10-12）：分镜站整站收简——表格整块撤掉（分镜列表不再逐条摆出来）、进站自动切一版（「🧠 生成分镜」钮撤）、
+#   📐 分几张档位（3/4/5/6/8 ＋「AI 自己定」，点档＝按新张数重切、整组提示词跟着重拼）、
+#   传图＝一颗「⬆ 传图（可多选）」批量钮 ＋ 小缩略图条（点某张选中），文件多选 / Ctrl+V 粘贴两种传法。
+# 覆盖：档案「下一步」→ 直落 ⑤（dOut=img）/ 进站自动出词（忙态卡不用点）＋配置行新形状（无生成钮）/
+#       AI 契约（宁少勿多约 4~6 屏；指定张数＝「正好 N 屏」）＋角色兜底＋配图主题截断＋整组提示词本地拼 /
+#       点档位按新张数重切 / 换流派 / 换配文方式＝本地重拼零 AI / 批量传图进素材库（shotOf 引用）＋
+#       粘贴进选中格 ＋ 全满＝选中换图 / ⑥ 缺口读数 → 封面 ✨ 一发＋传封面 →「齐了」/ 封面开关 /
+#       ↻ 再来一组（故事线重切·confirm 盖旧·7 屏位置兜底链）/ 存好回档案（「代发」、还缺 7 张、shotN 落档）/
+#       重进分镜原样（不重切、不再烧 AI）
+import base64
+import json
+import pathlib
+import struct
+import tempfile
+import zlib
+
+from playwright.sync_api import expect, sync_playwright
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+
+DRAFT1 = ('知道吧，很多人买电脑散热垫都是随手搜一个销量高的就下单。我前前后后换过七个，踩的坑一个比一个贵。'
+          '第一个是那种大风扇直吹的，风是够大，可我的笔记本底部是整块塑料，根本吃不上风。'
+          '后来又买过带冰袋的，刚开始凉，半个小时就回温，还得擦水。'
+          '第三种是架高的铝合金，散热一般，但打字角度是真舒服。'
+          '我们家两个孩子都上网课，两台本子并排跑，桌面上一放就挤成一团。'
+          '于是我自己动手改了一个能拼装的支架，风速三挡可调，底座能拆开塞进书包，上周带出去开会，放在小桌板上也稳。'
+          '装的时候不用拧螺丝，卡扣一按就合。如果你也想给本子找个能装包里的散热支架，主页有我自己在用的那款。')
+TURN = '于是我自己动手改了一个能拼装的支架'
+
+LONGTOPIC = '一段特别长的配图主题要截断考'
+LONGTOPIC_CUT = '一段特别长的配图主题要截'
+
+# 知识线：4 屏。第 2 屏角色留空（考兜底「展开」）、配图主题 14 字（考截断到 12）
+K4 = {'分镜': [
+    {'角色': '开场', '画面描述': '画面：桌面上摊着三份没改完的表格，台灯压着边角。这一张要让人看明白：表格堆成山。',
+     '每页文案': '表格改到半夜。', '配图主题': '熬夜改表格'},
+    {'角色': '', '画面描述': '画面：一只手把便签按颜色分成三摞。这一张要让人分出来：按类别拆开。',
+     '每页文案': '先按类别拆开。', '配图主题': LONGTOPIC},
+    {'角色': '细节', '画面描述': '画面：屏幕上重复的表格行被高亮成一块。这一张要让人看清楚：模板复用。',
+     '每页文案': '重复的整段复用。', '配图主题': '模板复用'},
+    {'角色': '收束', '画面描述': '画面：一份只剩三行的清单放在桌中间，旁边一杯热茶。这一张要让人落住：人工只确认一小段。',
+     '每页文案': '最后只核对一小段。', '配图主题': '小清单'},
+]}
+
+# 故事线：7 屏。第 2/4/6 屏角色留空（考位置兜底链 展开/对照/细节）
+S7 = {'分镜': [
+    {'角色': '开场', '画面描述': '画面：桌上并排两台笔记本挤成一团。这一张要让人看明白：桌面太挤。',
+     '每页文案': '两台本子挤成一团。', '配图主题': '挤桌面'},
+    {'角色': '', '画面描述': '画面：一箱没拆的散热垫堆在墙角。这一张要让人看清楚：踩过很多坑。',
+     '每页文案': '买过一箱都没用。', '配图主题': '一箱散热垫'},
+    {'角色': '转折', '画面描述': '画面：手把拼装支架的卡扣按合。这一张要让人看明白：自己动手改。',
+     '每页文案': '索性自己改了一个。', '配图主题': '卡扣按合'},
+    {'角色': '', '画面描述': '画面：风速挡位拨到三挡，纸条在出风口飘起来。这一张要让人看清楚：风力可调。',
+     '每页文案': '三挡风速可调。', '配图主题': '纸条飘起'},
+    {'角色': '对照', '画面描述': '画面：支架折起来塞进书包侧袋。这一张要让人分出来：能装包。',
+     '每页文案': '折起来就进书包。', '配图主题': '塞进书包'},
+    {'角色': '', '画面描述': '画面：小桌板上的支架稳稳架着本子，旁边是会议牌。这一张要让人看清楚：出门也稳。',
+     '每页文案': '带出门也稳当。', '配图主题': '小桌板'},
+    {'角色': '收束', '画面描述': '画面：支架放在窗边，晨光照在卡扣上。这一张要让人落住：主页有同款。',
+     '每页文案': '同款放主页了。', '配图主题': '窗边支架'},
+]}
+
+
+def seed_note():
+    now = 1759000000000
+    return {
+        'id': 'dsh1', 'createdAt': now, 'updatedAt': now, 'platform': 'xhs',
+        'title': '散热垫换了七个', 'topic': '', 'people': [], 'sellPoints': [], 'kb': [],
+        'form': '图文', 'style': '', 'filmKind': '',
+        'draft': DRAFT1, 'titles': ['散热垫换了七个'], 'tags': ['散热'], 'timeTip': '',
+        'visual': None, 'shots': None, 'imgDocs': None, 'filmDocs': None,
+        'voice': DRAFT1, 'thumb': None, '_sv': 2,
+        'dir': 'd', 'kOut': '', 'dOut': 'img',
+        'mind': None, 'voiceUrl': '', 'voiceError': None, 'dgenDocs': [], 'dgen': None, 'asm': None,
+        'wip': {'step': 4, 'path': 'image', 'noteStyle': {}, 'write': None, 'planItem': None,
+                'drainPick': {'cat': '踩坑', 'title': '散热垫换了七个', 'line': '干货经验', 'turn': TURN, 'body': DRAFT1}},
+        'status': '代发', 'statusAt': {'代发': now},
+    }
+
+
+def png(path, w=160, h=200, rgb=(120, 200, 140)):
+    """写一张纯色 PNG（只用来验传图回素材库＋预览合成读得到底图）"""
+    raw = b''.join(b'\x00' + bytes(rgb) * w for _ in range(h))
+
+    def chunk(tag, data):
+        return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+
+    path.write_bytes(b'\x89PNG\r\n\x1a\n'
+                     + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress(raw, 6))
+                     + chunk(b'IEND', b''))
+    return path
+
+
+with tempfile.TemporaryDirectory(prefix='xhs-note-dsh-') as profile, sync_playwright() as p:
+    ctx = p.chromium.launch_persistent_context(
+        profile, headless=False, channel='msedge',
+        args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+    try:
+        sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event('serviceworker')
+        sw.evaluate('''async () => {
+            await Storage.initializeDefaults(DEFAULT_PROMPTS);
+            await ensureTenantInit();
+            const config = await Storage.getConfig();
+            config.ai.apiKey = 'test-local-only';
+            config.product.name = '分镜测试产品';
+            config.imgLook = null;
+            await Storage.setConfig(config);
+            self.testDshCalls = 0;
+            self.testDshMode = 'k';
+            self.testDshLastSystem = '';
+            self.testDshLastUser = '';
+            const K4 = %s;
+            const S7 = %s;
+            AiClient.chatCompletion = async (cfg, system, user) => {
+                self.testDshCalls++;
+                self.testDshLastSystem = String(system || '');
+                self.testDshLastUser = String(user || '');
+                await new Promise(resolve => setTimeout(resolve, 400));
+                return { content: JSON.stringify(self.testDshMode === 's' ? S7 : K4) };
+            };
+        }''' % (json.dumps(K4, ensure_ascii=False), json.dumps(S7, ensure_ascii=False)))
+        sw.evaluate('''async (entry) => {
+            await chrome.storage.local.set({ np_notes: [entry] });
+            await chrome.storage.local.remove(['np_assets', 'note_dgens']);
+        }''', seed_note())
+
+        png1 = png(pathlib.Path(profile) / 'shot1.png')
+        png2 = png(pathlib.Path(profile) / 'shot2.png', rgb=(88, 150, 210))
+
+        page = ctx.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.on('dialog', lambda d: d.accept())
+        page.set_default_timeout(20000)
+        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        page.wait_for_function('typeof switchMainTab === "function" && typeof _npWiz !== "undefined"')
+        if page.locator('#fsClose').is_visible():
+            page.locator('#fsClose').click()
+
+        # ① 档案「下一步」：没拆分镜＝「✏️ 编辑」，title 指去分镜（img 线，还没图所以不带「还缺」）
+        page.evaluate('() => switchMainTab("noteArchive")')
+        page.wait_for_selector('.npar-next[data-id="dsh1"]')
+        nb1 = page.locator('.npar-next[data-id="dsh1"]')
+        expect(nb1).to_have_text('✏️ 编辑')
+        tip1 = nb1.get_attribute('title') or ''
+        assert '接着出这一套' in tip1 and '还缺' not in tip1, tip1
+        print('PASS: archive next-step reads 编辑 and the tip points to the img flow')
+
+        # ② 点「下一步」直落写稿 ⑤ 站：五站条＋出图页不出现（三十改：不切独立出图页）
+        nb1.click()
+        page.wait_for_function('() => _npWiz && _npWiz.step === 5 && _npWiz.dOut === "img"')
+        assert page.evaluate('_npWiz.path') == 'image'
+        steps = page.locator('#npSteps').inner_text()
+        for t in ['挑稿', '改稿', '🖋 分镜确认', '👀 预览', '发布']:
+            assert t in steps, f'五站条缺「{t}」: {steps}'
+        assert '断句' not in steps, steps
+        assert page.locator('#noteOutputContent').is_hidden()
+        print('PASS: archive jump lands on the 5-station img line inside the wizard (no separate img page)')
+
+        # ③ 进站自动出词（四十八改）：忙态卡自己到（不用点任何钮）＋配置行走新形状（生成钮撤了）
+        page.wait_for_function('''() => {
+            const b = document.getElementById("npWizBody");
+            const n = document.getElementById('npWizNav');
+            return !!b && b.innerText.includes("按正文把分镜切好") && b.innerText.includes("自动跑一版，不用点")
+                && !!n && n.innerText.includes("正在把这一套切出来");
+        }''')
+        assert page.locator('.np-dsh-gen').count() == 0, '「🧠 生成分镜」那颗钮该撤了'
+        assert page.locator('.np-dsh-motif').count() == 4
+        assert page.locator('.np-dsh-motif[data-k="方案页"]').count() == 1
+        assert page.locator('.np-dsh-motif[data-k=""]').count() == 1
+        assert page.locator('.np-dsh-cap').count() == 4
+        assert page.locator('.np-dsh-n').count() == 6, '张数档位＝3/4/5/6/8 ＋ AI 自己定'
+        assert page.locator('.np-dsh-n[data-k="0"]').count() == 1
+        assert page.locator('.np-dsh-again').count() == 1
+        body = page.locator('#npWizBody').inner_text()
+        assert '⚙ 生成前定一次' in body and '📐 分几张' in body, body[:400]
+        assert 'AI 自己定＝看内容切、宁少勿多' in body and '这篇算「知识 / 干货」' in body, body[:400]
+        print('PASS: entering the station auto-splits (busy card on its own) and the config row is reshaped (no gen button)')
+
+        # ④ 自动那一发落地：4 屏——表格整块没了 / 角色兜底 / 配图主题截断 / 整组提示词本地拼 / AI 契约
+        page.wait_for_function('() => (_npWiz.shots.items || []).length === 4 && !_npDshBusy')
+        assert page.locator('.np-dsh-cell').count() == 4
+        assert page.locator('.np-dsh-set').count() == 0 and page.locator('.np-dsh-prompt').count() == 0
+        assert page.locator('.np-dsh-copy').count() == 0 and page.locator('.np-dsh-file').count() == 0
+        assert page.locator('.np-dsh-gcopy').count() == 1
+        assert '还差 4 张图' in page.locator('#npWizNav').inner_text()
+        roles = page.evaluate('_npWiz.shots.items.map(x => x.role).join("/")')
+        assert roles == '开场/展开/细节/收束', roles
+        assert page.evaluate('_npWiz.shots.items[1].topic') == LONGTOPIC_CUT
+        gv = page.locator('#npDshGroup').input_value()
+        for t in ('一组 4 张小红书图文配图', '第 1 张（画面主角：熬夜改表格）：', '每张都留出配文位：',
+                  '真人工作场景', '顺序不要乱', '画面里不要出现任何文字'):
+            assert t in gv, f'整组提示词缺「{t}」: {gv[:300]}'
+        sys_tx = sw.evaluate('self.testDshLastSystem')
+        assert '图文笔记分镜师' in sys_tx and '看内容切、宁少勿多（约 4~6 屏' in sys_tx, sys_tx[:300]
+        assert '绝对不许按字数均分' in sys_tx and '正好切成' not in sys_tx, sys_tx[:300]
+        user_tx = sw.evaluate('self.testDshLastUser')
+        assert '【转法那句】' in user_tx and TURN in user_tx, user_tx
+        assert '【这篇算】知识 / 干货（看内容切、宁少勿多约 4~6 屏）' in user_tx, user_tx
+        assert sw.evaluate('self.testDshCalls') == 1
+        assert '表格改到半夜' in page.evaluate('String((_npWiz.shots.cv || {}).copy || "")')
+        expect(page.locator('#popToastBox')).to_contain_text('切好了 4 张')
+        expect(page.locator('#popToastBox')).to_contain_text('AI 自己定的，知识 / 干货料型')
+        print('PASS: the automatic split lands 4 screens — table gone, role fallback, topic sliced, group prompt assembled')
+
+        # ⑤ 📐 分几张：点「5 张」＝按新张数重切一版（AI 契约改成「正好 5 屏」）
+        page.locator('.np-dsh-n[data-k="5"]').click()
+        page.wait_for_function('() => _npWiz.shots.shotN === 5')
+        page.wait_for_function('() => document.getElementById("npWizBody").innerText.includes("按「5 张」重切一版")')
+        expect(page.locator('#popToastBox')).to_contain_text('切好了 4 张（你定的张数')
+        page.wait_for_function('() => !_npDshBusy && (_npWiz.shots.items || []).length === 4')
+        sys_tx = sw.evaluate('self.testDshLastSystem')
+        assert '正好切成 5 屏' in sys_tx and '看内容切、宁少勿多' not in sys_tx, sys_tx[:300]
+        user_tx = sw.evaluate('self.testDshLastUser')
+        assert '【这篇算】知识 / 干货（正好 5 屏）' in user_tx, user_tx
+        assert sw.evaluate('self.testDshCalls') == 2
+        assert '一组 4 张小红书图文配图' in page.locator('#npDshGroup').input_value()
+        print('PASS: the 分几张 chip re-splits on the spot — busy card reads 按「5 张」重切一版, AI contract carries 正好 5 屏')
+
+        # ⑥ 换画面流派：选「方案页」→ 整组提示词重拼；点「跟账号默认」→ 清掉回到真人工作场景（零 AI）
+        page.locator('.np-dsh-motif[data-k="方案页"]').click()
+        expect(page.locator('#popToastBox')).to_contain_text('这一套按「方案页」摆画面')
+        assert page.evaluate('(_npWiz.shots.look || {}).motif') == '方案页'
+        assert '，方案页）' in page.locator('#npDshGroup').input_value()
+        page.locator('.np-dsh-motif[data-k=""]').click()
+        expect(page.locator('#popToastBox')).to_contain_text('跟账号默认走了')
+        assert not page.evaluate('(_npWiz.shots.look || {}).motif')
+        assert '，真人工作场景）' in page.locator('#npDshGroup').input_value()
+        assert sw.evaluate('self.testDshCalls') == 2
+        print('PASS: motif chips re-assemble the group prompt locally; 跟账号默认 clears the suite-level motif')
+
+        # ⑦ 换配文方式：辅助标注 → 整组提示词的配文位随档换（零 AI）
+        page.locator('.np-dsh-cap[data-k="label"]').click()
+        expect(page.locator('#popToastBox')).to_contain_text('配文方式换成「辅助标注」')
+        assert '引线标注' in page.locator('#npDshGroup').input_value()
+        assert sw.evaluate('self.testDshCalls') == 2
+        print('PASS: caption mode chip rewrites the 配文位 segment of the group prompt')
+
+        # ⑧ ⬆ 传图（可多选）：两颗文件按顺序铺进空格 → 进素材库（shotOf 引用）＋缩略图条＋计数
+        page.set_input_files('.np-dsh-upmany', [str(png1), str(png2)])
+        expect(page.locator('#popToastBox')).to_contain_text('传了 2 张——还差 2 张')
+        page.wait_for_function('() => (_npWiz.shots.items[0].imgs || []).length === 1 && (_npWiz.shots.items[1].imgs || []).length === 1')
+        assert '已传 2/4' in page.locator('#npWizBody').inner_text()
+        assert page.locator('.np-dsh-cell img').count() == 2, '传过的那两张该有小缩略图'
+        id0 = page.evaluate('_npWiz.shots.items[0].id')
+        id1 = page.evaluate('_npWiz.shots.items[1].id')
+        assets = sw.evaluate('''async () => {
+            const d = await chrome.storage.local.get('np_assets');
+            return (d.np_assets || []).filter(a => a && String(a.shotOf || '').indexOf('dsh1#') === 0).map(a => a.shotOf);
+        }''')
+        assert ('dsh1#' + id0) in assets and ('dsh1#' + id1) in assets, assets
+        print('PASS: ⬆ 传图（可多选）lays files into the empty slots — refs in the asset lib, thumbs + 已传 2/4 on screen')
+
+        # ⑨ 粘贴：点第 3 张选中 → Ctrl+V（合成 clipboard 事件）贴上 → 进选中那张
+        page.locator('.np-dsh-cell[data-i="2"]').click()
+        assert page.evaluate('_npDshSel') == 2
+        b64 = base64.b64encode(png1.read_bytes()).decode()
+        page.evaluate('''(b64) => {
+            const bin = atob(b64);
+            const arr = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+            const file = new File([arr], 'pasted.png', { type: 'image/png' });
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+            Object.defineProperty(ev, 'clipboardData', { value: dt });
+            document.dispatchEvent(ev);
+        }''', b64)
+        page.wait_for_function('() => (_npWiz.shots.items[2].imgs || []).length === 1')
+        expect(page.locator('#popToastBox')).to_contain_text('第 3 张贴上了——还差 1 张')
+        assert page.evaluate('_npDshSel') == -1
+        print('PASS: Ctrl+V pastes into the selected cell — 第 3 张贴上了——还差 1 张')
+
+        # ⑩ 补最后一个空格 → 齐了；全满后再传＝选中那张换图
+        page.set_input_files('.np-dsh-upmany', str(png2))
+        expect(page.locator('#popToastBox')).to_contain_text('传了 1 张——图齐了')
+        page.wait_for_function('() => (_npWiz.shots.items[3].imgs || []).length === 1')
+        assert '✓ 图齐了——页脚进预览看合成' in page.locator('#npWizBody').inner_text()
+        page.locator('.np-dsh-cell[data-i="0"]').click()
+        page.set_input_files('.np-dsh-upmany', str(png1))
+        expect(page.locator('#popToastBox')).to_contain_text('第 1 张换成新图了')
+        page.wait_for_function('() => (_npWiz.shots.items[0].imgs || []).length === 2')
+        print('PASS: last slot fills in one shot; once all full, a file goes onto the selected cell as a replace')
+
+        # ⑪ 去预览 ⑥ 站：缺口读数（只剩封面）＋ 封面「✨ 一发」拼提示词 ＋ 传封面 → 齐了
+        page.locator('.np-dsh-next').click()
+        page.wait_for_function('() => _npWiz.step === 6')
+        body = page.locator('#npWizBody').inner_text()
+        assert '⚠ 这一套还缺：封面没图' in body, body[:400]
+        assert page.locator('.np-dsh-back').count() == 1 and page.locator('.np-dsh-done').count() == 1
+        page.locator('.np-dsh-cv-gen').click()
+        expect(page.locator('#popToastBox')).to_contain_text('封面提示词拼好了')
+        cv_prompt = page.locator('.np-dsh-cv-prompt').input_value()
+        assert cv_prompt.startswith('封面｜') and '熬夜改表格' in cv_prompt, cv_prompt
+        page.set_input_files('.np-dsh-cv-file', str(png1))
+        expect(page.locator('#popToastBox')).to_contain_text('封面传好了')
+        page.wait_for_function('() => ((_npWiz.shots.cv || {}).imgs || []).length === 1')
+        body = page.locator('#npWizBody').inner_text()
+        assert '✓ 这一套齐了：4 屏都有图，封面也有了' in body, body[:400]
+        assert '底图没传' not in body, body[:400]
+        print('PASS: preview reads the gap, ✨ assembles the cover prompt, cover upload flips to 齐了 with base images')
+
+        # ⑫ 封面开关：不出（缺口不含封面）→ 恢复
+        page.locator('.np-dsh-cv-on[data-v="0"]').click()
+        expect(page.locator('#popToastBox')).to_contain_text('这一版不出封面')
+        body = page.locator('#npWizBody').inner_text()
+        assert '这一版不出封面' in body and '封面也有了' not in body, body[:400]
+        page.locator('.np-dsh-cv-on[data-v="1"]').click()
+        expect(page.locator('#popToastBox')).to_contain_text('封面恢复要出')
+        body = page.locator('#npWizBody').inner_text()
+        assert '✓ 这一套齐了：4 屏都有图，封面也有了' in body, body[:400]
+        print('PASS: cover toggle drops/restores the cover without touching the screens')
+
+        # ⑬ ↻ 再来一组（故事线）：confirm 盖旧 → 7 屏＋位置兜底链，AI 契约带上故事线口径，封面图不丢
+        page.locator('.np-dsh-back').click()
+        page.wait_for_function('() => _npWiz.step === 5')
+        page.evaluate('() => { _npWiz.drainPick.line = "情绪故事"; }')
+        sw.evaluate('self.testDshMode = "s"')
+        page.locator('.np-dsh-again').click()
+        page.wait_for_function('() => (_npWiz.shots.items || []).length === 7 && !_npDshBusy')
+        roles = page.evaluate('_npWiz.shots.items.map(x => x.role).join("/")')
+        assert roles == '开场/展开/转折/对照/对照/细节/收束', roles
+        sys_tx = sw.evaluate('self.testDshLastSystem')
+        assert '正好切成 5 屏' in sys_tx, sys_tx[:300]
+        user_tx = sw.evaluate('self.testDshLastUser')
+        assert '【这篇算】故事 / 情绪（正好 5 屏）' in user_tx, user_tx
+        assert sw.evaluate('self.testDshCalls') == 3
+        assert page.evaluate('((_npWiz.shots.cv || {}).imgs || []).length') == 1
+        print('PASS: ↻ 再来一组 re-splits 7 screens after the confirm — role chain by position, story line reaches the AI')
+
+        # ⑭ 存好回档案：标「代发」、还缺 7 张、shotN 一起落档
+        page.locator('.np-dsh-next').click()
+        page.wait_for_function('() => _npWiz.step === 6')
+        body = page.locator('#npWizBody').inner_text()
+        assert '⚠ 这一套还缺：7 屏没图' in body, body[:400]
+        page.locator('.np-dsh-done').click()
+        page.wait_for_selector('#noteArchiveContent .npar-stsel[data-id="dsh1"]')
+        expect(page.locator('#noteArchiveContent .npar-stsel[data-id="dsh1"]')).to_have_value('代发')
+        expect(page.locator('#popToastBox')).to_contain_text('存好了——还缺 7 张')
+        nb = page.locator('.npar-next[data-id="dsh1"]')
+        expect(nb).to_have_text('✏️ 编辑')
+        tip2 = nb.get_attribute('title') or ''
+        assert '接着出这一套' in tip2 and '还缺 7 张' in tip2, tip2
+        entry = sw.evaluate('''async () => {
+            const d = await chrome.storage.local.get('np_notes');
+            return (d.np_notes || []).find(x => x && x.id === 'dsh1') || null;
+        }''')
+        assert entry['status'] == '代发' and entry['dOut'] == 'img'
+        rows = entry.get('imgDocs') or []
+        assert len(rows) == 1, rows
+        sh = rows[0].get('shots') or {}
+        its = sh.get('items') or []
+        assert len(its) == 7, its
+        assert sh.get('shotN') == 5, sh.get('shotN')
+        assert '一组 7 张小红书图文配图' in str(sh.get('groupPrompt') or '')
+        assert len((sh.get('cv') or {}).get('imgs') or []) == 1
+        print('PASS: 存好 marks 代发, keeps 7 screens + shotN + cover in the archive, row reads 还缺 7 张')
+
+        # ⑮ 重进：分镜原样在（不重切、不再烧 AI）
+        calls = sw.evaluate('self.testDshCalls')
+        page.locator('.npar-next[data-id="dsh1"]').click()
+        page.wait_for_function('() => _npWiz && _npWiz.step === 5 && _npWiz.dOut === "img"')
+        page.wait_for_function('() => (_npWiz.shots.items || []).length === 7')
+        assert '一组 7 张小红书图文配图' in page.locator('#npDshGroup').input_value()
+        assert page.evaluate('_npWiz.shots.shotN') == 5
+        assert sw.evaluate('self.testDshCalls') == calls
+        print('PASS: reopened station reuses the saved screens without re-splitting')
+
+        assert not errors, f'页面报错: {errors}'
+        print('ALL PASS: check_note_dsh')
+    finally:
+        ctx.close()

@@ -3,54 +3,66 @@
  */
 'use strict';
 
+// 内嵌进弹窗左栏「设置」（iframe ?embed=1）：隐藏自带侧栏，导航交给弹窗外层那套二级 tab。
+// 必须赶在首帧前生效——本文件是 parser-blocking 的尾脚本，在 paint 之前执行，不会闪一下侧栏。
+if (/[?&]embed=1/.test(location.search)) document.documentElement.dataset.embed = '1';
+// 内嵌时禁用本页的「切换租户」：切换只在弹窗顶栏那个下拉框里做（避免两处入口各切一半）
+const _EMBED = document.documentElement.dataset.embed === '1';
+
 // 本会话内是否已完成账号绑定验证（成功即置位，防止验证后仍判断为未验证）
 let _accountVerifiedInSession = false;
 
 // ── Tab 切换 ────────────────────────────────────────────────
+// 每个 Tab 的一次性加载钩子
+const TAB_MOUNT = {};
+// 这几个页的正文是 JS 现画的，必须挂在 TAB_MOUNT 上：弹窗左栏是 settingsOpenTab(tab) 直接切，
+// 不会点侧栏（内嵌时侧栏本来就看不见），只挂 click 的话那条路会落到一个空 body。
+// 函数声明会提升，所以这里放心前引后文的 load*。
+TAB_MOUNT.leadtouch = () => loadLeadTouch();
+TAB_MOUNT.leadtask = () => loadLeadTask();
+TAB_MOUNT.logs = () => loadLogs();
+TAB_MOUNT.theme = () => renderThemeSettings();
+TAB_MOUNT.guard = () => renderGuardSettings();
+
+async function settingsOpenTab(tab) {
+  const item = document.querySelector('.tab-item[data-tab="' + tab + '"]');
+  const panel = document.getElementById('tab-' + tab);
+  // 有些页的侧栏条目已经撤了（客服话术 / 拟人化与触达——分别在 诊断&配置·线索 里内嵌打开），
+  // 这些页只认面板在不在，别再拿侧栏条目当准入条件
+  if (!panel) return false;
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  if (item) item.classList.add('active');
+  panel.classList.add('active');
+  if (location.hash !== '#' + tab) { try { location.hash = tab; } catch (_) {} }
+  document.querySelector('.main')?.scrollTo(0, 0);
+  // 高级配置弹窗是页面级浮层（不属于哪一页）：切页时收掉，别盖在新页上
+  const advModal = document.getElementById('delayAdvModal');
+  if (advModal) advModal.style.display = 'none';
+  if (TAB_MOUNT[tab]) await TAB_MOUNT[tab]();
+  return true;
+}
+window.settingsOpenTab = settingsOpenTab;
+
 document.querySelectorAll('.tab-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    item.classList.add('active');
-    const panel = document.getElementById('tab-' + item.dataset.tab);
-    if (panel) panel.classList.add('active');
-  });
+  item.addEventListener('click', () => { settingsOpenTab(item.dataset.tab); });
 });
 
-// ── 侧栏分组折叠/展开（点分组标题折叠该组，状态存本地） ──
-const GROUP_DEFAULT_EXPANDED = { accounts: true, ops: true, auto: false, data: false };
-function collapseGroup(group, collapsed) {
-  let el = group.nextElementSibling;
-  while (el && !el.classList.contains('tab-group')) {
-    if (el.classList.contains('tab-item')) el.style.display = collapsed ? 'none' : '';
-    el = el.nextElementSibling;
-  }
+// 深链：弹窗的 ⚙️ / 业务页「去配置」都是 settings.html#aics 这样打开的；
+// 已经开着设置页时再点，hash 变化同样触发切页
+function _applyHash() {
+  const t = (location.hash || '').replace(/^#/, '');
+  if (t) settingsOpenTab(t);
 }
-async function loadSidebarGroups() {
-  const saved = {};
-  try { const r = await chrome.storage.local.get('settings_tab_groups'); Object.assign(saved, (r && r.settings_tab_groups) || {}); } catch (_) {}
-  document.querySelectorAll('.tab-group').forEach(group => {
-    const key = group.getAttribute('data-group') || '';
-    const expanded = (key in saved) ? saved[key] : (GROUP_DEFAULT_EXPANDED[key] !== false);
-    group.classList.toggle('collapsed', !expanded);
-    collapseGroup(group, !expanded);
-  });
-}
-document.querySelectorAll('.tab-group').forEach(group => {
-  group.addEventListener('click', async () => {
-    const collapsed = group.classList.toggle('collapsed');
-    collapseGroup(group, collapsed);
-    const key = group.getAttribute('data-group') || '';
-    if (!key) return;
-    try {
-      const r = await chrome.storage.local.get('settings_tab_groups');
-      const saved = (r && r.settings_tab_groups) || {};
-      saved[key] = !collapsed;
-      await chrome.storage.local.set({ settings_tab_groups: saved });
-    } catch (_) {}
-  });
-});
-loadSidebarGroups();
+window.addEventListener('hashchange', _applyHash);
+// 首次深链要等整份脚本跑完再切：TAB_MOUNT 里那些 load* 会读本文件后面才声明的 const（DEFAULT_CONFIG 等），
+// 解析期就切会撞 TDZ（弹窗里的内嵌页都是带 hash 打开的：settings.html?embed=1#delays …）
+window.addEventListener('DOMContentLoaded', _applyHash);
+
+// 问号只管出说明：点在折叠块标题里的问号，别顺手把那个块收起来
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.qhelp')) { e.preventDefault(); e.stopPropagation(); }
+}, true);
 
 // ── 工具函数 ────────────────────────────────────────────────
 function esc(str) {
@@ -93,13 +105,14 @@ async function setStorage(key, value) {
 
 // ── 默认配置结构 ─────────────────────────────────────────────
 const DEFAULT_CONFIG = {
-  product: { name: '我的产品', promoGoal: '', guideText: '', description: '', targetKeywords: [], sellPoints: [], username: '', cta: '私信"玄铁剑"领试用版', coverHook: '', coverTemplate: null },
+  product: { name: '我的产品', promoGoal: '', guideText: '', description: '', targetKeywords: [], commentPurpose: '', sellPoints: [], cta: '私信"玄铁剑"领试用版', coverHook: '' },
   myAccountNames: [],
   ai: { apiKey: '', apiBaseUrl: 'https://qianfan.baidubce.com/v2', model: 'ernie-4.5-turbo-32k', temperature: 0.8, maxTokens: 4096, fallbackApiKey: '', fallbackApiBaseUrl: '', fallbackModel: '' },
   scriptStyle: {
-    scriptPurpose: 'sell',
     purposeMinChars: 100, purposeMaxChars: 300,
     toneMannerisms: '',
+    toneProfile: '',
+    toneAnswers: [],
     personaSample: '',
   },
   keywordFilter: { enabled: false, includeKeywords: [], excludeKeywords: [], minCommentLength: 5 },
@@ -124,257 +137,10 @@ function deepMerge(base, over) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 基本配置（产品配置 / 封面设置）
+// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「诊断&配置 → 基础配置」；
+// 评论区承接 2026-09-25 又搬去「获客 → 任务配置 → 🎯 推广目标」），
+// 产品名称/卖点在诊断里维护，这里不再有任何入口与读写
 // ══════════════════════════════════════════════════════════════
-
-async function loadProductConfig() {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  document.getElementById('productName').value = cfg.product.name || '';
-  // 推广目标（已合并原「引导方式」）：回显已存目标；旧数据无目标但填过引导去向的，按工具引流处理
-  initStyleTemplates();
-  const goal = cfg.product.promoGoal || (cfg.product.guideText ? 'tool' : '');
-  document.getElementById('styleTemplateSelect').value = goal;
-  document.getElementById('productGuide').value = cfg.product.guideText || '';
-  updatePromoGoalUI(goal);
-  document.getElementById('myAccountNames').value = (cfg.myAccountNames || []).join('\n');
-  renderSellPointList(cfg.product.sellPoints || [], _productLibLocked);
-}
-
-async function loadCoverConfig() {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  document.getElementById('productUsername').value = cfg.product.username || '';
-  document.getElementById('productCta').value = cfg.product.cta || '';
-  document.getElementById('coverHookInput').value = cfg.product.coverHook || '';
-  renderCoverPreview(cfg.product.coverTemplate);
-  bindCoverTemplate();
-}
-
-document.getElementById('saveProductBtn')?.addEventListener('click', async () => {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  // ★ 产品名必填：话术、知识库引用都要用到产品名，为空会生成为"我的产品"，这里强提醒并拦截
-  const _name = document.getElementById('productName').value.trim();
-  if (!_name) {
-    showMsg('productSaveMsg', '⚠️ 请先填写产品名称——话术会带上产品名，留空会生成"我的产品"', 'err', 4000);
-    document.getElementById('productName')?.focus();
-    return;
-  }
-  cfg.product.name = _name;
-  // 引导去向已并入「推广目标」：仅工具引流模式下输入框可见，此时才随基本配置一起保存
-  if (document.getElementById('guideRow').style.display !== 'none') {
-    cfg.product.guideText = document.getElementById('productGuide').value.trim();
-  }
-  // 产品卖点：收集 1~10 个（标题/内容/配图），并反向聚合出 description 供提示词/{product_description} 使用
-  const sellPoints = collectSellPoints();
-  if (!_productLibLocked) {
-    cfg.product.sellPoints = sellPoints.slice(0, 10);
-    const descLines = [];
-    cfg.product.sellPoints.forEach((s, i) => {
-      const t = (s.title || '').trim(), c = (s.content || '').trim();
-      if (t && c) descLines.push(t + '：' + c);
-      else if (t) descLines.push(t);
-      else if (c) descLines.push(c);
-    });
-    cfg.product.description = descLines.join('\n');
-  }
-  cfg.myAccountNames = document.getElementById('myAccountNames').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-  await setStorage('config', cfg);
-  showMsg('productSaveMsg', '✅ 已保存', 'ok');
-});
-
-document.getElementById('saveCoverBtn')?.addEventListener('click', async () => {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  cfg.product.username = document.getElementById('productUsername').value.trim();
-  cfg.product.cta = document.getElementById('productCta').value.trim() || '私信"玄铁剑"领试用版';
-  cfg.product.coverHook = document.getElementById('coverHookInput').value.trim();
-  cfg.product.coverTemplate = _currentCoverTemplate;
-  await setStorage('config', cfg);
-  showMsg('coverSaveMsg', '✅ 已保存', 'ok');
-});
-
-// ══════════════════════════════════════════════════════════════
-// 产品卖点维护（1~10 个，每个含 标题/内容/配图）
-// ══════════════════════════════════════════════════════════════
-let _productLibLocked = false;
-
-function renderSellPointList(sellPoints, locked) {
-  const listEl = document.getElementById('sellPointList');
-  if (!listEl) return;
-  const list = Array.isArray(sellPoints) ? sellPoints.slice(0, 10) : [];
-  if (locked) {
-    listEl.style.opacity = '0.55';
-    listEl.style.pointerEvents = 'none';
-  }
-  listEl.innerHTML = list.length ? list.map((s, i) => sellPointCardHtml(s, i, locked)).join('')
-    : '<div style="font-size:12px;color:#999;border:1px dashed #d7d9de;border-radius:8px;padding:10px 12px;">还没有卖点。点下方「＋ 添加卖点」，每个卖点填 标题 + 内容，有需要可配一张图。</div>';
-  wireSellPointListEvents(list.length);
-}
-
-function sellPointCardHtml(s, i, locked) {
-  const t = esc((s && s.title) || '');
-  const c = esc((s && s.content) || '');
-  const img = (s && s.image) || '';
-  return '<div class="sp-card" data-idx="' + i + '" style="border:1px solid #e3e7f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fbfcfe;">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;">' +
-    '<span style="font-size:12px;font-weight:700;color:#c41d3c;">卖点 ' + (i + 1) + '/10</span>' +
-    '<button type="button" class="sp-remove" data-idx="' + i + '" ' + (locked ? 'disabled style="opacity:.4"' : '') + ' style="border:1px solid #f2c2cd;border-radius:6px;background:#fff;color:#c41d3c;font-size:11px;cursor:pointer;padding:2px 8px;">🗑 删除</button></div>' +
-    '<div style="display:flex;gap:8px;align-items:flex-start;">' +
-    '<div style="flex:1;min-width:0;">' +
-    '<input type="text" class="sp-title" data-idx="' + i + '" value="' + t + '" maxlength="40" placeholder="卖点标题（喂给评论/文案提示词）"' + (locked ? ' disabled' : '') + ' style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-bottom:6px;">' +
-    '<textarea class="sp-content" data-idx="' + i + '" rows="2" placeholder="卖点内容（喂给评论/文案提示词，越具体越好）"' + (locked ? ' disabled' : '') + ' style="width:100%;box-sizing:border-box;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;line-height:1.5;resize:vertical;">' + c + '</textarea>' +
-    '<div style="font-size:10px;color:#999;margin-top:2px;">提示词中可用 {product_description} 引用全部卖点；发笔记选中此卖点时，会列出下方配图</div>' +
-    '</div>' +
-    '<div class="sp-img" data-idx="' + i + '" style="flex:none;width:104px;">' +
-    (img
-      ? '<img src="' + img + '" data-idx="' + i + '" style="width:104px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #eee;display:block;cursor:pointer;" title="点击更换" class="sp-img-pick">' +
-        '<button type="button" class="sp-img-clear" data-idx="' + i + '" ' + (locked ? 'disabled style="opacity:.4"' : '') + ' style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3e3e3;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>'
-      : '<label class="sp-img-add" data-idx="' + i + '" style="display:flex;align-items:center;justify-content:center;width:104px;height:72px;border:1px dashed #bbb;border-radius:6px;font-size:10px;color:#999;cursor:pointer;background:#fff;">＋ 配图<input type="file" accept="image/*" class="sp-file" data-idx="' + i + '" style="display:none;"' + (locked ? ' disabled' : '') + '></label>') +
-    '</div></div></div>';
-}
-
-function wireSellPointListEvents(count) {
-  const listEl = document.getElementById('sellPointList');
-  if (!listEl) return;
-
-  const btn = document.getElementById('addSellPointBtn');
-  if (btn) btn.onclick = () => {
-    if (_productLibLocked) { showMsg('productSaveMsg', '🔒 产品卖点当前版本不可用，升级更高版本可解锁', 'err'); return; }
-    const childCount = listEl.querySelectorAll('.sp-card').length;
-    if (childCount >= 10) { showMsg('productSaveMsg', '⚠️ 最多添加 10 个卖点', 'err'); return; }
-    listEl.insertAdjacentHTML('beforeend', sellPointCardHtml({}, childCount, _productLibLocked));
-    wireSellPointListEvents(childCount + 1);
-  };
-
-  listEl.querySelectorAll('.sp-remove').forEach(b => b.onclick = () => {
-    if (_productLibLocked) return;
-    const card = b.closest('.sp-card');
-    if (card) card.remove();
-  });
-
-  listEl.querySelectorAll('.sp-img-clear').forEach(b => b.onclick = () => {
-    if (_productLibLocked) return;
-    const card = b.closest('.sp-card');
-    const col = card ? card.querySelector('.sp-img') : null;
-    if (!col) return;
-    const idx = card.getAttribute('data-idx');
-    col.innerHTML = '<label style="display:flex;align-items:center;justify-content:center;width:104px;height:72px;border:1px dashed #bbb;border-radius:6px;font-size:10px;color:#999;cursor:pointer;background:#fff;">＋ 配图\n<input type="file" accept="image/*" class="sp-file" data-idx="' + idx + '" style="display:none;"></label>';
-    wireSellPointListEvents(count);
-  });
-
-  listEl.querySelectorAll('.sp-file').forEach(inp => inp.onchange = () => {
-    const file = inp.files && inp.files[0];
-    if (!file) return;
-    const card = inp.closest('.sp-card');
-    const col = card ? card.querySelector('.sp-img') : null;
-    if (!col) return;
-    const idx = card.getAttribute('data-idx');
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      col.innerHTML = '<img src="' + ev.target.result + '" data-idx="' + idx + '" style="width:104px;height:72px;object-fit:cover;border-radius:6px;border:1px solid #eee;display:block;cursor:pointer;" title="点击更换">' +
-        '<button type="button" class="sp-img-clear" data-idx="' + idx + '" style="width:100%;margin-top:4px;font-size:10px;padding:1px 0;border:1px solid #e3e3e3;border-radius:5px;background:#fff;color:#a00;cursor:pointer;">清除</button>';
-      wireSellPointListEvents(count);
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-function collectSellPoints() {
-  const listEl = document.getElementById('sellPointList');
-  const out = [];
-  if (!listEl) return out;
-  listEl.querySelectorAll('.sp-card').forEach((card) => {
-    const idx = parseInt(card.getAttribute('data-idx'), 10);
-    if (Number.isNaN(idx)) idx = out.length;
-    while (out.length < idx) out.push({});
-    const title = (card.querySelector('.sp-title') ? card.querySelector('.sp-title').value : '').trim();
-    const content = (card.querySelector('.sp-content') ? card.querySelector('.sp-content').value : '').trim();
-    let image = '';
-    const img = card.querySelector('.sp-img img');
-    if (img) image = img.getAttribute('src') || '';
-    out[idx] = { title, content, image };
-  });
-  return out.filter(s => s && (String(s.title).trim() || String(s.content).trim() || String(s.image || '')));
-}
-
-// ══════════════════════════════════════════════════════════════
-// 封面底图模板管理（AI 生成候选 / 上传导入 / 预览 / 清除；三段式：上署名·中留白·下引流）
-// ══════════════════════════════════════════════════════════════
-let _coverBound = false;
-let _currentCoverTemplate = null;
-
-function renderCoverPreview(tpl) {
-  _currentCoverTemplate = (tpl && tpl.image) ? tpl : null;
-  const wrap = document.getElementById('coverPreview');
-  if (!wrap) return;
-  const clearBtn = document.getElementById('coverClearBtn');
-  if (clearBtn) clearBtn.style.display = _currentCoverTemplate ? '' : 'none';
-  if (_currentCoverTemplate) {
-    wrap.innerHTML = '<div style="font-size:12px;font-weight:600;color:#1f6feb;margin-bottom:4px;">当前底图模板：</div>' +
-      '<img src="' + _currentCoverTemplate.image + '" style="max-width:150px;border-radius:8px;border:1px solid #dfe8f5;display:block;">';
-  } else {
-    wrap.innerHTML = '<div style="font-size:12px;color:#999;">（还没有底图模板，封面会用渐变+文字兜底生成）</div>';
-  }
-}
-
-function bindCoverTemplate() {
-  if (_coverBound) return; _coverBound = true;
-  const genBtn = document.getElementById('coverGenBtn');
-  if (genBtn) genBtn.addEventListener('click', async () => {
-    const box = document.getElementById('coverCandidates');
-    if (box) box.innerHTML = '<div style="font-size:12px;color:#888;">⏳ AI 正在按用户名+人设生成封面底图候选…</div>';
-    try {
-      const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-      const persona = cfg.persona || {};
-      const coverHook = cfg.product.coverHook || persona.coverHook || '';
-      const r = await chrome.runtime.sendMessage({ action: 'genCoverTemplate', data: { username: cfg.product.username || '', productName: cfg.product.name || '', persona: (persona.text || ''), coverHook } });
-      const cands = (r && r.candidates) || [];
-      if (!cands.length) throw new Error((r && r.reason) || 'AI 未返回候选');
-      box.innerHTML = '<div style="font-size:12px;font-weight:600;color:#1f6feb;margin-bottom:4px;">请选一个风格候选（可「一键生图」或「复制提示词」去外部出图）：</div>' +
-        cands.map((c, i) =>
-          '<div style="border:1px solid #dfe8f5;border-radius:8px;padding:8px 10px;margin-bottom:6px;background:#fff;">' +
-          '<div style="font-size:12px;font-weight:600;color:#333;">候选 ' + (i + 1) + '：' + esc(c.name || '') + '</div>' +
-          '<pre style="font-size:11px;color:#555;background:#f7f8fb;border-radius:6px;padding:6px 8px;white-space:pre-wrap;word-break:break-all;margin:4px 0;max-height:90px;overflow:auto;font-family:monospace;line-height:1.5;">' + esc(c.prompt || '') + '</pre>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
-          '<button type="button" class="cover-gen-one" data-prompt="' + String(c.prompt || '').replace(/"/g, '&quot;') + '" data-name="' + esc(c.name || '') + '" style="border:1px solid #1f6feb;border-radius:6px;background:#fff;color:#1f6feb;font-size:11px;cursor:pointer;padding:2px 10px;">🖼 一键生底图</button>' +
-          '<button type="button" class="cover-copy-one" data-prompt="' + String(c.prompt || '').replace(/"/g, '&quot;') + '" style="padding:2px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;color:#666;font-size:11px;cursor:pointer;">📋 复制提示词</button>' +
-          '<span class="cover-gen-msg" style="font-size:11px;color:#0a7b5a;"></span>' +
-          '</div></div>').join('');
-      box.querySelectorAll('.cover-copy-one').forEach(b => b.onclick = () => { const v = b.getAttribute('data-prompt') || ''; if (v) copyText(v).then(() => showMsg('coverSaveMsg', '✅ 提示词已复制，可去千问/生图工具出图', 'ok')); });
-      box.querySelectorAll('.cover-gen-one').forEach(b => b.onclick = async () => {
-        const msg = b.parentNode.querySelector('.cover-gen-msg');
-        if (msg) msg.textContent = '⏳ 生成中…(约10~30秒)';
-        try {
-          const rr = await chrome.runtime.sendMessage({ action: 'generateNoteImage', prompt: b.getAttribute('data-prompt') || '' });
-          const img = (rr && rr.image) || '';
-          if (!img) throw new Error('未返回图片');
-          _currentCoverTemplate = { image: img, w: 0, h: 0, preview: '', topBand: 0.14, bottomBand: 0.18 };
-          renderCoverPreview(_currentCoverTemplate);
-          if (msg) { msg.textContent = '✅ 已设为底图模板（记得点「保存基本配置」）'; }
-        } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ ' + (e.message || e); } }
-      });
-    } catch (e) {
-      if (box) box.innerHTML = '<div style="font-size:12px;color:#d32f2f;">生成候选失败：' + (e.message || e) + '</div>';
-    }
-  });
-
-  const upBtn = document.getElementById('coverUpBtn');
-  const fileInput = document.getElementById('coverFileInput');
-  if (upBtn) upBtn.addEventListener('click', () => { if (fileInput) fileInput.click(); });
-  if (fileInput) fileInput.addEventListener('change', () => {
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      _currentCoverTemplate = { image: ev.target.result, w: 0, h: 0, preview: '', topBand: 0.14, bottomBand: 0.18 };
-      renderCoverPreview(_currentCoverTemplate);
-      showMsg('coverSaveMsg', '✅ 已设为底图模板（记得点「保存封面设置」）', 'ok', 3000);
-    };
-    reader.readAsDataURL(file);
-  });
-
-  const clearBtn = document.getElementById('coverClearBtn');
-  if (clearBtn) clearBtn.addEventListener('click', () => { _currentCoverTemplate = null; renderCoverPreview(null); showMsg('coverSaveMsg', '已清除底图模板', 'ok', 2000); });
-}
 
 // 简单复制工具（settings 页无 navigator.clipboard 权限保障时降级）
 function copyText(t) {
@@ -384,110 +150,7 @@ function copyText(t) {
 // ══════════════════════════════════════════════════════════════
 // AI 配置
 // ══════════════════════════════════════════════════════════════
-const PROVIDER_CONFIG = {
-  deepseek: {
-    baseUrl: 'https://api.deepseek.com/v1',
-    models: [
-      { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（新，快、省，推荐）' },
-      { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro（新，更强，费 token）' },
-    ],
-  },
-  openai: {
-    baseUrl: 'https://api.openai.com/v1',
-    models: [
-      { value: 'gpt-4.1', label: 'GPT-4.1（最新旗舰，推荐）' },
-      { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini（性价比）' },
-      { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano（最快）' },
-      { value: 'gpt-4o', label: 'GPT-4o' },
-      { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    ],
-  },
-  qwen: {
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    models: [
-      { value: 'qwen-turbo', label: 'Qwen Turbo（快速便宜）' },
-      { value: 'qwen-plus', label: 'Qwen Plus（均衡，推荐）' },
-      { value: 'qwen-max', label: 'Qwen Max（最强）' },
-      { value: 'qwen3.7-max', label: 'Qwen3.7 Max（最新版旗舰）' },
-      { value: 'qwen3.7-plus', label: 'Qwen3.7 Plus（最新版均衡）' },
-    ],
-  },
-  siliconflow: {
-    baseUrl: 'https://api.siliconflow.cn/v1',
-    models: [
-      { value: 'deepseek-ai/DeepSeek-V4-Flash', label: 'DeepSeek V4 Flash' },
-      { value: 'deepseek-ai/DeepSeek-V4-Pro', label: 'DeepSeek V4 Pro' },
-      { value: 'Qwen/Qwen3.5-397B-A17B', label: 'Qwen3.5 397B（旗舰）' },
-      { value: 'Qwen/Qwen3.6-27B', label: 'Qwen3.6 27B' },
-      { value: 'zai-org/GLM-5.2', label: 'GLM-5.2（智谱）' },
-      { value: 'deepseek-ai/DeepSeek-V3.2', label: 'DeepSeek V3.2' },
-    ],
-  },
-  qianfan: {
-    baseUrl: 'https://qianfan.baidubce.com/v2',
-    models: [
-      { value: 'ernie-4.5-turbo-32k', label: 'ERNIE 4.5 Turbo 32K（最便宜、推荐）' },
-      { value: 'ernie-4.5-turbo-128k', label: 'ERNIE 4.5 Turbo 128K（长上下文）' },
-      { value: 'ernie-3.5-128k', label: 'ERNIE 3.5 128K（便宜）' },
-      { value: 'deepseek-v3.2', label: 'DeepSeek-V3.2（千帆平台）' },
-    ],
-  },
-  gemini: {
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    models: [
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（免费档，推荐）' },
-      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash（免费档）' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro（强，费额度）' },
-    ],
-  },
-  openrouter: {
-    baseUrl: 'https://openrouter.ai/api/v1',
-    models: [
-      { value: 'deepseek/deepseek-chat-v3.2:free', label: 'DeepSeek V3.2（free）' },
-      { value: 'qwen/qwen-2.5-72b-instruct:free', label: 'Qwen 2.5 72B（free）' },
-      { value: 'meta-llama/llama-3.3-70b-versatile:free', label: 'Llama 3.3 70B（free）' },
-      { value: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
-    ],
-  },
-  groq: {
-    baseUrl: 'https://api.groq.com/openai/v1',
-    models: [
-      { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B（免费快）' },
-      { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B（最快）' },
-      { value: 'qwen/qwen2.5-32b', label: 'Qwen2.5 32B' },
-    ],
-  },
-  zhipu: {
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    models: [
-      { value: 'glm-4-flash', label: 'GLM-4-Flash（免费模型）' },
-      { value: 'glm-4-air', label: 'GLM-4-Air（便宜）' },
-      { value: 'glm-4-plus', label: 'GLM-4-Plus' },
-    ],
-  },
-  custom: {
-    baseUrl: '',
-    models: [],
-  },
-};
-
-/* 自定义模式下可快速选用的常用模型（选完即用，无需手敲），按“非推理/推理”两组展示 */
-const QUICK_MODELS = {
-  normal: [
-    { value: 'deepseek-v4-flash', label: 'deepseek-v4-flash（DeepSeek 新）' },
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash（免费）' },
-    { value: 'Qwen/Qwen3.5-397B-A17B', label: 'Qwen3.5 397B（硅基流动）' },
-    { value: 'Qwen/Qwen2.5-7B-Instruct', label: 'Qwen2.5 7B（硅基流动 free）' },
-    { value: 'glm-4-flash', label: 'GLM-4-Flash（智谱免费）' },
-    { value: 'gpt-4o-mini', label: 'gpt-4o-mini（OpenAI）' },
-    { value: 'ernie-4.5-turbo-32k', label: 'ernie-4.5-turbo-32k（千帆最便宜）' },
-  ],
-  reasoning: [
-    { value: 'deepseek-v4-pro', label: 'deepseek-v4-pro' },
-    { value: 'deepseek-ai/DeepSeek-V4-Flash', label: 'DeepSeek-V4-Flash（硅基流动）' },
-    { value: 'quiet-star/glm-4.6', label: 'GLM-4.6' },
-  ],
-};
+/* AI 服务商 / 模型清单 / 常用模型：都在 lib/ai-providers.js（与弹窗、首次设置向导、后台共用一份） */
 
 function populateModelSelect(provider, selectedModel, selId) {
   const sel = document.getElementById(selId || 'apiModel');
@@ -555,7 +218,7 @@ function onProviderChange() {
 
 document.getElementById('apiProvider')?.addEventListener('change', onProviderChange);
 
-/* 多模态模型：提供商切换时同步 Base URL + 模型下拉 */
+/* 备用 / 看图模型：提供商切换时同步 Base URL + 模型下拉 */
 document.getElementById('fallbackApiProvider')?.addEventListener('change', () => {
   const provider = document.getElementById('fallbackApiProvider').value;
   const customGroup = document.getElementById('fallbackCustomBaseUrlGroup');
@@ -610,7 +273,7 @@ async function loadAiConfig() {
   document.getElementById('temperature').value = String(cfg.ai.temperature ?? 0.8);
   document.getElementById('maxTokens').value = String(cfg.ai.maxTokens || 2000);
 
-  // 多模态模型
+  // 备用 / 看图模型
   document.getElementById('fallbackApiKey').value = cfg.ai.fallbackApiKey || '';
   const fbBase = cfg.ai.fallbackApiBaseUrl || '';
   const fbModel = cfg.ai.fallbackModel || '';
@@ -638,6 +301,10 @@ document.getElementById('toggleFallbackApiKey')?.addEventListener('click', () =>
 });
 
 document.getElementById('saveAiBtn')?.addEventListener('click', async () => {
+  // 服务商域名授权必须在点击手势里、其他 await 之前要（火山方舟没写进 manifest host_permissions）
+  const grantedMain = await ensureProviderHostGranted(document.getElementById('apiProvider').value);
+  const grantedFb = await ensureProviderHostGranted(document.getElementById('fallbackApiProvider').value);
+  const granted = grantedMain && grantedFb;
   const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
   cfg.ai.apiKey = document.getElementById('apiKey').value.trim();
   const provider = document.getElementById('apiProvider').value;
@@ -652,7 +319,7 @@ document.getElementById('saveAiBtn')?.addEventListener('click', async () => {
   delete cfg.ai._prevModel;
   cfg.ai.temperature = parseFloat(document.getElementById('temperature').value) || 0.8;
   cfg.ai.maxTokens = parseInt(document.getElementById('maxTokens').value) || 2000;
-  // 多模态模型
+  // 备用 / 看图模型
   cfg.ai.fallbackApiKey = document.getElementById('fallbackApiKey').value.trim() || '';
   const fbProvider = document.getElementById('fallbackApiProvider').value;
   if (fbProvider === 'custom') {
@@ -666,7 +333,10 @@ document.getElementById('saveAiBtn')?.addEventListener('click', async () => {
     cfg.ai.fallbackApiKey = cfg.ai.fallbackApiBaseUrl = cfg.ai.fallbackModel = '';
   }
   await setStorage('config', cfg);
-  showMsg('aiSaveMsg', '✅ 已保存' + (cfg.ai.fallbackApiKey ? '（含多模态模型）' : ''), 'ok');
+  showMsg('aiSaveMsg',
+    granted ? '✅ 已保存' + (cfg.ai.fallbackApiKey ? '（含备用模型）' : '')
+            : '⚠️ 已保存，但服务商域名的访问授权没拿到——调用时会被浏览器拦下（再点一次保存，并在弹窗里选「允许」）',
+    granted ? 'ok' : 'err');
 });
 
 document.getElementById('testAiBtn')?.addEventListener('click', async () => {
@@ -675,6 +345,9 @@ document.getElementById('testAiBtn')?.addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = '测试中...';
   resultEl.style.display = 'none';
+
+  // 域名授权必须在点击手势里、其他 await 之前要（没授权的话下面只会测出「网络错误」）
+  const grantedTest = await ensureProviderHostGranted(document.getElementById('apiProvider').value);
 
   const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
   // 先用页面上当前选择的值（可能尚未保存）
@@ -692,7 +365,7 @@ document.getElementById('testAiBtn')?.addEventListener('click', async () => {
     temperature: 0, maxTokens: 512,
   };
 
-  // 多模态模型（若已填）
+  // 备用 / 看图模型（若已填）
   const fbKey = document.getElementById('fallbackApiKey').value.trim() || cfg.ai.fallbackApiKey;
   let fallback = null;
   if (fbKey) {
@@ -720,7 +393,10 @@ document.getElementById('testAiBtn')?.addEventListener('click', async () => {
   };
 
   const lines = [await tryOne('Chat 模型', primary)];
-  if (fallback) lines.push(await tryOne('多模态模型', fallback));
+  if (fallback) lines.push(await tryOne('备用（看图）模型', fallback));
+  if (!grantedTest) {
+    lines.unshift('⚠️ 未拿到该服务商域名的访问授权，下面的失败多半是被浏览器跨域拦下——先点「保存 AI 配置」并在弹窗里选「允许」，再回来测');
+  }
 
   resultEl.style.display = 'block';
   resultEl.className = 'test-result ' + (lines.some(l => l.includes('✅')) ? 'ok' : 'err');
@@ -731,562 +407,151 @@ document.getElementById('testAiBtn')?.addEventListener('click', async () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 话术风格
+// 🔔 线索（弹窗「线索」下面的两页）
+//   · 设置    #tab-leadtouch ＝ 扫描节奏两件：整轮扫描间隔（多久扫一次新线索）+ 新消息监听（对方刚回早点知道）
+//   · 任务配置 #tab-leadtask  ＝ 触达场合（私信 / 通知回访）AI 说话带什么去向：🎙 渠道基调 / 💰 成交引导
+//   基调/引导讲的是私信 / 通知回访这类触达场合的承接，可以更直接；评论里的承接在「获客 → 任务配置 → 🎯 推广目标」
 // ══════════════════════════════════════════════════════════════
-async function loadStyleConfig() {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  const ss = cfg.scriptStyle || {};
-  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  // 字数控制（评论目的版：单范围；兼容旧统一 minChars/maxChars）
-  setVal('purposeMinChars', ss.purposeMinChars ?? ss.minChars ?? (ss.aMinChars ?? 100));
-  setVal('purposeMaxChars', ss.purposeMaxChars ?? ss.maxChars ?? (ss.aMaxChars ?? 300));
-  // 评论目的
-  setVal('scriptPurposeSelect', ss.scriptPurpose || 'sell');
-  // 反AI味：口癖池 + 口吻样本
-  setVal('toneMannerisms', ss.toneMannerisms || '');
-  setVal('personaSample', ss.personaSample || '');
-  initStyleTemplates();
-}
+const TR_CH_META = { comment: '💬 评论/回复', like: '👍 点赞/收藏', follow: '👣 关注', ai: '🧠 AI抓回' };
+const TR_CH_DESC = {
+  comment: '先接住对方评论原话话题，再带一句产品/引导',
+  like: '顺着TA赞的话题续下去，再带销售/引导',
+  follow: '破冰自我介绍 + 价值预告 + 引导',
+  ai: '破冰呼应需求 + 引导',
+};
+const TR_GUIDE_DEFAULT = '私信我';   // 成交引导留空时的兜底（与后台 handleChannelDraftForPerson 同一口径）
 
-// ══════════════ 账号人设管理器（显示 / AI建人设 / 保存 / 重置） ══════════════
-const PERSONA_QUESTIONS = [
-  '你是谁？介绍一下你的身份、职业，或现在正在做的事。',
-  '在这个领域/产品上你有过哪些真实的经历？做了多久、帮过多少人、或亲自踩过哪些坑。',
-  '你最拿手、最想让别人知道的干货或专业积累是什么？',
-  '你的小红书账号定位是什么？主要分享什么、写给谁看？',
-  '你希望评论区互动时的"人设感"是哪种（专业靠谱 / 接地气过来人 / 随性朋友…）？有没有特别的口吻或语气？',
-];
-let _personaBound = false;
-async function personaSay(method, data) {
-  return await chrome.runtime.sendMessage({ action: method, data: data || {} });
-}
-function personaSetStatus(html, cls) {
-  const el = document.getElementById('personaStatus'); if (!el) return;
-  el.innerHTML = html || ''; el.style.color = (cls === 'err' ? '#c62828' : cls === 'ok' ? '#0a7b5a' : '#666');
-}
-function personaRenderStatus(p) {
-  const st = document.getElementById('personaStatus'); if (!st) return;
-  if (p && p.text) {
-    const t = p.updatedAt ? new Date(p.updatedAt).toLocaleString('zh-CN') : '';
-    st.innerHTML = '<b>✅ 已保存人设</b>' + (t ? '（' + t + '）' : '') + '<br><span style="white-space:pre-wrap;">' + String(p.text).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</span>';
-    st.style.color = '#0a7b5a';
-  } else {
-    st.innerHTML = '⚠️ 还没有人设。点下方"用 AI 建人设"生成，或自己写一份保存。';
-    st.style.color = '#b8730a';
+// 本页挂载（#tab-leadtouch）：两件事——整轮扫描间隔 + 新消息监听，保存按钮共用，其余都在 任务配置 那页
+async function loadLeadTouch() {
+  const sel = document.getElementById('ltScanFreq');
+  if (sel) {
+    let on = false, iv = 20;
+    try {
+      on = (await getStorage('prospect_scan_auto')) === true;
+      iv = parseInt((await getStorage('prospect_scan_interval_min')) || '20', 10) || 20;
+    } catch (_) {}
+    sel.value = on ? String(iv) : 'off';
+    // 老数据里可能存过 2/10（当年没下限，后台实际按 20 跑）——落不到选项上就显示成 20
+    if (sel.selectedIndex < 0) sel.value = '20';
+  }
+  const mw = document.getElementById('mwFreq');
+  if (mw) {
+    let on = false, sec = 30;
+    try {
+      on = (await getStorage('msg_watch_on')) === true;
+      sec = parseInt((await getStorage('msg_watch_tick')) || '30', 10) || 30;
+    } catch (_) {}
+    mw.value = on ? String(sec) : 'off';
+    if (mw.selectedIndex < 0) mw.value = '30';   // 后台硬下限 30s，存过更小的值就显示成 30
   }
 }
-function _esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
-function personaRenderQuestions(qa) {
-  const wrap = document.getElementById('personaQuestions'); if (!wrap) return;
-  wrap.innerHTML = '';
-  PERSONA_QUESTIONS.forEach((q, i) => {
-    const val = (qa && qa['q' + (i + 1)]) ? String(qa['q' + (i + 1)]) : '';
-    const row = document.createElement('div'); row.style.marginBottom = '8px';
-    row.innerHTML = '<div style="font-size:12px;color:#333;margin-bottom:2px;">Q' + (i + 1) + '. ' + _esc(q) + '</div>' +
-      '<textarea class="personaQ" data-k="q' + (i + 1) + '" rows="2" style="width:100%;box-sizing:border-box;" placeholder="你的回答…">' + _esc(val) + '</textarea>';
-    wrap.appendChild(row);
-  });
-}
-async function loadPersonaManager() {
+
+// 落库：两件都走后台唯一入口（写 storage + 排/清闹钟）
+document.getElementById('ltSaveBtn')?.addEventListener('click', async () => {
+  const sel = document.getElementById('ltScanFreq');
+  const on = !!sel && sel.value !== 'off';
+  const iv = on ? Math.max(20, parseInt(sel.value, 10) || 20) : 0;
+  const mwSel = document.getElementById('mwFreq');
+  const mwOn = !!mwSel && mwSel.value !== 'off';
+  const mwSec = mwOn ? Math.max(30, parseInt(mwSel.value, 10) || 30) : 0;
   try {
-    const r = await personaSay('getPersona');
-    const p = (r && r.persona) || null;
-    personaRenderStatus(p);
-    personaRenderQuestions(p && p.qa ? p.qa : null);
-    if (p && p.bio) { const b = document.getElementById('personaBio'); if (b && !b.value) b.value = p.bio; }
-    if (p && p.text) { const m = document.getElementById('personaManual'); if (m && !m.value) m.value = p.text; }
+    const r = await chrome.runtime.sendMessage({ action: 'setAutoScanChat', data: { enabled: on, intervalMin: iv } });
+    if (!r || r.ok === false) throw new Error((r && r.error) || '保存失败');
+    const r2 = await chrome.runtime.sendMessage({ action: 'setMsgWatch', data: { enabled: mwOn, tickSec: mwSec } });
+    if (!r2 || r2.ok === false) throw new Error((r2 && r2.error) || '保存失败');
+  } catch (e) { showMsg('ltSaveMsg', '❌ ' + (e.message || e), 'err'); return; }
+  showMsg('ltSaveMsg', '✅ 已保存', 'ok');
+});
+
+// ── 📮 任务配置（#tab-leadtask）：页内四个横 tab（渠道基调 / 成交引导 / 话术配置 / 试问答），一次只显那一节 ──
+let _ltTaskSec = 'ch';
+function renderLtTaskSec(sec) {
+  _ltTaskSec = sec;
+  const box = document.getElementById('ltCfgTabs');
+  if (box) box.querySelectorAll('[data-sec]').forEach(b => b.classList.toggle('active', b.getAttribute('data-sec') === sec));
+  document.querySelectorAll('#tab-leadtask .cfgsec').forEach(d => {
+    d.style.display = d.getAttribute('data-sec') === sec ? '' : 'none';
+  });
+  // 页底那颗「保存」管的是渠道基调与成交引导；话术配置自己带「💾 保存全部」，试问答没有要存的
+  const bar = document.querySelector('#tab-leadtask .toolbar');
+  if (bar) bar.style.display = (sec === 'ch' || sec === 'guide') ? '' : 'none';
+  if (sec === 'qa') mountAiCsBody();
+}
+document.getElementById('ltCfgTabs')?.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-sec]');
+  if (b) renderLtTaskSec(b.getAttribute('data-sec'));
+});
+
+async function loadLeadTask() {
+  await loadTouchTone();
+  renderLtTaskSec(_ltTaskSec);
+}
+
+// 当前读到的 aiCs（channels 是整对象覆盖，保存时得把没改的键一起带着）
+let _trAiCs = null;
+async function loadTouchTone() {
+  const box = document.getElementById('trChannels');
+  if (!box) return;
+  // 渠道基调（四个渠道各干什么，每条可再补一句自己的基调）+ 字数：字数真源是「诊断&配置 → 人设 → 说话风格」，这里只读
+  let chars = {};
+  try { chars = (deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {})).scriptStyle || {}; } catch (_) { chars = {}; }
+  const mn = Number(chars.purposeMinChars) > 0 ? Number(chars.purposeMinChars) : 100;
+  const mx = Number(chars.purposeMaxChars) > 0 ? Number(chars.purposeMaxChars) : 300;
+  // 成交引导（私信 · 触达用）：存 aiCs.guide，与客服话术库同一份配置
+  let guide = {};
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'getAiCsConfig', data: {} });
+    if (r && r.ok) { _trAiCs = r.config || null; guide = (_trAiCs && _trAiCs.guide) || {}; }
   } catch (_) {}
-  personaBind();
-}
-function personaBind() {
-  if (_personaBound) return; _personaBound = true;
-  const readBtn = document.getElementById('personaReadBioBtn');
-  if (readBtn) readBtn.addEventListener('click', async () => {
-    readBtn.disabled = true; readBtn.textContent = '…读取中';
-    try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tab = tabs && tabs[0];
-      let desc = '', name = '';
-      if (tab && tab.id && /xiaohongshu\.com/.test(tab.url || '')) {
-        try { const r = await chrome.tabs.sendMessage(tab.id, { action: 'getProfileDesc' }); if (r && r.desc) { desc = r.desc; name = r.name || ''; } }
-        catch (_) {
-          try { await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }); await new Promise(r => setTimeout(r, 300)); } catch (_) {}
-          try { const r = await chrome.tabs.sendMessage(tab.id, { action: 'getProfileDesc' }); if (r && r.desc) { desc = r.desc; name = r.name || ''; } } catch (_) {}
-        }
-      }
-      if (desc) {
-        const b = document.getElementById('personaBio'); if (b) b.value = desc;
-        personaSetStatus((name ? '读到账号：' + _esc(name) + '；' : '') + '✅ 已读取简介，可以继续答题或直接建人设。', 'ok');
-      } else {
-        personaSetStatus('⚠️ 没抓到简介。请先打开【你自己小红书的主页】（能显示简介的那页）再点一次；或直接粘贴到下面输入框。', 'err');
-      }
-    } finally { readBtn.disabled = false; readBtn.textContent = '🧲 读取我当前打开的本主页简介'; }
-  });
-
-  const buildBtn = document.getElementById('personaBuildBtn');
-  if (buildBtn) buildBtn.addEventListener('click', async () => {
-    buildBtn.disabled = true; buildBtn.textContent = '⏳ AI 整合中…';
-    const bio = (document.getElementById('personaBio') || {}).value ? document.getElementById('personaBio').value.trim() : '';
-    const answers = Array.from(document.querySelectorAll('.personaQ')).map(el => ({ answer: el.value }));
-    const msg = document.getElementById('personaBuildMsg'); if (msg) msg.textContent = '';
-    try {
-      const r = await personaSay('aiPersonaBuild', { bio, answers });
-      if (r && r.persona && r.persona.text) {
-        const saved = await personaSay('setPersona', { persona: r.persona });
-        personaRenderStatus(saved && saved.persona ? saved.persona : r.persona);
-        const m = document.getElementById('personaManual'); if (m) m.value = r.persona.text;
-        if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 已生成并保存人设。'; }
-      } else { throw new Error((r && r.error) || 'AI 未返回人设'); }
-    } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ ' + (e.message || e); } }
-    finally { buildBtn.disabled = false; buildBtn.textContent = '✨ 用 AI 整理成人设并保存'; }
-  });
-
-  const saveBtn = document.getElementById('personaSaveManualBtn');
-  if (saveBtn) saveBtn.addEventListener('click', async () => {
-    const text = (document.getElementById('personaManual') || {}).value ? document.getElementById('personaManual').value.trim() : '';
-    if (!text) { personaSetStatus('⚠️ 请先在"或自己写一份人设"里填内容再保存。', 'err'); return; }
-    try {
-      const bio = (document.getElementById('personaBio') || {}).value ? document.getElementById('personaBio').value.trim() : '';
-      const answers = Array.from(document.querySelectorAll('.personaQ')).map(el => ({ answer: el.value }));
-      const qa = {}; PERSONA_QUESTIONS.forEach((_, i) => { qa['q' + (i + 1)] = answers[i] ? answers[i].answer : ''; });
-      const saved = await personaSay('setPersona', { persona: { text, bio, qa, updatedAt: Date.now() } });
-      if (saved && saved.ok) { personaRenderStatus(saved.persona); personaSetStatus(''); }
-      else throw new Error('后台没返回成功');
-    } catch (e) { personaSetStatus('❌ 保存失败：' + (e.message || e), 'err'); }
-  });
-
-  const resetBtn = document.getElementById('personaResetBtn');
-  if (resetBtn) resetBtn.addEventListener('click', async () => {
-    if (!confirm('确认重置账号人设？重置后需重新填写/重新生成。')) return;
-    try { await personaSay('clearPersona'); } catch (_) {}
-    const b = document.getElementById('personaBio'); if (b) b.value = '';
-    const m = document.getElementById('personaManual'); if (m) m.value = '';
-    personaRenderQuestions(null);
-    personaRenderStatus(null);
-  });
+  const chs = (_trAiCs && _trAiCs.channels) || {};
+  // 表格填空（2026-09-25 三十一改）：原来是四张卡（各带一段说明 + 一个输入框），换成一张表——
+  // 「渠道 / 系统怎么说 / 你的基调」三列，第三列直接填；说明挪到列头，字数口径挪到表脚
+  box.innerHTML =
+    '<div class="tr-ch-wrap">' +
+      '<table class="tr-ch-table" aria-label="渠道基调">' +
+        '<colgroup><col class="tr-ch-c1"><col class="tr-ch-c2"><col class="tr-ch-c3"></colgroup>' +
+        '<thead><tr><th scope="col">渠道</th><th scope="col">系统怎么说</th><th scope="col">你的基调</th></tr></thead>' +
+        '<tbody>' + Object.keys(TR_CH_META).map(k => {
+          const c = chs[k] || {};
+          return '<tr>' +
+            '<td class="tr-ch-name">' + TR_CH_META[k] + '</td>' +
+            '<td class="tr-ch-desc">' + TR_CH_DESC[k] + '</td>' +
+            '<td><input type="text" class="tr-ch-tone" data-ch="' + k + '" maxlength="60" value="' + esc(String(c.tone || '')) + '" ' +
+            'placeholder="留空＝只用系统那套" title="例：先聊两句家常再谈正事"></td>' +
+            '</tr>';
+        }).join('') + '</tbody>' +
+      '</table>' +
+      '<div class="tr-ch-foot">字数跟随「诊断&amp;配置 → 人设 → 说话风格」：<b>' + mn + '~' + mx + '</b> 字（要改去那里，四个渠道一起生效）</div>' +
+    '</div>';
+  const d = document.getElementById('trGuideDeliver'); if (d) d.value = guide.deliver || TR_GUIDE_DEFAULT;   // 默认「私信我」，看得见的就是会用的
 }
 
-// ── 推广目标（基本配置 Tab）：目标决定判定口径 + 引导去哪；话术打法由「话术风格」Tab 的「评论目的」决定
-//   guide: null = 工具引流，去向由用户在区块内的输入框填写；'' = 不引流；其他 = 固定去向
-const STYLE_TEMPLATES = {
-  tool: {
-    name: '🛠️ 工具/应用引流（引导对方去用你的产品，如小程序/App/网站）',
-    guide: null,
-    a: '', b: '', c: '',
-  },
-  brand: {
-    name: '🏷️ 品牌推广（只卖品牌价值，不引流）',
-    guide: '',
-    a: '', b: '', c: '',
-  },
-  profile: {
-    name: '👤 个人主页引流（涨粉/把人沉淀到自己主页）',
-    guide: '个人主页（点头像进入）',
-    a: '', b: '', c: '',
-  },
-};
-
-function initStyleTemplates() {
-  const sel = document.getElementById('styleTemplateSelect');
-  if (!sel || sel.options.length > 1) return; // 已填充过
-  Object.keys(STYLE_TEMPLATES).forEach(key => {
-    const opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = STYLE_TEMPLATES[key].name;
-    sel.appendChild(opt);
+// 落库：写进 aiCs.guide + 各渠道 tone（channels 是整对象覆盖，先把读到的原值铺开再改 tone）
+async function saveTouchTone() {
+  const d = document.getElementById('trGuideDeliver');
+  if (!d) return;
+  const deliver = (d.value || '').trim();
+  const channels = {};
+  const src = (_trAiCs && _trAiCs.channels) || {};
+  Object.keys(TR_CH_META).forEach(k => {
+    const el = document.querySelector('.tr-ch-tone[data-ch="' + k + '"]');
+    channels[k] = Object.assign({}, src[k] || {}, { tone: el ? String(el.value || '').trim() : String((src[k] || {}).tone || '') });
   });
+  const r = await chrome.runtime.sendMessage({ action: 'saveAiCsConfig', data: { partial: { guide: { deliver, tips: '' }, channels } } });
+  if (!r || !r.ok) throw new Error((r && r.error) || '保存失败');
+  if (r.config) _trAiCs = r.config;
 }
 
-// 按当前选中的推广目标切换引导去向输入框显隐与提示文案
-function updatePromoGoalUI(goal) {
-  const row = document.getElementById('guideRow');
-  const hint = document.getElementById('promoGoalHint');
-  if (!row || !hint) return;
-  row.style.display = goal === 'tool' ? 'block' : 'none';
-  const hints = {
-    '': '选推广目标后点「应用」，自动设定判定口径与引导去向并保存；话术打法请到「话术风格」Tab 选「评论目的」',
-    tool: '填写引导对方去哪（如：微信小程序/App），点「应用」后生效；话术会自然推荐对方去用你的产品',
-    brand: '品牌推广不引流：话术只讲品牌价值与口碑，不会引导去任何平台/主页，无需填写去向',
-    profile: '自动引导对方点头像进入你的个人主页，无需填写去向',
-  };
-  hint.innerHTML = hints[goal] || hints[''];
-}
-
-document.getElementById('styleTemplateSelect')?.addEventListener('change', (e) => {
-  updatePromoGoalUI(e.target.value); // 只切 UI，点「应用」才落库
+document.getElementById('ltToneSaveBtn')?.addEventListener('click', async () => {
+  try { await saveTouchTone(); } catch (e) { showMsg('ltToneMsg', '❌ ' + (e.message || e), 'err'); return; }
+  showMsg('ltToneMsg', '✅ 已保存', 'ok');
 });
 
-document.getElementById('applyStyleTemplateBtn')?.addEventListener('click', async () => {
-  const key = document.getElementById('styleTemplateSelect').value;
-  if (!key || !STYLE_TEMPLATES[key]) { showMsg('productSaveMsg', '请先选择推广目标', 'err'); return; }
-  const tpl = STYLE_TEMPLATES[key];
-  const guideInput = document.getElementById('productGuide');
-  // 引导去向：工具引流取用户输入（必填），其余目标由样板固定
-  let guideVal;
-  if (tpl.guide === null) {
-    guideVal = guideInput.value.trim();
-    if (!guideVal) { showMsg('productSaveMsg', '请先填写引导去向（例：微信小程序）再应用', 'err'); guideInput.focus(); return; }
-  } else {
-    guideVal = tpl.guide;
-  }
-  const guideDesc = guideVal === '' ? '不引流（只讲品牌价值）' : '引导去向设为「' + guideVal + '」';
-  if (!confirm('将应用「' + tpl.name + '」：\n\n1. ' + guideDesc + '\n2. 设定评论判定的口径（话术打法由「话术风格」Tab 的「评论目的」决定，不受此影响）\n\n应用后立即保存生效，继续？')) return;
-  // 1) 同步表单 UI
-  guideInput.value = guideVal;
-  // 2) 直接落库（只动推广目标/引导去向，不碰基本配置其他未保存项；话术风格已改用「评论目的」体系）
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  cfg.product.promoGoal = key;
-  cfg.product.guideText = guideVal;
-  await setStorage('config', cfg);
-  showMsg('productSaveMsg', '✅ 已应用并保存：' + guideDesc + '（判定口径已切换，打法请到「话术风格」Tab 选评论目的）', 'ok');
-});
-
-document.getElementById('saveStyleBtn')?.addEventListener('click', async () => {
-  const cfg = deepMerge(DEFAULT_CONFIG, (await getStorage('config')) || {});
-  // 字数控制（单范围，校验 + 自动纠正大小关系）
-  const readPair = (minId, maxId, dMin, dMax) => {
-    let mn = parseInt(document.getElementById(minId)?.value, 10);
-    let mx = parseInt(document.getElementById(maxId)?.value, 10);
-    if (!Number.isFinite(mn) || mn <= 0) mn = dMin;
-    if (!Number.isFinite(mx) || mx <= 0) mx = dMax;
-    if (mn > mx) { const t = mn; mn = mx; mx = t; }
-    return [mn, mx];
-  };
-  const [pMn, pMx] = readPair('purposeMinChars', 'purposeMaxChars', 100, 300);
-  cfg.scriptStyle.purposeMinChars = pMn;
-  cfg.scriptStyle.purposeMaxChars = pMx;
-  // 清理旧字数字段与旧 A/B/C 风格字段，避免混淆（新流程不再读取）
-  delete cfg.scriptStyle.minChars; delete cfg.scriptStyle.maxChars;
-  delete cfg.scriptStyle.aMinChars; delete cfg.scriptStyle.aMaxChars;
-  delete cfg.scriptStyle.bMinChars; delete cfg.scriptStyle.bMaxChars;
-  delete cfg.scriptStyle.cMinChars; delete cfg.scriptStyle.cMaxChars;
-  delete cfg.scriptStyle.versionAStyle; delete cfg.scriptStyle.versionBStyle; delete cfg.scriptStyle.versionCStyle;
-  // 评论目的 + 反AI味配置
-  cfg.scriptStyle.scriptPurpose = document.getElementById('scriptPurposeSelect').value || 'sell';
-  cfg.scriptStyle.toneMannerisms = document.getElementById('toneMannerisms').value.trim();
-  cfg.scriptStyle.personaSample = document.getElementById('personaSample').value.trim();
-  await setStorage('config', cfg);
-  const nameMap = { sell: '卖产品', brand: '品牌种草', profile: '主页涨粉', likes: '互动涨赞', trend: '蹭热点', auto: '综合自动' };
-  showMsg('styleSaveMsg', '✅ 已保存（目的：' + (nameMap[cfg.scriptStyle.scriptPurpose] || cfg.scriptStyle.scriptPurpose) + ' · 字数 ' + pMn + '-' + pMx + ' 字）', 'ok');
-});
-
-// ══════════════════════════════════════════════════════════════
-// 知识库
-// ══════════════════════════════════════════════════════════════
-let kbData = [], kbEditId = null;
-
-async function loadKnowledgeBase() {
-  kbData = (await getStorage('knowledge_base')) || [];
-  updateKbTagFilter();
-  renderKbList();
-}
-
-// 更新标签筛选下拉框
-function updateKbTagFilter() {
-  const select = document.getElementById('kbTagFilter');
-  if (!select) return;
-  const currentVal = select.value;
-  // 收集所有唯一标签
-  const allTags = new Set();
-  kbData.forEach(e => {
-    if (Array.isArray(e.tags)) {
-      e.tags.forEach(t => { if (t && t.trim()) allTags.add(t.trim()); });
-    }
-  });
-  // 重建选项
-  select.innerHTML = '<option value="">全部标签</option>';
-  [...allTags].sort().forEach(tag => {
-    const opt = document.createElement('option');
-    opt.value = tag;
-    opt.textContent = tag;
-    select.appendChild(opt);
-  });
-  // 恢复之前的选择
-  if (currentVal && allTags.has(currentVal)) {
-    select.value = currentVal;
-  }
-}
-
-function renderKbList() {
-  const list = document.getElementById('kbList');
-  if (!list) return;
-  const q = (document.getElementById('kbSearch')?.value || '').toLowerCase();
-  const selectedTag = document.getElementById('kbTagFilter')?.value || '';
-  const filtered = kbData.filter(e => {
-    // 搜索文本过滤
-    const matchSearch = !q || (e.title || '').toLowerCase().includes(q) || (e.content || '').toLowerCase().includes(q);
-    // 标签过滤
-    const matchTag = !selectedTag || (Array.isArray(e.tags) && e.tags.some(t => t.trim() === selectedTag));
-    return matchSearch && matchTag;
-  });
-  list.innerHTML = '';
-  if (filtered.length === 0) {
-    list.innerHTML = '<div class="empty-tip">暂无匹配条目</div>';
-    return;
-  }
-  filtered.forEach(entry => {
-    const card = document.createElement('div');
-    card.className = 'item-card' + (entry.isActive === false ? ' inactive' : '');
-    const tags = Array.isArray(entry.tags) ? entry.tags.map(t => `<span class="item-tag">${esc(t)}</span>`).join('') : '';
-    const roleBadge = entry.role ? `<span class="item-tag" style="background:#e8f4fd;color:#1a73e8;">${esc(entry.role)}</span>` : '';
-    const imageBadge = entry.image ? `<span class="item-tag" style="background:#fef3c7;color:#d97706;">🖼️ 有图</span>` : '';
-    card.innerHTML = `
-      <div class="item-info">
-        <div class="item-title">${esc(entry.title || '（无标题）')}</div>
-        <div class="item-meta">${roleBadge} ${imageBadge} ${esc(entry.category || '通用')} · ${formatDate(entry.createdAt)} ${tags}</div>
-        <div class="item-content">${esc((entry.content || '').slice(0, 120))}${(entry.content || '').length > 120 ? '...' : ''}</div>
-      </div>
-      <div class="item-actions">
-        <button class="btn-secondary btn-sm edit-kb-btn" data-id="${esc(entry.id)}">编辑</button>
-        <button class="btn-danger del-kb-btn" data-id="${esc(entry.id)}">删除</button>
-      </div>`;
-    list.appendChild(card);
-  });
-  list.querySelectorAll('.edit-kb-btn').forEach(b => b.addEventListener('click', () => openKbModal(b.dataset.id)));
-  list.querySelectorAll('.del-kb-btn').forEach(b => b.addEventListener('click', () => deleteKbEntry(b.dataset.id)));
-}
-
-function openKbModal(id) {
-  kbEditId = id || null;
-  const entry = id ? kbData.find(e => e.id === id) : null;
-  document.getElementById('kbModalTitle').textContent = id ? '编辑条目' : '添加知识库条目';
-  document.getElementById('kbTitle').value = entry?.title || '';
-  document.getElementById('kbCategory').value = entry?.category || '';
-  document.getElementById('kbContent').value = entry?.content || '';
-  document.getElementById('kbTags').value = Array.isArray(entry?.tags) ? entry.tags.join(', ') : '';
-  document.getElementById('kbRole').value = entry?.role || '';
-  document.getElementById('kbIsActive').checked = entry ? (entry.isActive !== false) : true;
-  // 图片预览
-  const imgPreview = document.getElementById('kbImagePreview');
-  const imgInput = document.getElementById('kbImageInput');
-  const imgDelete = document.getElementById('kbImageDelete');
-  if (entry?.image) {
-    imgPreview.src = entry.image;
-    imgPreview.style.display = 'block';
-    imgDelete.style.display = 'inline-block';
-  } else {
-    imgPreview.style.display = 'none';
-    imgPreview.src = '';
-    imgDelete.style.display = 'none';
-  }
-  if (imgInput) imgInput.value = '';
-  document.getElementById('kbModal').style.display = 'flex';
-}
-
-function closeKbModal() { document.getElementById('kbModal').style.display = 'none'; }
-
-async function saveKbEntry() {
-  const title = document.getElementById('kbTitle').value.trim();
-  const content = document.getElementById('kbContent').value.trim();
-  if (!title || !content) { alert('标题和内容不能为空'); return; }
-  
-  // 处理图片
-  let image = null;
-  const imgInput = document.getElementById('kbImageInput');
-  const imgFile = imgInput?.files?.[0];
-  
-  if (imgFile) {
-    // 有新图片，读取为 base64
-    image = await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.readAsDataURL(imgFile);
-    });
-  } else if (kbEditId) {
-    // 编辑模式且无新图，保留原图
-    const existing = kbData.find(e => e.id === kbEditId);
-    image = existing?.image || null;
-  }
-  
-  const entry = {
-    id: kbEditId || (Date.now().toString()),
-    title,
-    category: document.getElementById('kbCategory').value.trim() || '通用',
-    content,
-    tags: document.getElementById('kbTags').value.split(',').map(t => t.trim()).filter(Boolean),
-    role: document.getElementById('kbRole').value.trim() || '',
-    isActive: document.getElementById('kbIsActive').checked,
-    image: image,
-    createdAt: kbEditId ? (kbData.find(e => e.id === kbEditId)?.createdAt || Date.now()) : Date.now(),
-  };
-  if (kbEditId) {
-    const idx = kbData.findIndex(e => e.id === kbEditId);
-    if (idx >= 0) kbData[idx] = entry;
-  } else {
-    kbData.push(entry);
-  }
-  await setStorage('knowledge_base', kbData);
-  closeKbModal();
-  updateKbTagFilter();
-  renderKbList();
-}
-
-async function deleteKbEntry(id) {
-  if (!confirm('确认删除这条知识库条目？')) return;
-  kbData = kbData.filter(e => e.id !== id);
-  await setStorage('knowledge_base', kbData);
-  updateKbTagFilter();
-  renderKbList();
-}
-
-document.getElementById('addKbBtn')?.addEventListener('click', () => openKbModal(null));
-document.getElementById('closeKbModal')?.addEventListener('click', closeKbModal);
-document.getElementById('cancelKbModal')?.addEventListener('click', closeKbModal);
-document.getElementById('saveKbEntry')?.addEventListener('click', saveKbEntry);
-
-// 图片上传预览
-document.getElementById('kbImageInput')?.addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  const preview = document.getElementById('kbImagePreview');
-  const deleteBtn = document.getElementById('kbImageDelete');
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      preview.src = ev.target.result;
-      preview.style.display = 'block';
-      deleteBtn.style.display = 'inline-block';
-    };
-    reader.readAsDataURL(file);
-  }
-});
-
-// 删除图片
-document.getElementById('kbImageDelete')?.addEventListener('click', function() {
-  const preview = document.getElementById('kbImagePreview');
-  const input = document.getElementById('kbImageInput');
-  preview.src = '';
-  preview.style.display = 'none';
-  this.style.display = 'none';
-  input.value = '';
-});
-
-document.getElementById('kbSearch')?.addEventListener('input', renderKbList);
-document.getElementById('kbTagFilter')?.addEventListener('change', renderKbList);
-document.getElementById('exportKbBtn')?.addEventListener('click', async () => {
-  const pw = await CryptoBox.askPassword({
-    title: '设置导出加密口令',
-    hint: '知识库导出为加密文件，请设一个口令并记牢；导入时要用同一个口令。',
-    okText: '加密导出', confirm: true,
-  });
-  if (!pw.ok) return;
-  try {
-    const enc = await CryptoBox.encryptFile(JSON.stringify(kbData), pw.password);
-    const blob = new Blob([enc], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `knowledge_base_enc_${Date.now()}.json`;
-    a.click();
-  } catch (e) { alert('导出失败：' + (e.message || e)); }
-});
-document.getElementById('clearKbBtn')?.addEventListener('click', async () => {
-  if (!confirm(`确认清空所有知识库条目？（共 ${kbData.length} 条）\n\n建议先导出备份再清空。`)) return;
-  kbData = [];
-  await setStorage('knowledge_base', kbData);
-  updateKbTagFilter();
-  renderKbList();
-});
-document.getElementById('importKbBtn')?.addEventListener('click', () => document.getElementById('kbImportFile').click());
-document.getElementById('kbImportFile')?.addEventListener('change', async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    let text = await file.text();
-    if (CryptoBox.isFileEnvelope(text)) {
-      const pw = await CryptoBox.askPassword({
-        title: '输入知识库口令',
-        hint: '这是加密导出的知识库文件，请输入导出时设置的口令。',
-        okText: '解密导入',
-      });
-      if (!pw.ok) { e.target.value = ''; return; }
-      text = await CryptoBox.decryptFile(text, pw.password);
-    }
-    const data = JSON.parse(text);
-    if (!Array.isArray(data)) { alert('JSON 格式错误，应为数组'); e.target.value = ''; return; }
-    if (!confirm(`导入 ${data.length} 条数据（将覆盖现有知识库）？`)) { e.target.value = ''; return; }
-    kbData = data;
-    await setStorage('knowledge_base', kbData);
-    updateKbTagFilter();
-    renderKbList();
-    alert('导入成功');
-  } catch (err) { alert('文件解析失败：' + ((err && err.message) || '请检查文件格式')); }
-  e.target.value = '';
-});
-
-// ══════════════════════════════════════════════════════════════
-// 提示词管理
-// ══════════════════════════════════════════════════════════════
-let promptsData = {}, currentPromptScene = null;
-
-// 默认提示词（内嵌，避免依赖 importScripts）
-const DEFAULT_PROMPTS_INLINE = {
-  prospect_finder: { scene_name: '商机发现（评论区挖掘）' },
-  prospect_screener: { scene_name: '商机快筛（AI 价值判断+抓取自检）' },
-};
-
-async function loadPrompts() {
-  promptsData = (await getStorage('prompts')) || {};
-  renderPromptSceneList();
-}
-
-function renderPromptSceneList() {
-  const list = document.getElementById('promptSceneList');
-  if (!list) return;
-  list.innerHTML = '';
-  Object.entries(DEFAULT_PROMPTS_INLINE).forEach(([scene, info]) => {
-    const item = document.createElement('div');
-    item.className = 'prompt-scene-item' + (scene === currentPromptScene ? ' active' : '');
-    item.textContent = info.scene_name;
-    item.dataset.scene = scene;
-    item.addEventListener('click', () => openPromptEditor(scene));
-    list.appendChild(item);
-  });
-}
-
-function openPromptEditor(scene) {
-  currentPromptScene = scene;
-  const prompt = promptsData[scene] || {};
-  const editor = document.getElementById('promptEditor');
-  if (!editor) return;
-
-  document.querySelectorAll('.prompt-scene-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.scene === scene);
-  });
-
-  editor.innerHTML = `
-    <div class="prompt-field">
-      <label>System Prompt（占位符会自动替换：{product_name} {product_guide} {product_description} {promo_goal_name} {promo_goal_rules} {purpose_name} {purpose_guidance} {purpose_catalog} {tone_words} {persona_sample} {purpose_min_chars}/{purpose_max_chars} {comments_text} {max_opportunities} 等）</label>
-      <textarea id="editSystemPrompt" style="height:420px">${esc(prompt.system_prompt || '')}</textarea>
-    </div>
-    <div class="prompt-field">
-      <label>User Prompt 模板（{note_title} {comments_text} {comment_content} 等占位符会自动替换）</label>
-      <textarea id="editUserPrompt" style="height:260px">${esc(prompt.user_prompt_template || '')}</textarea>
-    </div>
-    <div class="prompt-actions">
-      <button class="btn-primary" id="savePromptBtn">保存</button>
-      <button class="btn-secondary" id="resetPromptBtn">恢复默认</button>
-      <span id="promptSaveMsg" class="save-msg" style="margin-left:8px;align-self:center"></span>
-    </div>`;
-
-  document.getElementById('savePromptBtn')?.addEventListener('click', async () => {
-    // ★ 保存前提醒：插件升级/浏览器重启时会用最新默认模板覆盖自定义内容（设计如此，保证新版提示词一定生效）
-    if (!confirm('提醒：自定义提示词在插件升级或浏览器重启后，会被最新的默认模板覆盖（保证新版优化能生效）。\n\n建议自行备份修改内容。确认保存？')) return;
-    if (!promptsData[scene]) promptsData[scene] = {};
-    promptsData[scene].system_prompt = document.getElementById('editSystemPrompt').value;
-    promptsData[scene].user_prompt_template = document.getElementById('editUserPrompt').value;
-    promptsData[scene].scene_name = DEFAULT_PROMPTS_INLINE[scene]?.scene_name || scene;
-    await setStorage('prompts', promptsData);
-    showMsg('promptSaveMsg', '✅ 已保存', 'ok');
-  });
-
-  document.getElementById('resetPromptBtn')?.addEventListener('click', async () => {
-    if (!confirm(`确认恢复「${DEFAULT_PROMPTS_INLINE[scene]?.scene_name}」的默认提示词？`)) return;
-    // 从 background 获取默认值（需要插件安装时已初始化）
-    // 简化处理：直接清空用户自定义，让 background 使用 default-prompts.js 中的值
-    delete promptsData[scene];
-    await setStorage('prompts', promptsData);
-    openPromptEditor(scene);
-    showMsg('promptSaveMsg', '✅ 已恢复默认', 'ok');
-  });
+// 内嵌在弹窗里时，本页只留「新建 / 改名 / 删除」，切换当前产品统一走弹窗顶栏下拉框（改的是问号气泡里的字）
+function applyTenantIntro() {
+  if (!_EMBED) return;
+  const intro = document.getElementById('tenantIntro');
+  if (intro) intro.setAttribute('data-tip', '一个租户 = 一个产品。这一页负责新建 / 改名 / 删除；切换当前产品请点弹窗顶栏那个下拉框（🏢），切完整套配置、知识库、记录一起换。新建的租户是一张白纸（空知识库 / 默认提示词），建完在顶栏下拉框里选它即可切过去。');
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1338,117 +603,46 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 一键灌水（只保留灌水历史；搜索关键词已移到 popup 左上方输入框，调度功能早已下线）
+// 灌水频率与去重（原「一键灌水 → 灌水规则」页，已并进「拟人化与触达」）：
+// 上限存 note_trend_config（与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）；排序/类型归「任务配置·关键词池」，
+// 搜索页不再勾「未看过」筛选（去重靠笔记池的冷却/复核）
 // ══════════════════════════════════════════════════════════════
-async function loadAutoWaterConfig() {
-  await Promise.all([loadAutoWaterHistory(), loadAutoWaterRules()]);
-}
-
-/* ─── 灌水规则：上限（note_trend_config，与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）
-       + 搜索排序/范围（auto_water_config.filter，两种口径共用） ─── */
 const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 2 };
 const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
-const AW_FILTER_DEFAULT = { enabled: true, sort: 'rotate', scope: 'unseen' };
+// 「每轮最多处理」现在住在「⚙️ 高级配置」弹窗里：主页面那行「每轮处理」在弹窗关着时读这份缓存
+let _ntRoundCache = NT_DEFAULT_CONFIG.maxPerRound;
 
-async function loadAutoWaterRules() {
+async function loadWaterFreq() {
   try {
     const cfg = Object.assign({}, NT_DEFAULT_CONFIG, (await getStorage('note_trend_config')) || {});
+    _ntRoundCache = Math.max(0, parseInt(cfg.maxPerRound, 10) || 0);   // 挡位卡上的「每轮处理 xx 篇」用
     Object.entries(NT_EL_IDS).forEach(([k, id]) => {
       const el = document.getElementById(id);
       if (el) el.value = cfg[k];
     });
     const aw = (await getStorage('auto_water_config')) || {};
-    const f = aw.filter || aw.coldFilter || AW_FILTER_DEFAULT; // ★ 兼容旧版 coldFilter 未迁移的数据
-    const on = document.getElementById('awFilterOn'); if (on) on.checked = f.enabled !== false;
-    const sort = document.getElementById('awFilterSort'); if (sort) sort.value = f.sort || 'rotate';
-    const scope = document.getElementById('awFilterScope'); if (scope) scope.value = f.scope || '';
-    const msg = document.getElementById('awRulesSaveMsg');
-    if (msg) msg.textContent = '';
+    // 每轮篇数只有一份真源（note_trend_config.maxPerRound）：顺手把运行时的 schedule.perRound 对齐，
+    // 免得 UI 显示的篇数与 auto-bot 实际每轮上限是两套老值
+    if (Number(aw.schedule && aw.schedule.perRound) !== Number(cfg.maxPerRound)) {
+      aw.schedule = aw.schedule || {};
+      aw.schedule.perRound = Number(cfg.maxPerRound) || 0;
+      await setStorage('auto_water_config', aw);
+    }
   } catch (_) {}
 }
-
-document.getElementById('awRulesSaveBtn')?.addEventListener('click', async () => {
-  const cfg = {};
-  Object.entries(NT_EL_IDS).forEach(([k, id]) => {
-    const el = document.getElementById(id);
-    const v = parseInt(el ? el.value : '', 10);
-    if (!isNaN(v) && v > 0) cfg[k] = v;
-  });
-  await setStorage('note_trend_config', cfg);
-  const aw = (await getStorage('auto_water_config')) || {};
-  aw.filter = {
-    enabled: !!document.getElementById('awFilterOn')?.checked,
-    sort: document.getElementById('awFilterSort')?.value || 'rotate',
-    scope: document.getElementById('awFilterScope')?.value || '',
-  };
-  delete aw.coldFilter;    // 旧的两套筛选已并入 aw.filter
-  delete aw.cycleFilter;
-  await setStorage('auto_water_config', aw);
-  const msg = document.getElementById('awRulesSaveMsg');
-  if (msg) {
-    const sortLabel = aw.filter.sort === 'rotate' ? '轮换' : ({ likes: '点赞最多', collects: '收藏最多', comments: '评论最多' }[aw.filter.sort] || aw.filter.sort);
-    msg.textContent = '✅ 已保存：每轮最多 ' + cfg.maxPerRound + ' 篇 / 每篇最多 ' + cfg.maxPerNote + ' 次 / 冷却 ' + cfg.cooldownHours + 'h / 复核 ' + cfg.checkedHours + 'h / 间隔 ' + cfg.scanIntervalMin + 'min；筛选' + (aw.filter.enabled ? '开（' + sortLabel + (aw.filter.scope ? '·未看过' : '') + '）' : '关');
-    setTimeout(() => { msg.textContent = ''; }, 4000);
-  }
-});
-
-async function loadAutoWaterHistory() {
-  const history = (await getStorage('auto_water_history')) || {};
-  const entries = Object.entries(history).sort((a, b) => (b[1].wateredAt || 0) - (a[1].wateredAt || 0));
-  const countEl = document.getElementById('awHistoryCount');
-  const body = document.getElementById('awHistoryBody');
-  if (countEl) countEl.textContent = `共 ${entries.length} 条记录`;
-  if (body) {
-    body.innerHTML = '';
-    if (entries.length === 0) {
-      body.innerHTML = '<tr><td colspan="3" style="padding:18px;text-align:center;color:#999;">暂无灌水历史</td></tr>';
-      return;
-    }
-    for (const [noteId, rec] of entries.slice(0, 100)) {
-      const tr = document.createElement('tr');
-      tr.style.borderBottom = '1px solid #f0f0f0';
-      const statusMap = { success: '✅ 成功', failed: '❌ 失败', no_prospect: '⚠️ 无商机' };
-      const statusText = statusMap[rec.status] || rec.status || '-';
-      const time = rec.wateredAt ? new Date(rec.wateredAt).toLocaleString() : '-';
-      tr.innerHTML = `
-        <td style="padding:5px 8px;" title="${esc(rec.url || '')}">${esc((rec.title || noteId).slice(0, 30))}</td>
-        <td style="padding:5px 8px;">${statusText}</td>
-        <td style="padding:5px 8px;">${time}</td>`;
-      body.appendChild(tr);
-    }
-  }
-}
-
-// 清空历史
-document.getElementById('awClearHistoryBtn')?.addEventListener('click', async () => {
-  if (!confirm('确认清空所有灌水历史？')) return;
-  await setStorage('auto_water_history', {});
-  loadAutoWaterHistory();
-});
 
 // ══════════════════════════════════════════════════════════════
 // 停留时间（delay_config：区间随机 min~max，单位毫秒，默认 = 技术下限：能跑通的最快值）
 // ══════════════════════════════════════════════════════════════
 const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0} };
-// 拟人推荐值 = 区间（min~max 随机）
-const DELAY_RECOMMEND = { browseDwell: {min:1200,max:2000}, typingCharDelay: {min:15,max:30}, likeGap: {min:300,max:600}, lazyLoadWait: {min:700,max:1100}, retryBackWait: {min:500,max:900}, retryOpenWait: {min:1100,max:2200}, noteOpenBuffer: {min:400,max:800}, preSendGap: {min:300,max:500}, batchItemGap: {min:4000,max:8000} };
 const DELAY_KEYS = Object.keys(DELAY_DEFAULT);
 
-// ═══ 拟人化挡位（0~5）：一键套用整套「停留/间隔」，挡位越高越慢越安全 ═══
-const DELAY_PRESETS = [
-  { level:0, name:'极速 · 裸跑', daily:'不限', desc:'不做停留与逐字输入延时，跑得最快。仅建议单篇测试用，不建议上量。批量点赞仍保留 300ms 保底间隔。',
-    cfg:{ browseDwell:{min:0,max:0}, typingCharDelay:{min:0,max:0}, likeGap:{min:300,max:300}, lazyLoadWait:{min:300,max:300}, retryBackWait:{min:300,max:300}, retryOpenWait:{min:800,max:800}, noteOpenBuffer:{min:300,max:300}, preSendGap:{min:400,max:400}, batchItemGap:{min:0,max:0} } },
-  { level:1, name:'轻装 · 单篇/少量', daily:'≤20', desc:'只留底线缓冲，适合快速试探或低量测试。',
-    cfg:{ browseDwell:{min:500,max:1000}, typingCharDelay:{min:0,max:0}, likeGap:{min:300,max:500}, lazyLoadWait:{min:300,max:600}, retryBackWait:{min:300,max:500}, retryOpenWait:{min:800,max:1200}, noteOpenBuffer:{min:300,max:500}, preSendGap:{min:300,max:600}, batchItemGap:{min:1000,max:2000} } },
-  { level:2, name:'标准拟人（推荐默认）', daily:'≤10', desc:'自然浏览停留/逐字输入/点赞间隔/条间间隔，日常稳定，推荐使用。',
-    cfg:{ browseDwell:{min:1200,max:2000}, typingCharDelay:{min:15,max:30}, likeGap:{min:300,max:600}, lazyLoadWait:{min:700,max:1100}, retryBackWait:{min:500,max:900}, retryOpenWait:{min:1100,max:2200}, noteOpenBuffer:{min:500,max:900}, preSendGap:{min:400,max:700}, batchItemGap:{min:4000,max:8000} } },
-  { level:3, name:'保守拟人', daily:'≤8', desc:'间隔拉长约一倍，加思考停顿，适合对量不敏感但求稳。',
-    cfg:{ browseDwell:{min:2000,max:4000}, typingCharDelay:{min:20,max:40}, likeGap:{min:800,max:1500}, lazyLoadWait:{min:1200,max:2000}, retryBackWait:{min:900,max:1500}, retryOpenWait:{min:2000,max:3500}, noteOpenBuffer:{min:1000,max:1800}, preSendGap:{min:800,max:1200}, batchItemGap:{min:8000,max:15000} } },
-  { level:4, name:'重度拟人 · 新号起步', daily:'≤5', desc:'更长随机间隔，适合新号起步或流量不稳定期。',
-    cfg:{ browseDwell:{min:4000,max:8000}, typingCharDelay:{min:30,max:50}, likeGap:{min:1500,max:3000}, lazyLoadWait:{min:2000,max:3500}, retryBackWait:{min:1500,max:2500}, retryOpenWait:{min:3000,max:5000}, noteOpenBuffer:{min:1800,max:3000}, preSendGap:{min:1200,max:2000}, batchItemGap:{min:15000,max:30000} } },
-  { level:5, name:'极致从容', daily:'≤3', desc:'每步都留足停顿、超长随机，单篇耗时数分钟，节奏最缓。',
-    cfg:{ browseDwell:{min:8000,max:15000}, typingCharDelay:{min:40,max:80}, likeGap:{min:3000,max:6000}, lazyLoadWait:{min:3500,max:6000}, retryBackWait:{min:2500,max:4000}, retryOpenWait:{min:5000,max:8000}, noteOpenBuffer:{min:3000,max:5000}, preSendGap:{min:1500,max:2500}, batchItemGap:{min:30000,max:60000} } },
-];
+// ═══ 拟人化挡位（0~5）：表在 lib/delay-presets.js（与弹窗顶部选择器同一张） ═══
+// 挡位刻度（0 极速·裸跑 … 5 极致从容）由表渲染，别再手写一份
+function renderDelayTicks() {
+  const row = document.getElementById('delayTickRow'); if (!row) return;
+  row.innerHTML = DELAY_PRESETS.map(p => `<span>${p.level} ${p.short}</span>`).join('');
+}
 
 function _delayVal(k) {
   const c = DELAY_DEFAULT[k];
@@ -1475,8 +669,7 @@ async function loadDelayConfig() {
   if (followChk) followChk.checked = bh.autoFollow !== false;
   const everyInput = document.getElementById('bhFollowEvery');
   if (everyInput) everyInput.value = Math.max(1, parseInt(bh.followEvery, 10) || 1);
-  const scanChk = document.getElementById('bhAutoScanChat');
-  if (scanChk) { const psa = (await getStorage('prospect_scan_auto')); scanChk.checked = psa === true; }
+  await loadWaterFreq();   // 预计灌完要读「灌水频率与去重 → 每轮最多处理」的值，先填上
   await presetOnLoad();
 }
 
@@ -1493,7 +686,29 @@ function fillDelayInputs(values) {
   }
 }
 
-document.getElementById('delaySaveBtn')?.addEventListener('click', async () => {
+/* ─── ⚙️ 高级配置弹窗：灌水上限与冷却 / 各环节停留 / 互动行为一起保存 ───
+   主页面只留挡位（2026-09-25）：以前这些是平铺的，保存按钮也在页尾，用户看不完也看不懂 */
+function openDelayAdv() {
+  const m = document.getElementById('delayAdvModal');
+  if (!m) return;
+  showMsg('delayAdvMsg', '');
+  m.style.display = 'flex';
+}
+function closeDelayAdv() {
+  const m = document.getElementById('delayAdvModal');
+  if (m) m.style.display = 'none';
+}
+document.getElementById('delayAdvBtn')?.addEventListener('click', async () => {
+  await loadDelayConfig();   // 打开即刷成落盘值（上次没保存的编辑作废，免得看着像存上了）
+  openDelayAdv();
+});
+document.getElementById('delayAdvClose')?.addEventListener('click', closeDelayAdv);
+document.getElementById('delayAdvCancel')?.addEventListener('click', closeDelayAdv);
+document.getElementById('delayAdvModal')?.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'delayAdvModal') closeDelayAdv();
+});
+
+document.getElementById('delayAdvSave')?.addEventListener('click', async () => {
   const cfg = {};
   for (const k of DELAY_KEYS) {
     const mi = parseInt(document.getElementById('dl_' + k + '_min')?.value, 10);
@@ -1501,28 +716,35 @@ document.getElementById('delaySaveBtn')?.addEventListener('click', async () => {
     cfg[k] = { min: Math.max(0, mi || 0), max: Math.max(0, ma || 0) };
   }
   await setStorage('delay_config', cfg);
-  // 互动行为一并保存
+  // 灌水频率与去重（同一弹窗的上半截；没有一键灌水的版本整块被摘掉，这里读不到就当没填）
+  const nt = {};
+  Object.entries(NT_EL_IDS).forEach(([k, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = parseInt(el.value, 10);
+    if (isNaN(v)) return;
+    if (k === 'maxPerRound') nt[k] = Math.max(0, v);      // 0=不限：要显式存下来
+    else if (v > 0) nt[k] = v;
+  });
+  if (Object.keys(nt).length) {
+    await setStorage('note_trend_config', nt);
+    const aw = (await getStorage('auto_water_config')) || {};
+    aw.schedule = aw.schedule || {};
+    aw.schedule.perRound = Number(nt.maxPerRound) || 0;   // 灌水与循环计划共用这一个每轮篇数
+    delete aw.filter; delete aw.coldFilter; delete aw.cycleFilter;   // 老的范围筛选开关已下线（搜索页不再勾「未看过」）
+    await setStorage('auto_water_config', aw);
+    if (nt.maxPerRound != null) _ntRoundCache = nt.maxPerRound;
+  }
+  // 互动行为一并保存（Bot 间隔在「线索 → 设置」那页，触达基调在「线索 → 任务配置」那页，各自有自己的保存）
   await setStorage('behavior_config', {
     autoFollow: !!document.getElementById('bhAutoFollow')?.checked,
     followEvery: Math.max(1, parseInt(document.getElementById('bhFollowEvery')?.value, 10) || 1),
   });
-  // 后台定时扫描 /chat 开关
-  const scanChk = document.getElementById('bhAutoScanChat');
-  const scanOn = !!(scanChk && scanChk.checked);
-  const _curMin = parseInt((await getStorage('prospect_scan_interval_min')) || '10', 10) || 10;
-  await chrome.storage.local.set({ prospect_scan_auto: scanOn }).catch(() => {});
-  chrome.runtime.sendMessage({ action: 'setAutoScanChat', data: { enabled: scanOn, intervalMin: scanOn ? Math.max(1, _curMin) : 0 } }).catch(() => {});
-  showMsg('delaySaveMsg', '✅ 已保存（区间随机，立即生效）', 'ok');
-});
-
-document.getElementById('delayRecommendBtn')?.addEventListener('click', () => {
-  fillDelayInputs(DELAY_RECOMMEND);
-  showMsg('delaySaveMsg', '已填入拟人推荐区间，点「保存」生效', 'ok');
-});
-
-document.getElementById('delayZeroBtn')?.addEventListener('click', () => {
-  fillDelayInputs(DELAY_DEFAULT);
-  showMsg('delaySaveMsg', '已恢复默认（技术下限，最快），点「保存」生效', 'ok');
+  // 逐项改过停留值 → 挡位滑块按「最近的那一档」回正（没改回原样就还是原来那档）
+  const lvl = _closestPreset(cfg);
+  await setStorage('delay_preset', lvl);
+  renderPreset(lvl, cfg);
+  showMsg('delayAdvMsg', '✅ 已保存（区间随机，立即生效）', 'ok');
 });
 
 /* ─── 拟人化挡位（一键套用 + 预计灌完时间） ─── */
@@ -1547,11 +769,13 @@ function _closestPreset(cfg) {
   for (const p of DELAY_PRESETS) { const d = Math.abs(_weightedTotal(p.cfg) - t); if (d < bestD) { bestD = d; best = p.level; } }
   return best;
 }
+const DELAY_PRESET_ROUND_ID = 'ntMaxPerRound';   // 每轮篇数唯一入口（本页「灌水频率与去重」），0=不限
+function _presetLevelFromTable(n) { return DELAY_PRESETS.some(p => p.level === n); }
 // 当前滑杆挡位（合法返回 0~5，含 0=裸跑；非法则按已填区间就近判定）
 function _presetLevel() {
   const v = document.getElementById('delayPreset')?.value;
   const n = (v === '' || v === undefined || v === null) ? NaN : Number(v);
-  return DELAY_PRESETS.some(p => p.level === n) ? n : _closestPreset(_presetCfgFromInputs());
+  return _presetLevelFromTable(n) ? n : _closestPreset(_presetCfgFromInputs());
 }
 // 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=条间）
 function _estimateRoundSec(cfg, nr) {
@@ -1560,7 +784,12 @@ function _estimateRoundSec(cfg, nr) {
   const r = Math.max(1, Math.floor(nr || 10));
   return per * r + sec('batchItemGap') * (r - 1);
 }
-const DELAY_ROUND_LIMIT = { 0: 0, 1: 30, 2: 20, 3: 12, 4: 8, 5: 5 }; // 每轮可处理笔记篇数（挡位越高越保守；0=不限=以每日上限为准；1档放松到30/2档20）
+// 「每轮最多处理」在「⚙️ 高级配置」里：弹窗关着时读不到输入框，用 loadWaterFreq 缓存的那份
+function _roundPerValue() {
+  const el = document.getElementById(DELAY_PRESET_ROUND_ID);
+  if (el) return Math.max(0, parseInt(el.value, 10) || 0);
+  return Math.max(0, parseInt(_ntRoundCache, 10) || 0);
+}
 function _fmtMin(sec) {
   if (!(sec > 0)) return '<1 分钟';
   const m = sec / 60;
@@ -1574,20 +803,20 @@ function renderPreset(level, cfg) {
   const nameEl = document.getElementById('delayPresetName');
   const descEl = document.getElementById('delayPresetDesc');
   const estEl = document.getElementById('delayPresetEst');
-  const nr = parseInt(document.getElementById('dl_estimateRound')?.value, 10) || 10;
   if (slider) slider.value = level;
   if (nameEl) nameEl.textContent = '挡位 ' + p.level + ' · ' + p.name;
   if (descEl) descEl.textContent = '每日建议 ' + p.daily + ' 篇 ｜ ' + p.desc;
-  const roundVal = Math.max(0, parseInt(document.getElementById('dl_estimateRound')?.value, 10) || 0);
+  const roundVal = _roundPerValue();
   const roundEl = document.getElementById('delayPresetRound');
   if (roundEl) roundEl.textContent = (roundVal <= 0 ? '不限（以每日上限为准）' : '≤ ' + roundVal + ' 篇');
   if (estEl) estEl.textContent = (roundVal > 0 ? _fmtMin(_estimateRoundSec(cfg || _presetCfgFromInputs(), roundVal)) : '每轮不限，无法预估');
 }
 async function presetOnLoad() {
+  renderDelayTicks();
   const saved = (await getStorage('delay_config')) || {};
   const savedLvl = await getStorage('delay_preset');
   let level = (savedLvl != null) ? Number(savedLvl) : _closestPreset(saved);
-  if (!DELAY_PRESETS.find(x => x.level === level)) level = 2;
+  if (!_presetLevelFromTable(level)) level = 2;
   renderPreset(level, saved);
 }
 document.getElementById('delayPreset')?.addEventListener('input', async (e) => {
@@ -1595,38 +824,22 @@ document.getElementById('delayPreset')?.addEventListener('input', async (e) => {
   const p = DELAY_PRESETS.find(x => x.level === lvl);
   if (!p) return;
   fillDelayInputs(p.cfg);
-  const pr = DELAY_ROUND_LIMIT[lvl] != null ? DELAY_ROUND_LIMIT[lvl] : 0;
-  const erEl = document.getElementById('dl_estimateRound');
-  if (erEl) erEl.value = pr;
   renderPreset(lvl, p.cfg);
+  // 拖完即生效：与弹窗顶部那个挡位选择器写同一份真源（delay_preset + delay_config），不必再点保存
   await setStorage('delay_preset', lvl);
-  try { // 每轮处理篇数随挡位联动（即时写入一键灌水配置；0=不限=以每日上限为准）
-    const aw = (await getStorage('auto_water_config')) || {};
-    aw.schedule = aw.schedule || {};
-    aw.schedule.perRound = pr;
-    await setStorage('auto_water_config', aw);
-  } catch (_) {}
-  showMsg('delaySaveMsg', '已套用 挡位' + lvl + '（' + p.name + '），确定后点「保存」生效', 'ok');
+  await setStorage('delay_config', p.cfg);
+  showMsg('delaySaveMsg', '✅ 已套用 挡位' + lvl + '（' + p.name + '），已生效', 'ok');
 });
-['delayPreset', 'dl_estimateRound'].forEach(id => {
-  document.getElementById(id)?.addEventListener('input', async () => {
-    renderPreset(_presetLevel(), _presetCfgFromInputs());
-    if (id === 'dl_estimateRound') {            // 自定义每轮篇数 → 即时写入（0=不限）
-      try {
-        const rv = Math.max(0, parseInt(document.getElementById('dl_estimateRound')?.value, 10) || 0);
-        const aw = (await getStorage('auto_water_config')) || {};
-        aw.schedule = aw.schedule || {};
-        aw.schedule.perRound = rv;
-        await setStorage('auto_water_config', aw);
-      } catch (_) {}
-    }
-  });
+// 每轮篇数在「⚙️ 高级配置 → 灌水频率与去重」里改：换值后挡位卡上的预计时间跟着重算
+document.getElementById(DELAY_PRESET_ROUND_ID)?.addEventListener('input', () => {
+  renderPreset(_presetLevel(), _presetCfgFromInputs());
 });
 
 // ══════════════════════════════════════════════════════════════
 // 初始化
 // ══════════════════════════════════════════════════════════════
 async function init() {
+  applyTenantIntro();
   await applyEditionToSettings();
   await applyAccountVerifyToSettings();
   // ★ 其它入口(弹窗/向导)验证通过后，本设置页立即解锁，无需重开
@@ -1643,14 +856,10 @@ async function init() {
   } catch (_) {}
   await Promise.all([
     loadTenants(),
-    loadProductConfig(),
     loadAiConfig(),
-    loadStyleConfig(),
-    loadKnowledgeBase(),
-    loadPrompts(),
     loadLogs(),
-    loadAutoWaterConfig(),
     loadDelayConfig(),
+    loadLeadTouch(),
   ]);
 }
 
@@ -1674,83 +883,27 @@ async function applyEditionToSettings() {
   // 到期：全屏遮罩锁死
   if (status.expired) { showSettingsExpiredMask(ed); return; }
 
-  // 产品库（未开通时关闭）：灰显「产品卖点」并标注版本限制（不隐藏）
-  _productLibLocked = !ed.features || !ed.features.productLib;
-  if (_productLibLocked) {
-    const grp = document.getElementById('sellPointList');
-    const wrap = grp && grp.closest('.form-group');
-    if (grp) {
-      grp.style.opacity = '0.55';
-      grp.style.pointerEvents = 'none';
-      grp.style.cursor = 'not-allowed';
-      grp.setAttribute('title', '🔒 产品卖点当前版本不可用，升级后解锁');
-    }
-    const addBtn = document.getElementById('addSellPointBtn');
-    if (addBtn) { addBtn.disabled = true; addBtn.style.opacity = '0.55'; }
-    if (wrap) {
-      const label = wrap.querySelector('label');
-      if (label && !label.querySelector('.edition-lock-badge')) {
-        const badge = document.createElement('span');
-        badge.className = 'edition-lock-badge';
-        badge.style.cssText = 'font-size:11px;color:#ff2442;background:#fff0f3;border:1px solid #ffd9e0;padding:1px 6px;border-radius:3px;margin-left:6px;';
-        badge.textContent = '🔒 产品卖点当前版本（' + (ed.label || '') + '）不可用';
-        label.appendChild(badge);
-      }
-    }
-  }
-
   // 租户模式：三档全开（tenant 恒为 true），不再做灰显锁定
 
-  // 知识库（未开通时关闭）：灰显 Tab + 面板锁定
-  if (!ed.features || !ed.features.knowledge) {
-    lockSettingsTab({
-      tab: 'knowledge',
-      panelId: 'tab-knowledge',
-      lockedLabel: '🔒 知识库',
-      tabTitle: '知识库当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 知识库（录入专业知识、AI 生成时自动引用）当前版本（' + esc(ed.label || '') + '）不可用。升级更高版本后可解锁，让回复更专业、更自然。',
-      listId: 'kbList',
-    });
-  }
-
-  // 一键灌水（未开通时关闭）：灰显 Tab + 面板锁定
+  // 一键灌水（未开通时收起）：节奏/停留全版本都有（① 基础版靠设置页这条兜底改），只有「灌水频率与去重」那半页跟着灌水走
   if (!ed.features || !ed.features.autoWater) {
-    lockSettingsTab({
-      tab: 'autowater',
-      panelId: 'tab-autowater',
-      lockedLabel: '🔒 一键灌水',
-      tabTitle: '一键灌水当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器）当前版本（' + esc(ed.label || '') + '）不可用。升级「升级版」或更高版本解锁。',
-    });
+    document.getElementById('delayWaterFreq')?.remove();
   }
 
-  // 封面设置（发送笔记的配套，未开通时关闭）
-  if (!ed.features || !ed.features.notePublish) {
-    lockSettingsTab({
-      tab: 'cover',
-      panelId: 'tab-cover',
-      lockedLabel: '🔒 封面设置',
-      tabTitle: '封面设置随「发送笔记」提供，当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 封面设置属于「发送笔记」功能，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
-    });
-  }
-
-  // AI 客服·场景话术（通知/私信获客的配套，未开通时关闭）
+  // 「线索」整片随「线索」走（2026-10-01 五十二改：客服话术也并进了「线索 → 任务配置」，这里不再有独立一页）：
+  // 没线索的版本既没有扫新线索（设置），也没有触达场合的基调、引导与问答话术（任务配置）
   if (!ed.features || !ed.features.prospectList) {
-    lockSettingsTab({
-      tab: 'aics',
-      panelId: 'tab-aics',
-      lockedLabel: '🔒 AI客服·场景话术',
-      tabTitle: 'AI 客服随「通知 / 私信」提供，当前版本（' + (ed.label || '') + '）不可用',
-      notice: '🔒 AI 客服·场景话术（通知/私信线索的触达与问答话术）随「通知 / 私信」提供，当前版本（' + esc(ed.label || '') + '）不可用。升级「全功能版」解锁。',
-    });
+    document.getElementById('tab-leadtouch')?.remove();
+    document.getElementById('tab-leadtask')?.remove();
   }
 
-  // 日常浏览（②升级版/③全功能版可用，但不列入对外功能清单）：未开通版本整块隐藏，不留锁定入口
-  if (!ed.features || !ed.features.dailyBrowse) {
-    document.querySelector('.tab-item[data-tab="dailybrowse"]')?.remove();
-    document.getElementById('tab-dailybrowse')?.remove();
+  // 拟人化与频率：② 升级版起（随获客开通），入口在 获客 → ⚙️ 设置，
+  // 设置页这条侧栏撤掉；没开通获客的档（① 基础版 / 自定义包）留着兜底，否则那档没地方改节奏
+  if (ed.features && ed.features.autoWater) {
+    document.querySelector('.tab-item[data-tab="delays"]')?.remove();
   }
+
+  // 日常浏览已搬进「获客 → 任务配置 → 🌿 日常浏览」三级 tab（2026-09-26），设置页这一页整块撤掉
 }
 
 /**
@@ -1781,12 +934,12 @@ function lockSettingsTab(o) {
       if (list) { list.style.opacity = '0.5'; list.style.pointerEvents = 'none'; }
     }
   }
-  // 若被锁 Tab 原本是激活态，改为激活「产品配置」
+  // 若被锁 Tab 原本是激活态，改为激活「租户 / 产品」（settings 页里唯一恒在的一页）
   if (tabItem && tabItem.classList.contains('active')) {
     tabItem.classList.remove('active');
     if (panel) panel.classList.remove('active');
-    const basicTab = document.querySelector('.tab-item[data-tab="product"]');
-    const basicPanel = document.getElementById('tab-product');
+    const basicTab = document.querySelector('.tab-item[data-tab="tenant"]');
+    const basicPanel = document.getElementById('tab-tenant');
     if (basicTab) basicTab.classList.add('active');
     if (basicPanel) basicPanel.classList.add('active');
   }
@@ -1973,7 +1126,7 @@ async function renderTenantList() {
     const s = stats[t.id];
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 10px;margin-bottom:6px;border:1px solid ' +
-      (isCur ? '#ff2442' : '#e0e0e0') + ';border-radius:6px;background:' + (isCur ? '#fff0f3' : '#fff') + ';';
+      (isCur ? 'var(--c-brand)' : '#e0e0e0') + ';border-radius:6px;background:' + (isCur ? 'var(--c-brand-soft)' : '#fff') + ';';
     const left = document.createElement('div');
     left.style.cssText = 'flex:1;min-width:0;';
     const name = document.createElement('div');
@@ -1983,13 +1136,13 @@ async function renderTenantList() {
     const stat = document.createElement('div');
     stat.style.cssText = 'font-size:11px;color:#888;margin-top:2px;display:flex;gap:10px;flex-wrap:wrap;';
     stat.innerHTML =
-      '<span title="产品卖点数">🏷️ <b style="color:' + (s.sell > 0 ? '#ff2442' : '#bbb') + '">' + s.sell + '</b> 卖点</span>' +
-      '<span title="知识库条目数">📚 <b style="color:' + (s.kb > 0 ? '#ff2442' : '#bbb') + '">' + s.kb + '</b> 知识库</span>' +
-      '<span title="获客清单人数">👥 <b style="color:' + (s.pl > 0 ? '#ff2442' : '#bbb') + '">' + s.pl + '</b> 获客</span>';
+      '<span title="产品卖点数">🏷️ <b style="color:' + (s.sell > 0 ? 'var(--c-brand-text)' : '#bbb') + '">' + s.sell + '</b> 卖点</span>' +
+      '<span title="知识库条目数">📚 <b style="color:' + (s.kb > 0 ? 'var(--c-brand-text)' : '#bbb') + '">' + s.kb + '</b> 知识库</span>' +
+      '<span title="获客清单人数">👥 <b style="color:' + (s.pl > 0 ? 'var(--c-brand-text)' : '#bbb') + '">' + s.pl + '</b> 获客</span>';
     left.appendChild(stat);
     row.appendChild(left);
 
-    if (!isCur) {
+    if (!isCur && !_EMBED) {
       const useBtn = document.createElement('button');
       useBtn.className = 'btn-primary';
       useBtn.style.cssText = 'padding:3px 10px;font-size:12px;';
@@ -2068,43 +1221,37 @@ document.getElementById('createTenantBtn')?.addEventListener('click', async () =
     if (r && r.ok === false) throw new Error(r.error || '新建失败');
     inp.value = '';
     await loadTenants();
-    showMsg('tenantSaveMsg', '✅ 已新建「' + name + '」，点“切换”可切到该产品', 'ok');
+    showMsg('tenantSaveMsg', '✅ 已新建「' + name + '」' + (_EMBED ? '，到弹窗顶栏下拉框里选它即可切过去' : '，点“切换”可切到该产品'), 'ok');
   } catch (e) {
     showMsg('tenantSaveMsg', '❌ ' + (e.message || e), 'err');
   }
 });
 
-// Tab 切换时刷新日志
-document.querySelector('[data-tab="logs"]')?.addEventListener('click', loadLogs);
-// Tab 切换时刷新灌水历史
-document.querySelector('[data-tab="autowater"]')?.addEventListener('click', loadAutoWaterConfig);
-
-// Tab 切换时刷新封面设置 / 人设&话术风格
-document.querySelector('[data-tab="cover"]')?.addEventListener('click', loadCoverConfig);
-document.querySelector('[data-tab="persona"]')?.addEventListener('click', () => { loadPersonaManager(); loadStyleConfig(); });
+// 日志 / AI客服 的刷新都挂 TAB_MOUNT（见文件头），这里不再重复挂 click
 
 // ═══════════ AI客服：设置镜像（场景A + 问答B + 导入导出 + 试问答） ═══════════
 let _aics = null;
-const _ae = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const _AICS_PURP = [['sell', '卖货'], ['brand', '品牌'], ['profile', '涨粉'], ['likes', '养数'], ['trend', '热点'], ['auto', '自动']];
-const _AICS_GUIDE = [['', '跟随产品承接（默认）'], ['私信我', '私信我'], ['私信我留个邮箱，我把资料发你', '引导留邮箱（成交）'], ['看我主页置顶笔记', '引导看主页置顶'], ['看我主页简介', '引导看主页简介']];
-document.querySelector('[data-tab="aics"]')?.addEventListener('click', renderAiCsSettings);
+const _ae = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// ═══════════ 备份 / 恢复（导出全部租户 + 运行数据 / 合并导入） ═══════════
-document.querySelector('[data-tab="backup"]')?.addEventListener('click', renderBackup);
+// ═══════════ 整机备份 / 恢复（导出全部租户 + 运行数据 / 合并导入） ═══════════
+TAB_MOUNT.backup = renderBackup;
 
 function renderBackup() {
   const box = document.getElementById('backupBody'); if (!box) return;
   box.innerHTML = `
-    <div style="background:#fff7fa;border:1px solid #f6dde3;border-radius:8px;padding:10px 12px;font-size:12px;color:#8a3a4e;line-height:1.7;margin-bottom:12px;">
+    <div style="background:var(--c-brand-soft);border:1px solid var(--c-brand-line);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--c-brand-ink);line-height:1.7;margin-bottom:12px;">
       ⚠️ 备份文件包含 <b>API Key、账号绑定信息、获客清单/私信历史</b> 等敏感数据，导出时用你设置的<b>口令整体加密</b>，恢复时要输入同一口令；<b>口令无法找回</b>，请连同文件一起妥善保存、不要外传。
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button id="backupExport" style="font-size:13px;padding:10px 18px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">⬇ 导出全部数据（加密）</button>
-      <button id="backupImport" style="font-size:13px;padding:10px 18px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;font-weight:600;">⬆ 从备份文件导入（合并）</button>
+      <button id="backupExport" style="font-size:13px;padding:10px 18px;border:none;border-radius:8px;background:var(--c-brand);color:var(--c-brand-on);cursor:pointer;font-weight:600;">⬇ 整机导出（所有产品 · 加密）</button>
+      <button id="backupImport" style="font-size:13px;padding:10px 18px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;font-weight:600;">⬆ 整机导入（合并保留）</button>
       <input type="file" id="backupFile" accept=".json,application/json" style="display:none;">
     </div>
     <div id="backupMsg" style="font-size:12px;color:#0a7b5a;margin-top:10px;"></div>
+    <label style="display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#555;margin-top:10px;cursor:pointer;line-height:1.7;">
+      <input type="checkbox" id="backupNoThumb" style="margin:3px 0 0;">
+      <span><b>不含素材缩略图</b>：备份小一点——素材库里「我传的本机图」只留文件名，不带走那张 ≤160px 的预览小图（原图本来就不在库里，导入后重新传一张就能看回预览）。</span>
+    </label>
     <div style="font-size:12px;color:#888;margin-top:10px;line-height:1.8;">导出（加密）：把<b>所有产品(租户)</b>的完整配置 + 获客清单/私信历史/已灌水/内容规划打成一份<b>口令加密</b>的文件。<br>导入（合并保留）：备份数据<b>并入</b>本地——备份里的配置会覆盖本地同名 key，本地独有的产品保留，备份里的新产品追加进来，不会清空现有配置。适合换版本/换机后还原（也支持早期未加密的旧备份）。</div>`;
   document.getElementById('backupExport')?.addEventListener('click', backupExport);
   document.getElementById('backupImport')?.addEventListener('click', () => { document.getElementById('backupFile')?.click(); });
@@ -2113,8 +1260,9 @@ function renderBackup() {
 
 async function backupExport() {
   const msg = document.getElementById('backupMsg'); if (msg) msg.textContent = '正在打包全部数据…';
+  const noThumb = !!(document.getElementById('backupNoThumb') || {}).checked;
   try {
-    const r = await chrome.runtime.sendMessage({ action: 'exportAllData', data: {} });
+    const r = await chrome.runtime.sendMessage({ action: 'exportAllData', data: { noThumb } });
     if (!r || !r.ok) throw new Error((r && r.error) || '导出失败');
     const pw = await CryptoBox.askPassword({
       title: '设置导出加密口令',
@@ -2130,9 +1278,10 @@ async function backupExport() {
     if (msg) {
       const sm = (r.backup && r.backup.summary) || {};
       const lines = Object.entries(sm).map(([name, s]) =>
-        `${name}：卖点${s.卖点数} · 话术库${s.话术库条数} · 知识库${s.知识库条数} · 获客${s.获客清单数}`).join('；');
+        `${name}：卖点${s.卖点数} · 话术库${s.话术库条数} · 知识库${s.知识库条数} · 获客${s.获客清单数} · 笔记档案${s.笔记档案数}` +
+        (s.素材数 ? ` · 素材${s.素材数}` : '')).join('；');
       msg.textContent = '✅ 已加密导出 ' + (r.backup.tenants.length) + ' 个产品的完整备份' +
-        (lines ? '　（' + lines + '）' : '') + '，请连同口令一起妥善保存。';
+        (lines ? '　（' + lines + '）' : '') + (noThumb ? '　· 素材缩略图未含' : '') + '，请连同口令一起妥善保存。';
       msg.style.color = '#0a7b5a';
     }
   } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 导出失败：' + (e.message || e); } }
@@ -2165,6 +1314,13 @@ async function backupImportFile(e) {
   e.target.value = '';
 }
 
+/* 切到「🗨 话术配置」那一 tab 才画；画过一次就复用（每次重画会把没点保存的编辑冲掉，也多烧一次读盘） */
+let _aicsMounted = false;
+function mountAiCsBody() {
+  if (_aicsMounted && document.getElementById('aicsQa')) { paintAicsQa(); return; }
+  _aicsMounted = true;
+  renderAiCsSettings();
+}
 async function renderAiCsSettings() {
   const box = document.getElementById('aicsBody'); if (!box) return;
   box.innerHTML = '<div style="padding:20px;color:#888;">加载 AI客服配置…</div>';
@@ -2174,89 +1330,191 @@ async function renderAiCsSettings() {
   _aics = cfg;
   box.innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
-      <button id="aicsSave" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:#ff274b;color:#fff;cursor:pointer;font-weight:600;">💾 保存全部</button>
+      <button id="aicsSave" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:var(--c-brand);color:var(--c-brand-on);cursor:pointer;font-weight:600;">💾 保存全部</button>
+      <button id="aicsAdd" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">➕ 新增一条</button>
       <button id="aicsExport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬇ 导出</button>
       <button id="aicsImport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
-      <button id="aicsKb" style="font-size:12px;padding:6px 12px;border:1px solid #059669;background:#ecfdf5;color:#059669;border-radius:8px;cursor:pointer;">📥 话术→知识库</button>
     </div>
-    <div style="font-weight:600;font-size:13px;margin:4px 0;">⚙️ 配置-通知 · 渠道基调 + 成交引导</div>
-    <div id="aicsChannels"></div>
-    <div id="aicsGuide" style="margin:7px 0 4px;"></div>
-    <div style="font-weight:600;font-size:13px;margin:12px 0 4px;">📖 配置-消息 · 客户问答话术库</div>
+    <div style="font-weight:600;font-size:13px;margin:4px 0 6px;">客户问答话术库</div>
     <div id="aicsQa"></div>
-    <div style="font-weight:600;font-size:13px;margin:12px 0 4px;">🧪 试问答</div>
-    <div style="display:flex;gap:6px;"><input id="aicsIn" type="text" placeholder="模拟客户说一句，如：几号发货" style="flex:1;padding:6px 8px;border:1px solid #dfe3ea;border-radius:8px;font-size:12px;"><button id="aicsTest" style="font-size:12px;padding:6px 12px;border:1px solid #0e7490;background:#ecfeff;color:#0e7490;border-radius:8px;cursor:pointer;">应答</button></div>
-    <div id="aicsOut" style="font-size:12px;color:#333;margin-top:6px;white-space:pre-wrap;"></div>`;
-  paintAicsChannels(); paintAicsQa();
+    <!-- 一条话术的编辑弹窗：列表页只负责看，改/新增都收在这里（改完先在内存里，点「💾 保存全部」才落盘） -->
+    <div class="modal" id="aicsQaModal" style="display:none;">
+      <div class="modal-box" style="width:560px;">
+        <div class="modal-header">
+          <h3 id="aicsQaModalTitle">编辑话术</h3>
+          <button class="modal-close" id="aicsQaModalClose" title="关闭">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:10px;">
+          <div>
+            <label style="font-size:12px;color:#555;">分类</label>
+            <input type="text" id="aicsQaCat" placeholder="例：发货 / 售后" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:6px;margin-top:4px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">触发关键词<span style="font-size:11px;color:#999;"> · 逗号分隔</span></label>
+            <input type="text" id="aicsQaKw" placeholder="例：发货，几天到，物流" style="width:100%;box-sizing:border-box;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:6px;margin-top:4px;">
+          </div>
+        </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:12px;color:#555;">话术<span style="font-size:11px;color:#999;"> · 客户这么问时回什么</span></label>
+          <textarea id="aicsQaAns" rows="6" placeholder="用客服口吻写清楚：先答问题，再给下一步。" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;line-height:1.7;border:1px solid #ddd;border-radius:6px;margin-top:4px;resize:vertical;"></textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">
+          <div>
+            <label style="font-size:12px;color:#555;">模式</label>
+            <select id="aicsQaMode" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:6px;margin-top:4px;">
+              <option value="template">模板（按话术原样回）</option>
+              <option value="ai">AI（照意思重新组织）</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">处理</label>
+            <select id="aicsQaAuto" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:6px;margin-top:4px;">
+              <option value="draft">草拟（等你确认）</option>
+              <option value="auto">自动（直接发）</option>
+              <option value="off">关闭（只记录）</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#555;">启用</label>
+            <div style="margin-top:8px;"><label style="font-size:12px;color:#333;cursor:pointer;"><input type="checkbox" id="aicsQaOn"> 参与匹配</label></div>
+          </div>
+        </div>
+        <div class="modal-footer" style="align-items:center;">
+          <span id="aicsQaModalMsg" style="flex:1;font-size:12px;color:#d33;"></span>
+          <button class="btn" id="aicsQaModalCancel" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">取消</button>
+          <button class="btn-primary" id="aicsQaModalOk" style="font-size:12px;padding:6px 14px;border:none;border-radius:8px;background:var(--c-brand);color:var(--c-brand-on);cursor:pointer;font-weight:600;">💾 保存这条</button>
+        </div>
+      </div>
+    </div>`;
+  paintAicsQa();
   document.getElementById('aicsSave')?.addEventListener('click', saveAicsSettings);
+  document.getElementById('aicsAdd')?.addEventListener('click', () => {
+    _aics.qa = Array.isArray(_aics.qa) ? _aics.qa : [];
+    openAicsQaModal(-1);
+  });
   document.getElementById('aicsExport')?.addEventListener('click', () => exportAicsSettings());
   document.getElementById('aicsImport')?.addEventListener('click', () => importAicsSettings());
-  document.getElementById('aicsKb')?.addEventListener('click', async () => { try { const r = await chrome.runtime.sendMessage({ action: 'qaToKb', data: {} }); alert(r && r.ok ? ('📥 已同步 ' + r.added + '/' + r.total + ' 条话术进知识库（客服·XX 分类）') : ('❌ ' + ((r && r.error) || '失败'))); } catch (e) { alert('❌ ' + e.message); } });
+  const inn = document.getElementById('aicsIn');
+  inn?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); testAics(); } });
   document.getElementById('aicsTest')?.addEventListener('click', () => testAics());
+  document.getElementById('aicsChatClear')?.addEventListener('click', () => { _aicsChat = []; paintAicsChat(); });
+  paintAicsChat();
+  document.getElementById('aicsQaModalClose')?.addEventListener('click', closeAicsQaModal);
+  document.getElementById('aicsQaModalCancel')?.addEventListener('click', closeAicsQaModal);
+  document.getElementById('aicsQaModal')?.addEventListener('click', (ev) => { if (ev.target && ev.target.id === 'aicsQaModal') closeAicsQaModal(); });
+  document.getElementById('aicsQaModalOk')?.addEventListener('click', saveAicsQaModal);
 }
 
-function paintAicsChannels() {
-  const box = document.getElementById('aicsChannels'); if (!box) return;
-  box.innerHTML = '';
-  const CH_KEYS = ['comment', 'like', 'follow', 'ai'];
-  const CH_META = { comment: '💬 评论/回复', like: '👍 点赞/收藏', follow: '👣 关注', ai: '🧠 AI抓回' };
-  const CH_DESC = { comment: '先接住对方评论原话话题，再带一句产品/引导', like: '顺着TA赞的话题续下去，再带销售/引导', follow: '破冰自我介绍 + 价值预告 + 引导', ai: '破冰呼应需求 + 引导' };
-  CH_KEYS.forEach((k) => {
-    const c = (_aics.channels && _aics.channels[k]) || { minChars: 30, maxChars: 90 };
-    const card = document.createElement('div');
-    card.style.cssText = 'border:1px solid #eee;border-radius:6px;padding:5px 8px;margin-bottom:4px;background:#fff;';
-    card.innerHTML = `
-      <div style="font-size:12px;font-weight:600;">${CH_META[k]} <span style="font-weight:400;color:#888;">${CH_DESC[k]}</span></div>
-      <div style="margin-top:4px;font-size:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-        字数<input class="aics-ch-min" data-k="${k}" type="number" style="width:48px" value="${c.minChars}">~<input class="aics-ch-max" data-k="${k}" type="number" style="width:48px" value="${c.maxChars}">
-      </div>`;
-    box.appendChild(card);
-  });
-  // 成交/引导
-  const g = _aics.guide || {};
-  const GUIDE_PRESETS = [['私信我留个邮箱，我把资料发你', '留邮箱发资料'], ['看我主页置顶笔记', '看主页置顶'], ['私信我', '私信我'], ['看我主页简介', '看主页简介'], ['小程序下单', '小程序下单']];
-  const guideOpts = `<option value="" ${!g.deliver ? 'selected' : ''}>跟随产品/自定义…</option>` + GUIDE_PRESETS.map(([v, l]) => `<option value="${_ae(v)}" ${g.deliver === v ? 'selected' : ''}>${l}</option>`).join('');
-  const gb = document.getElementById('aicsGuide');
-  if (gb) gb.innerHTML = `<div style="font-weight:600;font-size:12px;">💰 成交/引导（4渠道共用）</div>
-    <div style="border:1px solid #eee;border-radius:6px;padding:6px 8px;background:#fff;font-size:11px;">
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">引导方式<select id="aicsGuidePre" style="font-size:11px;">${guideOpts}</select></div>
-      <input id="aicsGuideDeliver" placeholder="或自定义：私信我留个邮箱，我把资料发你" style="width:100%;box-sizing:border-box;margin-top:5px;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:5px;" value="${_ae(g.deliver || '')}">
-      <div style="margin-top:5px;display:flex;align-items:center;gap:6px;font-size:11px;">优惠活动<input id="aicsGuideTips" placeholder="可选：报体验价/送赠品/强调售后" style="flex:1;min-width:0;font-size:11px;padding:4px 6px;border:1px solid #eee;border-radius:5px;" value="${_ae(g.tips || '')}"></div>
-    </div>`;
-  const pre = document.getElementById('aicsGuidePre');
-  if (pre) pre.addEventListener('change', (e) => { const d = document.getElementById('aicsGuideDeliver'); if (d) d.value = e.target.value; });
-}
+/* 话术库列表：一条一行卡片（分类 + 关键词 + 模式·处理 + 启用 + 编辑/删除），正文截断预览；
+   改与新增都进弹窗，这里不铺表单 */
+const AICS_QA_MODE = { template: '模板', ai: 'AI' };
+const AICS_QA_AUTO = { draft: '草拟', auto: '自动', off: '关闭' };
 function paintAicsQa() {
   const box = document.getElementById('aicsQa'); if (!box) return;
-  if (!_aics.qa || _aics.qa.length === 0) {
-    box.innerHTML = '<div style="border:1px dashed #dfe3ea;border-radius:6px;padding:18px;text-align:center;color:#999;font-size:12px;">暂无客户问答话术<br><span style="font-size:11px;color:#bbb;">可点击插件弹窗「📖 B·客服问答话术库」添加，或在此下方手动添加</span></div>';
+  const qa = (_aics && Array.isArray(_aics.qa)) ? _aics.qa : [];
+  if (!qa.length) {
+    box.innerHTML = '<div style="border:1px dashed #dfe3ea;border-radius:8px;padding:18px;text-align:center;color:#999;font-size:12px;">还没有客服话术——点上方「➕ 新增一条」加一条，或用「⬆ 导入」载入一份话术库。</div>';
     return;
   }
-  box.innerHTML = _aics.qa.map((e, i) => `<div style="border:1px solid #eee;border-radius:6px;padding:5px 8px;margin-bottom:4px;background:#fff;">
-    <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
-      <input class="aics-qa-cat" data-i="${i}" value="${_ae(e.category)}" style="width:80px;font-size:12px;font-weight:600;border:1px solid #eee;border-radius:5px;padding:3px;">
-      <select class="aics-qa-mode" data-i="${i}" style="font-size:11px;"><option value="template" ${e.mode === 'template' ? 'selected' : ''}>模板</option><option value="ai" ${e.mode === 'ai' ? 'selected' : ''}>AI</option></select>
-      <select class="aics-qa-auto" data-i="${i}" style="font-size:11px;"><option value="draft" ${e.auto === 'draft' ? 'selected' : ''}>草拟</option><option value="auto" ${e.auto === 'auto' ? 'selected' : ''}>自动</option><option value="off" ${e.auto === 'off' ? 'selected' : ''}>关闭</option></select>
-      <label style="font-size:11px;display:flex;gap:2px;align-items:center;"><input type="checkbox" class="aics-qa-on" data-i="${i}" ${e.enabled !== false ? 'checked' : ''}>启用</label>
-      <button class="aics-qa-del" data-i="${i}" style="margin-left:auto;border:none;background:none;color:#d32f2f;cursor:pointer;">🗑</button>
-    </div>
-    <input class="aics-qa-kw" data-i="${i}" value="${_ae((e.keywords || []).join('，'))}" placeholder="触发关键词" style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #eee;border-radius:5px;padding:3px;margin-top:4px;">
-    <textarea class="aics-qa-ans" data-i="${i}" rows="1" placeholder="话术" style="width:100%;box-sizing:border-box;font-size:11px;border:1px solid #eee;border-radius:5px;padding:3px;margin-top:4px;">${_ae(e.answer || '')}</textarea>
-  </div>`).join('');
-  box.querySelectorAll('.aics-qa-del').forEach(b => b.addEventListener('click', () => { _aics.qa.splice(parseInt(b.dataset.i, 10), 1); paintAicsQa(); }));
+  box.innerHTML =
+    '<div style="font-size:11px;color:#888;margin:0 0 8px;line-height:1.7;">共 ' + qa.length + ' 条'
+      + '<span class="qhelp" tabindex="0" data-tip="模式＝「模板」按话术原样回、「AI」照意思重新组织；处理＝「草拟」等你确认、「自动」直接发、「关闭」只记录不回。" style="margin:0 5px;">?</span>'
+      + '<b>改动先在本地，点上方「💾 保存全部」才生效。</b></div>' +
+    qa.map((e, i) => {
+      const kws = Array.isArray(e.keywords) ? e.keywords.filter(Boolean) : [];
+      const off = e.enabled === false;
+      const ans = String(e.answer || '').replace(/\s+/g, ' ').trim();
+      return `<div class="aics-row" data-i="${i}" style="border:1px solid var(--c-line);border-radius:10px;background:${off ? '#fbfbfc' : 'var(--c-surface)'};padding:9px 11px;margin-bottom:8px;${off ? 'opacity:.62;' : ''}">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-weight:600;font-size:13px;color:#1f2937;">${_ae(e.category || '未命名')}</span>
+          ${kws.length
+            ? kws.map(k => `<span style="font-size:11px;color:#4b5563;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:1px 6px;">${_ae(k)}</span>`).join('')
+            : '<span style="font-size:11px;color:#c7ccd4;">没填触发关键词</span>'}
+          <span style="font-size:11px;color:${e.auto === 'auto' ? '#0a7b5a' : '#6b7280'};background:${e.auto === 'auto' ? '#ecfdf5' : '#f3f4f6'};border-radius:6px;padding:1px 6px;">${AICS_QA_MODE[e.mode] || '模板'} · ${AICS_QA_AUTO[e.auto] || '草拟'}</span>
+          <span style="flex:1;"></span>
+          <label style="font-size:11px;color:#555;cursor:pointer;user-select:none;"><input type="checkbox" class="aics-qa-on" data-i="${i}" ${off ? '' : 'checked'}> 启用</label>
+          <button class="aics-qa-edit" data-i="${i}" style="font-size:11px;padding:3px 9px;border:1px solid #dfe3ea;border-radius:6px;background:#fff;cursor:pointer;">✏️ 编辑</button>
+          <button class="aics-qa-del" data-i="${i}" title="删掉这条" style="border:none;background:none;color:#d32f2f;cursor:pointer;padding:2px;font-size:13px;">🗑</button>
+        </div>
+        <div style="font-size:12px;color:#374151;line-height:1.7;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${_ae(e.answer || '')}">${ans ? _ae(ans) : '<span style="color:#c7ccd4;">还没写话术</span>'}</div>
+      </div>`;
+    }).join('');
+  box.querySelectorAll('.aics-qa-on').forEach(c => c.addEventListener('change', () => {
+    const i = parseInt(c.dataset.i, 10);
+    if (!_aics.qa[i]) return;
+    _aics.qa[i].enabled = !!c.checked;
+    paintAicsQa();
+  }));
+  box.querySelectorAll('.aics-qa-edit').forEach(b => b.addEventListener('click', () => openAicsQaModal(parseInt(b.dataset.i, 10))));
+  box.querySelectorAll('.aics-qa-del').forEach(b => b.addEventListener('click', () => {
+    const i = parseInt(b.dataset.i, 10);
+    const e = _aics.qa[i] || {};
+    if (!confirm('删掉「' + (e.category || '未命名') + '」这条话术？（点「💾 保存全部」后彻底生效）')) return;
+    _aics.qa.splice(i, 1);
+    paintAicsQa();
+  }));
+}
+
+/* i < 0 ＝ 新增 */
+function openAicsQaModal(i) {
+  const modal = document.getElementById('aicsQaModal'); if (!modal) return;
+  const add = i < 0;
+  const e = add ? { category: '', keywords: [], mode: 'template', auto: 'draft', enabled: true, answer: '' } : (_aics.qa[i] || {});
+  modal.dataset.i = String(add ? -1 : i);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  const title = document.getElementById('aicsQaModalTitle');
+  if (title) title.textContent = add ? '➕ 新增话术' : '✏️ 编辑话术';
+  set('aicsQaCat', String(e.category || ''));
+  set('aicsQaKw', (Array.isArray(e.keywords) ? e.keywords : []).join('，'));
+  set('aicsQaAns', String(e.answer || ''));
+  set('aicsQaMode', e.mode === 'ai' ? 'ai' : 'template');
+  set('aicsQaAuto', AICS_QA_AUTO[e.auto] ? e.auto : 'draft');
+  const on = document.getElementById('aicsQaOn'); if (on) on.checked = e.enabled !== false;
+  const msg = document.getElementById('aicsQaModalMsg'); if (msg) msg.textContent = '';
+  modal.style.display = 'flex';
+  setTimeout(() => document.getElementById('aicsQaCat')?.focus(), 30);
+}
+function closeAicsQaModal() {
+  const modal = document.getElementById('aicsQaModal');
+  if (modal) modal.style.display = 'none';
+}
+function saveAicsQaModal() {
+  const modal = document.getElementById('aicsQaModal'); if (!modal) return;
+  const msg = document.getElementById('aicsQaModalMsg');
+  const val = (id) => { const el = document.getElementById(id); return el ? String(el.value || '') : ''; };
+  const answer = val('aicsQaAns').trim();
+  if (!answer) { if (msg) msg.textContent = '话术不能空着——客户这么问时回什么，得写一句。'; return; }
+  const i = parseInt(modal.dataset.i, 10);
+  const prev = (i >= 0 && _aics.qa[i]) ? _aics.qa[i] : {};
+  const next = {
+    id: prev.id || ('qa_' + Date.now()),
+    category: val('aicsQaCat').trim() || '未命名',
+    keywords: val('aicsQaKw').split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean),
+    mode: val('aicsQaMode') === 'ai' ? 'ai' : 'template',
+    auto: AICS_QA_AUTO[val('aicsQaAuto')] ? val('aicsQaAuto') : 'draft',
+    enabled: !!(document.getElementById('aicsQaOn') || {}).checked,
+    answer,
+  };
+  _aics.qa = Array.isArray(_aics.qa) ? _aics.qa : [];
+  if (i >= 0 && _aics.qa[i]) _aics.qa[i] = next; else _aics.qa.push(next);
+  closeAicsQaModal();
+  paintAicsQa();
 }
 function gatherAicsSettings() {
-  const CH_KEYS = ['comment', 'like', 'follow', 'ai'];
-  const channels = {};
-  CH_KEYS.forEach((k) => {
-    const base = (_aics.channels && _aics.channels[k]) || {};
-    const val = (sel) => parseInt(document.querySelector(sel + '[data-k="' + k + '"]') && document.querySelector(sel + '[data-k="' + k + '"]').value, 10);
-    channels[k] = { ...base, minChars: val('.aics-ch-min') || base.minChars || 30, maxChars: val('.aics-ch-max') || base.maxChars || 90 };
-  });
-  const guide = { deliver: (document.getElementById('aicsGuideDeliver') && document.getElementById('aicsGuideDeliver').value.trim()) || '', tips: (document.getElementById('aicsGuideTips') && document.getElementById('aicsGuideTips').value.trim()) || '' };
+  // 渠道基调 / 成交引导已搬到「线索 → 任务配置」（settings 页 #tab-leadtask），这里只管问答话术库；
+  // scenes 是触达场景的排期配置（私信触发用），本页没有界面，原样带着走别弄丢。
+  // qa 由列表的启停开关与编辑弹窗直接写进 _aics.qa，这里只做规范化兜底
   const scenes = _aics.scenes || {};
-  const qa = Array.from(document.querySelectorAll('.aics-qa-cat')).map(ta => { const i = parseInt(ta.dataset.i, 10); const e = _aics.qa[i] || {}; return { id: e.id || ('qa_' + i), category: ta.value.trim() || '未命名', keywords: (document.querySelector('.aics-qa-kw[data-i="' + i + '"]')?.value || '').split(/[,，、\s]+/).map(x => x.trim()).filter(Boolean), mode: document.querySelector('.aics-qa-mode[data-i="' + i + '"]')?.value || 'template', auto: document.querySelector('.aics-qa-auto[data-i="' + i + '"]')?.value || 'draft', enabled: !!document.querySelector('.aics-qa-on[data-i="' + i + '"]')?.checked, answer: document.querySelector('.aics-qa-ans[data-i="' + i + '"]')?.value || '' }; });
-  return { channels, guide, scenes, qa };
+  const qa = (Array.isArray(_aics.qa) ? _aics.qa : []).map((e, i) => ({
+    id: e.id || ('qa_' + i),
+    category: String(e.category || '').trim() || '未命名',
+    keywords: (Array.isArray(e.keywords) ? e.keywords : []).map(k => String(k || '').trim()).filter(Boolean),
+    mode: e.mode === 'ai' ? 'ai' : 'template',
+    auto: AICS_QA_AUTO[e.auto] ? e.auto : 'draft',
+    enabled: e.enabled !== false,
+    answer: String(e.answer || ''),
+  }));
+  return { scenes, qa };
 }
 async function saveAicsSettings() {
   try { const r = await chrome.runtime.sendMessage({ action: 'saveAiCsConfig', data: { partial: gatherAicsSettings() } }); if (r && r.ok) { _aics = r.config; alert('✅ AI客服配置已保存'); } else alert('❌ 保存失败：' + ((r && r.error) || '未知')); }
@@ -2295,139 +1553,272 @@ function importAicsSettings() {
   });
   input.click();
 }
-async function genAicsDefaults() {
-  try {
-    const r = await chrome.runtime.sendMessage({ action: 'genDefaultAiCS', data: { sceneKeys: Object.keys(_aics.scenes || {}), qa: (_aics.qa || []).map(q => ({ category: q.category })) } });
-    if (!r || !r.ok) throw new Error((r && r.error) || '生成失败');
-    let sc = 0, qaF = 0;
-    for (const k of Object.keys(r.scenes || {})) if (_aics.scenes[k] && r.scenes[k]) { _aics.scenes[k].template = r.scenes[k]; _aics.scenes[k].templates = [r.scenes[k]]; sc++; }
-    for (const g of (r.qa || [])) { const e = (_aics.qa || []).find(x => x && x.category === g.category); if (e && g.answer) { e.answer = g.answer; if (!e.mode) e.mode = 'template'; qaF++; } }
-    paintAicsScenes(); paintAicsQa();
-    alert(`✨ AI 已按人设/卖点生成默认话术：场景 ${sc} 条 · 问答 ${qaF} 条。预览后可改，记得点「💾 保存全部」。`);
-  } catch (e) { alert('❌ 生成失败：' + e.message); }
+/* 试问答＝会话形式（老板：「多次问，多次答的」）：一问一答各一条气泡，记录在本页留着方便对比，
+   改完话术回来接着问，不用重开一页。只试不发——走的还是 aiCsRespond 那条路由。 */
+let _aicsChat = [];
+function paintAicsChat() {
+  const box = document.getElementById('aicsChat'); if (!box) return;
+  if (!_aicsChat.length) { box.innerHTML = '<div style="font-size:12px;color:#999;">还没有对话——在下面输入一句客户可能说的话，点「发送」。</div>'; return; }
+  box.innerHTML = _aicsChat.map(function (row) {
+    const mine = row.role === 'me';
+    return '<div style="align-self:' + (mine ? 'flex-end' : 'flex-start') + ';max-width:82%;' +
+      'padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;' +
+      (mine ? 'background:var(--c-brand-soft,#fdecef);color:#333;' : 'background:#fff;border:1px solid #e3e7f0;color:#333;') + '">' +
+      (mine ? '' : '<span style="color:#98a2b3;font-size:11px;">' + (row.tag ? _ae(row.tag) + ' · ' : '') + '</span>') +
+      _ae(row.text) + '</div>';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
 }
-async function testAics() { const inn = document.getElementById('aicsIn'); const out = document.getElementById('aicsOut'); if (!inn || !out) return; const q = inn.value.trim(); if (!q) return; out.textContent = '路由中…'; try { const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } }); out.innerHTML = r && r.ok ? ('🎯 ' + _ae(r.category) + ' · ' + (r.mode === 'ai' ? 'AI' : '模板') + '\n' + _ae(r.reply)) : ('❌ ' + _ae((r && r.error) || '失败')); } catch (e) { out.textContent = '❌ ' + e.message; } }
+async function testAics() {
+  const inn = document.getElementById('aicsIn'); const box = document.getElementById('aicsChat');
+  if (!inn || !box) return;
+  const q = inn.value.trim(); if (!q) return;
+  if (_aicsChat.some(function (r) { return r.pending; })) return;
+  _aicsChat.push({ role: 'me', text: q });
+  _aicsChat.push({ role: 'bot', text: '路由中…', pending: true });
+  inn.value = '';
+  paintAicsChat();
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'aiCsRespond', data: { incoming: q } });
+    const last = _aicsChat[_aicsChat.length - 1];
+    last.pending = false;
+    if (r && r.ok) { last.tag = '🎯 ' + (r.category || '未分类') + ' · ' + (r.mode === 'ai' ? 'AI' : '模板'); last.text = r.reply || '（空应答）'; }
+    else { last.tag = '失败'; last.text = '❌ ' + ((r && r.error) || '失败'); }
+  } catch (e) {
+    const last = _aicsChat[_aicsChat.length - 1];
+    last.pending = false; last.tag = '失败'; last.text = '❌ ' + e.message;
+  }
+  paintAicsChat();
+}
 
-/* ═══════════ 🌿 日常浏览（②升级版/③全功能版可用，不列入对外功能清单：时段 + 每日配额 + 按比例点赞收藏） ═══════════ */
-function _dbParseWindows(text) {
-  const out = [];
-  String(text || '').split(/\r?\n|;/).forEach(line => {
-    const m = line.trim().match(/^(\d{1,2}:\d{2})\s*[-~—至到]\s*(\d{1,2}:\d{2})$/);
-    if (m) out.push({ start: m[1], end: m[2] });
+
+/* ── 界面主题（🎨 tab）────────────────────────────────────────
+   配色本身在 theme.js（预设表 + 由基色推浅底/淡边/悬停深一档）。
+   这一页只负责「选」：点预设或填一个自定义色 → Theme.save() → 本页立刻变，
+   已经开着的弹窗 / 字效编辑器靠 chrome.storage.onChanged 自己跟上，不用重开。
+   主题值存在 ui_theme（在 lib/tenant.js 的 TENANT_SCOPED_KEYS 里：跟着租户走，也进备份）。 */
+let _themeWired = false;
+function _themeMsg(txt, kind) { showMsg('themeSaveMsg', txt, kind || 'ok'); }
+
+async function renderThemeSettings() {
+  const box = document.getElementById('themePresets');
+  if (!box || typeof Theme === 'undefined') return;
+  _themeWire();
+  const cur = await Theme.read();
+  const card = (id, dot, name, desc, on) =>
+    '<button type="button" class="theme-card' + (on ? ' on' : '') + '" data-t="' + esc(id) + '" title="' + esc(desc) + '">' +
+      '<span class="tc-dot" style="background:' + esc(dot) + ';"></span>' +
+      '<span class="tc-n">' + esc(name) + '</span>' +
+      '<span class="tc-hex">' + esc(dot) + '</span>' +
+      (on ? '<span class="tc-cur">✓ 在用</span>' : '') +
+    '</button>';
+  box.innerHTML = Theme.PRESETS.map(p => card(p.id, p.brand, p.name, p.desc, cur.preset === p.id)).join('') +
+    (cur.preset === 'custom' ? card('custom', String(cur.custom || '#1f2329'), '自定义', '自己填的那个色', true) : '');
+  // 自定义那两格回填当前色（当前是预设时回填该预设的基色，方便在以它为基础微调）
+  const col = document.getElementById('themeCustomColor');
+  const hex = document.getElementById('themeCustomHex');
+  if (col && hex) {
+    const v = (cur.preset === 'custom' && cur.custom) ? String(cur.custom) : (Theme.presetOf(cur.preset) || Theme.presetOf(Theme.DEFAULT)).brand;
+    col.value = v; hex.value = v;
+  }
+}
+
+async function applyThemePreset(id) {
+  const cur = await Theme.read();
+  await Theme.save({ preset: id, custom: String(cur.custom || '') });
+  _themeMsg(id === 'custom' ? '已用自定义色' : '已换成「' + ((Theme.presetOf(id) || {}).name || id) + '」');
+  renderThemeSettings();
+}
+
+async function applyThemeCustom() {
+  const hexEl = document.getElementById('themeCustomHex');
+  const m = /^#?([0-9a-f]{6})$/i.exec(String((hexEl && hexEl.value) || '').trim());
+  if (!m) { _themeMsg('色值要写成 #rrggbb（例：#4f46e5）', 'err'); return; }
+  const hex = '#' + m[1].toLowerCase();
+  await Theme.save({ preset: 'custom', custom: hex });
+  _themeMsg('已用色值 ' + hex);
+  renderThemeSettings();
+}
+
+function _themeWire() {
+  if (_themeWired) return;
+  const panel = document.getElementById('tab-theme');
+  if (!panel) return;
+  _themeWired = true;
+  panel.addEventListener('click', (e) => {
+    const c = e.target.closest('.theme-card');
+    if (c) { applyThemePreset(c.dataset.t); return; }
+    if (e.target.closest('#themeCustomBtn')) { applyThemeCustom(); return; }
+    if (e.target.closest('#themeResetBtn')) { applyThemePreset(Theme.DEFAULT); return; }
   });
-  return out;
+  const col = document.getElementById('themeCustomColor');
+  const hex = document.getElementById('themeCustomHex');
+  if (col && hex) {
+    // 挑色器松手就存（不搞「先预览再确认」——多一步反而要用户记着点保存）
+    col.addEventListener('change', () => { hex.value = col.value; applyThemeCustom(); });
+    hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyThemeCustom(); });
+  }
 }
-function _dbFmtWindows(wins) {
-  return (Array.isArray(wins) ? wins : [])
-    .map(w => ((w && w.start) || '') + '-' + ((w && w.end) || ''))
-    .filter(s => s !== '-').join('\n');
-}
-function _dbFmtTs(ms) {
-  if (!ms) return '—';
-  const d = new Date(ms);
-  const p = n => String(n).padStart(2, '0');
-  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
-}
-function _dbNum(id, def) {
-  const el = document.getElementById(id);
-  const n = el ? parseInt(el.value, 10) : NaN;
-  return isFinite(n) ? n : def;
-}
-function _dbSetNum(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
 
-function renderDailyBrowseStatus(st) {
-  const box = document.getElementById('dbStatus');
-  const logBox = document.getElementById('dbLogs');
+/* ── 🛡 账号安全（镜像 demo ?v=63）：总挡位 / 额度墙 / 静默期 / 单休 / 体检卡 ──
+   真源在 lib/account-guard.js（后台闹钟与各自动化的执行闸读同一份账本）；
+   本页只做「看与调」：点挡位卡 / 点休息日 / 记体检卡 → AccountGuard.saveCfg / record。 */
+const GD_ROWS = [
+  ['open', '📖 打开 / 浏览笔记'], ['like', '👍 点赞'], ['save', '⭐ 收藏'],
+  ['comment', '💬 评论 + 回复'], ['follow', '➕ 关注'], ['dm', '✉️ 私信'],
+  ['post', '📝 发笔记'],
+];
+// 周一..周日 的显示序；dow 是 JS getDay()（0=周日）
+const GD_DAYS = [['周一', 1], ['周二', 2], ['周三', 3], ['周四', 4], ['周五', 5], ['周六', 6], ['周日', 0]];
+let _gdRecKind = '警告';
+let _gdWired = false;
+
+function _gdActText(r) {
+  if (r.floor) return r.kind === '处罚' ? '已在最保守档——建议先把自动化停几天' : '已在最保守档——再收就是停一停（建议手动全停几天）';
+  if (r.kind === '处罚') return '挡位已自动落到「保守」（原「' + r.before + '」）';
+  return '挡位已自动降一级：「' + r.before + '」→「' + r.after + '」';
+}
+
+async function renderGuardSettings() {
+  const box = document.getElementById('guardBody');
   if (!box) return;
-  if (!st || !st.cfg) { box.innerHTML = '⚠️ ' + ((st && st.error) || '当前版本未开通「日常浏览」'); if (logBox) logBox.innerHTML = ''; return; }
-  const c = st.cfg;
-  const lines = [];
-  lines.push('今日已浏览：<b>' + (st.todayCount || 0) + '</b> / ' + (c.dailyQuota || 0) + ' 篇');
-  lines.push('状态：' + (st.running ? '🌿 正在浏览中' : (c.enabled ? (st.inWindow ? '✅ 已开启（当前在时段内）' : '⏸ 已开启（当前不在时段内）') : '未开启')));
-  if (st.nextAt) lines.push('下次运行：约 ' + _dbFmtTs(st.nextAt));
-  if (st.lastRound && st.lastRound.ts) {
-    const its = st.lastRound.items || [];
-    lines.push('最近一轮：' + _dbFmtTs(st.lastRound.ts) + ' · 浏览 ' + its.length + ' 篇' +
-      (its.filter(x => x.opened).length ? '，打开 ' + its.filter(x => x.opened).length + ' 篇' : '') +
-      (its.filter(x => x.liked).length ? '，点赞 ' + its.filter(x => x.liked).length : '') +
-      (its.filter(x => x.collected).length ? '，收藏 ' + its.filter(x => x.collected).length : ''));
+  if (typeof AccountGuard === 'undefined') { box.innerHTML = '<div class="empty-tip">账号安全组件没加载上，刷新一下这页试试。</div>'; return; }
+  _gdWire();
+  const st = await AccountGuard.status();
+  const cards = AccountGuard.LEVELS.map(l => {
+    const on = l.name === st.level;
+    const c = l.cap;
+    return '<div class="gd-card' + (on ? ' on' : '') + '" data-level="' + esc(l.name) + '">' +
+      '<div class="gd-name">' + (on ? '✅ ' : '') + esc(l.name) + '</div>' +
+      '<div class="gd-tag">' + esc(l.sub) + '</div>' +
+      '<div class="gd-nums">📖 打开 ' + c.open + ' · 👍 点赞 ' + c.like + ' · ⭐ 收藏 ' + c.save + '<br>💬 评论+回复 ' + c.comment + ' · ➕ 关注 ' + c.follow + '<br>✉️ 私信 ' + c.dm + ' · 📝 发笔记 ' + c.post + '</div></div>';
+  }).join('');
+  const byKind = {};
+  st.rows.forEach(r => { byKind[r.kind] = r; });
+  const wall = GD_ROWS.map(row => {
+    const r = byKind[row[0]] || { used: 0, cap: 0 };
+    const raw = r.used || 0, cap = r.cap || 0;
+    const full = cap > 0 && raw >= cap;
+    const pct = cap > 0 ? Math.min(100, Math.round(raw / cap * 100)) : 0;
+    const cls = full ? ' full' : (pct >= 80 ? ' hot' : '');
+    return '<div class="gd-wallrow"><div class="wl">' + row[1] + '</div>' +
+      '<div class="gd-bar"><i class="gd-fill' + cls + '" style="width:' + (full ? 100 : pct) + '%;"></i></div>' +
+      '<div class="wn' + (full ? ' full' : '') + '">' + raw + ' / ' + cap + (full ? ' · 停手' : ' · 余 ' + (cap - raw)) + '</div></div>';
+  }).join('');
+  const days = GD_DAYS.map(d => '<button type="button" class="gd-day' + (d[1] === st.rest.day ? ' rest' : '') + '" data-dow="' + d[1] + '">' + d[0] + (d[1] === st.rest.day ? ' · 休' : '') + '</button>').join('');
+  const health = st.health.slice().reverse();
+  const recs = health.length ? health.map(r =>
+    '<div class="gd-rec"><div class="rt">' + esc(r.t) + '<span class="rk ' + (r.kind === '处罚' ? 'rk-pun' : 'rk-warn') + '">' + esc(r.kind) + '</span></div>' +
+    '<div class="rn">' + esc(r.note || '（没写详情）') + '</div>' +
+    '<div class="ra ' + (r.floor ? 'floor' : 'down') + '">' + esc(_gdActText(r)) + '</div></div>').join('')
+    : '<div class="gd-note" style="margin-top:2px;">还没记过——收到平台的警告 / 限流 / 处罚时，来这儿记一笔（挡位会自动收紧）。</div>';
+  box.innerHTML =
+    '<div class="gd-wrap">' +
+    '<div class="gd-sec"><h4>① 总挡位 · 点一张卡＝那天所有自动化的合计上限</h4>' +
+    '<div class="gd-cards">' + cards + '</div>' +
+    '<div class="gd-wave">今日额度 ＝ 挡位基准 × <b>今日波动 ' + st.wave.toFixed(1) + '</b>（每天凌晨随机抽 0.6~1.0——同样「' + esc(st.level) + '」，有的日子只跑六成。）</div>' +
+    '<div id="gdSaveMsg" class="save-msg"></div></div>' +
+    '<div class="gd-sec"><h4>② 今天各动作还剩多少（一天合计：灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发笔记…一起算）</h4>' + wall +
+    '<div class="gd-note">到量就停手、剩下的等明天——各功能不再各算各的，合计封顶。</div></div>' +
+    '<div class="gd-sec"><h4>🌙 静默期 21:00 – 09:00 · 一律不跑</h4>' +
+    '<div class="gd-tl"><span class="seg-off" style="flex:0 0 37.5%;"></span><span class="seg-on" style="flex:1;"></span><span class="seg-off" style="flex:0 0 12.5%;"></span></div>' +
+    '<div class="gd-tlx"><span style="left:0;">00:00</span><span style="left:37.5%;transform:translateX(-50%);">09:00 · 开工（再随机等 0~40 分钟才动）</span><span style="left:87.5%;transform:translateX(-50%);">21:00 · 收工</span><span style="right:0;">24:00</span></div>' +
+    '<div class="gd-note">到 21:00 自动停下，早上 9 点前一律不动。<b>发布队列到点撞上静默期 → 自动顺延到第二天 9 点后</b>（工作台回执注明「因静默期顺延」）；存量功能里超出的时段（如日常浏览）自动钳进 09:00–21:00。</div>' +
+    '<div class="gd-note">白天也不是一直动：<b>每小时最多自动动 30 分钟</b>，剩下半小时歇着——「连着干」比「干得多」更扎眼。</div></div>' +
+    '<div class="gd-sec"><h4>🛌 每周单休 · 点一天就是那天的休息日</h4>' +
+    '<div class="gd-days">' + days + '</div>' +
+    '<div class="gd-note">每周随机抽 1 天整个停（这周是 <b>' + (st.rest.day >= 0 ? esc(st.rest.name) : '还没定') + '</b>）——那天不发笔记、不灌水、不获客，什么都不跑。想换天，点一下就是它。</div></div>' +
+    '<div class="gd-sec"><h4>🩺 账号体检卡 <span class="badge ' + (st.level === '保守' ? 'ok' : 'warn') + '" style="margin-left:6px;">当前挡位：' + esc(st.level) + '</span> <span style="font-size:var(--fs-xs);color:var(--c-ink-3);">记过 ' + st.health.length + ' 笔</span></h4>' +
+    recs +
+    '<div style="margin-top:10px;"><button class="btn-primary btn-sm" id="gdRecOpen">＋ 记一笔</button></div>' +
+    '<div class="gd-note">收到警告 / 限流：挡位自动降一级；收到处罚：直接落到「保守」；已在「保守」再收到 → 红字提醒（建议先停几天）。<b>恢复要手动</b>——觉得稳了想跑多点，到上面点卡自己调。</div></div>' +
+    '<div class="gd-foot">这一页和「拟人化与频率」页各管各的：那边管每一步停多久，这边管一天能干多少、什么时候不许干。所有功能（灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发布台）跑之前都过这一道闸：额度没了等明天，静默 / 休息日顺延。</div>' +
+    // 记一笔弹层（默认收着；.modal 自带 display:flex，用行内 none 盖掉）
+    '<div class="modal" id="gdRecModal" style="display:none;">' +
+      '<div class="modal-box">' +
+        '<div class="modal-header"><h3>🩺 记一笔平台动作</h3><button class="modal-close" id="gdRecClose">✕</button></div>' +
+        '<div style="font-size:var(--fs-sm);color:var(--c-ink-2);line-height:1.8;">收到平台的警告 / 限流 / 处罚，记在这里——挡位自动收紧，不用自己盯：<b>警告、限流降一级；处罚直接落到「保守」</b>。</div>' +
+        '<div class="gd-radios" id="gdKinds" style="margin-top:12px;">' +
+          ['警告', '限流', '处罚'].map(k => '<button type="button" class="gd-radio' + (k === _gdRecKind ? ' on' : '') + '" data-k="' + k + '">' + k + '</button>').join('') +
+        '</div>' +
+        '<div class="gd-recdate"><span>发生日期</span><input type="date" id="gdRecDate"><span style="font-size:var(--fs-xs);color:var(--c-ink-3);">补记历史日期时改这里（默认今天）</span></div>' +
+        '<textarea id="gdNote" class="gd-recbox" rows="3" placeholder="平台怎么说这个的、原文、时间范围（可不填）"></textarea>' +
+        '<div class="gd-modalfoot"><span class="gd-mf-hint">记完就按新挡位跑，从下一个动作开始生效</span>' +
+        '<span style="display:flex;gap:8px;"><button class="btn-secondary btn-sm" id="gdRecCancel">取消</button><button class="btn-primary btn-sm" id="gdRecSave">保存</button></span></div>' +
+      '</div>' +
+    '</div>' +
+    '</div>';
+}
+
+function _gdOpenRec() {
+  _gdRecKind = '警告';
+  const m = document.getElementById('gdRecModal');
+  if (!m) return;
+  // 每次打开都重置到「警告」＋清空备注（防上次残留）
+  m.querySelectorAll('#gdKinds .gd-radio').forEach(b => b.classList.toggle('on', b.dataset.k === '警告'));
+  const note = document.getElementById('gdNote');
+  if (note) note.value = '';
+  const date = document.getElementById('gdRecDate');
+  if (date) {
+    const d = new Date();
+    const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    date.value = today;
+    date.max = today;   // 不能记未来的日期
   }
-  box.innerHTML = lines.join('<br>');
-  if (logBox) {
-    const logs = st.logs || [];
-    logBox.innerHTML = logs.length
-      ? logs.map(l => '<div>' + esc(l.text || '') + '</div>').join('')
-      : '<div style="color:#bbb;">暂无日志</div>';
+  m.style.display = 'flex';
+}
+function _gdCloseRec() { const m = document.getElementById('gdRecModal'); if (m) m.style.display = 'none'; }
+
+async function _gdSaveRec() {
+  if (typeof AccountGuard === 'undefined') return;
+  const note = document.getElementById('gdNote');
+  const date = document.getElementById('gdRecDate');
+  const t = date && date.value ? date.value : '';
+  let r = null;
+  try { r = await AccountGuard.record({ kind: _gdRecKind, note: (note && note.value) || '', t }); } catch (_) {}
+  _gdCloseRec();
+  await renderGuardSettings();
+  if (r) {
+    const act = r.floor
+      ? '已在最保守档——建议先把自动化停几天'
+      : (_gdRecKind === '处罚' ? '挡位已落到「保守」' : '挡位已降一级到「' + r.level + '」');
+    showMsg('gdSaveMsg', '记下了——' + act);
+  } else {
+    showMsg('gdSaveMsg', '没记上（存储写入失败），再试一次', 'err');
   }
 }
 
-async function loadDailyBrowse() {
-  if (!document.getElementById('dbEnabled')) return;
-  let st = null;
-  try { st = await chrome.runtime.sendMessage({ action: 'dailyBrowseStatus' }); } catch (_) {}
-  if (!st || !st.cfg) { renderDailyBrowseStatus(st); return; }
-  const c = st.cfg;
-  const en = document.getElementById('dbEnabled'); if (en) en.checked = !!c.enabled;
-  const win = document.getElementById('dbWindows'); if (win) win.value = _dbFmtWindows(c.windows);
-  const kw = document.getElementById('dbKeywords'); if (kw) kw.value = (c.keywords || []).join('\n');
-  _dbSetNum('dbDailyQuota', c.dailyQuota);
-  _dbSetNum('dbPerRound', c.perRound);
-  _dbSetNum('dbIntervalMin', c.intervalMin);
-  _dbSetNum('dbDwellMin', c.dwellMin);
-  _dbSetNum('dbDwellMax', c.dwellMax);
-  _dbSetNum('dbOpenRate', c.openRate);
-  _dbSetNum('dbLikeRate', c.likeRate);
-  _dbSetNum('dbCollectRate', c.collectRate);
-  renderDailyBrowseStatus(st);
+function _gdWire() {
+  if (_gdWired) return;
+  const panel = document.getElementById('tab-guard');
+  if (!panel) return;
+  _gdWired = true;
+  panel.addEventListener('click', async (e) => {
+    const card = e.target.closest('.gd-card');
+    if (card && typeof AccountGuard !== 'undefined') {
+      if (card.classList.contains('on')) return;   // 点已选中的卡不动（同 demo）
+      await AccountGuard.saveCfg({ level: card.dataset.level });
+      await renderGuardSettings();
+      showMsg('gdSaveMsg', '挡位切到「' + card.dataset.level + '」——今天各功能的额度上限跟着换了（体检卡降挡后想放宽，也在这手动调）');
+      return;
+    }
+    const day = e.target.closest('.gd-day');
+    if (day && typeof AccountGuard !== 'undefined') {
+      const dow = parseInt(day.dataset.dow, 10);
+      const nm = (GD_DAYS.find(d => d[1] === dow) || [''])[0];
+      await AccountGuard.saveCfg({ restDay: dow });
+      await renderGuardSettings();
+      showMsg('gdSaveMsg', '这周的休息日改成' + nm + '了——那天所有自动化不跑');
+      return;
+    }
+    if (e.target.closest('#gdRecOpen')) { _gdOpenRec(); return; }
+    if (e.target.closest('#gdRecClose') || e.target.closest('#gdRecCancel')) { _gdCloseRec(); return; }
+    const k = e.target.closest('#gdKinds .gd-radio');
+    if (k) {
+      _gdRecKind = k.dataset.k || '警告';
+      panel.querySelectorAll('#gdKinds .gd-radio').forEach(b => b.classList.toggle('on', b === k));
+      return;
+    }
+    if (e.target.closest('#gdRecSave')) { _gdSaveRec(); return; }
+  });
 }
-
-document.querySelector('[data-tab="dailybrowse"]')?.addEventListener('click', loadDailyBrowse);
-
-document.getElementById('dbSaveBtn')?.addEventListener('click', async () => {
-  const winRaw = (document.getElementById('dbWindows') || {}).value || '';
-  const windows = _dbParseWindows(winRaw);
-  if (winRaw.trim() && !windows.length) {
-    showMsg('dbSaveMsg', '❌ 时段格式不对：每行写成 09:00-11:30 这样（或用「−」分隔）', 'err');
-    return;
-  }
-  const keywords = String((document.getElementById('dbKeywords') || {}).value || '')
-    .split(/\r?\n|,|，/).map(s => s.trim()).filter(Boolean);
-  const cfg = {
-    enabled: !!(document.getElementById('dbEnabled') || {}).checked,
-    windows,
-    keywords,
-    dailyQuota: _dbNum('dbDailyQuota', 40),
-    perRound: _dbNum('dbPerRound', 6),
-    intervalMin: _dbNum('dbIntervalMin', 25),
-    dwellMin: _dbNum('dbDwellMin', 8),
-    dwellMax: _dbNum('dbDwellMax', 25),
-    openRate: _dbNum('dbOpenRate', 60),
-    likeRate: _dbNum('dbLikeRate', 25),
-    collectRate: _dbNum('dbCollectRate', 12),
-  };
-  try {
-    const r = await chrome.runtime.sendMessage({ action: 'dailyBrowseSaveConfig', data: { config: cfg } });
-    if (!r || r.error || !r.cfg) throw new Error((r && r.error) || '保存失败');
-    showMsg('dbSaveMsg', '✅ 已保存' + (r.cfg.enabled ? '，到点会自动跑' : '（当前未开启）'), 'ok');
-    loadDailyBrowse();
-  } catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
-});
-
-document.getElementById('dbRunBtn')?.addEventListener('click', async () => {
-  showMsg('dbSaveMsg', '🌿 正在打开页面开始浏览…一轮大约 1~3 分钟，请不要关掉小红书标签页', '');
-  const btn = document.getElementById('dbRunBtn'); if (btn) btn.disabled = true;
-  try {
-    const r = await chrome.runtime.sendMessage({ action: 'dailyBrowseRunNow' });
-    const n = (r && Array.isArray(r.items)) ? r.items.length : 0;
-    if (r && r.ok) showMsg('dbSaveMsg', '✅ 本轮完成：浏览 ' + n + ' 篇', 'ok');
-    else showMsg('dbSaveMsg', '⚠️ ' + ((r && r.error) || '本轮未完成'), 'err');
-  } catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
-  if (btn) btn.disabled = false;
-  loadDailyBrowse();
-});
-
-document.getElementById('dbStopBtn')?.addEventListener('click', async () => {
-  try { await chrome.runtime.sendMessage({ action: 'dailyBrowseStop' }); showMsg('dbSaveMsg', '⏹ 已通知本轮尽快结束（当前这一篇会跑完）', 'ok'); }
-  catch (e) { showMsg('dbSaveMsg', '❌ ' + (e.message || e), 'err'); }
-  loadDailyBrowse();
-});

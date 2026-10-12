@@ -29,8 +29,8 @@
     'auto_water_history',   // 自动灌水历史（笔记标题/链接 → 按运行数据 30 天清除）
   ];
 
-  // 只做过期清除、不做整块加密的 key（纯计数，不含个人信息）
-  const SWEEP_EXTRA_KEYS = ['auto_water_daily'];
+  // 只做过期清除、不做整块加密的 key（纯计数 / 本机运行痕迹）
+  const SWEEP_EXTRA_KEYS = ['auto_water_daily', 'daily_browse_daily', 'daily_browse_log', 'daily_browse_last'];
   const SWEEP_KEYS = ENC_KEYS.concat(SWEEP_EXTRA_KEYS);
 
   // config 内需要字段级加密的路径
@@ -219,6 +219,12 @@
     return removed ? { changed: true, removed, value: out } : { changed: false, removed: 0 };
   }
 
+  /* 单条记录（如 🌿 daily_browse_last：只留最近一轮）：过期就整块清掉 */
+  function _sweepOne(rec, tsOf, cutoff) {
+    if (!rec || typeof rec !== 'object') return { changed: false, removed: 0 };
+    return _stale(tsOf(rec), cutoff) ? { changed: true, removed: 1, value: {} } : { changed: false, removed: 0 };
+  }
+
   function _sweepDaily(map, cutoff) {
     if (!map || typeof map !== 'object') return { changed: false, removed: 0 };
     let removed = 0;
@@ -256,6 +262,10 @@
     apply('ai_logs', _sweepListOf(body.ai_logs, r => _toMs(r && r.timestamp), runCut));
     apply('auto_water_history', _sweepWaterHistory(body.auto_water_history, runCut));
     apply('auto_water_daily', _sweepDaily(body.auto_water_daily, runCut));
+    // 🌿 日常浏览（运行数据 30 天）：每日计数 / 日志 / 最近一轮（含刷到的笔记标题）
+    apply('daily_browse_daily', _sweepDaily(body.daily_browse_daily, runCut));
+    apply('daily_browse_log', _sweepListOf(body.daily_browse_log, r => _toMs(r && (r.ts || r.at)), runCut));
+    apply('daily_browse_last', _sweepOne(body.daily_browse_last, r => _toMs(r && (r.ts || r.doneAt || r.startedAt)), runCut));
     return { changed, removed, value: out };
   }
 

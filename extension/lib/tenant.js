@@ -31,15 +31,29 @@ const TENANT_SCOPED_KEYS = [
   'prospect_list',       // 获客清单
   'prospect_dm_history', // 获客清单私信历史
   'prospect_sync_cursor',// 通知同步游标（识别"上次处理到最深那条"实现增量）
-  'note_plan',           // 内容规划（含每页配图背景建议 photoPlans）
+  'note_plan',           // 内容规划（「诊断&配置 → 规划」产出）
+  'note_columns',        // 📅 栏目表（账号级长期设定：每个栏目＝每周固定一天发的一类笔记）
+  'deep_report',         // 账号诊断·深度评估报告（规划节点的产出，随租户切换）
   'topic_pool',          // 🏷 话题采集池（笔记列表读到的 #话题，可一键转搜索关键词）
   'np_used_topics',      // 发笔记：已用选题/卖点指纹池（剔除已发送，恢复后免重复发）
-  'daily_browse_config', // 🌿 日常浏览：时段/配额/概率配置
+  'np_notes',            // 发笔记：笔记档案（写过的每一篇留档：成稿/提示词/口播稿 + 状态）
+  'np_assets',           // 发笔记：画面表挂图内部仓（出图那侧在用；只存引用 + 缩略图）
+  'np_asset_needs',      // 发笔记：老备图清单（素材库集合化后只留读——启动期迁移用，不再写入）
+  'np_collections',      // 发笔记：素材库集合（一行一集：案例剪段 / 要备料，空集合＝待补充）
+  'np_clips',            // 发笔记：素材库片段（视频段 + 纯图混装；只记账不拷文件）
+  'np_collections_meta', // 发笔记：素材库整理外账（{ sig, genAt }——卖点/知识库没变就不重算）
+  'daily_browse_config', // 🌿 日常浏览：方向/插入规则/节奏与概率配置
   'daily_browse_daily',  // 🌿 日常浏览：每日浏览计数
-  'daily_browse_last',   // 🌿 日常浏览：最近一轮结果（页面侧落盘，供后台对账）
+  'daily_browse_last',   // 🌿 日常浏览：最近一轮结果（页面侧落盘，排查用）
   'daily_browse_log',    // 🌿 日常浏览：运行日志
+  'daily_browse_stop_at',// 🌿 日常浏览：停止本轮信号
   'drain_notes',         // ✂️ 截流：笔记监控池（扫描发现的笔记）
   'drain_scan_cfg',      // ✂️ 截流：扫描来源配置（关键词/城市/高V + 定时）
+  'drain_queue',         // ✂️ 截流：队列状态（正在跑/欠账/手插/已完成，含日常流程项）
+  'ui_theme',            // 🎨 界面主题（一套配色的编号 / 自定义色值——跟着产品走，将来抖音那条线换一套预设）
+  'account_guard',       // 🛡 账号安全：挡位 + 本周单休日
+  'guard_daily',         // 🛡 账号安全：当日总账（各动作已用/波动/干歇节拍）
+  'account_health',      // 🛡 账号安全：体检卡历史（警告/限流/处罚）
 ];
 
 /* ─── 底层读写 ─── */

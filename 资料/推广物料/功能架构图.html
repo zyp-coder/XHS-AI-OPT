@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI雕兄 · 功能全图</title>
+<style>
+  :root{
+    --ink:#1a1a1a;--body:#333;--gray:#909090;--red:#e0493c;
+    --line:#ececec;--soft:#faf5f4;--softline:#f0dcd8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:#fff;font-family:"Microsoft YaHei","微软雅黑",system-ui,sans-serif;}
+  .sheet{width:960px;padding:48px 52px 44px;background:#fff;}
+  .kicker{text-align:center;font-size:13.5px;color:var(--gray);letter-spacing:.14em;margin-bottom:13px;}
+  .title{text-align:center;font-size:36px;font-weight:800;color:var(--ink);letter-spacing:.04em;margin-bottom:12px;}
+  .sub{text-align:center;font-size:15.5px;color:var(--body);margin-bottom:36px;}
+  .sub i{font-style:normal;color:var(--red);font-weight:700;margin:0 3px;}
+  .mod{border:1.5px solid var(--line);border-radius:16px;padding:21px 26px;}
+  .mhead{display:flex;align-items:baseline;gap:11px;}
+  .no{font-size:23px;font-weight:800;color:var(--red);}
+  .mname{font-size:22px;font-weight:800;color:var(--ink);}
+  .mrole{font-size:14px;color:var(--gray);}
+  .arrow{height:34px;display:flex;align-items:center;justify-content:center;color:#cfcfcf;font-size:19px;}
+  .bar{margin-top:20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:12px;background:var(--soft);border:1px solid var(--softline);border-radius:16px;padding:16px 26px;}
+  .bar b{font-size:15.5px;font-weight:800;color:var(--red);}
+  .bar span{font-size:14.5px;color:var(--body);}
+
+  .say{margin-top:11px;font-size:14px;color:#3d3d3d;line-height:1.62;}
+
+  /* ── 分层框套框（① 发笔记）：模块框 → 分组框 → 条目框 ── */
+  .grp{margin-top:16px;background:#f7f8fa;border:1px solid #eef0f3;border-radius:14px;padding:13px 15px 14px;}
+  .glab{display:flex;align-items:center;gap:9px;margin-bottom:11px;font-size:15.5px;font-weight:800;color:var(--ink);}
+  .glab i{width:4px;height:15px;background:var(--red);border-radius:2px;}
+  .glab span{font-size:12.5px;font-weight:400;color:var(--gray);}
+  .its{display:grid;gap:10px;}
+  .its.c3{grid-template-columns:repeat(3,1fr);}
+  .its.c2{grid-template-columns:repeat(2,1fr);}
+  .its.c6{grid-template-columns:repeat(6,1fr);gap:8px;}
+  .it{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px 12px 11px;}
+  .it .t{font-size:14.5px;font-weight:800;color:var(--ink);line-height:1.5;}
+  .it .t .hl{color:var(--red);}
+  .it .d .hl{color:var(--red);font-weight:800;}
+  .it .d{margin-top:5px;margin-bottom:9px;font-size:12.5px;color:#5a5a5a;line-height:1.58;}
+  .it .cap{margin-top:auto;font-size:12px;font-weight:700;color:var(--red);background:var(--soft);border-radius:8px;padding:5px 9px;line-height:1.5;}
+  .it .cap .nb{white-space:nowrap;}
+  .it.nm{padding:8px 4px;border-radius:9px;align-items:center;justify-content:center;}
+  .it.nm .t{font-size:13px;font-weight:700;color:#555;}
+  .ln{font-size:13px;color:#5a5a5a;line-height:1.6;}
+  .ln+.ln{margin-top:7px;}
+  .ln b{color:var(--ink);font-weight:800;}
+  .gfoot{margin-top:11px;background:var(--soft);border:1px solid var(--softline);border-radius:10px;padding:8px 12px;font-size:13.5px;color:#3d3d3d;line-height:1.55;}
+  .gfoot b{color:var(--red);font-weight:800;}
+  .guard{margin-top:18px;background:var(--soft);border:1px solid var(--softline);border-radius:12px;padding:13px 18px;}
+  .guard .g1{font-size:14.5px;color:#3d3d3d;line-height:1.72;}
+  .guard b{color:var(--red);font-weight:800;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="kicker">AI雕兄 · 小红书评论区获客系统</div>
+  <div class="title">功能全图</div>
+  <div class="sub">四个模块，一条链：发内容 <i>→</i> 捞客户 <i>→</i> 跟客户 <i>→</i> 管账号</div>
+
+  <div class="mod">
+    <div class="mhead"><span class="no">①</span><span class="mname">发笔记</span><span class="mrole">您要发的，就 3 类，各有各的活</span></div>
+
+    <div class="grp">
+      <div class="glab"><i></i>笔记类型</div>
+      <div class="its c3">
+        <div class="it">
+          <div class="t">知识笔记 <span class="hl">＝立专业</span></div>
+          <div class="d">拿您的知识库讲一条——怎么选、怎么避坑、多少钱算合理，让搜这类问题的客户先搜到您、先信您。</div>
+          <div class="cap">能出：<span class="nb">思维导图</span>/<span class="nb">竖版视频</span>/<span class="nb">口播稿</span></div>
+        </div>
+        <div class="it">
+          <div class="t">引流笔记 <span class="hl">＝抓流量</span></div>
+          <div class="d">借大家正在聊的话头——热点、热梗、情绪、感悟，把还不认识您的路人吸引进来。一次出 18 版，挑一版改顺就发。</div>
+          <div class="cap">能出：<span class="nb">图文</span>/<span class="nb">竖版视频</span></div>
+        </div>
+        <div class="it">
+          <div class="t">案例笔记 <span class="hl">＝加信度</span></div>
+          <div class="d">实拍、完工现场、真实结果丢进去——快速切片、每段配一句讲解、拼成成片；一条案例拆成多条视频讲。</div>
+          <div class="cap">能出：<span class="nb">竖版视频</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="glab"><i></i>发布台<span>一篇笔记从备料到留档，都在这儿</span></div>
+      <div class="its c2">
+        <div class="it">
+          <div class="t">笔记规划</div>
+          <div class="d">按账号阶段排——一周哪天发知识、哪天发引流、哪天发案例；AI 先排一版，您能改。</div>
+        </div>
+        <div class="it">
+          <div class="t">发布队列</div>
+          <div class="d">写好的笔记自动排进最早的空位——到点自己发，不用人守。</div>
+        </div>
+        <div class="it">
+          <div class="t">素材库</div>
+          <div class="d">每篇要配的料，AI 先列清单——要有几张、缺几张、用在哪，一眼看清；传上来的图、剪好的段，自动按集合归好。</div>
+        </div>
+        <div class="it">
+          <div class="t">笔记档案</div>
+          <div class="d">写过的都留档——每篇走到哪一步，一眼看清。</div>
+        </div>
+      </div>
+      <div class="gfoot"><b>发布支持：</b>小红书 / 抖音 / 视频号（视频三家都能发，图文只发小红书和抖音）</div>
+    </div>
+
+    <div class="say"><b>AI 出稿，您把关</b>——一篇定稿，各平台各出各的版本。</div>
+  </div>
+  <div class="arrow">↓</div>
+
+  <div class="mod">
+    <div class="mhead"><span class="no">②</span><span class="mname">评论区获客</span><span class="mrole">去客户正在看的地方接——就干 3 件事</span></div>
+
+    <div class="grp">
+      <div class="glab"><i></i>第 1 件 · 找对地方<span>三个来源，都进同一个词池</span></div>
+      <div class="ln"><b>AI 找词</b>——AI 按您的人设、卖点、知识库推荐关键词，勾选入池。</div>
+      <div class="ln"><b>刷笔记采词</b>——平时刷到的笔记，#话题自动采下来——读得越多越准。</div>
+      <div class="ln"><b>自己维护</b>——想搜什么词自己加、随时改。</div>
+    </div>
+
+    <div class="grp">
+      <div class="glab"><i></i>第 2 件 · 接对话<span>5 种笔记，5 种聊法</span></div>
+      <div class="its c2">
+        <div class="it">
+          <div class="t">正在上涨的笔记 <span class="hl">＝抢前排</span></div>
+          <div class="d">流量正在往上走的笔记——露脸的话抢先评一条，占住前排。</div>
+        </div>
+        <div class="it">
+          <div class="t">搜索老帖 <span class="hl">＝占深度</span></div>
+          <div class="d">这类帖子长期有人搜得到——写一条够专业的深度解答，长期排前面给您露脸。</div>
+        </div>
+        <div class="it">
+          <div class="t">同城帖 <span class="hl">＝拉近乎</span></div>
+          <div class="d">用本地人的口吻聊一句——同城客户刷到一看是「自己人」，信任先立住。</div>
+        </div>
+        <div class="it">
+          <div class="t">求助帖 <span class="hl">＝给方案</span></div>
+          <div class="d">主动求助的就是最准的客户——评论里求助的、同问的，一个个给解答、给方案。</div>
+        </div>
+        <div class="it">
+          <div class="t">大V帖 <span class="hl">＝补干货</span></div>
+          <div class="d">大博主的笔记流量大——去评论区补一条内行干货，借他的流量露个脸。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="glab"><i></i>第 3 件 · 说对话<span>12 种评论打法，看菜下饭</span></div>
+      <div class="its c6">
+        <div class="it nm"><div class="t">教程</div></div>
+        <div class="it nm"><div class="t">避坑</div></div>
+        <div class="it nm"><div class="t">对比</div></div>
+        <div class="it nm"><div class="t">数据</div></div>
+        <div class="it nm"><div class="t">反驳</div></div>
+        <div class="it nm"><div class="t">补充</div></div>
+        <div class="it nm"><div class="t">反向共情</div></div>
+        <div class="it nm"><div class="t">共情</div></div>
+        <div class="it nm"><div class="t">热点</div></div>
+        <div class="it nm"><div class="t">带赞</div></div>
+        <div class="it nm"><div class="t">提问</div></div>
+        <div class="it nm"><div class="t">求教</div></div>
+      </div>
+      <div class="gfoot">要教程给教程、要共情给共情；纯捧场、不带货也照发——<b>不刷屏、不招黑</b>。</div>
+    </div>
+
+    <div class="guard">
+      <div class="g1"><b>守着两条线。</b>一是只跟主动问「哪家好」的人聊——求助的、疑问的、被坑过的，不该评的自动跳过；</div>
+      <div class="g1">二是节奏是真人节奏——逐字打字 · 间隔随机 · 每天有量上限，看着像您本人在回。</div>
+    </div>
+    <div class="say">评论区里感兴趣的人，顺手记进客户名单。</div>
+  </div>
+  <div class="arrow">↓</div>
+
+  <div class="mod">
+    <div class="mhead"><span class="no">③</span><span class="mname">AI 客服</span><span class="mrole">捞到的人，不漏</span></div>
+
+    <div class="grp">
+      <div class="glab"><i></i>跟客户<span>捞到的人，一个个跟到底</span></div>
+      <div class="its c3">
+        <div class="it">
+          <div class="t">私信触达</div>
+          <div class="d">评论区捞到的人，<span class="hl">AI 主动私信</span>找上去——按对方情况拟好，您点头才发。</div>
+        </div>
+        <div class="it">
+          <div class="t">客户名单</div>
+          <div class="d">谁走到哪一步、谈没谈成，打开一眼看清。</div>
+        </div>
+        <div class="it">
+          <div class="t">通知回访</div>
+          <div class="d">有人回您了，替您盯着；该接的话，一个不落。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="glab"><i></i>接住来问的<span>客服的活，也接过来</span></div>
+      <div class="its c2">
+        <div class="it">
+          <div class="t">自动接待</div>
+          <div class="d">有人私信来问、评论里搭话——它按您的话术库先聊上、该跟的自动跟；新消息有角标提醒。</div>
+        </div>
+        <div class="it">
+          <div class="t">客服话术库</div>
+          <div class="d">接话的话术，您自己定。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="arrow">↓</div>
+
+  <div class="mod">
+    <div class="mhead"><span class="no">④</span><span class="mname">账号诊断与配置</span><span class="mrole">先把您的号照一遍</span></div>
+
+    <div class="grp">
+      <div class="glab"><i></i>先诊断</div>
+      <div class="its">
+        <div class="it">
+          <div class="t">账号诊断</div>
+          <div class="d">6 个维度把您的号照一遍：定位（卖什么、卖给谁）· 人群（写给谁看）· 频率（发多发少）· 选题（踩不踩痛点）· 内容硬伤（标题、封面、开头）· 历史归因（哪篇爆了、哪篇沉了）。不是一句「挺好」，是一张「你这个号该怎么做」的施工图。</div>
+          <div class="cap">交您四样：<span class="nb">人设方向</span>/<span class="nb">笔记结构</span>/<span class="nb">选题清单</span>/<span class="nb">发布节奏</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grp">
+      <div class="glab"><i></i>再配置<span>AI 开口前，先把您的料配齐</span></div>
+      <div class="its c2">
+        <div class="it">
+          <div class="t">人设</div>
+          <div class="d">把说话风格定下来——AI 从头到尾照您的口吻说话。</div>
+        </div>
+        <div class="it">
+          <div class="t">卖点库</div>
+          <div class="d">卖什么、凭什么——AI 说话都从这儿取。</div>
+        </div>
+        <div class="it">
+          <div class="t">知识库</div>
+          <div class="d">AI 只引您的真资料——数字、功能、经历都从这来，编不出来。</div>
+        </div>
+        <div class="it">
+          <div class="t">内容规划</div>
+          <div class="d">一周发几篇、几类怎么搭，按账号阶段排好。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="guard">
+    <div class="g1"><b>跑起来之后 · 越跑越准。</b>复盘——今天发了多少、回了谁、用了什么话术，AI 一条条记账，随时回看、一键复制；这些又喂回诊断，下一轮选题、话术越调越准。</div>
+  </div>
+
+  <div class="bar"><b>所有档位都带：</b><span>多产品切换 · 数据只存本机 · 发送间隔与停留时间自己设</span></div>
+</div>
+</body>
+</html>

@@ -4,22 +4,23 @@
  * ⚠️ 本文件内容在正式打包时会被 build.js 自动覆盖写死。
  *    默认这里是「开发版 dev」：所有功能全开、永不过期，方便本地开发调试。
  *
- * 版本类型（与 build.js PRESETS 对应）：
+ * 版本类型（与 build.js PRESETS 对应；三档边界 2026-10-09 老板定：一个模块一条线、累进开通）：
  *   dev            开发版（全开、不过期，仅本地用）
- *   full           全功能版（¥539/月；② + 通知/私信（线索触达/获客清单）+ 笔记生成）
- *   comment        基础版（¥239/月；手动评论助手，无自动化/无获客清单）
- *   comment-multi  升级版（¥399/月；一键灌水+笔记列表 + 多关键词）
+ *   comment        基础版（¥239/月；共有 + 发笔记：整页发送 / 账号诊断&配置 / 产品库·知识库 / 多产品切换 / 笔记生成+素材库+笔记档案+字效编辑器）
+ *   comment-multi  升级版（¥399/月；① + 获客：一键灌水/笔记列表/关键词维护）
+ *   full           全功能版（¥539/月；② + 线索：通知/私信、获客清单）
  *   pro            自用版（全功能、零等待、不过期，自用）
+ *   ※ 关键词上限三档一律不限（keywordMax 0＝不限）
  *
  * 功能开关（features）：
- *   batchSend    整页发送评论（同一篇笔记的多条评论一键发完；手动触发）
- *   productLib   产品库（产品描述参与 AI 生成）
- *   tenant       多租户模式（多产品/多租户切换，三档全开）
- *   knowledge    知识库（录入/导入专业知识，AI 生成时引用）
- *   autoWater    一键灌水（关键词搜笔记 + 笔记列表 + 灌水执行器：口径 × 节奏）
- *   prospectList 获客清单（通知/消息线索汇总 + 定向私信）
- *   notePublish  发送笔记（AI 选题 → 生成图文 → 发布）
- *   dailyBrowse  日常浏览（按时段/配额自动浏览，可配点赞收藏；②③可用，不列入对外功能清单）
+ *   batchSend    整页发送评论（同一篇笔记的多条评论一键发完；手动触发；三档共有）
+ *   tenant       多租户模式（多产品/多租户切换，三档共有）
+ *   knowledge    知识库（录入/导入专业知识，AI 生成时引用；三档共有）
+ *   autoWater    获客（任务配置/队列/工作台/笔记池：关键词搜笔记 + 灌水执行器：口径 × 节奏）→ ② 起
+ *   prospectList 线索（通知/私信线索汇总 + 获客清单 + 定向私信）→ ③ 起
+ *   notePublish  发笔记（AI 选题 → 生成图文 → 发布 + 素材库/笔记档案）→ ① 起
+ *   dailyBrowse  日常浏览（按时段/配额自动浏览，可配点赞收藏；随获客 ② 起开，不列入对外功能清单）
+ *   videoFilm    字效编辑器（口播稿 → 分幕 → 配音 → 竖版视频；随发笔记一起给）→ ① 起
  */
 
 const EDITION = {
@@ -40,21 +41,21 @@ const EDITION = {
   // xhsId 为公开小红书号（个人主页“小红书号：xxx”）；name 为可选的主页昵称（仅用于展示）。
   // 留空（xhsId 为空）表示不绑定账号，任何已登录账号均可用（dev / 全功能自用版默认如此）。
   boundAccount: { xhsId: '', name: '' },
-  // 一键灌水最大关键词数（1=单关键词；8=多关键词）；price 定价（元/月；0=不标价）
-  keywordMax: 8,
+  // 一键灌水最大关键词数（0＝不限，三档默认都不限）；price 定价（元/月；0=不标价）
+  keywordMax: 0,
   price: 0,
   // noDelay=true（自用版 pro）：所有拟人延时归零（零等待），仍全功能
   noDelay: false,
   // 功能开关
   features: {
     batchSend: true,
-    productLib: true,
     tenant: true,
     knowledge: true,
     autoWater: true,
     prospectList: true,
     notePublish: true,
     dailyBrowse: true,
+    videoFilm: true,
   },
 };
 
@@ -78,10 +79,10 @@ function editionBoundXhsId() {
   return editionHasBinding() ? String(EDITION.boundAccount.xhsId).trim() : '';
 }
 
-/** 一键灌水允许的最大关键词数量（1=单关键词；8=多关键词） */
+/** 一键灌水允许的最大关键词数量（0＝不限；非法值按不限处理） */
 function editionKeywordMax() {
   const v = parseInt(EDITION.keywordMax, 10);
-  return (isFinite(v) && v >= 1) ? v : 8;
+  return (isFinite(v) && v >= 0) ? v : 0;
 }
 
 /** 授权文件完整性校验（dev/模板恒为 true；发行版判载荷未被篡改） */

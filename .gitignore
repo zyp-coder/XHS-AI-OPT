@@ -38,6 +38,23 @@ config.json         # 若含本地路径或密钥，请勿入库；正式密钥�
 # ── 字面名为 %APPDATA% 的本地目录 ──
 %APPDATA%/
 
+# ── 按顾客定制的安装预填（含真实姓名 / 小红书号，只放本机）──
+setup/installdef.json
+setup/*-installdef.json
+
+# ── 手机看板 · 本地中转的运行数据（配对记录 / 令牌）──
+relay/local/.data.json
+# wrangler 部署时的工作目录（登录态、缓存），别进仓库
+relay/worker/.wrangler/
+
 # ── 临时杂项 ──
 nul
 __test_escape.txt
+
+# ── 上传整理（2026-10-12）：临时草稿 / 档案 / 超大导出成片 ──
+tmp/*
+!tmp/remote-cmd-proof/
+tmp/remote-cmd-proof/.profile-play/
+tmp/remote-cmd-proof/.profile-proof/
+.tmpcheck/
+资料/视频/AI雕兄口播稿/成片/

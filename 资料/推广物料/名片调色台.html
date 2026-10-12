@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>名片 · 白底配色台</title>
+<style>
+
+  /* 本段深色+金色＝「深色版」；名片默认是白底黑字（<body> 带 class="bw"，见 <style> 末尾），要回深色版就去掉 body 的 class */
+  :root{
+    --cw:90mm; --ch:54mm; --cx:4.6mm; --cy:4mm;
+    --gold:#f0c869; --gold-d:#c99a3d; --red:#ff2442;
+    --tx:#f2f4f8; --tx-2:#a9b1c0; --tx-3:#79828f; --line:rgba(255,255,255,.11);
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  .nb{white-space:nowrap;}
+  html,body{background:#fff;}
+  body{
+    font-family:"Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei","DengXian",sans-serif;
+    color:var(--tx); -webkit-font-smoothing:antialiased;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  @page{ size:90mm 54mm; margin:0; }
+
+  .card{
+    width:var(--cw); height:var(--ch); padding:var(--cy) var(--cx);
+    position:relative; overflow:hidden; display:flex; flex-direction:column; break-after:page;
+    background:
+      radial-gradient(52mm 40mm at 100% -14%, rgba(240,200,105,.20), transparent 66%),
+      radial-gradient(46mm 34mm at -14% 112%, rgba(255,36,66,.16), transparent 62%),
+      linear-gradient(160deg,#171b23 0%,#0f1218 48%,#0b0d12 100%);
+  }
+  .card:last-child{break-after:auto;}
+  .card::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    /* 星空层：手放的 ~35 颗极暗星点（内联 SVG），下面叠 6mm 网格 */
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 90 54' preserveAspectRatio='none'%3E%3Cg fill='%23ffffff'%3E%3Ccircle cx='7.5' cy='6.5' r='.17' opacity='.45'/%3E%3Ccircle cx='14' cy='3.4' r='.10' opacity='.30'/%3E%3Ccircle cx='22.5' cy='9.5' r='.12' opacity='.33'/%3E%3Ccircle cx='31' cy='4.6' r='.18' opacity='.42'/%3E%3Ccircle cx='40' cy='2.8' r='.10' opacity='.28'/%3E%3Ccircle cx='49.5' cy='7.2' r='.13' opacity='.35'/%3E%3Ccircle cx='58' cy='3.5' r='.11' opacity='.30'/%3E%3Ccircle cx='67' cy='8' r='.18' opacity='.45'/%3E%3Ccircle cx='76' cy='4.2' r='.10' opacity='.28'/%3E%3Ccircle cx='84.5' cy='9.5' r='.14' opacity='.38'/%3E%3Ccircle cx='5' cy='15.5' r='.11' opacity='.30'/%3E%3Ccircle cx='11.5' cy='21' r='.10' opacity='.25'/%3E%3Ccircle cx='19' cy='28' r='.12' opacity='.28'/%3E%3Ccircle cx='27.5' cy='23' r='.10' opacity='.25'/%3E%3Ccircle cx='36' cy='33' r='.11' opacity='.28'/%3E%3Ccircle cx='44.5' cy='19' r='.10' opacity='.25'/%3E%3Ccircle cx='53' cy='26' r='.17' opacity='.40'/%3E%3Ccircle cx='62' cy='15.5' r='.11' opacity='.30'/%3E%3Ccircle cx='71' cy='22.5' r='.13' opacity='.35'/%3E%3Ccircle cx='80' cy='17' r='.10' opacity='.25'/%3E%3Ccircle cx='87' cy='29' r='.12' opacity='.30'/%3E%3Ccircle cx='6.5' cy='39' r='.14' opacity='.35'/%3E%3Ccircle cx='16' cy='46' r='.11' opacity='.28'/%3E%3Ccircle cx='25' cy='42' r='.10' opacity='.25'/%3E%3Ccircle cx='35' cy='49.5' r='.12' opacity='.30'/%3E%3Ccircle cx='44' cy='37.5' r='.10' opacity='.25'/%3E%3Ccircle cx='53' cy='44.5' r='.14' opacity='.38'/%3E%3Ccircle cx='62' cy='50.5' r='.10' opacity='.25'/%3E%3Ccircle cx='71' cy='40.5' r='.11' opacity='.28'/%3E%3Ccircle cx='80' cy='47.5' r='.13' opacity='.35'/%3E%3Ccircle cx='87.5' cy='51.5' r='.10' opacity='.25'/%3E%3C/g%3E%3Cg fill='%23f0c869'%3E%3Ccircle cx='29.5' cy='13.5' r='.17' opacity='.38'/%3E%3Ccircle cx='68' cy='32.5' r='.14' opacity='.33'/%3E%3Ccircle cx='9' cy='29.5' r='.12' opacity='.28'/%3E%3Ccircle cx='57' cy='9' r='.12' opacity='.30'/%3E%3C/g%3E%3C/svg%3E"),
+      linear-gradient(rgba(255,255,255,.024) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.024) 1px,transparent 1px);
+    background-size:100% 100%, 6mm 6mm, 6mm 6mm;
+  }
+  .card > *{position:relative; z-index:1;}
+
+  .brand{display:flex; align-items:center; gap:1.6mm; font-size:2.4mm; color:var(--tx-2);}
+  .dot{width:2mm; height:2mm; border-radius:50%; background:var(--gold); box-shadow:0 0 1.8mm rgba(240,200,105,.85);}
+  .brand b{color:#fff; font-size:2.9mm; font-weight:900; letter-spacing:.3mm;}
+  .brand .sep{color:var(--gold);}
+  .brand span.r{margin-left:auto; color:var(--tx-3); font-size:2.2mm;}
+  .rule{height:.3mm; margin:1.8mm 0 0; background:linear-gradient(90deg,var(--gold),rgba(240,200,105,.08) 46%,transparent);}
+
+  /* ── 正面 ── */
+  .f-body{margin-top:auto; display:flex; align-items:flex-end; gap:4mm;}
+  .f-txt{flex:1;}
+  .name{font-size:9.2mm; font-weight:900; color:#fff; line-height:1.06; letter-spacing:.3mm;}
+  .alias{margin-top:1.1mm; font-size:2.5mm; color:var(--tx-2); letter-spacing:.15mm;}
+  .title{margin-top:1.5mm; font-size:3.2mm; color:var(--gold); font-weight:700; letter-spacing:.2mm;}
+  .f-note{margin-top:1.2mm; font-size:2.4mm; line-height:1.38; color:var(--tx-2);}
+  .f-qr{flex:none; text-align:center;}
+  .f-qr img{width:19mm; height:19mm; display:block; background:#fff; border-radius:1.4mm; padding:.6mm;}
+  .f-qr span{display:block; margin-top:1.1mm; font-size:2.1mm; color:var(--tx-3);}
+  .f-foot{margin-top:auto; display:flex; align-items:center; justify-content:space-between;
+          border-top:.28mm solid var(--line); padding-top:1.8mm; font-size:2.7mm; color:var(--tx-2);}
+  .f-foot b{color:#fff; font-weight:700; font-size:3mm;}
+  .f-foot .num{color:var(--gold); font-weight:900; font-size:3.2mm; letter-spacing:.2mm;}
+
+  /* ── 背面 ── */
+  .b-grid{margin-top:auto; display:flex; gap:4mm; align-items:center;}
+  .b-txt{flex:1; min-width:0;}
+  .b-top{font-size:5.2mm; font-weight:900; color:#fff; line-height:1.24; letter-spacing:.1mm;}
+  .b-top em{font-style:normal; color:var(--gold);}
+  .b-sub{margin-top:1.5mm; font-size:2.5mm; line-height:1.52; color:var(--tx-2);}
+  .b-sub b{color:#fff; font-weight:700;}
+  .b-foot{margin-top:auto; display:flex; align-items:baseline; justify-content:space-between; gap:3mm;
+          border-top:.28mm solid var(--line); padding-top:1.6mm; font-size:2.3mm; color:var(--tx-3); white-space:nowrap;}
+  .b-foot b{color:#fff; font-weight:700;}
+
+  /* ══════════ 白底版：<body> 带 class="bw" 时生效＝名片默认；去掉 class 回到上面的深色+金色版 ══════════
+     下面这几个变量就是「调色台」（资料/推广物料/名片调色台.html）拨的旋钮——改这里的默认值＝改成品默认色 */
+  body.bw{
+    --w-bg:#fff;            /* 卡面底色，可整段放渐变 */
+    --w-brand:#c08a1e;      /* 圆点 + 品牌分割线 */
+    --w-title:#a8791c;      /* 定位句 */
+    --w-num:#000;           /* 页脚号码 */
+    --w-qr:#c08a1e;         /* 二维码外框 */
+    --w-tex-d:none; --w-tex:none; --w-tex-size:auto;   /* 底纹（网格 / 点星）*/
+    --w-ink:#15171c; --w-ink-2:#4a4f57; --w-ink-3:#555; --w-ink-4:#777; --w-line:#d5d8dd;
+    color:var(--w-ink);
+  }
+  body.bw .card{background:var(--w-bg);}
+  body.bw .card::after{display:var(--w-tex-d); background-image:var(--w-tex); background-size:var(--w-tex-size);}
+  body.bw .brand{color:var(--w-ink-3);}
+  body.bw .brand b{color:var(--w-ink);}
+  body.bw .brand .sep{color:#999;}
+  body.bw .brand span.r{color:var(--w-ink-4);}
+  body.bw .dot{background:var(--w-brand); box-shadow:none;}
+  body.bw .rule{background:var(--w-brand);}
+  body.bw .name{color:var(--w-ink);}
+  body.bw .alias{color:var(--w-ink-3);}
+  body.bw .f-note{color:var(--w-ink-2);}
+  body.bw .title{color:var(--w-title);}
+  body.bw .f-qr img{border:.3mm solid var(--w-qr);}
+  body.bw .f-qr span{color:var(--w-ink-4);}
+  body.bw .f-foot{color:var(--w-ink-2); border-top-color:var(--w-line);}
+  body.bw .f-foot b{color:var(--w-ink);}
+  body.bw .f-foot .num{color:var(--w-num);}
+  body.bw .b-top{color:var(--w-ink);}
+  body.bw .b-top em{color:var(--w-title);}
+  body.bw .b-sub{color:var(--w-ink-2);}
+  body.bw .b-sub b{color:var(--w-ink);}
+  body.bw .b-foot{color:var(--w-ink-4); border-top-color:var(--w-line);}
+  body.bw .b-foot b{color:var(--w-ink);}
+
+</style>
+<style>
+  html,body{background:#e9ebef;}
+  body{color:#1a1d23;}
+  .wrap{display:flex;gap:26px;padding:22px;align-items:flex-start;box-sizing:border-box;}
+  .panel{flex:none;width:306px;position:sticky;top:22px;background:#fff;border-radius:12px;
+         padding:16px 18px 18px;box-shadow:0 4px 18px rgba(20,26,44,.10);}
+  .panel h1{font-size:15px;font-weight:800;margin:0 0 4px;letter-spacing:.2px;}
+  .panel .sub{font-size:11.5px;color:#6d737e;line-height:1.6;margin-bottom:12px;}
+  .knob{margin:12px 0 0;}
+  .knob .kl{font-size:12px;font-weight:700;color:#39404b;margin-bottom:6px;}
+  .opts{display:flex;flex-wrap:wrap;gap:6px;}
+  .opts button{font:inherit;font-size:12px;line-height:1;padding:6px 9px;border:1px solid #d8dbe0;
+               background:#fff;border-radius:7px;cursor:pointer;color:#2a303a;display:flex;align-items:center;}
+  .opts button:hover{border-color:#b9bec6;}
+  .opts button.on{border-color:#c08a1e;background:#fdf6e6;color:#8a5f0a;font-weight:800;}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;
+      border:1px solid rgba(0,0,0,.16);}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px;}
+  .presets button{font:inherit;font-size:12px;padding:6px 10px;border:1px solid #d8dbe0;background:#f7f8fa;
+                  border-radius:7px;cursor:pointer;}
+  .presets button:hover{border-color:#b9bec6;background:#fff;}
+  .hr{height:1px;background:#eceef1;margin:14px 0 0;}
+  #cfg{width:100%;box-sizing:border-box;margin-top:7px;font:12px/1.6 Consolas,"Courier New",monospace;
+       padding:8px;border:1px solid #d8dbe0;border-radius:7px;background:#fafbfc;color:#222;resize:vertical;}
+  .copy{width:100%;margin-top:8px;font:inherit;font-size:13px;font-weight:800;padding:9px;border:0;
+        border-radius:8px;background:#1f2430;color:#fff;cursor:pointer;}
+  .copy:hover{background:#2b3140;}
+  .tip{font-size:11px;color:#7a808b;line-height:1.6;margin-top:9px;}
+  .stage{flex:1;display:flex;flex-direction:column;gap:26px;min-width:0;}
+  .shot{display:flex;flex-direction:column;gap:8px;}
+  .shot .cap{font-size:12px;color:#5c626d;font-weight:700;letter-spacing:.3px;}
+  .cwshell{width:calc(90mm * 1.5);height:calc(54mm * 1.5);}
+  .cw{transform:scale(1.5);transform-origin:top left;}
+  .cw .card{box-shadow:0 3px 14px rgba(20,25,40,.16);}
+</style>
+</head>
+<body class="bw">
+<div class="wrap">
+  <aside class="panel">
+    <h1>名片 · 白底配色台</h1>
+    <div class="sub">只调颜色，文案与版面一个字不动。拨到顺眼为止，点最下面「复制配置」，把那行发我就固化成成品（PDF / 预览图重出）。</div>
+    <div class="knob"><div class="kl">一键起点</div><div class="presets" id="presets"></div></div>
+    <div class="hr"></div>
+    <div id="knobs"></div>
+    <div class="hr"></div>
+    <label class="kl" style="display:block;margin-top:12px;">配置行（发我这行就行）</label>
+    <textarea id="cfg" rows="3" readonly></textarea>
+    <button class="copy" id="copyBtn">复制配置</button>
+    <div class="tip">二维码本身没动，四种外框都照扫；深色版不受这里影响。</div>
+  </aside>
+  <main class="stage">
+    <div class="shot"><div class="cap">正面</div><div class="cwshell"><div class="cw"><section class="card">
+  <div class="brand">
+    <span class="dot"></span><b>AI雕兄</b><span class="sep">·</span><span>小红书评论区获客</span>
+  </div>
+  <div class="rule"></div>
+
+  <div class="f-body">
+    <div class="f-txt">
+      <div class="name">张宇鹏</div>
+      <div class="alias">AI杨小过 · 前大厂码农 · 江湖散人</div>
+      <div class="title">专帮小生意打通线上获客，<br>帮您捞同行还未发现的客</div>
+      <div class="f-note"><span class="nb">有人问『哪家好』，</span>您的号就<span class="nb">在评论区</span>接上话。</div>
+    </div>
+    <div class="f-qr">
+      <img src="assets/qr-wechat.png" alt="微信二维码">
+      <span>扫码加我<br>备注「测评」</span>
+    </div>
+  </div>
+
+  <div class="f-foot">
+    <div>微信 / 手机 <span class="num">13360308932</span> <b>（微信同号）</b></div>
+  </div>
+</section></div></div></div>
+    <div class="shot"><div class="cap">背面</div><div class="cwshell"><div class="cw"><section class="card">
+  <div class="brand">
+    <span class="dot"></span><b>AI雕兄</b><span class="sep">·</span><span>小红书评论区获客</span>
+    <span class="r">AI杨小过 · 前大厂码农 · 江湖散人</span>
+  </div>
+  <div class="rule"></div>
+
+  <div class="b-grid">
+    <div class="b-txt">
+      <div class="b-top">15 天，<em>1000+ 真人</em><br>加进我微信</div>
+      <div class="b-sub">这套系统，<b>就我一个人在跑</b>。<br>没投广告、没买流量，客户全靠评论区接来。<br>加我微信，发您 3 分钟完整演示，免费做一次测评。<br>效果因人而异。</div>
+    </div>
+  </div>
+
+  <div class="b-foot">
+    <div>微信 / 手机 <b>13360308932</b>（微信同号）</div>
+  </div>
+</section></div></div></div>
+  </main>
+</div>
+<script>
+const KNOBS = [{"key": "bg", "label": "底色", "opts": [{"name": "纯白", "vars": {"--w-bg": "#fff"}}, {"name": "米白", "vars": {"--w-bg": "#fbf8f0"}}, {"name": "白·淡金晕", "vars": {"--w-bg": "radial-gradient(60mm 44mm at 100% -8%,rgba(192,138,30,.10),transparent 62%),#fff"}}, {"name": "浅暖灰", "vars": {"--w-bg": "#f4f3ef"}}]}, {"key": "gold", "label": "金色点缀", "opts": [{"name": "不要金（全黑）", "vars": {"--w-brand": "#111", "--w-title": "#000", "--w-num": "#000"}}, {"name": "少：圆点+线", "vars": {"--w-brand": "#c08a1e", "--w-title": "#000", "--w-num": "#000"}}, {"name": "中：+定位句", "vars": {"--w-brand": "#c08a1e", "--w-title": "#a8791c", "--w-num": "#000"}}, {"name": "足：+号码", "vars": {"--w-brand": "#c08a1e", "--w-title": "#a8791c", "--w-num": "#a8791c"}}]}, {"key": "qr", "label": "二维码外框", "opts": [{"name": "细金框", "vars": {"--w-qr": "#c08a1e"}}, {"name": "细黑框", "vars": {"--w-qr": "#111"}}, {"name": "浅灰框", "vars": {"--w-qr": "#d5d8dd"}}, {"name": "不要框", "vars": {"--w-qr": "transparent"}}]}, {"key": "tex", "label": "底纹", "opts": [{"name": "纯平", "vars": {"--w-tex-d": "none", "--w-tex": "none", "--w-tex-size": "auto"}}, {"name": "淡网格", "vars": {"--w-tex-d": "block", "--w-tex": "linear-gradient(rgba(0,0,0,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.035) 1px,transparent 1px)", "--w-tex-size": "6mm 6mm"}}, {"name": "淡点星", "vars": {"--w-tex-d": "block", "--w-tex": "radial-gradient(rgba(0,0,0,.10) .3mm,transparent .3mm),radial-gradient(rgba(0,0,0,.07) .26mm,transparent .26mm)", "--w-tex-size": "11mm 9mm,13mm 12mm"}}]}];
+const PRESETS = [{"name": "白底·金线（推荐＝成品现状）", "pick": {"bg": "纯白", "gold": "中：+定位句", "qr": "细金框", "tex": "纯平"}}, {"name": "米白·暖调", "pick": {"bg": "米白", "gold": "足：+号码", "qr": "细金框", "tex": "淡点星"}}, {"name": "金晕·足金", "pick": {"bg": "白·淡金晕", "gold": "足：+号码", "qr": "细金框", "tex": "纯平"}}, {"name": "极简黑白（切白底那版）", "pick": {"bg": "纯白", "gold": "不要金（全黑）", "qr": "细黑框", "tex": "纯平"}}];
+const picked = {};
+
+function apply() {
+  const opt = {};
+  KNOBS.forEach(k => {
+    const name = picked[k.key];
+    const o = k.opts.find(x => x.name === name);
+    if (o) Object.assign(opt, o.vars);
+  });
+  Object.keys(opt).forEach(v => document.body.style.setProperty(v, opt[v]));
+  const line = '名片白底配色：' + KNOBS.map(k => k.label + '=' + picked[k.key]).join(' ｜ ');
+  document.getElementById('cfg').value = line;
+}
+
+function paint() {
+  document.querySelectorAll('#knobs .opts button').forEach(b => {
+    b.classList.toggle('on', picked[b.dataset.key] === b.dataset.name);
+  });
+  apply();
+}
+
+function build() {
+  const box = document.getElementById('knobs');
+  KNOBS.forEach(k => {
+    const wrap = document.createElement('div');
+    wrap.className = 'knob';
+    const t = document.createElement('div');
+    t.className = 'kl';
+    t.textContent = k.label;
+    wrap.appendChild(t);
+    const opts = document.createElement('div');
+    opts.className = 'opts';
+    k.opts.forEach(o => {
+      const b = document.createElement('button');
+      b.dataset.key = k.key;
+      b.dataset.name = o.name;
+      if (o.swatch) {
+        const s = document.createElement('span');
+        s.className = 'sw';
+        s.style.background = o.swatch;
+        b.appendChild(s);
+      }
+      b.appendChild(document.createTextNode(o.name));
+      b.onclick = () => { picked[k.key] = o.name; paint(); };
+      opts.appendChild(b);
+    });
+    wrap.appendChild(opts);
+    box.appendChild(wrap);
+  });
+
+  const pbox = document.getElementById('presets');
+  PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.textContent = p.name;
+    b.onclick = () => { Object.assign(picked, p.pick); paint(); };
+    pbox.appendChild(b);
+  });
+
+  document.getElementById('copyBtn').onclick = () => {
+    const el = document.getElementById('cfg');
+    el.removeAttribute('readonly');
+    el.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    el.setAttribute('readonly', 'readonly');
+    if (!ok && navigator.clipboard) { navigator.clipboard.writeText(el.value); ok = true; }
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = ok ? '已复制 ✓' : '复制失败，手动选中上面那行';
+    setTimeout(() => { btn.textContent = '复制配置'; }, 1600);
+  };
+}
+
+Object.assign(picked, PRESETS[0].pick);
+build();
+paint();
+</script>
+</body>
+</html>

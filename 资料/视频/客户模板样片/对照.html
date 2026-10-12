@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>客户模板样片 · 四套风格对照</title>
+<style>
+  body{margin:0;padding:26px 26px 60px;background:#141418;color:#e8e8e8;
+       font:14px/1.7 "Microsoft YaHei",sans-serif}
+  h1{font-size:19px;margin:0 0 4px;color:#f97316}
+  .tip{font-size:13px;color:#8f8f8f;margin-bottom:20px}
+  .tip b{color:#d8d8d8}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;max-width:1560px}
+  .card{background:#1d1d22;border:1px solid #2c2c33;border-radius:12px;padding:12px}
+  .card h2{margin:0 0 2px;font-size:15px;color:#fff}
+  .card p{margin:0 0 10px;font-size:12px;color:#9a9a9a;min-height:46px}
+  video{width:100%;border-radius:8px;background:#000;display:block}
+  .row{display:flex;gap:8px;margin-top:10px}
+  button{flex:1;padding:6px 0;border:1px solid #3a3a44;border-radius:8px;background:#26262d;
+         color:#ddd;font-size:12px;cursor:pointer}
+  button:hover{border-color:#f97316;color:#f97316}
+  .bar{margin:0 0 18px}
+  .bar button{max-width:170px}
+</style>
+</head>
+<body>
+<h1>客户模板样片 · 四套风格对照</h1>
+<div class="tip">
+  同一条文案、同一条配音（晓晓）、同一套版式骨架，只换皮：<b>配色 / 字体 / 装饰 / 入场节奏</b>。
+  选一套定为模板，之后要换再单独调。竖屏 1080×1920 · 17.9s。
+</div>
+<div class="bar"><button onclick="all('play')">▶ 全部重播</button></div>
+
+<div class="grid">
+  <div class="card">
+    <h2>A · 深色品牌橙</h2>
+    <p>延续现在雕兄片子的深色底 + 品牌橙，账号辨识度一致，跟插件界面同色系。</p>
+    <video id="vA" src="样片-A-深色品牌橙.mp4" controls muted loop playsinline></video>
+    <div class="row"><button onclick="one('vA')">▶ 重播</button><button onclick="pick('A')">选它</button></div>
+  </div>
+  <div class="card">
+    <h2>B · 深色鎏金</h2>
+    <p>深底 + 鎏金衬线，压得住场，讲「专家 / 背书」类内容时最稳。</p>
+    <video id="vB" src="样片-B-深色鎏金.mp4" controls muted loop playsinline></video>
+    <div class="row"><button onclick="one('vB')">▶ 重播</button><button onclick="pick('B')">选它</button></div>
+  </div>
+  <div class="card">
+    <h2>C · 米白纸感</h2>
+    <p>暖米白 + 衬线 + 记号笔划重点，最温和可信，适合女性 / 生活类客群。</p>
+    <video id="vC" src="样片-C-米白纸感.mp4" controls muted loop playsinline></video>
+    <div class="row"><button onclick="one('vC')">▶ 重播</button><button onclick="pick('C')">选它</button></div>
+  </div>
+  <div class="card">
+    <h2>D · 浅灰科技</h2>
+    <p>浅灰底 + 网格 + 等宽编号，最利落，像产品 / 数据页，适合 B 端老板。</p>
+    <video id="vD" src="样片-D-浅灰科技.mp4" controls muted loop playsinline></video>
+    <div class="row"><button onclick="one('vD')">▶ 重播</button><button onclick="pick('D')">选它</button></div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('video').forEach(v => v.volume = 0);
+  const one = id => { const v = document.getElementById(id); v.currentTime = 0; v.play(); };
+  const all = () => document.querySelectorAll('video').forEach(v => { v.currentTime = 0; v.play(); });
+  const pick = k => {
+    const names = { A: '深色品牌橙', B: '深色鎏金', C: '米白纸感', D: '浅灰科技' };
+    document.querySelectorAll('.card').forEach(c => c.style.borderColor = '#2c2c33');
+    document.querySelectorAll('video').forEach(v => { v.muted = true; v.play(); });
+    alert('已记下：' + k + ' · ' + names[k] + '\n（跟我说一声「就这套」或「要改哪里」，我按这套做模板）');
+  };
+  window.addEventListener('load', () => setTimeout(all, 400));
+</script>
+</body>
+</html>

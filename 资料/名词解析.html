@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名词解析 · 咱俩统一叫法</title>
+<style>
+  :root{ --ink:#1f2329; --mut:#8a8a8a; --line:#e8e4de; --bg:#faf9f7; --acc:#b3352c; }
+  *{box-sizing:border-box; -webkit-box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--ink); font:15px/1.75 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif; padding:28px 16px 70px;}
+  .wrap{max-width:860px; margin:0 auto;}
+  h1{font-size:22px; margin:0 0 4px; letter-spacing:1px;}
+  .sub{color:var(--mut); font-size:13px; margin:0 0 16px;}
+  input{width:100%; padding:10px 14px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:#fff; outline:none; margin-bottom:6px;}
+  input:focus{border-color:var(--acc);}
+  .count{color:var(--mut); font-size:12px; min-height:18px; margin:0 0 10px;}
+  section{background:#fff; border:1px solid var(--line); border-radius:14px; padding:4px 20px 8px; margin-bottom:14px;}
+  h2{font-size:15px; margin:14px 0 4px; letter-spacing:.5px;}
+  .term{padding:9px 0; border-top:1px dashed var(--line); display:flex; gap:14px; align-items:baseline;}
+  section .term:first-of-type{border-top:none;}
+  b{font-weight:600; flex:0 0 auto; min-width:96px;}
+  .say{display:block; color:#4a4a4a; font-size:14px; flex:1;}
+  .hid{display:none;}
+  .foot{color:var(--mut); font-size:12px; text-align:center; margin-top:22px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>名词解析</h1>
+  <p class="sub">咱俩的叫法统一在这页：粗体是你平时说的词，后面一句白话讲它是干嘛的。哪个叫法别扭、缺了什么词，直接圈给我改。</p>
+  <input id="q" type="search" placeholder="🔍 搜词试试：灌水、队列、五条线、出图">
+  <p class="count" id="count"></p>
+  <div id="list">
+
+  <section><h2>① 三档与版本</h2>
+    <div class="term"><b>三档</b><span class="say">收费分三档，功能按档解锁：①基础版 239/月 → ②升级版 399/月 → ③全功能版 539/月。关键词三档都不限量。</span></div>
+    <div class="term"><b>基础版（①）</b><span class="say">共有部分 + 发笔记。日常浏览从升级版起有（随获客），但不对外宣传。</span></div>
+    <div class="term"><b>升级版（②）</b><span class="say">基础版 + 获客（自动找词、一键评论那套）。</span></div>
+    <div class="term"><b>全功能版（③）</b><span class="say">升级版 + 线索（私信、通知、回访那一套）。</span></div>
+    <div class="term"><b>共有部分</b><span class="say">三档都有的底子：账号诊断与配置、AI 生成评论、产品库/知识库、多产品切换，数据只存本机。</span></div>
+    <div class="term"><b>加购项</b><span class="say">不进三档、单独装的东西，目前只有「手机看板」。</span></div>
+    <div class="term"><b>挡位</b><span class="say">一根滑杆 0~5，一键定整套操作快慢（0 极速 ~ 5 极致从容），拖完立刻生效。</span></div>
+    <div class="term"><b>有效期</b><span class="say">扩展包能用到哪天，过期整包上锁屏。</span></div>
+  </section>
+
+  <section><h2>② 左栏与顶栏</h2>
+    <div class="term"><b>顶栏</b><span class="say">扩展弹窗最上面那条：版本徽标、产品切换、大窗/设置、挡位。</span></div>
+    <div class="term"><b>版本徽标</b><span class="say">显示版本/授权/到期状态的小标；没网或过期直接上锁屏。</span></div>
+    <div class="term"><b>大窗 / 小窗</b><span class="say">大窗＝点开铺满整屏的完整工作台；小窗只显示进度状态卡，干正事去大窗。</span></div>
+    <div class="term"><b>产品切换</b><span class="say">一个扩展管多个产品/账号；切产品＝配置、知识库、话术、记录整套跟着换。</span></div>
+  </section>
+
+  <section><h2>③ 诊断与配置（6 页）</h2>
+    <div class="term"><b>诊断&配置</b><span class="say">给账号建档、立人设的总入口，共 6 页：基础配置、问卷、人设、产品卖点、知识库、规划。</span></div>
+    <div class="term"><b>基础配置</b><span class="say">产品名（第一行主名、后面各行是别名）、账号类型、昵称清单、同城挡位。</span></div>
+    <div class="term"><b>昵称清单</b><span class="say">防重复灌水的兜底名单——自己的小号也记进来，免得自己人互评。</span></div>
+    <div class="term"><b>问卷</b><span class="say">13 个问题（选择题为主），答完一次生成：人设卡、卖点、知识库、规划——唯一的生成口。</span></div>
+    <div class="term"><b>人设卡</b><span class="say">「你是谁」的名片：身份、凭据、来路、立场、口头禅、雷区、称呼。AI 照它说话。</span></div>
+    <div class="term"><b>说话风格</b><span class="say">你平时怎么说话：字数 + 3 问 → AI 识别你的口吻、口癖词、仿写样张。并在人设页第二个标签里。</span></div>
+    <div class="term"><b>产品卖点</b><span class="say">产品能打的点，上限 10 条；发笔记从这里挑着写。</span></div>
+    <div class="term"><b>知识库</b><span class="say">喂给 AI 的资料库；停用＝先不参与匹配，不是删除。能加密导出备份。</span></div>
+    <div class="term"><b>规划</b><span class="say">内容排产表：按成长阶段（冷启动/成长/成熟）排 12 篇，每篇标哪条线、哪种写法、什么话题。</span></div>
+    <div class="term"><b>配比条</b><span class="say">五条线各占几篇的权重，可以调，存了就按新比例排产。</span></div>
+    <div class="term"><b>栏目表</b><span class="say">长期设定：一个栏目＝每周固定某天发某条线的一篇，配一次长期用。</span></div>
+    <div class="term"><b>解锁地图</b><span class="say">一眼看现在能做哪几条线（绿）、补什么素材能解锁哪些（灰）。</span></div>
+  </section>
+
+  <section><h2>④ 获客（② 起）</h2>
+    <div class="term"><b>获客</b><span class="say">搜笔记 + 评论区互动、自动找客户的大模块。</span></div>
+    <div class="term"><b>任务配置（获客）</b><span class="say">获客的设置台，四个标签：词池、盯的账号、推广目标、日常浏览。改这里的表＝改队列。</span></div>
+    <div class="term"><b>词池</b><span class="say">关键词总仓库，跑获客的词都从这取，不限量；一个词可以勾「这一类也跑」。</span></div>
+    <div class="term"><b>词×类型</b><span class="say">一个词配一种找法算一项活；队列按这个排队，同一趟不重复取。</span></div>
+    <div class="term"><b>盯的账号</b><span class="say">你点名长期跟的账号（👑高V / 🕵️竞对），有自己独立的节奏，不占词的队；一律去对方个人主页。</span></div>
+    <div class="term"><b>推广目标</b><span class="say">定「评论区承接」——别人问起来往哪引（主页简介 / 私信我）。</span></div>
+    <div class="term"><b>日常浏览</b><span class="say">挂在队列里的养号流程：按方向刷笔记、按概率顺手点赞评论关注；动作不进获客台账。</span></div>
+    <div class="term"><b>队列</b><span class="say">到点的活排成一队串行跑：跑完一项记一笔，再跑下一项。队列不存第二份计划，实时从配置表算出来。</span></div>
+    <div class="term"><b>格子</b><span class="say">队列里的一项活（一个词×一种筛法）。每轮获客收尾还会按配置补开没打开的笔记、更新商机。</span></div>
+    <div class="term"><b>四类筛法</b><span class="say">找笔记的四种方式：最新发布 / 热门 TOP / 高粉账号 / 本地。除本地外也扫评论区，只收商机不回复。</span></div>
+    <div class="term"><b>笔记池</b><span class="say">扫进来的笔记都攒在这，按类型标状态。</span></div>
+    <div class="term"><b>工作台</b><span class="say">打开一篇笔记后干活的地方：评论分析、商机挖掘、一键回复。</span></div>
+    <div class="term"><b>商机</b><span class="say">评论区里值得承接的潜在客户（问价、求推荐这类评论）。</span></div>
+    <div class="term"><b>商机卡</b><span class="say">一条商机一张卡：切话术版本、定位到评论、点赞关注、一键发送、入清单。</span></div>
+    <div class="term"><b>一键发送</b><span class="say">定位→填话术→发送一条龙；发之前会顺手点个赞。</span></div>
+    <div class="term"><b>灌水</b><span class="say">自动发评论、点赞、关注的统称。</span></div>
+    <div class="term"><b>已灌水标记</b><span class="say">这篇发过评论的记号，防重复发。</span></div>
+    <div class="term"><b>✅ 队列已跑过</b><span class="say">队列执行完那篇的记号——跟「已灌水」是两回事；跑过的执行器会跳过不重开。</span></div>
+    <div class="term"><b>评论策略</b><span class="say">现场读配置生成的大白话说明：现在开着哪几类、评多少、怎么评。改配置它跟着变。</span></div>
+  </section>
+
+  <section><h2>⑤ 线索（③ 起）</h2>
+    <div class="term"><b>线索</b><span class="say">私信、通知、回访那一套大模块，全功能版起有。四个二级页：任务配置、通知、消息、设置。</span></div>
+    <div class="term"><b>渠道基调</b><span class="say">评论回复、点赞收藏、关注、AI抓回四个渠道各补一句你自己的口径；留空＝只用系统那套。</span></div>
+    <div class="term"><b>成交引导</b><span class="say">话术结尾把人往哪带，默认「私信我」。</span></div>
+    <div class="term"><b>话术配置</b><span class="say">客户问答话术库：触发关键词→回复，模板原样回或 AI 重新组织。</span></div>
+    <div class="term"><b>试问答</b><span class="say">拿一句模拟客户话走一遍，看命中哪个分类、回什么。</span></div>
+    <div class="term"><b>通知</b><span class="say">别人评论/赞藏/关注了你，回评与触达的清单；带状态筛选。</span></div>
+    <div class="term"><b>状态（线索）</b><span class="say">每个人标到哪一步：待触达→已触达→谈单中→已成交 / 流失中 / 已废弃。</span></div>
+    <div class="term"><b>通知回访队列</b><span class="say">排队自动回访的名单，有每日上限；撞上限即停。</span></div>
+    <div class="term"><b>消息</b><span class="say">私信往来（对方进线 / 我方触达）；「我方触达」默认折起来。</span></div>
+    <div class="term"><b>🛰 新消息监听</b><span class="say">挂着盯私信，30 秒级跟单；开监听会建一页专属「监听页」停在消息页待命，关监听收掉。</span></div>
+    <div class="term"><b>扫描间隔</b><span class="say">多久扫一轮新线索，最低 20 分钟。</span></div>
+    <div class="term"><b>每日主动触达</b><span class="say">一天最多主动发 10 条。</span></div>
+  </section>
+
+  <section><h2>⑥ 发笔记（① 起）</h2>
+    <div class="term"><b>发笔记</b><span class="say">从选题到成稿到做图出片的一条龙，基础版起有。二级：任务配置、笔记档案、发布台、素材库、复盘。</span></div>
+    <div class="term"><b>任务配置（发笔记）</b><span class="say">发笔记的默认表两张——内容基调（4 种基调的铺垫/广告与字数）、出图风格（画面风格、印记、配文版式）；🧬 笔记规划（怎么用发笔记＋每周排法＋阶段计划）在「发布台」页内签。写稿全按这一套账号默认走。</span></div>
+    <div class="term"><b>写稿</b><span class="say">正文生产线，六步向导走下来：卖点→人群→话题→挑稿→改稿→发稿；知识篇少两步（不选人群、不挑稿）。条件没满足时下一步是灰的，停上去告诉为什么。</span></div>
+    <div class="term"><b>五条线</b><span class="say">内容的五个方向：故事线、共鸣线、热梗线、热点线、干货线。</span></div>
+    <div class="term"><b>写法</b><span class="say">每条线底下 4~5 种具体写法，全系统 23 种；挑稿时一种写法写一篇。</span></div>
+    <div class="term"><b>话题域 + 一句真事</b><span class="say">选题两栏：题只给方向、不带结论清单；那句真事是这篇打底的凭据，换了它这批重出。</span></div>
+    <div class="term"><b>由头</b><span class="say">热点线借的公开新闻/话题当引子；点热点线自动去找，没由头不写那批稿。</span></div>
+    <div class="term"><b>挑稿</b><span class="say">第四步：几种写法各写一篇，几台「手机」并排比稿；点「就用这篇」才走得下去。</span></div>
+    <div class="term"><b>重写这批</b><span class="say">这批不满意就重出一批；换一条线也等于这批作废重出。</span></div>
+    <div class="term"><b>逐句改</b><span class="say">改稿默认按句拆开，点一句只改那一句，其余一个字不动；也能切全文手改。</span></div>
+    <div class="term"><b>平台多选</b><span class="say">改满意了勾发到哪些平台（默认勾小红书）；定稿时勾了的平台各按那边的规矩自动改写一版。</span></div>
+    <div class="term"><b>版本条</b><span class="say">发稿页顶部切各平台版本的地方；写挂的版点它重试。</span></div>
+    <div class="term"><b>补版本</b><span class="say">当时漏勾的平台，事后补写一版、另存一档。</span></div>
+    <div class="term"><b>笔记档案</b><span class="say">发笔记的主页：一篇一档（草稿→代发→已发→已归档，状态在下拉里自己改）；页顶「✍️ 新建笔记」起新篇，每行一颗「下一步」按这篇做到哪了（写稿 / 出图 / 出片 / 发布教程）直接送过去。</span></div>
+    <div class="term"><b>发布台</b><span class="say">排＋发一条线的一页，页内两签——📅 发布队列（跟着「🧬 笔记规划」的每周排法从今天往后滚 3 周，位子「＋ 排一篇」从档案里挑）＋ 🧬 笔记规划（怎么用发笔记＋每周排法＋阶段计划）；篇写好标「代发」那一刻自动找最早的未来空位排进去（没空位先进「🆕 写好等排期」），到点自己发、发完落页底「📜 最近发过」。</span></div>
+    <div class="term"><b>素材库</b><span class="say">料库：按集合（相册）分类、一行一集——案例视频段＋图片混装；点集合进去看料、传图、连播。空集合＝还没料，标「待补充」。</span></div>
+    <div class="term"><b>复盘</b><span class="say">按知识库类盘点讲过 / 没讲过（没讲过的能「📅 排进本周计划」）；已发的抓主页数字看表现（日均赞）。</span></div>
+  </section>
+
+  <section><h2>⑦ 出图与出片（① 起）</h2>
+    <div class="term"><b>出图</b><span class="say">一篇一页做料，五站走下来：① 风格 → ② 封面 → ③ 断句 → ④ 分镜 → ⑤ 预览。</span></div>
+    <div class="term"><b>画面表</b><span class="say">图文的料：一句＝一张画面，一行一句可改、可并到上一句、过场话可点掉不占图、可自己补一张。</span></div>
+    <div class="term"><b>AI 断句 + 筛重点</b><span class="say">AI 把正文断成一句一张、顺手筛掉过场话；重新断句会推翻手调过的表。</span></div>
+    <div class="term"><b>统一风格</b><span class="say">一份风格（配色/光线/字体/留白）套全部画面，改一次全跟着变，才像一家人。</span></div>
+    <div class="term"><b>出图提示词</b><span class="say">拿去千问/即梦/可灵生成图的料；提示词只给料，图那边生成后按画面号传回来。</span></div>
+    <div class="term"><b>传这一张的图</b><span class="say">把生成好的图按画面号传回素材库；还没图的行标红、进档案的缺口列。</span></div>
+    <div class="term"><b>字效编辑器</b><span class="say">把稿子做成成片的工作站——口播稿 / 分幕 / 音色 / 风格四个签；逐幕配音＋逐帧渲染，出完自动下载，当场摊「成片预览」（能 💾 再下一遍、点「✓ 完成，回笔记」回档案）。</span></div>
+    <div class="term"><b>五种成片形式</b><span class="say">PPT字体动效 / 卡片画面叙事（这两种在本机出片）；动态视频 / 实拍 / 数字人（扩展只给料，第三方那边跑）。</span></div>
+    <div class="term"><b>口播稿</b><span class="say">念出来的稿子，一段一行＝一幕；能自己改、能让 AI 改一版。</span></div>
+    <div class="term"><b>分幕</b><span class="say">把稿子切成一幕一幕：一幕一个框，念的就是框里的字；想分屏上行就在断开的地方打个 /（念的时候不念它）；重点词给屏幕上标红。</span></div>
+    <div class="term"><b>卡片底图</b><span class="say">底图不用手配：跟着「🖼 出图」那张画面表自动铺（一行画面＝一段底图）；一张图连着的几幕卡不翻、只在卡里换字。</span></div>
+    <div class="term"><b>音色表</b><span class="say">配音的声音选哪条、语速四档（稳/正常/快/更快）。</span></div>
+    <div class="term"><b>出片</b><span class="say">逐幕配音＋逐帧渲染，出完自动下载成片，当场摊「成片预览」；长片建议新标签页开。</span></div>
+    <div class="term"><b>成片预览</b><span class="say">出完片当场摊的一层：片就在这儿放；「💾 再下一遍」重存一遍。之后档案那行点「🎬 成片预览」还能看片、回台子「✏️ 再改一版」。</span></div>
+    <div class="term"><b>教程（📖）</b><span class="say">档案那行进、单独一页：按这一篇的形式给「怎么做、怎么发」的步骤。</span></div>
+  </section>
+
+  <section><h2>⑧ 设置与其他</h2>
+    <div class="term"><b>设置</b><span class="say">大后院：产品管理、AI 配置、界面主题、日志统计、整机备份。</span></div>
+    <div class="term"><b>AI 模型配置</b><span class="say">用哪家的模型、填 Key；主模型报错自动切备用，看图模型供诊断读头像。</span></div>
+    <div class="term"><b>界面主题</b><span class="say">13 套预设配色（默认石墨黑）+ 自定义主色，点一下全站换。</span></div>
+    <div class="term"><b>日志统计</b><span class="say">AI 调用次数、花费、已回复、成功率。</span></div>
+    <div class="term"><b>整机备份/恢复</b><span class="say">所有产品+运行数据加密导出/导回；含 AI Key 与私信历史。</span></div>
+    <div class="term"><b>手机看板</b><span class="say">加购项：电脑照常跑，手机扫码只读看「队列剩几格、正在跑哪项、今天刷了几篇」。一个能点的按钮都没有。</span></div>
+  </section>
+
+  <section><h2>⑨ 我说话的惯用词（看不懂我回复时翻这节）</h2>
+    <div class="term"><b>亮轨道</b><span class="say">每单开头我先报走哪条道：「这单按大改动走流程」还是「小修直接做」。你可以当场否。</span></div>
+    <div class="term"><b>问题清单</b><span class="say">动手前我先丢一组编号问题，每题带我的推荐答案；你圈选或改，不答的按推荐走。</span></div>
+    <div class="term"><b>确认单</b><span class="say">圈完问题我列的「已定 / 替你定的 / 不做」三栏单子；你点头才算冻结需求。</span></div>
+    <div class="term"><b>碰撞</b><span class="say">你要的东西跟系统已有做法冲突的地方。碰撞必须你点头我才动，不自行取舍。</span></div>
+    <div class="term"><b>连带整改</b><span class="say">你报一个问题，我扫整个模块后建议一起修的同款毛病；范围先报大让你砍，不报小让你追。</span></div>
+    <div class="term"><b>demo / 演示页</b><span class="say">能点能玩的网页样品；你看满意了我才动真代码。</span></div>
+    <div class="term"><b>收口</b><span class="say">一轮问题问完、准备冻结需求的那一刻。你可以随时喊「先到这」，没答的按默认冻进确认单。</span></div>
+    <div class="term"><b>你定</b><span class="say">你回「你定」，我就直接拍板并给一句理由，不同意再翻。</span></div>
+    <div class="term"><b>圈选</b><span class="say">你在清单上挑选项的动作：回「1A 2B」或打勾都算。</span></div>
+  </section>
+
+  </div>
+  <p class="foot">这页跟着系统改版一起更新 · 缺词随时说，我补进来</p>
+</div>
+<script>
+const q=document.getElementById('q');
+q.addEventListener('input',()=>{
+  const v=q.value.trim().toLowerCase(); let n=0;
+  document.querySelectorAll('.term').forEach(t=>{
+    const hit=!v||t.textContent.toLowerCase().includes(v);
+    t.classList.toggle('hid',!hit); if(hit)n++;
+  });
+  document.querySelectorAll('section').forEach(s=>{
+    s.classList.toggle('hid',v&&!s.querySelector('.term:not(.hid)'));
+  });
+  document.getElementById('count').textContent=v?('筛出 '+n+' 条'):'';
+});
+</script>
+</body>
+</html>

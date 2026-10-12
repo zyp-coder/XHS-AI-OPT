@@ -1,0 +1,320 @@
+# -*- coding: utf-8 -*-
+"""一次性实测：同一篇稿子，摆两份「喂给出图工具的提示词」出来对照（老板 2026-10-03：「我怎么感觉跟直接扔口播稿出去差不多？」）。
+
+A 路＝直接扔稿：一段文案 ＋ 一句「照着做张小红书竖版图」，别的什么都不给（这就是人手上没有这套界面时会打的字）。
+B 路＝走五档拿到的那份：① 挑一派 + 定四类轴 + 定张数 + 拨「配文方式」那一档 → ② 封面（✨ 那一发同时回那一句文案＋那一张的画面）→ ③ 断句（点一行行号＝那一句自己成一屏）→ ④ 🔁 出分镜（三块）＋ 那一档要填的格子 → 📋 一次复制全部提示词（② ✨ 那份封面也一起带上）。
+    B 那几格分镜是照 background 里 NP_DESC_SHAPE 的三小段写法手写的（六十二改＝举证口径：这一张要证明／画面里必须出现的元素（逐条编号、至少一条自带「这就是……的凭据」）／背景，
+    可选一行『先说清楚』堵歧义；「版式」不再单列一小段，它挪进配文那档的字位那颗九宫格）；
+    配文那一份也照「这一档要哪几格」手写（六十五改·字后压：图上那句大字＝这一屏选定的那一句、由扩展本地压上屏，AI 一份都不许报『大字』，只给承接／标注／小注／重点／字位——
+    说一次＝承接＋小注＋重点＋字位／辅助标注＝标注＋小注＋重点＋字位／整段上屏＝重点＋字位／只一句大字＝重点＋字位），
+    ✨ 封面、🔁 重出分镜那两发都走桩（🔮 提名句这一跑用不上，③ 是人自己点行号立屏），不烧真接口；拼提示词那一段是扩展的真代码（npShotPromptText），一个字没替它改——
+    它会把那三块拆成几行，并标一句「这几行是说明，一个字都不要写上屏」；字后压之后它只报「这一屏要压几行、字位在哪一格」，要压的字一个不进生图提示词。
+    六十二改另有一条：「配文方式」提炼成了参数（替掉旧的字量档），所以这一版四个预设画面完全一样、只有图上那套字的身份在变；
+    流派与四轴一颗都不拨（照内置打底那一挂：真人工作场景 · 实拍——第一跑老板说「我更喜欢 A 那三张」，六十一改把统一那一挂做成打底，六十二改把它换成实拍）。
+
+跑法：python3 -X utf8 scripts/dev/_cmp_prompts.py [say|label|whole|only]
+产物：tmp/shots_cmp/B_prompts-<档>.txt（那一档的整套提示词）  tmp/shots_cmp/B_rows-<档>.txt（逐行那份）  tmp/shots_cmp/A_prompts.txt（直接扔的那两份）
+"""
+import pathlib
+import shutil
+import sys
+import tempfile
+import time
+
+from playwright.sync_api import sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = ROOT / 'tmp' / 'shots_cmp'
+
+# ── 同一篇稿：三段，每段一句（一段＝一张图）──
+SENTS = [
+    '做小红书到第五十篇我才看懂，笔记没人看往往不是图不漂亮，是前三行没把读者心里那句话写出来。',
+    '我把发过的笔记一篇一篇摊开逐条标，哪一句留住了人、哪一句纯属废话，标完只剩一个动作：开头先放最扎心的那句。',
+    '照这个改法跑完第二周，同样的图和同样的话题，评论区开始有人追着问在哪儿领，我这才敢把这套写下来。',
+]
+BODY = '\n\n'.join(SENTS)
+
+# ── 分镜（四档预设共用这一份：只写画面，图上放哪句字不归它）──
+DESCS = [
+    '这一张要证明：把「熬到第五十篇才转过弯」变成桌面上看得见的过程；'
+    '先说清楚：桌上不许出现电脑屏幕特写，纸面和屏幕上都不许出现可读的英文字；'
+    '画面里必须出现的元素：1. 木桌俯拍，左手边一叠打印出来的笔记截图散开，最上面那张右下角手写着「2 赞」（这就是没人看的凭据）；'
+    '2. 右手握着一支笔，笔尖停在纸上不动；3. 桌角一杯凉掉的咖啡，杯壁一圈茶渍；'
+    '4. 那叠纸边上用胶带正着贴一小条纸，上面手抄三行、第一行划了一道横线；'
+    '背景：晚上家里书桌，台灯从左上单一暖光源，浅景深随手抓拍，不要棚拍不要广告片。',
+    '这一张要证明：把「逐条标、只留真有用的那句」这个动作摆出来；'
+    '画面里必须出现的元素：1. 桌面平铺十几张便签纸，每张只抄了一小行字；'
+    '2. 一只手拿红笔在其中三张上画圈（这就是留下来的凭据）；'
+    '3. 旁边一只空碗，装着划掉揉皱的纸团，纸团明显比留下的便签多；4. 桌沿压着一张写日期的便利贴；'
+    '背景：白天办公室，窗光从右边来，桌面有木纹和一道旧划痕，随手抓拍不要摆拍。',
+    '这一张要证明：让「终于有人追着问」有一个具体的落点；'
+    '先说清楚：这里的「第二周」是改法跑完的第二个星期，跟跑步配速无关，画面上不许出现运动器材；'
+    '画面里必须出现的元素：1. 手机立在桌上，底下垫一张便签贴，屏幕是评论区界面、头像全部虚化看不清；'
+    '2. 屏幕里那串对话气泡一路顶到最下缘，密到数不清（这就是追问的人多的凭据）；'
+    '3. 旁边一只手端着杯子刚放下来，杯底一圈水痕；4. 垫手机那张便签正着贴在桌面，上面手抄着改法的三行；'
+    '背景：晚上家里书桌，同一盏台灯从左上打下来，浅景深随手抓拍，跟前两张是同一张桌子。',
+]
+
+# ── 配文方式四档（六十二改：这颗旋钮只管「这一段话，图替你说多少」，画面一个字不变；
+#    六十五改·字后压：图上那句大字＝这一屏选定的那一句，四档的桩里都不报『大字』，只给这一档要填的那几格）──
+CAP_PRESETS = {
+    # 说一次：大字是这一屏选定的那句（由 ④ 的选句器定）＋两三行承接，连起来读是一句完整的话
+    'say': {
+        't': '说一次',
+        'caps': [
+            {'档': '说一次', '承接': ['不是图不漂亮', '是那句心里话没写准'],
+             '重点': [{'字': '前三行', '标': '变色'}], '字位': '右中'},
+            {'档': '说一次', '承接': ['留下的圈出来', '划掉的全揉进碗里'],
+             '重点': [{'字': '开头先放', '标': '加粗'}], '字位': '右下'},
+            {'档': '说一次', '承接': ['同样的图和同样的话题', '评论区开始问在哪儿领'],
+             '重点': [{'字': '追着问', '标': '变色'}], '字位': '左中'},
+        ],
+    },
+    # 辅助标注：字只当标注用，每条都绑一个画面上看得见的具体东西
+    'label': {
+        't': '辅助标注',
+        'caps': [
+            {'档': '辅助标注', '标注': [{'指着': '最上面那张截图右下角那个「2 赞」', '写': '没人看的不是图'},
+                                        {'指着': '小纸条上划了横线的那一行', '写': '是开头这几行'}],
+             '重点': [{'字': '2 赞', '标': '变色'}], '字位': '左上'},
+            {'档': '辅助标注', '标注': [{'指着': '红笔圈住的那三张便签', '写': '留下的就这几张'},
+                                        {'指着': '空碗里揉皱的纸团', '写': '这些是废话'}],
+             '字位': '右下'},
+            {'档': '辅助标注', '标注': [{'指着': '一路顶到屏幕最下缘的那串气泡', '写': '问的人排到了底'},
+                                        {'指着': '垫在手机底下那张便签贴', '写': '改法记在这儿'}],
+             '字位': '左中'},
+        ],
+    },
+    # 整段上屏：图上就是这段原文，扩展本地一字不改接上，AI 那一发只给「哪几处该被点出来」＋字位
+    'whole': {
+        't': '整段上屏',
+        'caps': [
+            {'档': '整段上屏', '重点': [{'字': '前三行', '标': '变色'}], '字位': '正中'},
+            {'档': '整段上屏', '重点': [{'字': '开头先放', '标': '变色'}], '字位': '正中'},
+            {'档': '整段上屏', '重点': [{'字': '追着问', '标': '变色'}], '字位': '正中'},
+        ],
+    },
+    # 只一句大字：全页就这一处字（＝这一屏选定的那句），凭据由画面自己扛；AI 只给重点和字位
+    'only': {
+        't': '只一句大字',
+        'caps': [
+            {'档': '只一句大字', '重点': [{'字': '前三行', '标': '变色'}], '字位': '右下'},
+            {'档': '只一句大字', '重点': [{'字': '最扎心', '标': '变色'}], '字位': '右下'},
+            {'档': '只一句大字', '重点': [{'字': '追着问', '标': '变色'}], '字位': '左中'},
+        ],
+    },
+}
+
+NOTES = "async () => (await chrome.storage.local.get('np_notes')).np_notes || []"
+
+SEED = r'''async (payload) => {
+    await Storage.initializeDefaults(DEFAULT_PROMPTS);
+    await ensureTenantInit();
+    const cfg = await Storage.getConfig();
+    cfg.product.name = '实测对照产品';
+    cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
+    cfg.ai.apiKey = 'test-local-only';
+    cfg.imgLook = null;                    // 账号默认什么都不设：四轴与配文方式整层落回内置打底（实拍那一挂）
+    cfg.imgMotifs = [];
+    await Storage.setConfig(cfg);
+    await chrome.storage.local.set({
+        np_notes: [{id: 'cmp-1', title: '五十篇才看懂的那一句', status: '待发', platform: 'xhs', form: '图文',
+                    draft: payload.body, createdAt: Date.now()}],
+        np_assets: [],
+    });
+    self.ai = {cut: 0, desc: 0, cv: 0};
+    self.descs = payload.descs;
+    self.caps = payload.caps;
+    const TAG = '本段（要写的就是它）：';
+    AiClient.chatCompletion = async (cfg2, system, user) => {
+        const sys = String(system || ''), us = String(user || '');
+        if (sys.indexOf('你在改一条') >= 0) {
+            self.ai.desc++;
+            const texts = (us.match(/^本段（要写的就是它）：(.+)$/gm) || []).map(s => s.slice(TAG.length));
+            return {content: JSON.stringify({'风格': '', '画面': texts.map((t, i) => {
+                const d = self.descs[i] || self.descs[0];
+                return {'句': t, '候选': [d, d, d],                 // 主推那条进那一格；另两条只是候选，本跑不用
+                        '配文': self.caps[i] || {}};                // 按客户拨的那一档给一份字（用不上的格子扩展自己剪掉）
+            })})};
+        }
+        if (sys.indexOf('你在帮一条') >= 0) { self.ai.cut++; return {content: '{"提名句":[]}'}; }
+        if (sys.indexOf('你在给一条') >= 0) {                 // ✨ ② 封面：一发同时回那一句文案 + 那一张的画面（固定尾巴由扩展补）
+            self.ai.cv++;
+            return {content: JSON.stringify({
+                '文案': '五十篇才看懂：问题在前三行',
+                '提示词': '俯拍家里书桌的一角，晚上台灯从左上打单一暖光：左手边一叠打印出来的笔记截图散开，右手握着一支笔、笔尖停在纸上不动，' +
+                    '桌角一杯凉掉的咖啡；浅景深随手抓拍，不要棚拍不要广告片；纸面和屏幕上都不出现可读的字，右下角留一块干净的暗角。'})};
+        }
+        return {content: '{"__stub":"不该烧的这一发"}'};
+    };
+    return true;
+}'''
+
+
+def boot(p):
+    for i in range(5):
+        prof = pathlib.Path(tempfile.gettempdir()) / ('cmp-profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+def until(sw, page, secs=25):
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        if sw.evaluate('() => self.ai.desc') >= 1 and page.evaluate('() => _npDescBusy === false'):
+            return
+        page.wait_for_timeout(300)
+    raise AssertionError('等不到 🔁 回来')
+
+
+def main():
+    tag = (sys.argv[1] if len(sys.argv) > 1 else 'say')
+    assert tag in CAP_PRESETS, '没这个预设：%s（可选 %s）' % (tag, ' / '.join(CAP_PRESETS))
+    OUT.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        ctx = boot(p)
+        try:
+            run(ctx, tag)
+        finally:
+            ctx.close()
+
+
+def run(ctx, tag):
+    pre = CAP_PRESETS[tag]
+    sw = ctx.service_workers[0]
+    sw.evaluate(SEED, {'body': BODY, 'descs': DESCS, 'caps': pre['caps']})
+
+    page = ctx.new_page()
+    errs = []
+    page.on('pageerror', lambda e: errs.append(str(e)[:200]))
+    page.set_viewport_size({'width': 1280, 'height': 980})
+    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    page.wait_for_function('typeof switchMainTab === "function" && typeof npShotsTableHtml === "function"')
+    page.evaluate('() => { window.__clip = ""; navigator.clipboard.writeText = async (t) => { window.__clip = String(t); }; return true; }')
+    page.set_default_timeout(25000)
+
+    def enter_out():
+        """直开这一篇的「🖼 出图」（档案那一行「下一步」走的同一条路；七十改起界面不再有任务表与行选择器）"""
+        page.evaluate('''async () => {
+            const list = await npNotesAll();
+            const n = list.find(x => x && x.id === 'cmp-1') || null;
+            switchMainTab('noteOut', n);
+        }''')
+        page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+
+    def goto_out():
+        enter_out()
+        goto_tab('desc')          # ④ 空态：「＋ 起一套图（跟账号默认）」就是这一行
+        page.wait_for_function('() => !!document.querySelector("#npShotTable .np-img-add")')
+        page.locator('#npShotTable .np-img-add').click()
+        page.wait_for_function('() => (npS().imgDocs || []).length === 1 && !!npS().imgOpen')
+        enter_out()
+
+    def goto_tab(t):
+        page.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t).click()
+        page.wait_for_timeout(260)
+
+    def gut_box(i):
+        el = page.locator('#npCutWrap .np-cutline').nth(i).locator('.np-cut-gut')
+        el.scroll_into_view_if_needed()
+        return el.bounding_box()
+
+    goto_out()
+    goto_tab('look')         # 六十四改：新建那行啥都还没写＝本是落在 ② 那一关，① 这一档自己切过去摊开
+
+    # ① 风格：流派与四类轴一颗都不拨（照打底那一挂＝实拍），只拨「配文方式」这一颗
+    page.locator('#npLookBox .np-capd[data-k="%s"]' % tag).click()
+    page.wait_for_function('(k) => npCapOf(npLookOf(npS())) === k', arg=tag)
+    print('① 流派 %s ／ 四轴 %s ／ 配文方式「%s」' % (
+        page.evaluate('() => npLookOf(npS()).motif'),
+        page.evaluate('() => npLookToken(npLookOf(npS()))'), pre['t']), flush=True)
+
+    # ③ 断句：点一行行号＝那一句自己成一屏（零 AI）；「这一屏哪句当大字」回 ④ 的 ✍️ 配文栏里挑（★ 已挪走）
+    goto_tab('cut')
+    assert page.locator('#npCutWrap .np-cutline').count() == 3
+    assert page.locator('#npCutWrap .np-sent-key').count() == 0, '★ 已挪进 ④ 配文栏，③ 只剩圈行'
+    for i in range(3):
+        box = gut_box(i)
+        page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        page.wait_for_timeout(300)
+    page.wait_for_function('() => (npS().shots.items || []).length === 3')
+
+    # ④ 分镜：🔁 出三块 ＋ 那一档要填的格子 → 📋 一次复制全部（② 那份封面跟着一起带）
+    goto_tab('desc')
+    page.locator('#npRegenBar .np-desc-regen').click()
+    until(sw, page)
+    page.wait_for_function('() => npS().shots.items.every(x => x.desc && x.desc.length > 20)')
+    # 档不落回段上（跟旋钮走），所以这里只验那一发把字落进了格子
+    page.wait_for_function('() => npS().shots.items.every(x => npCapHas(x))')
+    # 档定格子：这一档用不上的格子当场不摆（『大字』那格已撤——图上那句＝选定的那一句；重点那一格按三种标法各摆一框）
+    expect = {'say': ['lines', 'note', 'em:hot', 'em:bold', 'em:tag'],
+              'label': ['labels', 'note', 'em:hot', 'em:bold', 'em:tag'],
+              'whole': ['em:hot', 'em:bold', 'em:tag'], 'only': ['em:hot', 'em:bold', 'em:tag']}[tag]
+    got = page.evaluate('() => Array.from(document.querySelectorAll(".np-cap-in")).map(x => x.getAttribute("data-f"))')
+    assert sorted(set(got)) == sorted(expect), '这一档摆的格子不对：%s（应为 %s）' % (sorted(set(got)), expect)
+    assert page.locator('.np-cap-zone').count() == 27, '每一行都摆一颗字位九宫格（3 行 × 9 格）：%d' % page.locator('.np-cap-zone').count()
+    print('④ 配文那几格（照这一档落回来的那份字）：%s' %
+          page.evaluate('() => JSON.stringify(npS().shots.items[0].cap || {})'), flush=True)
+
+    # 六十四改②：② 封面不再派生第 1 屏那份，它自己烧一发 ✨（那一句文案＋那一张的画面同时回来）
+    assert sw.evaluate('() => self.ai.cut') == 0, '点行号立屏是本地的事，那一发没烧'
+    assert sw.evaluate('() => self.ai.desc') == 1, '🔁 只烧一发'
+    assert sw.evaluate('() => self.ai.cv') == 0, '🔁 那一发不代笔封面：② 是它自己那一发'
+    goto_tab('cover')
+    page.locator('#npCoverBox .np-cover-gen').click()
+    page.wait_for_function('() => !!(npS().shots.cv || {}).prompt')
+    assert sw.evaluate('() => self.ai.cv') == 1, '✨ 只烧一发'
+    cv = page.evaluate('() => npS().shots.cv')
+    assert cv['copy'] == '五十篇才看懂：问题在前三行', cv['copy']
+    assert '俯拍家里书桌的一角' in cv['prompt'] and '每一张都带的固定元素：' in cv['prompt'], cv['prompt'][:200]
+    assert '你不许画进去' in cv['prompt'] and '字位＝' in cv['prompt'], '字后压：封面那份也只留白、不画字：%s' % cv['prompt'][-220:]
+    cover = page.evaluate('() => npS().visual.cover')
+    assert cover == cv['prompt'], '档案那份 visual.cover 就是 ② 那一栏里的字（同一真源，不另拼）'
+    assert '封面／首图那一张' in cover, cover[:120]
+    goto_tab('desc')
+
+    page.locator('.np-shots-copy-all').click()
+    page.wait_for_function('() => window.__clip.length > 100')
+    b_text = page.evaluate('() => window.__clip')
+    per_row = [page.locator('.np-shot-pout').nth(i).evaluate('(el) => el.textContent') for i in range(3)]
+    shallow = page.locator('.np-shot-shallow').count()
+    (OUT / ('B_prompts-%s.txt' % tag)).write_text(b_text, encoding='utf-8')
+    (OUT / ('B_rows-%s.txt' % tag)).write_text('\n\n'.join(per_row), encoding='utf-8')
+
+    # A 路：直接扔稿子（整段文案原样喂，只补一句人都会补的话）——两种扔法都摆出来
+    a1 = []
+    for i, s in enumerate(SENTS):
+        a1.append('第 %d 张，小红书竖版 3:4 配图。请给这段文案配一张图：\n%s' % (i + 1, s))
+    a2 = ['给下面这篇笔记出 3 张小红书竖版（3:4）配图，要好看、抓眼、适合发笔记：\n\n' + BODY]
+    (OUT / 'A_prompts.txt').write_text('\n\n———\n\n'.join(a1) + '\n\n===\n\n' + a2[0], encoding='utf-8')
+
+    print('\n抄文案判红那一格：%d 行亮（0＝没抄）' % shallow, flush=True)
+    print('页面报错：%s' % (errs or '无'), flush=True)
+    print('\n' + '=' * 76 + '\nB 路（走五档·扩展本地拼的那份，%d 字，含 ② ✨ 那份封面；配文方式＝%s）\n%s' % (len(b_text), pre['t'], b_text), flush=True)
+    print('=' * 76 + '\nA 路（直接扔稿·逐段那份）\n%s' % '\n\n'.join(a1), flush=True)
+    print('=' * 76 + '\nA 路（直接扔稿·整篇那一份）\n%s' % a2[0], flush=True)
+    print('\n封面那一格（B 路：② ✨ 那一发回来的画面，扩展只补固定几行尾巴）：\n%s' % cover, flush=True)
+    print('\n产物在 %s' % OUT, flush=True)
+    assert errs == [] and shallow == 0
+
+
+if __name__ == '__main__':
+    main()

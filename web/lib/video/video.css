@@ -1,0 +1,204 @@
+/* 字效编辑器样式：左边竖屏预览，右边控制区（① 口播稿 → ② 分幕），底栏主钮钉窗口右下。
+   风格跟 popup / 设置页一套（共用 ui.css 的变量：浅底、白卡片、主题色只落在主按钮与选中态上）。
+   这里只管骨架与排版——颜色 / 圆角 / 字号一律走变量，别再自带一套深色主题。
+   注：lib/video/styles.js 是「成片画面」的风格，跟这个界面样式是两码事，别动它。 */
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--c-bg); color: var(--c-ink);
+  font: var(--fs-md)/1.65 var(--font-ui); }
+/* 预览高度：右边那栏照它对齐（口播稿框撑满剩下的地方），内嵌时按窗口再收一档 */
+html { --cvh: 720px; }
+body { display: flex; flex-direction: column; }
+header { display: flex; align-items: center; gap: var(--sp-2); padding: 8px 14px;
+  border-bottom: 1px solid var(--c-line); background: var(--c-surface); flex: none; }
+header .mark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: var(--r-sm); background: var(--c-brand); color: var(--c-brand-on); font-size: 14px; flex: none; }
+header b { font-size: var(--fs-lg); font-weight: 700; color: var(--c-ink); white-space: nowrap; }
+header .tip, .tiny { font-size: var(--fs-xs); color: var(--c-ink-3); }
+#noteTitle { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#outFlag { flex: none; font-size: var(--fs-xs); font-weight: 700; color: var(--c-ok); white-space: nowrap; }
+/* 右上一组工具：⚙ 音色与风格 ＋（内嵌时的）单开一页出口 */
+.hgroup { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.hgroup button { padding: 4px 10px; font-size: var(--fs-sm); font-weight: 600; }
+main { flex: 1 1 auto; min-height: 0; display: flex; gap: var(--sp-4); padding: var(--sp-4);
+  padding-bottom: 78px;   /* 给右下那颗底栏让位（底栏是钉窗口的，不占流） */
+  align-items: flex-start; }
+.left { position: sticky; top: var(--sp-4); }
+/* 右边这栏最高就到「预览」那么高：口播稿那一栏在里面撑满，底下不会空出一大截 */
+.right { flex: 1; min-width: 320px; height: 100%; max-height: var(--cvh); overflow-y: auto; padding-right: 6px;
+  display: flex; flex-direction: column; }
+
+/* 竖屏预览：黑底留着（画的是 1080×1920 的成片），外圈按白卡片那一档收边 */
+#cv { display: block; width: calc(var(--cvh) * 0.5625); height: var(--cvh); background: #0f1115;
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); box-shadow: var(--sh-1); }
+/* 底栏：主钮与步进钉窗口右下（跟 popup 的 .np-pinbar 同款）；进度 / 状态 / 说明跟随其旁 */
+.np-pinbar { position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+  max-width: calc(100vw - 36px);
+  background: rgba(255,255,255,.97); border: 1px solid var(--c-line);
+  border-radius: 12px; box-shadow: var(--sh-2); padding: 8px 10px; }
+.np-pinbar .prog { flex: none; width: 110px; height: 4px; background: var(--c-line); border-radius: 3px; overflow: hidden; }
+#bar { width: 0; height: 100%; background: var(--c-brand); transition: width .2s; }
+.st { font-size: var(--fs-sm); color: var(--c-ink-3); }
+/* 底栏里那句「分幕 N 幕 · 配晓晓念口播稿」，窄了就把自己收掉 */
+.np-pinbar #footHint { flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hint { width: calc(var(--cvh) * 0.5625); margin-top: var(--sp-2); padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm);
+  background: var(--c-warn-soft); color: var(--c-warn); border: 1px solid var(--c-warn-line); }
+
+/* 成片预览那层：出完片盖在预览画布上，当场回放（收起后接着编） */
+#done { position: absolute; top: 0; left: 0; width: calc(var(--cvh) * 0.5625); height: var(--cvh);
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); overflow: hidden; background: #0f1115;
+  box-shadow: var(--sh-1); z-index: 5; display: flex; flex-direction: column; }
+#done[hidden] { display: none; }
+#done video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+.donebar { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 8px 10px; background: #0f1115; }
+.donebar .tiny { flex: 1; color: #c6ccd6; }
+
+/* 按钮：跟 ui.css 的 .btn 一档（这页用裸 button + primary / ghost，没挂 .btn 类） */
+button { font: 600 var(--fs-md)/1.4 var(--font-ui); color: var(--c-ink-2); background: var(--c-surface);
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); padding: 6px 13px; cursor: pointer;
+  white-space: nowrap; transition: all .14s ease; }
+button:hover:not(:disabled) { border-color: var(--c-ink-4); color: var(--c-ink); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-brand-on); }
+button.primary:hover:not(:disabled) { background: var(--c-brand-ink); border-color: var(--c-brand-ink); color: #fff; }
+button.ghost { background: transparent; border-color: transparent; color: var(--c-ink-2); }
+button.ghost:hover:not(:disabled) { background: var(--c-bg-2); border-color: transparent; color: var(--c-ink); }
+.np-pinbar button { padding: 5px 11px; font-size: var(--fs-sm); }
+
+/* 顶栏那两站＝写稿工作流里的两步：① 口播稿 → ② 分幕（③ 音色 / ④ 风格 收进 ⚙ 弹窗） */
+.ftabs { flex: none; display: flex; flex-wrap: wrap; gap: 2px; margin: 0 0 10px; border-bottom: 1px solid var(--c-line); }
+.ftabs .ftab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none;
+  padding: 6px 7px; margin-bottom: -1px; font: 600 var(--fs-sm)/1.5 var(--font-ui); color: var(--c-ink-3);
+  cursor: pointer; white-space: nowrap; }
+.ftabs .ftab:hover:not(:disabled) { background: none; border-color: transparent; border-bottom-color: var(--c-ink-4); color: var(--c-ink); }
+.ftabs .ftab.on, .ftabs .ftab.on:hover:not(:disabled) { color: var(--c-brand-ink); border-bottom-color: var(--c-brand); }
+.fsec { display: none; background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-1); padding: var(--sp-3) var(--sp-4); }
+.fsec.on { display: block; }
+/* 栏底那一行说明：比正文小一档，别抢戏 */
+.fhint { margin: 10px 0 0; font-size: var(--fs-xs); color: var(--c-ink-3); line-height: 1.7; }
+.fsec .fhint:first-child { margin: 0 0 10px; }
+
+.row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+.lab { font-size: var(--fs-sm); color: var(--c-ink-3); }
+
+textarea { width: 100%; background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-md); padding: 7px 10px; font: 400 var(--fs-md)/1.6 var(--font-ui); resize: vertical; }
+textarea:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+textarea::placeholder { color: var(--c-ink-4); }
+/* 口播稿框：这一栏撑满右栏剩下的高度（右栏最高＝预览那么高，所以底边跟左边预览基本齐平），
+   稿子长也不用在个小框里滚；窗口矮的时候收到底 140px，别把「生成分幕」顶没了 */
+.fsec.on[data-sec="script"] { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+#script { flex: 1 1 auto; min-height: 140px; }
+#secScript > * + * { margin-top: 8px; }
+
+/* ① 口播稿那一站的块：调稿卡 / 按钮行 / 小标 / 看原稿 / 重点卡 */
+.fvcard { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px dashed var(--c-brand-line); border-radius: var(--r-md); background: var(--c-brand-soft); padding: 12px 14px; }
+.fvcard b { font-size: var(--fs-sm); color: var(--c-brand-text); }
+.fvcard.soft { display: block; border-color: var(--c-line); background: var(--c-bg-2);
+  color: var(--c-ink-3); font-size: var(--fs-xs); padding: 10px 12px; }
+.fvrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fvtip { font-size: var(--fs-xs); color: var(--c-ink-3); }
+.fvtip.ok { color: var(--c-brand-text); }
+.fvtip.warn { color: var(--c-warn); }
+.fvpeek { white-space: pre-wrap; border: 1px dashed var(--c-line); border-radius: var(--r-sm);
+  padding: 8px 10px; background: var(--c-bg-2); font-size: var(--fs-xs); color: var(--c-ink-3);
+  max-height: 160px; overflow: auto; }
+.fvnote { font-size: var(--fs-xs); color: var(--c-warn); background: var(--c-warn-soft);
+  border: 1px solid var(--c-warn-line); border-radius: var(--r-sm); padding: 6px 10px; }
+.ok { font-size: var(--fs-xs); color: var(--c-ok); }
+
+/* 重点卡：AI 提的重点（点字可改、点 ✕ 删），改完「按重点出分幕」 */
+.picks { border: 1px solid var(--c-brand-line); border-radius: var(--r-md);
+  background: var(--c-brand-soft); padding: 10px 12px; }
+.picks > b { font-size: var(--fs-sm); color: var(--c-brand-text); }
+.prow { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.prow input { flex: none; width: 210px; background: var(--c-surface); color: var(--c-brand-text);
+  border: 1px solid var(--c-brand-line); border-radius: var(--r-sm); padding: 5px 8px;
+  font: 700 var(--fs-sm)/1.5 var(--font-ui); }
+.prow input:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+.prow .tiny { flex: 1; min-width: 140px; padding-top: 6px; }
+.pickfoot { margin-top: 8px; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 4px 10px; border-radius: var(--r-full); border: 1px solid var(--c-line-2); background: var(--c-surface);
+  font-size: var(--fs-sm); color: var(--c-ink-2); cursor: pointer; }
+.chip:hover { border-color: var(--c-ink-4); }
+.chip.on { border-color: var(--c-brand-line); background: var(--c-brand-soft); color: var(--c-brand-ink); font-weight: 600; }
+
+/* 音色表：一行一个音色（音色 / 听感 / 适合），点一行换音色——比一排标签看得出区别 */
+.vtab { width: 100%; border-collapse: collapse; }
+.vtab th { padding: 0 10px 5px 0; border-bottom: 1px solid var(--c-line); text-align: left;
+  font: 600 var(--fs-xs)/1.6 var(--font-ui); color: var(--c-ink-3); }
+.vtab td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--c-line); vertical-align: top;
+  font-size: var(--fs-sm); color: var(--c-ink-3); line-height: 1.6; }
+.vtab tr.vrow { cursor: pointer; }
+.vtab tr.vrow:hover td { background: var(--c-bg-2); color: var(--c-ink-2); }
+.vtab tr.vrow.on td { background: var(--c-brand-soft); color: var(--c-brand-ink); }
+.vtab td.vname { white-space: nowrap; }
+.vtab td.vname b { font-size: var(--fs-md); font-weight: 700; color: var(--c-ink); }
+.vtab tr.vrow.on td.vname b { color: var(--c-brand-ink); }
+.vtab td.vname .vrec { margin-left: 5px; padding: 1px 6px; border-radius: var(--r-full);
+  background: var(--c-brand-soft); color: var(--c-brand-ink); font-size: 10px; font-weight: 700; }
+.vtab tr.vrow.on td.vname .vrec { background: var(--c-surface); }
+.vtab tr:last-child td { border-bottom: none; }
+
+.scenes { display: flex; flex-direction: column; gap: var(--sp-2); }
+.scene { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: 8px 10px; background: var(--c-surface-2); }
+.scene .head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 6px; }
+.scene .no { font: 600 var(--fs-xs)/1.6 var(--font-num); color: var(--c-brand-ink); letter-spacing: .5px; }
+.scene .lay { display: flex; gap: 4px; }
+.scene .lay .chip { padding: 2px 8px; font-size: var(--fs-xs); }
+.scene input { width: 100%; background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-sm); padding: 4px 8px; font: 400 var(--fs-md)/1.5 var(--font-ui); margin-top: 4px; }
+.scene input:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+.scene .emrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.scene .emrow .tiny { flex: none; white-space: nowrap; }
+.scene .emrow input { margin: 0; }
+.empty { color: var(--c-ink-3); font-size: var(--fs-sm); padding: 6px 2px; }
+
+.knobs { display: grid; grid-template-columns: 62px 1fr; gap: 6px 10px; align-items: center; margin-top: 10px; }
+.knobs .k { font-size: var(--fs-sm); color: var(--c-ink-3); }
+.knobs input[type=text] { background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-sm); padding: 4px 8px; font: 400 var(--fs-md)/1.5 var(--font-ui); width: 180px; }
+.knobs input[type=text]:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+/* 色块：跟 ui.css 里的开关 .sw 撞名，靠本文件后加载覆盖成 14px 小方块 */
+.sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 5px;
+  vertical-align: -2px; border: 1px solid var(--c-line-2); }
+.sw.dot { border-radius: 50%; }
+
+/* ⚙ 音色与风格：原 ③ 音色 / ④ 风格 两签收进这一个弹窗（改完直接按新的出片） */
+#cfgMask { position: fixed; inset: 0; z-index: 80; background: rgba(15,20,30,.38);
+  display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px 16px; }
+#cfgMask[hidden] { display: none; }
+#cfgBox { width: min(560px, 100%); max-height: 88vh; overflow: auto;
+  background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-2); padding: 14px 16px; }
+#cfgBox h3 { margin: 0 0 6px; font-size: var(--fs-lg); color: var(--c-ink); }
+.cfgh { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--c-ink); }
+hr.cfgsep { border: 0; border-top: 1px solid var(--c-line); margin: 14px 0 4px; }
+.cfgfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+/* 一闪而过的小提示（口播稿调好了 / 按本机规则分的幕…） */
+#toast { position: fixed; left: 50%; bottom: 88px; transform: translate(-50%, 8px); z-index: 90;
+  background: rgba(17,24,39,.92); color: #fff; font-size: var(--fs-sm); border-radius: var(--r-md);
+  padding: 8px 14px; max-width: min(560px, 86vw); opacity: 0; transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none; }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* 内嵌进弹窗（?embed=1）：竖向比独立标签页紧，预览与边距各收一档；
+   顶栏留着（左「← 返回档案」、右上「⚙ 音色与风格」＋单开一页出口），底栏照旧钉窗口右下。
+   预览按窗口高度缩，绝不把右边那栏挤出弹窗、也不顶到那颗底栏上——弹窗只有 640 宽，
+   预览一宽横置 tab 就被推走；嫌小就点右上单开一页（那页是 405×720 的完整版）。 */
+#popout { display: none; }
+html.embed { --cvh: max(300px, min(620px, calc(100vh - 226px))); }
+html.embed header { padding: 7px 14px; }
+html.embed #popout { display: inline-block; padding: 4px 10px; font-size: var(--fs-sm); font-weight: 600; }
+html.embed main { gap: 12px; padding: 12px; padding-bottom: 64px; }
+html.embed .left { top: 12px; width: calc(var(--cvh) * 0.5625); }
+html.embed #cv { width: calc(var(--cvh) * 0.5625); height: var(--cvh); }
+html.embed .hint { width: 100%; }
+html.embed .right { min-width: 0; }
+html.embed .np-pinbar { right: 10px; bottom: 10px; padding: 6px 8px; }
+html.embed .np-pinbar #footHint { max-width: 150px; }

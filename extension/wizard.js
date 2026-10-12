@@ -1,34 +1,7 @@
-﻿/* 首次设置向导：2 步——① 填 AI 配置 ② 绑定账号验证；产品/人设/知识库在「账号诊断」里配 */
+﻿/* 首次设置向导：2 步——① 填 AI 配置 ② 绑定账号验证；产品/人设/知识库在「诊断&配置」里配 */
 (function () {
   'use strict';
-/* 提供商 → 自动匹配 BaseURL + 模型清单（与设置页同口径，用户无需手敲 URL） */
-const PROVIDER_CONFIG = {
-  deepseek:  { baseUrl: 'https://api.deepseek.com/v1',              models: [{ v: 'deepseek-v4-flash', l: 'deepseek-v4-flash（新，快、省，推荐）' }, { v: 'deepseek-v4-pro', l: 'deepseek-v4-pro（新，更强，费 token）' }] },
-  openai:    { baseUrl: 'https://api.openai.com/v1',                models: [{ v: 'gpt-4.1', l: 'GPT-4.1（最新旗舰，推荐）' }, { v: 'gpt-4.1-mini', l: 'GPT-4.1 Mini（性价比）' }, { v: 'gpt-4.1-nano', l: 'GPT-4.1 Nano（最快）' }, { v: 'gpt-4o-mini', l: 'GPT-4o Mini' }] },
-  qwen:      { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: [{ v: 'qwen-turbo', l: 'Qwen Turbo（快速便宜）' }, { v: 'qwen-plus', l: 'Qwen Plus（均衡，推荐）' }, { v: 'qwen-max', l: 'Qwen Max（最强）' }, { v: 'qwen3.7-plus', l: 'Qwen3.7 Plus（最新版均衡）' }, { v: 'qwen3.7-max', l: 'Qwen3.7 Max（最新版旗舰）' }] },
-  qianfan:   { baseUrl: 'https://qianfan.baidubce.com/v2',          models: [{ v: 'ernie-4.5-turbo-32k', l: 'ERNIE 4.5 Turbo 32K（最便宜、推荐）' }, { v: 'ernie-4.5-turbo-128k', l: 'ERNIE 4.5 Turbo 128K（长上下文）' }, { v: 'ernie-3.5-128k', l: 'ERNIE 3.5 128K（便宜）' }, { v: 'deepseek-v3.2', l: 'DeepSeek-V3.2（千帆平台）' }] },
-  siliconflow:{ baseUrl: 'https://api.siliconflow.cn/v1',           models: [{ v: 'deepseek-ai/DeepSeek-V4-Flash', l: 'DeepSeek V4 Flash' }, { v: 'deepseek-ai/DeepSeek-V4-Pro', l: 'DeepSeek V4 Pro' }, { v: 'Qwen/Qwen3.5-397B-A17B', l: 'Qwen3.5 397B（旗舰）' }, { v: 'Qwen/Qwen3.6-27B', l: 'Qwen3.6 27B' }, { v: 'zai-org/GLM-5.2', l: 'GLM-5.2（智谱）' }, { v: 'deepseek-ai/DeepSeek-V3.2', l: 'DeepSeek V3.2' }] },
-  gemini:    { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', models: [{ v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash（免费档，推荐）' }, { v: 'gemini-2.0-flash', l: 'Gemini 2.0 Flash（免费档）' }, { v: 'gemini-2.5-pro', l: 'Gemini 2.5 Pro（强，费额度）' }] },
-  openrouter:{ baseUrl: 'https://openrouter.ai/api/v1',             models: [{ v: 'deepseek/deepseek-chat-v3.2:free', l: 'DeepSeek V3.2（free）' }, { v: 'qwen/qwen-2.5-72b-instruct:free', l: 'Qwen 2.5 72B（free）' }, { v: 'meta-llama/llama-3.3-70b-versatile:free', l: 'Llama 3.3 70B（free）' }, { v: 'google/gemini-2.0-flash-001', l: 'Gemini 2.0 Flash' }] },
-  groq:      { baseUrl: 'https://api.groq.com/openai/v1',           models: [{ v: 'llama-3.3-70b-versatile', l: 'Llama 3.3 70B（免费快）' }, { v: 'llama-3.1-8b-instant', l: 'Llama 3.1 8B（最快）' }, { v: 'qwen/qwen2.5-32b', l: 'Qwen2.5 32B' }] },
-  zhipu:     { baseUrl: 'https://open.bigmodel.cn/api/paas/v4',     models: [{ v: 'glm-4-flash', l: 'GLM-4-Flash（免费模型）' }, { v: 'glm-4-air', l: 'GLM-4-Air（便宜）' }, { v: 'glm-4-plus', l: 'GLM-4-Plus' }] },
-  custom:    { baseUrl: '', models: [] },
-};
-const QUICK_MODELS = {
-  normal: [
-    { v: 'deepseek-v4-flash', l: 'deepseek-v4-flash（DeepSeek 新）' },
-    { v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash（免费）' },
-    { v: 'Qwen/Qwen3.5-397B-A17B', l: 'Qwen3.5 397B（硅基流动）' },
-    { v: 'glm-4-flash', l: 'GLM-4-Flash（智谱免费）' },
-    { v: 'gpt-4o-mini', l: 'gpt-4o-mini（OpenAI）' },
-    { v: 'ernie-4.5-turbo-32k', l: 'ernie-4.5-turbo-32k（千帆最便宜）' },
-  ],
-  reasoning: [
-    { v: 'deepseek-v4-pro', l: 'deepseek-v4-pro' },
-    { v: 'deepseek-ai/DeepSeek-V4-Flash', l: 'DeepSeek-V4-Flash（硅基流动）' },
-    { v: 'quiet-star/glm-4.6', l: 'GLM-4.6' },
-  ],
-};
+/* 提供商 / 模型清单：都在 lib/ai-providers.js（与设置页、弹窗、后台共用一份） */
 function detectProviderByBaseUrl(baseUrl) {
   for (const k of Object.keys(PROVIDER_CONFIG)) { if (k !== 'custom' && PROVIDER_CONFIG[k].baseUrl === baseUrl) return k; }
   return 'custom';
@@ -44,15 +17,15 @@ function fillModelSelect(selId, provider, selectedModel) {
     const mk = (val, label, group) => {
       const o = document.createElement('option'); o.value = val; o.textContent = (group ? '[非推理] ' : '') + label; if (val === selectedModel) o.selected = true; sel.appendChild(o);
     };
-    QUICK_MODELS.normal.forEach(m => mk(m.v, m.l, false));
-    QUICK_MODELS.reasoning.forEach(m => mk(m.v, m.l, true));
+    QUICK_MODELS.normal.forEach(m => mk(m.value, m.label, false));
+    QUICK_MODELS.reasoning.forEach(m => mk(m.value, m.label, true));
     return;
   }
   let hasSelected = !selectedModel;
   cfg.models.forEach(m => {
-    if (m.v === selectedModel) hasSelected = true;
-    const opt = document.createElement('option'); opt.value = m.v; opt.textContent = m.l;
-    if (m.v === selectedModel) opt.selected = true;
+    if (m.value === selectedModel) hasSelected = true;
+    const opt = document.createElement('option'); opt.value = m.value; opt.textContent = m.label;
+    if (m.value === selectedModel) opt.selected = true;
     sel.appendChild(opt);
   });
   if (!hasSelected && selectedModel) {
@@ -209,7 +182,7 @@ let step = 1;
     });
   }
 
-  const KB_CATS = ['通用', '产品介绍', '客户痛点', '避坑经验', '数据/价格', '使用技巧', '行业干货'];
+  /* 知识库八分类：lib/ai-providers.js 的 KB_CATEGORIES */
   function renderWizKb() {
     const box = $('wizKbList'); if (!box) return;
     if (!wizKbItems.length) { box.innerHTML = '<div style="font-size:12px;color:var(--dim);">还没有知识，点下面"➕ 添加一条知识"。</div>'; return; }
@@ -221,7 +194,7 @@ let step = 1;
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">' +
           '<b style="font-size:12.5px;">知识 ' + (i + 1) + '</b>' +
           '<select class="wizKbCat" data-i="' + i + '" style="font-size:12px;border:1px solid #ddd;border-radius:6px;padding:2px 4px;">' +
-            KB_CATS.map(c => '<option value="' + spEsc(c) + '"' + (e.category === c ? ' selected' : '') + '>' + spEsc(c) + '</option>').join('') +
+            KB_CATEGORIES.map(c => '<option value="' + spEsc(c) + '"' + (e.category === c ? ' selected' : '') + '>' + spEsc(c) + '</option>').join('') +
           '</select>' +
           '<button type="button" class="wizKbDel" data-i="' + i + '" style="margin-left:auto;font-size:12px;border:none;background:none;color:#c62828;cursor:pointer;">🗑 删除</button>' +
         '</div>' +
@@ -232,7 +205,7 @@ let step = 1;
   }
   function wireWizKb() {
     const add = $('wizKbAddBtn');
-    if (add) add.onclick = () => { wizKbItems.push({ title: '', category: '通用', content: '' }); renderWizKb(); };
+    if (add) add.onclick = () => { wizKbItems.push({ title: '', category: '产品介绍', content: '' }); renderWizKb(); };
     const box = $('wizKbList'); if (!box) return;
     box.onclick = (ev) => {
       const del = ev.target.closest('.wizKbDel'); if (!del) return;
@@ -314,7 +287,7 @@ let step = 1;
         const answers = Array.from(document.querySelectorAll('.kbWizQ') || []).map(el => ({ answer: el.value }));
         const r = await chrome.runtime.sendMessage({ action: 'aiKbBuild', data: { answers } });
         if (!r || !r.ok || !Array.isArray(r.entries) || !r.entries.length) throw new Error((r && r.error) || 'AI 未生成知识库');
-        const added = r.entries.map(e => ({ id: e.id, title: e.title, category: e.category || '通用', content: e.content, createdAt: Date.now() }));
+        const added = r.entries.map(e => ({ id: e.id, title: e.title, category: e.category || '产品介绍', content: e.content, tags: Array.isArray(e.tags) ? e.tags : [], createdAt: Date.now() }));
         wizKbItems = wizKbItems.concat(added);
         renderWizKb();
         if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 已生成 ' + added.length + ' 条知识，可在下方再调整，点"下一步"保存。'; }
@@ -364,7 +337,12 @@ function validStep(n) {
 
 async function next() {
     if (!validStep(step)) return;
-    if (step === 1) { step = 2; paintSteps(); showPage(step); await prefillVerify(); return; }
+    if (step === 1) {
+      // 服务商域名授权要在点击手势里要（火山方舟没写进 manifest；没授权 AI 调用会被浏览器拦下）
+      const granted = await ensureProviderHostGranted($('apiProvider').value);
+      if (!granted) alert('没拿到该服务商域名的访问授权，AI 调用会被浏览器拦下。可先继续，之后到「设置 → AI 模型配置」再点一次保存，并在弹窗里选「允许」。');
+      step = 2; paintSteps(); showPage(step); await prefillVerify(); return;
+    }
     // step===2：验证按钮动作
   }
 
@@ -379,7 +357,7 @@ async function next() {
   }
 
 async function saveAll() {
-    // 快捷设置只保存 AI 配置；产品/人设/知识库/内容规划在「账号诊断」工作流里配置
+    // 快捷设置只保存 AI 配置；产品/人设/知识库/内容规划在「诊断&配置」工作流里配置
     const merged = deepMerge(cfg, {
       ai: {
         apiKey: $('apiKey').value.trim(),

@@ -23,28 +23,51 @@ const KEYS = {
   PROSPECT_DM_HISTORY: 'prospect_dm_history',
   // ★ 发笔记：已用选题/卖点指纹池（用于剔除已发送过的题目）
   NP_USED_TOPICS: 'np_used_topics',
+  // ★ 发笔记：笔记档案（每写一篇留一档：成稿/提示词/口播稿 + 自己的发布状态）
+  NP_NOTES: 'np_notes',
+  // ★ 发笔记：素材库（只存引用 + ≤160px 缩略图索引，原图不入库）
+  NP_ASSETS: 'np_assets',
+  // ★ 发笔记：素材需求清单（AI 按 卖点 × 知识库 × 表现形式 算出来的「要备哪些图」+ 我的三态标记；可重建）
+  NP_ASSET_NEEDS: 'np_asset_needs',
 };
 
 /* ─── 默认配置 ─── */
 const DEFAULT_CONFIG = {
   product: {
     name: '我的产品',
+    // ★ 产品名多值：names[0]＝主名、后面＝别名（喂提示词拼「主名（又名：A / B）」）。
+    //   name 恒等于主名，读旧字段的地方一字不用改；空数组＝只有一个叫法。
+    names: [],
     promoGoal: '',
     guideText: '',
     description: '',
     targetKeywords: [],
+    // ★ 评论目的（6 选 1：sell/brand/profile/likes/trend/auto）：这一批商机评论打什么目的。
+    //   入口在「获客助手」顶部的评论目的选择器（找商机时改）；留空 = 沿用旧 scriptStyle.scriptPurpose 或默认 sell
+    //   （老配置兜底，见 background.resolveCommentPurpose）
+    commentPurpose: '',
     // ★ 产品卖点（1~10 个）：{ title, content, image }。title/content 喂评论/文案提示词；
     //   image(base64 配图) 在「发笔记」选中该卖点时列出，作为文案配图元素加工。
     sellPoints: [],
-    // ★ 封面合成：小红书昵称(上板块)、引流方式(下板块)、独立封面底图模板(中部留白)
-    username: '',
+    // ★ 承接兜底：引流方式（老配置兜底，新配置走 guideText；见 background 的 guide 兜底链）
     cta: '私信"玄铁剑"领试用版',
-    coverHook: '',        // 手填覆盖的封面简介；留空则用 config.persona.coverHook（AI 沉淀）
-    coverTemplate: null,   // { image: base64, w, h, preview, topBand, bottomBand }
+    coverHook: '',        // 一句话人设短语；AI 建人设时沉淀，注入账号诊断的评估上下文
   },
+  // ★ 发笔记默认发到哪个平台（xhs/douyin/kuaishou/xianyu，真源见 lib/platforms.js）：
+  //   向导① 选平台时写回这里，跟着产品（租户）走——换个产品不必重选；老配置没有这个键＝小红书
+  notePlatform: '',
   // ★ 我的小红书账号昵称（可多个）。评论助手扫描时，若发现笔记里已有我的名字的评论，
   //   就直接判定这篇已灌水、跳过 AI，并记入已灌水清单。
   myAccountNames: [],
+  // ★ 同城判定用城市（基础配置抓本人主页时记录，抓不到可手填）：
+  //   { city: 城市/地区（如"深圳"，缺省时回落 IP 属地）, ipLocation: 主页 IP 属地（如"广东"）, source: auto|manual, updatedAt }
+  //   评论助手扫评论时用它与评论人的属地匹配（同省即算同城）
+  myCity: { city: '', ipLocation: '', source: '', updatedAt: 0 },
+  // ★ 同城挡位（诊断&配置 → 基础配置 里切换）：
+  //   'force'    = 同城就回：不管是不是商机，同城真人评论一律纳入回复
+  //   'priority' = 同城优先：同城往前排 + 话术尽量走同城案例角度，但不强制纳入
+  //   'off'      = 关闭：不单独对同城评论，same_city 一律 false
+  sameCityMode: 'priority',
   // ★ 账号人设（由「设置→话术风格→我的账号人设」的 AI 建人设流程生成并保存）：
   //   { text: 整合后的人设正文（注入评论/文案生成用）, bio: 账号简介原文, qa: {q1..q5}, updatedAt, footer, coverHook }
   persona: null,
@@ -60,13 +83,16 @@ const DEFAULT_CONFIG = {
     fallbackModel: '',
   },
   scriptStyle: {
-    // ★ 本次评论目的（驱动打法选择的轴）：sell=卖产品 / likes=博点赞 / trend=蹭热度
-    scriptPurpose: 'sell',
+    // ★ 评论目的只剩 product.commentPurpose（入口在获客助手）；此处不再默认，仅保留老配置里已有的值供兜底读取
     // 字数控制（评论目的版：单范围；兼容旧统一 minChars/maxChars）
     purposeMinChars: 100, purposeMaxChars: 300,
-    // 口癖池（可自定义，逗号/顿号/换行分隔；留空用内置池）
+    // 口癖词（AI 按「人设 → 说话风格」3 问识别出来，逗号/顿号分隔；留空用内置池）
     toneMannerisms: '',
-    // 博主口吻样本：贴 3-5 条真实评论，让 AI 跟随你本人的语感/节奏（few-shot）
+    // 我的口吻（AI 按 3 问回答识别出的语感画像，评论/私信的语气第一基准）
+    toneProfile: '',
+    // 那 3 问的原始回答（页面上回填用，不喂给提示词）
+    toneAnswers: [],
+    // 口吻样本（旧版手贴的评论；新流程由 AI 按回答仿写 3 条写入，作 few-shot 校准用词）
     personaSample: '',
     // 账号人设/主页简介+卖点概述：一句话讲清"我是谁、做啥的、有什么干货/经历"，AI 生成评论时必须自然用进去
     personaIntro: '',
@@ -110,11 +136,12 @@ const DEFAULT_CONFIG = {
       sales_close: { name: '销售促成', enabled: true, purpose: 'sell', mode: 'draft', minChars: 30, maxChars: 90, toneMannerisms: '', guidance: '私信', useKb: true, template: '', promptScene: 'scen_sales_close', schedule: { gapMin: 30, gapMax: 120, dailyMax: 15 } },
     },
     // ★ 渠道基调（配置-通知）：按线索来源渠道定首触策略，话术一律 AI 生成，不手写固定话术
+    //   tone ＝ 用户自己补的基调（「线索 → 任务配置 → 🎙 渠道基调」里改，留空＝只说系统那套）
     channels: {
-      comment: { name: '评论/回复', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_comment' },
-      like: { name: '点赞', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_like' },
-      follow: { name: '关注', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_follow' },
-      ai: { name: 'AI抓回', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_ai' },
+      comment: { name: '评论/回复', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_comment', tone: '' },
+      like: { name: '点赞', auto: 'draft', minChars: 30, maxChars: 90, dailyMax: 0, promptScene: 'scen_ch_like', tone: '' },
+      follow: { name: '关注', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_follow', tone: '' },
+      ai: { name: 'AI抓回', auto: 'draft', minChars: 40, maxChars: 120, dailyMax: 0, promptScene: 'scen_ch_ai', tone: '' },
     },
     // ★ 成交/引导（产品级一份，4 渠道共用）：怎么引导成交
     guide: { deliver: '', tips: '' },
@@ -378,7 +405,7 @@ const DEFAULT_AUTO_WATER_CONFIG = {
     minInterval: 180,
     maxInterval: 600,
     dailyMax: 20,
-    perRound: 10,          // 每轮灌水建议处理笔记篇数（随拟人挡位联动）
+    perRound: 10,          // 每轮灌水处理笔记篇数：真源＝note_trend_config.maxPerRound（设置页「灌水频率与去重」保存时同步过来），0=不限
     kwIdx: 0,              // 当前要搜索的关键词下标（逐词推进：灌完一个点下一个，不批量刷新）
     activeHoursStart: 9,
     activeHoursEnd: 22,
@@ -450,7 +477,7 @@ async function clearSingleWaterProgress() {
   await chrome.storage.local.remove(WATER_PROGRESS_KEY);
 }
 
-/* ─── 灌水总结：每次发送成功的明细（时间/笔记/评论/话术） ─── */
+/* ─── 评论记录（笔记池页尾「💧 评论记录」）：每次发送成功的明细（时间/笔记/评论/话术） ─── */
 const WATER_LOGS_KEY = 'watering_logs';
 const WATER_LOGS_LIMIT = 500; // 最多保留 500 条，超出裁剪最旧的
 

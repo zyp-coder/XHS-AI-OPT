@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "小红书评论助手 · 手机看板 · 开发版",
+  "version": "0.1.0",
+  "description": "把电脑上的队列进度安全地送到手机上看（只读 · 不含客户资料）。需先装主扩展。",
+  "permissions": [
+    "storage",
+    "alarms",
+    "management"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8788/*",
+    "http://localhost:8788/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "手机看板",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjMCrKgWJJ2eM+OEgj1gpmjQWHrhX1bA3sdQIqeLZf0YqcnmJQTr2/VEyFxbly4nW/QZovdStRklEbK4NXHhWmfaQq9Rr7+lo8Wy9aWwpTcNc1QPRSruMgyB5f8wKRZ/G3bWlPG4x+JtiNDsFeNYIlSTWFHfFy5Y98KJH/r6H7uJmGBZDE2OEyzhO1e1pcxHgfR9UOHBTn6mBVVqeyGuo8PDVetWdtlcM3lm/aCha4jsjVjVb8uiOvKyC4JUx5DVmp/f5mBIAz/YRKFg2TqPYY7eoHfkreRVet3gKNwTzLHOJLV9tV85jji485LpRhSzFwokvsMtPYxUQMHCooC+7EQIDAQAB"
+}

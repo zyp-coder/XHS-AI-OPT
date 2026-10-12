@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>客户模板样片 · canvas 出片台</title>
+<style>
+  html,body{margin:0;background:#1b1b1f;color:#d8d8d8;font:13px/1.7 "Microsoft YaHei",sans-serif}
+  #bar{padding:8px 12px;background:#111;position:sticky;top:0;z-index:9}
+  #bar b{color:#f97316}
+  #cv{display:block;width:540px;height:960px;margin:10px}
+</style>
+</head>
+<body>
+<div id="bar">出片台 · 状态：<b id="st">就绪</b></div>
+<canvas id="cv" width="1080" height="1920"></canvas>
+
+<script src="mp4-muxer.js"></script>
+<script src="styles.js"></script>
+<script src="timeline.js"></script>
+<script>
+const W = 1080, H = 1920, FPS = 30, BITRATE = 8_000_000, CHUNK = 40;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', { alpha: false });
+const TL = window.TIMELINE;
+const KEYS = Object.keys(Renderer.STYLES);
+
+const st = { phase: 'idle', style: '', i: 0, n: 0, ms: 0, size: 0, err: '', done: [] };
+window._st = st;
+function say(s) { st.phase = s; document.getElementById('st').textContent = s; }
+
+async function pickCodec(preferHw) {
+  for (const codec of ['avc1.640028', 'avc1.4d0028', 'avc1.42002a', 'avc1.420028']) {
+    const cfg = { codec, width: W, height: H, bitrate: BITRATE, framerate: FPS, latencyMode: 'quality' };
+    if (preferHw) cfg.hardwareAcceleration = 'prefer-hardware';
+    try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg; } catch (e) {}
+  }
+  return null;
+}
+
+function dl(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+
+/** 出 1 套风格的整片（离线编码，不播画面，纯逐帧） */
+async function encodeStyle(key, cfg) {
+  cfg = cfg || await pickCodec(false);
+  if (!cfg) throw new Error('没有可用编码器');
+  const target = new Mp4Muxer.ArrayBufferTarget();
+  const muxer = new Mp4Muxer.Muxer({ target, video: { codec: 'avc', width: W, height: H }, fastStart: 'in-memory' });
+  let encErr = '';
+  const enc = new VideoEncoder({
+    output: (c, m) => muxer.addVideoChunk(c, m),
+    error: e => { encErr = String(e && e.message || e); },
+  });
+  enc.configure(cfg);
+
+  const n = Math.round(TL.dur * FPS);
+  st.n = n; st.i = 0;
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) {
+    if (encErr) throw new Error('编码器报错：' + encErr);
+    Renderer.renderFrame(ctx, i / FPS, TL, key);
+    const vf = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+    enc.encode(vf, { keyFrame: i % 30 === 0 });
+    vf.close();
+    // 不要轮询 encodeQueueSize 来节流（实测 152ms/帧 vs 23.5ms/帧）：
+    // 分段 flush 让编码器成批干，同时把队列长度压在 CHUNK 以内。
+    if ((i + 1) % CHUNK === 0) { await enc.flush(); }
+    st.i = i + 1;
+    st.ms = performance.now() - t0;
+    if (i % 15 === 0) say(key + ' 编码 ' + st.i + '/' + n + '（' + (st.ms / 1000).toFixed(0) + 's）');
+  }
+  await enc.flush();
+  enc.close();
+  muxer.finalize();
+  const blob = new Blob([target.buffer], { type: 'video/mp4' });
+  st.size = blob.size;
+  return blob;
+}
+
+/** 一键出 4 套：逐套 编码 → 下载 → 下一套 */
+window.runAll = async (keys) => {
+  keys = keys || KEYS;
+  const cfg = await pickCodec(false);
+  st.codec = cfg && cfg.codec;
+  for (const k of keys) {
+    st.style = k; st.i = 0; st.err = '';
+    const t0 = performance.now();
+    try {
+      const blob = await encodeStyle(k, cfg);
+      const name = '样片-' + k + '.mp4';
+      dl(blob, name);
+      st.done.push({ style: k, name, size: blob.size, sec: +( (performance.now() - t0) / 1000 ).toFixed(1) });
+      say('✅ ' + k + ' 完成 ' + (blob.size / 1048576).toFixed(1) + 'MB，已下载');
+      await new Promise(r => setTimeout(r, 2500));   // 给浏览器落盘留时间
+    } catch (e) {
+      st.err = k + '：' + (e.message || e);
+      say('❌ ' + st.err);
+      return st;
+    }
+  }
+  say('全部完成');
+  return st;
+};
+
+window.encodeOne = async (key) => {
+  const cfg = await pickCodec(false);
+  st.style = key;
+  const blob = await encodeStyle(key, cfg);
+  dl(blob, '样片-' + key + '.mp4');
+  st.size = blob.size;
+  say('✅ ' + key + ' ' + (blob.size / 1048576).toFixed(1) + 'MB');
+  return { size: blob.size, ms: Math.round(st.ms) };
+};
+
+/** 抓静帧（全分辨率 PNG），看版式用 */
+window.stills = async (key, times) => {
+  const ts = times || TL.scenes.map(s => +( (s.start + (s.end - s.start) * .55).toFixed(2) )).concat([TL.head * .5]);
+  for (let i = 0; i < ts.length; i++) {
+    Renderer.renderFrame(ctx, ts[i], TL, key);
+    await new Promise(r => { cv.toBlob(b => { dl(b, 'still-' + key + '-' + String(i).padStart(2, '0') + '-' + ts[i] + 's.png'); r(); }, 'image/png'); });
+    await new Promise(r => setTimeout(r, 350));
+  }
+  say('静帧已下载 ' + ts.length + ' 张');
+  return ts;
+};
+
+/** 拆开量：绘制 vs 编码（默认 / 硬编 / 不节流），各 n 帧 */
+window.bench = async (n) => {
+  n = n || 30;
+  const out = {};
+  const t0 = performance.now();
+  for (let i = 0; i < n; i++) Renderer.renderFrame(ctx, i / FPS, TL, 'orange');
+  out.drawMsPerFrame = +((performance.now() - t0) / n).toFixed(1);
+
+  const run = async (hw, throttle) => {
+    const cfg = await pickCodec(hw);
+    if (!cfg) return 'no-codec';
+    const enc = new VideoEncoder({ output: () => {}, error: () => {} });
+    enc.configure(cfg);
+    Renderer.renderFrame(ctx, 1, TL, 'orange');
+    const t = performance.now();
+    for (let i = 0; i < n; i++) {
+      const vf = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+      enc.encode(vf, { keyFrame: i === 0 });
+      vf.close();
+      if (throttle) while (enc.encodeQueueSize > 4) await new Promise(r => setTimeout(r, 1));
+    }
+    await enc.flush();
+    const ms = (performance.now() - t) / n;
+    enc.close();
+    return { codec: cfg.codec, accel: cfg.hardwareAcceleration || 'no-pref', msPerFrame: +ms.toFixed(1) };
+  };
+
+  out.sw_throttled = await run(false, true);
+  out.sw_free = await run(false, false);
+  out.hw_free = await run(true, false);
+  say('bench 完成');
+  return out;
+};
+
+/** 编码速度对照：默认 vs prefer-hardware，各 24 帧 */
+window.speed = async (n) => {
+  n = n || 24;
+  const out = {};
+  for (const hw of [false, true]) {
+    const cfg = await pickCodec(hw);
+    if (!cfg) { out[hw ? 'hw' : 'sw'] = 'no-codec'; continue; }
+    const enc = new VideoEncoder({ output: () => {}, error: () => {} });
+    enc.configure(cfg);
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) {
+      Renderer.renderFrame(ctx, i / FPS, TL, 'orange');
+      const vf = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+      enc.encode(vf, { keyFrame: i === 0 });
+      vf.close();
+      await enc.flush();
+    }
+    const ms = (performance.now() - t0) / n;
+    out[hw ? 'hw' : 'sw'] = { codec: cfg.codec, accel: cfg.hardwareAcceleration || 'no-preference', msPerFrame: +ms.toFixed(1), fps: +(1000 / ms).toFixed(1) };
+    enc.close();
+  }
+  say('速度对照完成');
+  return out;
+};
+
+window.checkFonts = () => {
+  const names = ['HarmonyOS Sans SC', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Sans SC',
+    'Microsoft YaHei', 'SimSun', 'KaiTi', 'Consolas'];
+  const r = {};
+  for (const nm of names) {
+    r[nm] = {
+      r400: document.fonts.check('400 40px "' + nm + '"'),
+      w600: document.fonts.check('600 40px "' + nm + '"'),
+      w700: document.fonts.check('700 40px "' + nm + '"'),
+    };
+  }
+  return r;
+};
+
+say('就绪 · 总长 ' + TL.dur.toFixed(2) + 's / ' + Math.round(TL.dur * FPS) + ' 帧 · 风格 ' + KEYS.join(' '));
+</script>
+</body>
+</html>

@@ -1,0 +1,450 @@
+# -*- coding: utf-8 -*-
+"""造图片「页壳四档 + ② 顶上那格文案 + ④ 预览两视图」自检（老板 2026-10-02 五十七改口径；五十八改④ 换成四档横置 tab）。
+
+分工（四条自检各管一层，别重叠）：
+  · check_note_look.py        ＝ ① 那一档（四类轴 + 配文方式四档 + 账号默认／这一套两层）
+  · check_note_cut.py         ＝ ② 断句台本身（带行号的正文框、拖行号成段、🔮 建议断点、✂ 拆 / ✎ 改字）
+  · check_note_shots.py       ＝ ③ 那张表（段文本只读 → 分镜 → 每行提示词 → 每行 ⬆ 传图）
+  · 本文件                    ＝ 页壳四档（① / ② / ③ / ④ 一档一块）+ ② 顶上那格文案（断句的原料）+ ④ 预览两视图
+
+口径（四档：① 🎨 风格 → ② ✂️ 断句 → ③ 🖋 分镜 → ④ 👀 预览 · 图文对照）：
+  1) 进这一页落在工作流当前那一步（npImgLand）：没圈段→②，缺分镜→③，齐了→④（① 是旋钮、不作关卡：
+     风格有内置统一小红书打底，没挑过流派也不会被拦在 ①）；旧界面
+     （出图列表那一档 / 五档节点条 / 两颗路卡 / 成片形式那排 / 🎙 口播稿那块 / 编号提示词档 / 传图档）一处不留；
+  2) 一档只挂一块：站在 ② 读不到 ③ 的那张表，也不用切来切去把两块都摊开；
+  3) ④ 顶上那条「✅ 检查这一套」＝零 AI 扫，缺什么一行一条，点那颗跳去对应那一档（不作废料闸门）；
+  4) 断句的原料＝② 顶上那格文案：这一档没单独写过口播稿就先照正文列；改它会写回这一档的 voice（出片台念的还是它）；
+  5) 改过文案只提醒不拦人：摆「上面那格文案跟下面这些行对不上了」，行不自动重列（一次 AI 都不烧）；
+  6) ⟳ 按这份文案重列句子＝句子编号按原文复用：没改过字的那几行还在原来那一段里，圈好的分组不散；
+     改过字那一行换了新号，那段变成「旧档那份字」摆在底下，点 ⟳ 绑行号对不上就明说、✕ 散掉再重圈；
+  7) ④ 预览两视图：图文对照＝左整篇一段一格、右边同一行就是那张图（不占图那段也读得到，格子写明「这一段不占图」，缺图标红）；
+     只看图墙＝只摆占图那几张；切来切去、回 ③ 都不重烧；
+  8) 一切落进档案那一行的 imgDocs（一行一份），条目级 shots/visual ＝打开那一行；再进来照工作流落在 ③，零重烧。
+
+跑法：python3 -X utf8 scripts/dev/check_note_imgwork.py
+临时 profile 加载真扩展（msedge），全程 AI 走桩；这一页这条路一次都不该烧。
+"""
+import pathlib
+import shutil
+import struct
+import sys
+import tempfile
+import time
+import zlib
+
+from playwright.sync_api import sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(tempfile.gettempdir())
+ERRORS = []
+
+# 断句的原料：4 句，每句都以句号收（⟳ 重列时本地按标点切，一次 AI 都不烧）
+SENTS = [
+    '很多人一上来就对着表格一条条手改，改到半夜还漏了好几处没有对上。',
+    '第一步先把要改的东西按类别拆开，桌面上能够一眼看清哪一类最费时间。',
+    '第二步拿固定的模板去套，重复出现的那几段直接复用，不用每次重新敲。',
+    '第三步让工具自己跑一遍校验，跑完只留给你一小段要人工确认的清单。',
+]
+BODY = '\n\n'.join(SENTS)
+
+# 改过字的那一句（只动两个字）＋ 新写上去的一句：顶上那格改成这份，才验得出「分组散不散」
+SENT_2CHANGED = '第一步先把要改的东西按类别拆开，桌面上能一眼看清哪一类最费时间。'
+SENT_EXTRA = '跑完当天把那张清单发到群里，第二天早上接着上面继续做。'
+NEWTXT = '\n\n'.join([SENTS[0], SENT_2CHANGED, SENTS[2], SENTS[3], SENT_EXTRA])
+
+MOTIF = '方案页'
+NOTE_ID = 'iw-1'
+NOTES = "async () => (await chrome.storage.local.get('np_notes')).np_notes || []"
+
+SEED = r'''async (payload) => {
+    await Storage.initializeDefaults(DEFAULT_PROMPTS);
+    await ensureTenantInit();
+    const cfg = await Storage.getConfig();
+    cfg.product.name = '页壳文案预览测试产品';
+    cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
+    cfg.ai.apiKey = 'test-local-only';
+    cfg.imgLook = null;
+    cfg.imgMotifs = [];
+    await Storage.setConfig(cfg);
+    await chrome.storage.local.set({
+        np_notes: [{id: 'iw-1', title: '省时间三步', status: '待发', platform: 'xhs', form: '图文',
+                    draft: payload.body, createdAt: Date.now()}],
+        np_assets: [],
+    });
+    self.ai = {cut: 0, desc: 0};
+    self.other = [];
+    AiClient.chatCompletion = async (cfg2, system, user) => {
+        const sys = String(system || '');
+        if (sys.indexOf('你在帮一条') >= 0) { self.ai.cut++; return {content: '{"断点":[]}'}; }
+        if (sys.indexOf('你在改一条') >= 0) { self.ai.desc++; return {content: '{"画面":[]}'}; }
+        self.other.push(sys.slice(0, 24));
+        return {content: '{"__stub":"这一页不该烧的这一发"}'};
+    };
+    return true;
+}'''
+
+
+def png(path, w=200, h=260, rgb=(120, 200, 140)):
+    """写一张纯色 PNG（只用来验预览那一格读得回素材库的缩略图）"""
+    raw = b''.join(b'\x00' + bytes(rgb) * w for _ in range(h))
+
+    def chunk(tag, data):
+        return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+
+    path.write_bytes(b'\x89PNG\r\n\x1a\n'
+                     + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress(raw, 6))
+                     + chunk(b'IEND', b''))
+    return path
+
+
+def boot(p):
+    for i in range(5):
+        prof = OUT / ('imgwork-profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+def main():
+    with sync_playwright() as p:
+        ctx = boot(p)
+        try:
+            run(ctx)
+        finally:
+            ctx.close()
+
+
+def run(ctx):
+    sw = ctx.service_workers[0]
+    assert sw.evaluate('chrome.runtime.onMessage.hasListeners()'), '后台路由没注册上'
+    sw.evaluate(SEED, {'body': BODY})
+
+    page = ctx.new_page()
+    page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
+    page.set_viewport_size({'width': 1280, 'height': 980})
+    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    page.wait_for_function('typeof switchMainTab === "function" && typeof npImgTabsHtml === "function" '
+                           '&& typeof npPreviewHtml === "function" && typeof npCheckHtml === "function"')
+    page.set_default_timeout(25000)
+
+    def ai(k):
+        return sw.evaluate('() => self.ai.%s' % k)
+
+    def burned():
+        return (ai('cut'), ai('desc'))
+
+    def other():
+        return sw.evaluate('() => self.other')
+
+    def note(ar_id=NOTE_ID):
+        return next((x for x in page.evaluate(NOTES) if x and x.get('id') == ar_id), None)
+
+    def poll(fn, msg, timeout=20.0):
+        """涉及 storage 的回写不走页面侧事件：Python 这边轮询"""
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            v = fn()
+            if v:
+                return v
+            page.wait_for_timeout(250)
+        raise AssertionError('等不到：%s' % msg)
+
+    def st(expr):
+        return page.evaluate('() => (%s)' % expr)
+
+    def tab_on(t):
+        return page.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t)
+
+    def goto_tab(t):
+        tab_on(t).click()
+        page.wait_for_timeout(260)
+
+    def cur_tab():
+        return st('npTabOf(npS())')
+
+    def tab_badge(t):
+        return tab_on(t).inner_text().replace(' ', '').replace('\n', '')
+
+    def tabs():
+        return page.locator('#npImgTabs .np-imgtab').evaluate_all('els => els.map(x => x.getAttribute("data-t"))')
+
+    def head_text():
+        return page.locator('#npImgTabs').inner_text().replace(' ', '')
+
+    def box_text(sel):
+        return page.locator(sel).inner_text().replace(' ', '')
+
+    def gut_box(i):
+        el = page.locator('#npCutWrap .np-cutline').nth(i).locator('.np-cut-gut')
+        el.scroll_into_view_if_needed()
+        return el.bounding_box()
+
+    def poke(i):
+        """点一行没归段的行号＝这一句自己成一段（拖行号那条路由 check_note_cut.py 验）"""
+        box = gut_box(i)
+        page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        page.wait_for_timeout(300)
+
+    def src_fold_open():
+        d = page.locator('#npCutWrap details.np-cutsrc')
+        if not d.evaluate('e => e.open'):
+            d.locator('summary').click()
+            page.wait_for_timeout(200)
+
+    def open_task():
+        page.evaluate('() => switchMainTab("noteArchive")')
+        page.wait_for_function('() => !!document.querySelector(\'#noteArchiveContent .npar-task[data-id="%s"]\')' % NOTE_ID)
+        page.locator('#noteArchiveContent .npar-task[data-id="%s"]' % NOTE_ID).click()
+        page.wait_for_function('() => _npMode === "task" && '
+                               '!!document.querySelector("#noteTaskContent .np-task-img, #noteTaskContent .np-img-addopen")')
+
+    def add_row_and_enter():
+        page.locator('#noteTaskContent .np-img-addopen').click()
+        page.wait_for_function('() => !!document.querySelector(\'#noteTaskContent .np-img-add[data-k="%s"]\')' % MOTIF)
+        page.locator('#noteTaskContent .np-img-add[data-k="%s"]' % MOTIF).click()
+        page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-img").length === 1')
+        page.locator('#noteTaskContent .np-task-img').first.click()
+        page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+
+    def enter_row():
+        page.locator('#noteTaskContent .np-task-img').first.click()
+        page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+
+    def seg_texts():
+        return st('npS().shots.items.map(x => x.text)')
+
+    def pool_n():
+        return st('npS().shots.sents.filter(x => !npSentOwner(npS(), x.id)).length')
+
+    # ── 1) 页壳四档：这一行没圈段＝落在 ②；旧界面（出图列表档 / 节点条 / 编号提示词档 / 传图档）一处不留 ──
+    open_task()
+    add_row_and_enter()
+    assert tabs() == ['look', 'cut', 'desc', 'preview'], tabs()
+    labels = [x.strip() for x in page.locator('#npImgTabs .np-imgtab span:first-child')
+              .evaluate_all('els => els.map(x => x.innerText)')]
+    assert labels == ['① 🎨 风格', '② ✂️ 断句', '③ 🖋 分镜', '④ 👀 预览 · 图文对照'], labels
+    assert cur_tab() == 'cut', '这一行有流派、一段都还没圈＝落在 ②：%s' % cur_tab()
+    assert '现在做的是：' + MOTIF + '（还没断句）' in head_text(), head_text()[:200]
+    for t in ('list', 'story', 'prompt', 'upload', 'shots'):
+        assert page.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t).count() == 0, '旧的那一档 %s 还在' % t
+    for gone in ['#npImgList', '#npNodes', '.np-node', '.np-cutnew', '.np-cutpool', '.np-sent',
+                 '.np-shot-move', '.np-seg-take', '.np-seg-only', '.np-path-image', '.np-path-video',
+                 '#npVoiceBox', '#npStyleRow', '#npPathCards', '#npResult', '.npStepH', '#npShotStyle',
+                 '.np-vis-gen', '.np-shot-split', '.np-shot-text', '.np-shot-form']:
+        assert page.locator(gone).count() == 0, '旧界面的 %s 还留在造图片页上' % gone
+    assert burned() == (0, 0), '打开这一页不该自己烧 AI'
+    print('PASS: 页壳＝四档横置 tab（%s）；出图列表档 / 五档节点条 / 编号提示词档 / 传图档全撤了' % ' · '.join(labels), flush=True)
+
+    # ── 2) 一档只挂一块：站在 ② 读不到 ③ 那张表；④ 顶上那条检查只指路、点了真跳回 ② ──
+    assert page.locator('#npShotTable').count() == 0 and page.locator('#npLookBox').count() == 0, '② 这一档把别的块也摊出来了'
+    assert page.locator('.np-shot').count() == 0, '还没圈段就在 ② 摆出了画面表'
+    goto_tab('preview')
+    assert cur_tab() == 'preview' and page.locator('#npPreviewBox').count() == 1
+    assert page.locator('#npCutWrap').count() == 0, '④ 这一档还挂着 ② 那块'
+    chk = box_text('#npPreviewBox')
+    assert '✅检查这一套' in chk and '一段都还没圈' in chk, chk[:200]
+    assert '还没有断好的段' in chk, '没段时预览本体给一句指路的话'
+    assert page.locator('#npPreviewBox .np-imgwall').count() == 0, '没段就别摆预览视图那颗旋钮'
+    assert burned() == (0, 0), '空档切档一次 AI 都不该烧'
+    page.locator('#npPreviewBox .np-check-go[data-t="cut"]').click()
+    page.wait_for_function('() => npTabOf(npS()) === "cut"')
+    assert page.locator('#npCutWrap').count() == 1, '那颗「去 ② 断句」要真把那块摊出来'
+    print('PASS: 一档一块（② 读不到画面表、④ 读不到断句台）；④ 顶上那条检查摆「一段都还没圈」，点那颗跳回 ②', flush=True)
+
+    # ── 3) 断句的原料＝② 顶上那格文案：没写过口播稿先照正文列，冷启动本地列成 4 行、零 AI ──
+    assert not st('npS().voice'), '这一档没单独写过口播稿'
+    assert st('npImgSourceText(npS())') == BODY, '原料＝正文'
+    assert page.locator('#npCutWrap .np-cutline').count() == 4, '进 ② 已经本地列出 4 行'
+    assert '还有4行没归段' in box_text('#npCutFrame'), '一段都还没圈＝这四行都摆着「没归段」'
+    src_fold_open()
+    assert page.locator('#npVoiceTa').count() == 1 and page.locator('#npVoiceTa').input_value() == BODY, \
+        '那格（折叠块里）摆的就是这一档的正文'
+    assert '出片台要念的还是它' in box_text('#npCutWrap details.np-cutsrc')
+    assert st('document.getElementById("npSrcStale").hasAttribute("hidden")'), '刚列完行，文案跟行对得上'
+    assert burned() == (0, 0), '列句子零 AI'
+    print('PASS: ② 顶上那格＝这一档的正文（没写过口播稿照正文列，本地 4 行、零 AI），写明改它出片台念的还是它', flush=True)
+
+    # ── 4) 段是一行一句圈出来的（这一层的料：一段一句，后面才看得出重列散不散） ──
+    for i in range(4):
+        poke(i)
+    page.wait_for_function('() => (npS().shots.items || []).length === 4')
+    assert seg_texts() == SENTS, '段文本＝收进来那一句'
+    assert st('npS().shots.items.map(x => (x.sids || []).length)') == [1, 1, 1, 1]
+    assert pool_n() == 0
+    assert '4段圈好了' in tab_badge('cut'), tab_badge('cut')
+    assert '行号都圈好了' in box_text('#npCutBox')
+    assert burned() == (0, 0), '圈段不烧 AI'
+    print('PASS: 4 行各点成一段（段文本由那几句派生、零 AI），档名上写「4 段圈好了」', flush=True)
+
+    # ── 5) 改顶上那格＝只写回 voice + 提醒，不推翻段、也不自动重列 ──
+    src_fold_open()
+    page.locator('#npVoiceTa').fill(NEWTXT)
+    page.wait_for_timeout(250)
+    assert st('npS().voice') == NEWTXT, '这一格手改＝写回这一档的 voice'
+    assert st('npImgSourceText(npS())') == NEWTXT, '原料换成这格文案（不再读正文）'
+    assert st('!document.getElementById("npSrcStale").hasAttribute("hidden")'), '改过文案要亮提醒'
+    stale = page.locator('#npSrcStale').inner_text()
+    assert '上面那格文案跟下面这些行对不上了' in stale and '⟳ 按这份文案重列句子' in stale, stale
+    assert st('(npS().shots.items || []).length') == 4, '只提醒：已经圈好的 4 段一个字没被推翻'
+    assert st('(npS().shots.sents || []).length') == 4, '不跟着文案自动重列（那会把人圈好的组打散）'
+    assert burned() == (0, 0), '改文案不烧 AI'
+    poll(lambda: (lambda e: NEWTXT if e and e.get('voice') == NEWTXT else None)(note()), 'voice 没落档')
+    print('PASS: 改那格＝写回这一档的 voice（延迟落档）+ 亮「跟下面这些行对不上了」，段不推翻、行不重列、零 AI', flush=True)
+
+    # ── 6) ⟳ 按这份文案重列句子：没改过字的还留在原来那一段，改过字那一行自己掉出来 ──
+    before = st('npS().shots.items.map(x => (x.sids || []).slice())')
+    page.locator('#npCutWrap .np-cut-relest').click()
+    page.wait_for_function('() => (npS().shots.sents || []).length === 5')
+    assert st('(npS().shots.items || []).length') == 4, '重列不新增也不吞段'
+    after = st('npS().shots.items.map(x => (x.sids || []).slice())')
+    assert [after[0], after[2], after[3]] == [before[0], before[2], before[3]], '没改过字那三段还是原来那一行'
+    assert after[1] == [], '改过字那一行换了新号，那一段的绑没了'
+    assert st('npS().shots.items[1].text') == SENTS[1], '段里那份旧字留着给人处理，不抹成空'
+    leg = box_text('#npCutBox')
+    assert '有1段还是旧档／手打的那份字' in leg, leg[-400:]
+    assert page.locator('#npCutWrap .np-seg-bind').count() == 1 and '⟳绑行号' in leg
+    assert pool_n() == 2 and '还有2行没归段' in leg, pool_n()
+    assert '4段·2行没归' in tab_badge('cut'), tab_badge('cut')
+    assert st('document.getElementById("npSrcStale").hasAttribute("hidden")'), '重列完提醒收掉'
+    assert burned() == (0, 0), '⟳ 重列句子是本地按标点切的，一次 AI 都不烧'
+    print('PASS: ⟳ 重列＝5 行、圈好的三段没散（掉出来那段摆在底下「还是旧档那份字」＋ ⟳ 绑行号），提醒收掉、零 AI', flush=True)
+
+    # ── 7) 对不上就明说、散掉再重圈（段的先后跟着行号排，没有挪位那颗） ──
+    leg_id = st('npS().shots.items[1].id')
+    page.locator('#npCutWrap .np-seg-bind[data-id="%s"]' % leg_id).click()
+    page.wait_for_timeout(300)
+    assert '对不上现在句子里的连着几句' in box_text('#popToastBox'), box_text('#popToastBox')[:160]
+    assert st('npS().shots.items[1].sids.length') == 0 and burned() == (0, 0), '对不上不硬绑'
+
+    page.locator('#npCutWrap .np-seg-del[data-id="%s"]' % leg_id).click()
+    page.wait_for_function('() => (npS().shots.items || []).length === 3')
+    assert pool_n() == 2, '散掉那一段不吞行（那两行本来就归在池子里）'
+    poke(1)
+    poke(4)
+    page.wait_for_function('() => (npS().shots.items || []).length === 5')
+    assert seg_texts() == [SENTS[0], SENT_2CHANGED, SENTS[2], SENTS[3], SENT_EXTRA], seg_texts()
+    assert pool_n() == 0 and '5段圈好了' in tab_badge('cut'), tab_badge('cut')
+    assert burned() == (0, 0), '散段 / 重圈全在本地'
+    print('PASS: ⟳ 绑行号对不上明说不硬绑 ⟶ ✕ 散掉那一段 ⟶ 行号重点成段（5 段按行号排好），全程零 AI', flush=True)
+
+    # ── 8) ⬜ 最后一段当过场 + 传回一张图（预览要摆得出的三种格） ──
+    last_id = st('npS().shots.items[4].id')
+    page.locator('#npCutWrap .np-cutseg[data-id="%s"] .np-shot-key' % last_id).click()
+    page.wait_for_function('() => npS().shots.items[4].off === true')
+    assert '第5段·过场' in page.locator('#npCutWrap .np-cutseg').nth(4).inner_text().replace(' ', '')
+    cut_foot = box_text('#npCutBox')
+    assert '5句·5段·占图4张' in cut_foot, cut_foot[-260:]
+    assert st('npShotsOn(npS()).length') == 4 and burned() == (0, 0)
+    print('PASS: ⬜ 那段标成过场（第 5 段 · 过场；断句台底下那行跟着报 5 句 · 5 段 · 占图 4 张）', flush=True)
+
+    f1 = png(OUT / 'imgwork-1.png')
+    goto_tab('desc')
+    assert page.locator('.np-shot').count() == 5, '③ 那张表一行一段（含不占图那段）'
+    with page.expect_file_chooser() as fc:
+        page.locator('.np-shot').first.locator('.np-shot-up').click()
+    fc.value.set_files(str(f1))
+    poll(lambda: page.locator('.np-shot-unlink').count() == 1, '这张图挂不上')
+    assert burned() == (0, 0)
+    print('PASS: 图就在 ③ 那一行最后一格传回来（给预览摆出「有图／缺图／不占图」三种格）', flush=True)
+
+    # ── 9) ④ 预览两视图：图文对照＝左整篇右那张图；只看图墙＝只摆占图那几张 ──
+    goto_tab('preview')
+    page.wait_for_function('() => !!document.querySelector("#npPreviewBox .np-imgwall")')
+    head = box_text('#npPreviewBox')
+    assert '👀图文对照' in head and '5段·占图4张·已传回1张' in head, head[:220]
+    for t in seg_texts():
+        assert t.replace(' ', '') in head, '左列该把整篇一段一格读下来：%s' % t
+    assert SENT_2CHANGED.replace(' ', '') in head and SENTS[1].replace(' ', '') not in head, \
+        '顶上那格改过的那一行，读下来就是改后的那份'
+    assert page.locator('#npPreviewBox img').count() == 1, '挂上的那张在右边同一行现出来'
+    assert '画面1还没传图' not in head and '画面2还没传图' in head and '画面4还没传图' in head, '缺图那几格要标红'
+    assert '这一段不占图' in head, '不占图那段也读得到，格子写明不占图'
+    assert '画面5' not in head, '过场那段不编号'
+    assert '缺4段分镜' in head and '跳到第一个缺分镜的段' in head, '检查条跟预览摆在同一档顶上'
+
+    page.locator('#npPreviewBox .np-imgwall').click()
+    page.wait_for_function('() => npS().uiWall === true')
+    wall = box_text('#npPreviewBox')
+    assert '🧱只看图墙' in wall and '←回图文对照' in wall, wall[:200]
+    assert all(('画面%d' % i) in wall for i in (1, 2, 3, 4)) and '画面5' not in wall, '图墙只摆占图那几张'
+    assert '还没传图' in wall and '这一段不占图' not in wall
+    assert page.locator('#npPreviewBox img').count() == 1
+    page.locator('#npPreviewBox .np-imgwall').click()
+    page.wait_for_function('() => npS().uiWall === false')
+    assert '这一段不占图' in box_text('#npPreviewBox')
+
+    page.locator('#npTabBody .np-imgtab[data-t="desc"]').click()
+    page.wait_for_function('() => npTabOf(npS()) === "desc" && document.querySelectorAll(".np-shot").length === 5')
+    assert st('npS().uiWall') is False, '回 ③ 再进 ④ 不该把图墙视图留着'
+    goto_tab('preview')
+    page.wait_for_function('() => !!document.querySelector("#npPreviewBox .np-imgwall")')
+    assert st('npS().uiWall') is False and '图文对照' in box_text('#npPreviewBox')
+    assert burned() == (0, 0), '预览切来切去一次 AI 都不烧'
+    print('PASS: ④ 预览＝图文对照（左整篇／右同一行那张，缺图标红）+ 只看图墙（4 张、不摆过场），切档零 AI', flush=True)
+
+    # ── 10) 落档：一行一份 imgDocs；再进来照工作流落在 ③，点 ④ 读得回，零重烧 ──
+    live = st('JSON.parse(JSON.stringify(npS().shots))')   # 切走之后 npS() 就空了，先抄下台上这一份
+    open_id = st('npS().imgOpen')
+    page.evaluate('() => npArchiveFlushTouch()')
+    page.evaluate('() => switchMainTab("noteArchive")')
+    row = poll(lambda: (lambda e: e if e and ((e.get('imgDocs') or [{}])[0].get('shots') or {}).get('items') else None)(note()),
+               '画面表没落进档案')['imgDocs'][0]
+    saved = row['shots']
+    assert row.get('id') == open_id, '台上打开的那一行就是落档这一行'
+    assert len(saved['sents']) == 5 and len(saved['items']) == 5
+    assert [i['text'] for i in saved['items']] == [x['text'] for x in live['items']], '段文本按台上那份落档'
+    assert [i['sids'] for i in saved['items']] == [x['sids'] for x in live['items']], '段收哪几行要一起落'
+    assert saved['items'][4]['off'] is True and len(saved['items'][0]['imgs']) == 1
+    assert saved['look']['motif'] == MOTIF, '这一行的流派落在自己那一行上'
+    assert not saved.get('suggest') and 'cutBusy' not in saved, '台上那份临时状态（建议断点／忙旗）不许落档'
+    assert note().get('voice') == NEWTXT, '顶上那格改的文案落进这一档'
+    assert row['visual'] and '第 1 张' in row['visual']['images'], '那一行的提示词那份是本地拼出来的'
+    ent = note()
+    assert len((ent.get('shots') or {}).get('items') or []) == 5, '档案条目级那一份＝打开那一行（缺口列与教程读它）'
+    assert str((ent.get('visual') or {}).get('images', ''))[:40] == str(row['visual']['images'])[:40]
+    base = burned()
+    open_task()
+    enter_row()
+    assert cur_tab() == 'desc', '分镜还缺着＝照工作流落在 ③：%s' % cur_tab()
+    assert st('npS().imgOpen') == open_id, '重进还是打开的那一行'
+    assert '现在做的是：' + MOTIF + '（5段·1/4有图）' in head_text(), head_text()[:220]
+    assert '缺4段分镜' in tab_badge('desc') and '1/4有图' in tab_badge('preview'), (tab_badge('desc'), tab_badge('preview'))
+    assert page.locator('#npVoiceTa').count() == 0, '重进不该把 ② 那块摊出来'
+    goto_tab('preview')
+    page.wait_for_function('() => !!document.querySelector("#npPreviewBox .np-imgwall")')
+    again = box_text('#npPreviewBox')
+    assert '5段·占图4张·已传回1张' in again and SENT_EXTRA.replace(' ', '') in again
+    assert page.locator('#npPreviewBox img').count() == 1, '挂着的图从素材库引用读得回'
+    assert burned() == base, '再进来 / 再预览都不重烧'
+
+    assert other() == [], '烧到了不该烧的那一发：%s' % other()[:2]
+    assert burned() == (0, 0), '这一页这条路应该一次 AI 都不烧：%s' % (burned(),)
+    assert not ERRORS, '有 pageerror：%s' % ERRORS[:2]
+    page.screenshot(path=str(OUT / 'imgwork-preview.png'), full_page=True)
+    print('PASS: 一行一份落进档案（5 段收行号 + 过场 + 挂着的图 + 改过的 voice + 这一行的流派），'
+          '再进来落在 ③、点 ④ 读得回、全程零 AI', flush=True)
+    print('SHOT: %s' % (OUT / 'imgwork-preview.png'), flush=True)
+
+
+if __name__ == '__main__':
+    main()
+
+print('\n全绿：页壳四档（一档一块）+ ② 顶上那格文案（⟳ 重列不散组）+ ④ 预览两视图（四档口径）', flush=True)

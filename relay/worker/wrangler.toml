@@ -1,0 +1,27 @@
+# 中转 · 云端版（Cloudflare Worker）—— 部署前把 id 填上
+name = "xhs-relay"
+main = "index.mjs"
+compatibility_date = "2026-01-01"
+
+# 手机页直接托管 relay/phone/：根路径 / 就是它
+[assets]
+directory = "../phone"
+binding = "ASSETS"
+
+# 存"最后一封信"的 KV。先建：
+#   npx wrangler kv namespace create RELAY_KV
+# 再把打出来的 id 填到下面
+# （npm 官方源不通时用镜像：npm i -g wrangler --registry=https://registry.npmmirror.com）
+[[kv_namespaces]]
+binding = "RELAY_KV"
+id = "在这里填 kv namespace 的 id"
+
+# 国内要用得稳：在 Cloudflare 绑一个自己的域名（workers.dev 在大陆常被墙）。
+# 绑好后把下面两行的注释去掉，改成自己的子域名：
+# [[routes]]
+# pattern = "relay.你的域名.com"
+# custom_domain = true
+
+# 线上日志（免费）：出问题时能在 Cloudflare 后台看到请求与报错
+[observability]
+enabled = true

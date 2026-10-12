@@ -5,13 +5,16 @@
 不再依赖语音停顿检测。用法：
   python3 scripts/dev/tts_voice.py --sample                    # 3 个男声各读第 1 幕
   python3 scripts/dev/tts_voice.py --voice zh-CN-YunyangNeural  # 整篇合成 配音/配音-最终.mp3
-"""
-import argparse, asyncio, hashlib, json, shutil, sys
+
+换片子（如 9问快闪）时给 --html 指动效页：幕文本按页里的 <p> 取、幕间静默按每幕动画时长自适应；
+--sample 配 --html 就是读该页前两幕，配 --tag 给样音加后缀，避免盖掉长版样音。"""
+import argparse, asyncio, hashlib, json, re, shutil, sys
 from pathlib import Path
 import edge_tts
 
 sys.path.insert(0, str(Path(__file__).parent))
 from render_video import FF, run, probe_duration
+from use_my_voice import scene_needs
 
 ROOT = Path(__file__).resolve().parents[2]
 MAT = ROOT / '资料' / '视频' / 'AI雕兄口播稿'
@@ -40,6 +43,17 @@ async def speak(text, voice, out, rate, tries=4):
     raise SystemExit(f'语音合成失败：{err}')
 
 
+def scene_texts(html_path):
+    """按动效页取每幕口播文本（.notes-src 里的 <p>，保留标点）。"""
+    html = html_path.read_text(encoding='utf-8')
+    out = []
+    for _name, block in re.findall(r'<section class="scene" data-name="([^"]+)">(.*?)</section>',
+                                   html, re.S):
+        ps = [re.sub(r'<[^>]+>', '', p).strip() for p in re.findall(r'<p>(.*?)</p>', block, re.S)]
+        out.append('\n'.join(p for p in ps if p))
+    return out
+
+
 def cache_path(cache, text, voice, rate):
     """同一句 + 同一音色语速就复用上次的合成结果，改词重跑时只补改动的那几幕。"""
     return cache / (hashlib.md5(f'{voice}|{rate}|{text}'.encode()).hexdigest()[:12] + '.mp3')
@@ -50,22 +64,21 @@ def to_wav(src, dst):
          '-c:a', 'pcm_s16le', str(dst)])
 
 
-def join_wav(pieces, gap_wav, out_wav):
+def join_wav(pieces, gap_wavs, out_wav):
     """把各幕 wav 与幕间静默按顺序拼成一个 wav（纯 PCM 拼接，不经过解复用器）。"""
     import wave
     with wave.open(str(out_wav), 'wb') as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(SR)
-        gaps = wave.open(str(gap_wav), 'rb')
-        gap_frames = gaps.readframes(gaps.getnframes())
-        gaps.close()
         for i, p in enumerate(pieces):
             r = wave.open(str(p), 'rb')
             w.writeframes(r.readframes(r.getnframes()))
             r.close()
-            if i + 1 < len(pieces):
-                w.writeframes(gap_frames)
+            if i < len(gap_wavs):
+                g = wave.open(str(gap_wavs[i]), 'rb')
+                w.writeframes(g.readframes(g.getnframes()))
+                g.close()
 
 
 def main():
@@ -75,22 +88,33 @@ def main():
     ap.add_argument('--gap', type=float, default=GAP, help=f'幕间静默秒数（默认 {GAP}）')
     ap.add_argument('--sample', action='store_true', help='只读第 1 幕出试听样音')
     ap.add_argument('--out', help='整篇输出 mp3 路径')
+    ap.add_argument('--html', help='动效页：按页里的幕取文本（不传则读长版的粘贴稿）')
+    ap.add_argument('--tag', default='', help='样音文件名后缀，如 -9问')
     a = ap.parse_args()
 
     if a.sample:
         sd = OUTDIR / '样音'
         sd.mkdir(parents=True, exist_ok=True)
-        tag = '' if a.rate == '+0%' else '-' + a.rate.lstrip('+').replace('%', '')
+        tag = a.tag or ('' if a.rate == '+0%' else '-' + a.rate.lstrip('+').replace('%', ''))
+        text = SAMPLE_TXT
+        if a.html:
+            sc = scene_texts(Path(a.html))
+            text = '\n'.join(sc[:2])
         for v in ([a.voice] if a.voice else SAMPLES):
             out = sd / (v.split('-')[-1].replace('Neural', '') + tag + '.mp3')
-            asyncio.run(speak(SAMPLE_TXT, v, out, a.rate))
+            asyncio.run(speak(text, v, out, a.rate))
             print(f'样音 {out.name}  {probe_duration(out):.1f}s  ({v})')
         return
 
     if not a.voice:
         sys.exit('整篇合成需指定 --voice')
 
-    scenes = [s for s in PASTE.read_text(encoding='utf-8').strip().split('\n\n') if s.strip()]
+    needs = None
+    if a.html:
+        scenes = scene_texts(Path(a.html))
+        needs = scene_needs(Path(a.html))
+    else:
+        scenes = [s for s in PASTE.read_text(encoding='utf-8').strip().split('\n\n') if s.strip()]
     out_mp3 = Path(a.out) if a.out else OUTDIR / '配音-最终.mp3'
     out_mp3.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_mp3.parent / '_tts_tmp'
@@ -99,12 +123,14 @@ def main():
     cache = out_mp3.parent / '_tts_cache'
     cache.mkdir(exist_ok=True)
 
-    sil = tmp / 'sil.wav'
-    run([FF, '-hide_banner', '-y', '-f', 'lavfi', '-i', f'anullsrc=r={SR}:cl=mono',
-         '-t', str(a.gap), '-c:a', 'pcm_s16le', str(sil)])
+    def sil_wav(sec):
+        p = tmp / f'sil-{sec:.3f}.wav'
+        if not p.exists():
+            run([FF, '-hide_banner', '-y', '-f', 'lavfi', '-i', f'anullsrc=r={SR}:cl=mono',
+                 '-t', f'{sec:.3f}', '-c:a', 'pcm_s16le', str(p)])
+        return p
 
-    starts, durs, pieces = [], [], []
-    t = 0.0
+    durs, pieces = [], []
     for i, s in enumerate(scenes, 1):
         mp3 = cache_path(cache, s, a.voice, a.rate)
         wav = tmp / f's{i:02d}.wav'
@@ -119,17 +145,23 @@ def main():
                     raise
                 print('    缓存里的音频读不出来（上次中断留下的半截文件），删掉重合成')
                 mp3.unlink(missing_ok=True)
-        d = probe_duration(wav)
-        starts.append(t)
-        durs.append(d)
-        t += d + a.gap
+        durs.append(probe_duration(wav))
         pieces.append(wav)
-        print(f'  {i:>2} 幕  {d:5.1f}s  起 {starts[-1]:6.1f}s')
+
+    # 幕间静默：至少 --gap，且要够该幕动画播完（--html 模式才拿得到动画时长）
+    gaps = [round(max(a.gap, needs[i]['need'] - durs[i]), 3) for i in range(len(durs) - 1)] \
+        if needs else [a.gap] * (len(durs) - 1)
+    starts, t = [], 0.0
+    for i, d in enumerate(durs):
+        starts.append(round(t, 3))
+        print(f'  {i + 1:>2} 幕  {d:5.1f}s  起 {starts[-1]:6.1f}s'
+              + (f'  幕间 {gaps[i]:.2f}s' if i < len(gaps) else ''))
+        t += d + (gaps[i] if i < len(gaps) else 0.0)
 
     # 直接拼 PCM：concat 解复用器会截断；剪映的 mp3_mf 编长音频也不可靠，逐个试到能用为止
     whole = tmp / 'whole.wav'
-    join_wav(pieces, sil, whole)
-    expect = sum(durs) + a.gap * (len(pieces) - 1)
+    join_wav(pieces, [sil_wav(g) for g in gaps], whole)
+    expect = sum(durs) + sum(gaps)
     base = out_mp3.with_suffix('')
     total, out_audio = 0.0, None
     for codec, ext in (('mp3_mf', '.mp3'), ('aac', '.m4a')):
@@ -144,7 +176,7 @@ def main():
         out_audio = base.with_suffix('.wav')
         shutil.copyfile(whole, out_audio)
         total = probe_duration(out_audio)
-    meta = {'voice': a.voice, 'rate': a.rate, 'gap': a.gap, 'total': total,
+    meta = {'voice': a.voice, 'rate': a.rate, 'gap': a.gap, 'gaps': gaps, 'total': total,
             'starts': starts, 'durations': durs}
     out_audio.with_suffix('.starts.json').write_text(
         json.dumps(meta, ensure_ascii=False, indent=1), encoding='utf-8')

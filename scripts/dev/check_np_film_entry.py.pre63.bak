@@ -1,0 +1,368 @@
+# -*- coding: utf-8 -*-
+"""「那一格文案 → 出片台」这条入口＋出片台本身 自检（老板 2026-10-02 五十九改后改口）。
+
+五十九改起入口收在「出片台」这张任务表上：档案那一行只留一颗「🎬 出片台」（造图片／出片两颗独立按钮已并进来），
+点进去就是这一篇的出片台表；表上「＋ 一套图」加一行出图任务、「＋ 一片」加一行出片任务（一行＝一种成片形式），
+点出图行「🖼 出图」进造图片四档，点出片行「🎬 出片」直接进台子——成片形式跟着这一行走，不再铺五选一盖板。
+出片台念的稿仍是造图片 ② 顶上那格文案（口播稿＝断句的原料，不再是 AI 另出的一份东西）。
+按画面表铺底图（一行一段）那条口径在 check_film_kinds.py 里验，这里验入口本身。
+
+跑法：python3 -X utf8 scripts/dev/check_np_film_entry.py
+临时 profile 加载真扩展（msedge），AiClient 全程走桩、不烧真接口：
+  1) 写文案 ①→⑤（④ 唯一前进路＝点中样稿；⑤ 默认逐句列表，点一句只改那一句）→ 这一篇入档
+  2) 出片台表：有正文就能出片——「＋ 一片」加一行 PPT字体动效，这一行「还缺什么」只说「还没分幕」、不说「先整口播稿」，
+     也不压暗（口播稿＝正文那份，早就有了）
+  3) 「＋ 一套图」加一行 → 点「🖼 出图」进造图片：② 顶上那格文案读的是这一篇正文（没单独写过稿时照正文走），
+     手改一版要当场回写同一档；这一路一发 AI 都不打（断句／分镜那两发＝人点表上那颗才打，「AI 出口播稿」早已下线）
+  4) 点这一行的「🎬 出片」就地打开台子：不另开窗口、左栏二级仍停在「出片台」；成片形式跟着这一行走，不再铺五选一盖板
+  5) 带进片台的是手上那份稿；草稿按篇存进 xhsFilmDocs[这一档]，全局那份 xhsFilmScript 一个字都不写；
+     递过去当场分好幕，内嵌版有预览画布和「↗ 在新标签页打开」
+  6) 出片台皮肤跟全站一套（浅底 + 白卡片 + 跟弹窗同一个 --c-brand / --c-brand-on）——ui.css 的 <link> 掉了这条就红
+  7) 在台子「✏️ 换一种」→「卡片画面叙事」：只换画面、那格文案不许被改写；画面切成卡片轮播，
+     这一段没「传图」传回图就老老实实走纯色卡（行里没传回图＝纯色卡，不再退回按素材库顺序铺；按画面表铺底图那条口径在 check_film_kinds.py 验）；
+     换完形式回表，那一行「出片风格」列跟着改（filmKind 落进这一档的条目级），再点「🎬」走同一条通路回来
+  8) 档位闸门只锁出片：关掉 videoFilm 时表上出片行整颗不给（不是灰着），「＋ 一片」也不给；「🖼 出图」照常进得去
+"""
+import base64
+import io
+import json
+import os
+import pathlib
+import shutil
+import sys
+import time
+
+from PIL import Image
+from playwright.sync_api import expect, sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(os.environ.get('TEMP', '/tmp')) / 'xhs_film_entry'
+OUT.mkdir(parents=True, exist_ok=True)
+
+EDITED = '手打的新稿子第一行。\n第二行。'
+
+PEOPLE = {'people_options': [{'name': f'测试人群{i}', 'pain': '选择困难', 'scene': '准备购买', 'timing': '购买前'} for i in (1, 2, 3)]}
+# ③ 的候选话题要带「线」：④ 靠它自动按这条线的几种写法出一批样稿
+TOPICS = {'topics': [{'topic': '测试话题', 'angle': '角度', 'target': '人群', 'rationale': '理由',
+                      'fact': '一件真事：凌晨还在翻评论', 'type': 'howto', 'kind': 'steps'}]}
+NOTE = {'titles': ['标题A', '标题B', '标题C'], 'content': '开场钩子。\n\n干货。\n\n结尾引导。', 'tags': ['效率', '省时间'], 'timeTip': '12:00'}
+VARIANTS = json.dumps({'variants': [{'kind': '清单列举', 'title': '样稿标题', 'content': NOTE['content'], 'tags': NOTE['tags']}]}, ensure_ascii=False)
+SENT_REVISED = '改过的开场钩子。'
+
+# 拖句子成段：dragover 要按真浏览器语义派成可取消事件——没 preventDefault 就等于这个落点不接
+DRAG = r'''(a) => {
+  const from = document.querySelector(a.from), to = document.querySelector(a.to);
+  if (!from || !to) return JSON.stringify({err: 'missing:' + (!from ? 'from' : '') + (!to ? 'to' : '')});
+  const dt = new DataTransfer();
+  from.dispatchEvent(new DragEvent('dragstart', {bubbles: true, dataTransfer: dt}));
+  const allowed = !to.dispatchEvent(new DragEvent('dragover', {bubbles: true, cancelable: true, dataTransfer: dt}));
+  if (allowed) to.dispatchEvent(new DragEvent('drop', {bubbles: true, dataTransfer: dt}));
+  from.dispatchEvent(new DragEvent('dragend', {bubbles: true, dataTransfer: dt}));
+  return JSON.stringify({payload: dt.getData('text/plain'), allowed: allowed});
+}'''
+
+
+def _png(color, size=(160, 120)):
+    """一张一眼能认出来的小图，当素材库里的「预览小图」用"""
+    buf = io.BytesIO()
+    Image.new('RGB', size, color).save(buf, 'PNG')
+    return buf.getvalue()
+
+
+def boot(p):
+    """起浏览器 + 装真扩展。
+
+    playwright 默认往命令行里塞 --disable-extensions，跟 --load-extension 撞一起会时灵时不灵（扩展装不上、
+    service_workers 一直空），所以摘掉那个默认开关；每趟用全新档，免得读到上版 background.js 的缓存。
+    """
+    for i in range(5):
+        prof = OUT / ('profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+with sync_playwright() as p:
+    ctx = boot(p)
+    sw = ctx.service_workers[0]
+    sw.evaluate('''async (payload) => {
+        await Storage.initializeDefaults(DEFAULT_PROMPTS);
+        await ensureTenantInit();
+        const config = await Storage.getConfig();
+        config.product.name = '流程测试产品';
+        config.product.sellPoints = [{title: '省时间', content: '简化重复步骤'}];
+        config.ai.apiKey = 'test-local-only';
+        await Storage.setConfig(config);
+        self.testVoiceCalls = 0; self.testVisualCalls = 0;
+        AiClient.chatCompletion = async (cfg, system, user) => {
+            const sys = String(system || '');
+            const usr = String(user || '');
+            const call = async (text) => { await new Promise(r => setTimeout(r, 200)); return {content: text}; };
+            if (usr.includes('【要点的那一句】')) return call(payload.sentence);   // ⑤ 逐句改：只回那一句
+            if (sys.includes('同题写一批')) return call(payload.variants);        // ④ 那批样稿（必须在成稿那条之前）
+            if (sys.includes('把下面这篇已经定稿的图文笔记') || sys.includes('卡片轮播口播')) {
+                self.testVoiceCalls++; return call(payload.voice);               // 老「AI 出口播稿」那一发：这一路一次都不该打
+            }
+            if (sys.includes('你在帮一条') || sys.includes('你在改一条')) { self.testVisualCalls++; return call('{"断点":[]}'); }
+            if (sys.includes('爆款图文笔记写手')) return call(payload.note);
+            if (sys.includes('候选话题')) return call(payload.concept_topics);
+            return call(payload.concept_people);
+        };
+    }''', {'voice': '不该再被生成的口播稿',
+           'note': json.dumps(NOTE, ensure_ascii=False),
+           'variants': VARIANTS,
+           'sentence': json.dumps({'sentence': SENT_REVISED}, ensure_ascii=False),
+           'concept_people': json.dumps(PEOPLE, ensure_ascii=False),
+           'concept_topics': json.dumps(TOPICS, ensure_ascii=False)})
+    eid = sw.url.split('/')[2]
+
+    errs = []
+    page = ctx.new_page()
+    page.set_default_timeout(20000)
+    page.on('pageerror', lambda e: errs.append(str(e)))
+    page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+    page.wait_for_function('typeof _npWiz !== "undefined" && typeof switchMainTab === "function"')
+    if page.locator('#fsClose').is_visible():
+        page.locator('#fsClose').click()
+
+    # ── 1) 写文案 ①→⑤：④ 只有「点中样稿」一条前进路，⑤ 默认逐句改 ────────────────
+    page.evaluate('() => switchMainTab("notePublish", "new")')
+    page.wait_for_function('() => document.getElementById("notePublishContent").offsetWidth > 0 && !!document.querySelector(".np-spk")')
+    page.locator('.np-spk').first.check()
+    page.locator('.np-wiz-next').click()
+    page.locator('.np-ppc').first.check()
+    page.locator('.np-wiz-next').click()
+    page.wait_for_function('() => !!document.querySelector(".np-tpc:checked")')
+    page.locator('.np-wiz-next').click()
+    page.wait_for_function('() => _npWiz.step === 3')
+    assert page.locator('#npWizBody').inner_text().find('④ 挑稿') >= 0, '话题与成稿之间该是 ④ 挑稿（这条线底下的几种写法各出一篇给你挑）'
+    page.wait_for_function('() => !!document.querySelector(".npVarPick")', timeout=60000)
+    page.locator('.npVarPick').first.click()
+    page.wait_for_function('() => !!(_npWiz.draft && String(_npWiz.draft.content || "").trim())')
+    page.wait_for_function('() => _npWiz.step === 4 && !!document.querySelector(".np-sent-row")')
+    page.locator('.np-sent-row').first.click()
+    page.wait_for_selector('#npSentAsk')
+    page.fill('#npSentAsk', '开头那句换掉')
+    page.locator('.np-sent-go').click()
+    page.wait_for_function('(t) => (_npWiz.draft.content || "").indexOf(t) === 0', arg=SENT_REVISED, timeout=25000)
+    assert page.evaluate('_npWiz.draft.content') == SENT_REVISED + '\n\n干货。\n\n结尾引导。', \
+        '逐句改只许换那一句，其余一字不动：%s' % page.evaluate('_npWiz.draft.content')
+    expect(page.locator('#npSentMsg')).to_contain_text('这句换好了')
+    page.wait_for_function('() => !!_npWiz.arId', timeout=15000)
+    ar_id = page.evaluate('_npWiz.arId')
+    body_now = page.evaluate('_npWiz.draft.content')
+    print('这一篇的档案档 =', ar_id, flush=True)
+
+    # 出片台改版：档案入口收成一颗「🎬 出片台」→ 那张任务表；进造图片 / 出片台都从表上的行走（旧的 .npar-out / .npar-film 两颗下线）
+    def go_table():
+        page.evaluate('() => switchMainTab("noteArchive")')
+        page.wait_for_function(
+            'id => !!document.querySelector(`#noteArchiveContent .npar-task[data-id="${id}"]`) && '
+            'document.querySelector("#noteArchiveContent").offsetParent !== null', arg=ar_id)
+        page.locator('#noteArchiveContent .npar-task[data-id="%s"]' % ar_id).click()
+        page.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent")')
+
+    def add_img_row():
+        """表上「＋ 一套图」（跟账号默认那派）加一行图（零 AI），返回那一行 id"""
+        if page.locator('#noteTaskContent .np-img-addopen').count():
+            page.locator('#noteTaskContent .np-img-addopen').click()
+            page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-img-add").length > 1')
+        page.locator('#noteTaskContent .np-img-add[data-k=""]').click()
+        page.wait_for_function('() => (npS().imgDocs || []).length >= 1')
+        return page.evaluate('() => (npS().imgDocs || []).slice(-1)[0].id')
+
+    def open_out_row():
+        """点表上那行「🖼 出图」→ 造图片页（四档：② 顶上那格文案就是出片要念的稿）"""
+        page.locator('#noteTaskContent .np-task-img').first.click()
+        page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+
+    def add_film_row(kind):
+        """表上「＋ 一片」挑这一种成片形式加一行（零 AI），返回那一行 id"""
+        if page.locator('#noteTaskContent .np-task-filmopen').count():
+            page.locator('#noteTaskContent .np-task-filmopen').click()
+            page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-kind").length === 5')
+        page.locator('#noteTaskContent .np-task-kind[data-k="%s"]' % kind).click()
+        page.wait_for_function('(k) => (npS().filmDocs || []).some(x => x && x.kind === k)', arg=kind)
+        return page.evaluate('(k) => (npS().filmDocs || []).find(x => x && x.kind === k).id', kind)
+
+    def open_film_row(rid):
+        """点表上那行「🎬 出片」→ 出片台（成片形式跟着这一行，盖板不铺五选一）"""
+        page.locator('#noteTaskContent .np-task-film[data-id="%s"]' % rid).click()
+
+    def read_voice():
+        return page.evaluate('''async (id) => {
+            const d = await chrome.storage.local.get('np_notes');
+            const n = (d.np_notes || []).find(x => x.id === id) || {};
+            return String(n.voice || '');
+        }''', ar_id)
+
+    def wait_voice(timeout=15.0):
+        t0 = time.time()
+        seen = read_voice()
+        while time.time() - t0 < timeout and seen != EDITED:
+            page.wait_for_timeout(300)
+            seen = read_voice()
+        return seen
+
+    # ── 2) 口播稿＝正文同文：只有正文、没单独写过稿的那一行，缺口不是「先整口播稿」而是「还没分幕」，那颗亮着 ──
+    go_table()
+    rid = add_film_row('PPT字体动效')
+    row = page.locator('#noteTaskContent .np-task-film[data-id="%s"]' % rid).locator('xpath=ancestor::tr').inner_text().replace(' ', '')
+    assert '还没分幕' in row, ('有正文就算有稿：字体动效这一行缺口该是「还没分幕」，不是误报「先整口播稿」：%s' % row)
+    assert '先整口播稿' not in row, row
+    assert page.locator('#noteTaskContent .np-task-film[data-id="%s"]' % rid).evaluate('el => getComputedStyle(el).opacity') == '1', \
+        '有正文的字体动效那颗出片是亮的'
+    print('PASS: 口播稿＝正文同文——只有正文那篇的字体动效行缺口＝「还没分幕」（不再误报缺稿）、那颗出片亮着', flush=True)
+
+    # ── 3) 造图片 ② 顶上那格文案：读的是这一篇正文，手改一版当场回写同一档 ──────────
+    go_table()
+    add_img_row()
+    open_out_row()
+    page.locator('#npImgTabs .np-imgtab[data-t="cut"]').click()
+    page.wait_for_function('() => !!document.getElementById("npVoiceTa")')
+    page.locator('#npCutWrap details.np-cutsrc').evaluate('d => { d.open = true; }')
+    assert sw.evaluate('self.testVoiceCalls') == 0, '这一路不该再生成一份口播稿：%s' % sw.evaluate('self.testVoiceCalls')
+    assert sw.evaluate('self.testVisualCalls') == 0, '进造图片②＝零 AI 冷启动：%s' % sw.evaluate('self.testVisualCalls')
+    assert page.locator('#npVoiceTa').input_value().strip() == body_now.strip(), \
+        '那格文案读的是这一篇现在的正文/稿子：前 12 字 %r' % page.locator('#npVoiceTa').input_value()[:12]
+    pages_before = len(ctx.pages)
+    page.locator('#npVoiceTa').fill(EDITED)
+    seen = wait_voice()
+    assert seen == EDITED, '手改那格文案要回写进这一篇的档案档（15 秒没等到）：最后读到 %r' % seen
+    # 本地按标点重列句子（一次 AI 都不烧）：改过文案后点 ⟳，句子才列出来供拖段
+    page.locator('#npCutWrap .np-cut-relest').click()
+    page.wait_for_function('() => document.querySelectorAll("#npCutWrap .np-cutline").length >= 2')
+    assert [sw.evaluate('self.testVoiceCalls'), sw.evaluate('self.testVisualCalls')] == [0, 0], \
+        '重列句子＝本地按标点列，不该打 AI：voice=%s visual=%s' % (sw.evaluate('self.testVoiceCalls'), sw.evaluate('self.testVisualCalls'))
+    print('PASS: 出片台念的那格文案就在造图片 ② 顶上（读的是这一篇正文），手改一版当场回写同一档；全程没打「AI 出口播稿」那一发', flush=True)
+
+    # ── 4) 出片台是发笔记里一颗独立二级 tab：从表点「🎬 出片」就地进台子，不另开窗口、盖板不铺五选一 ──
+    go_table()
+    open_film_row(rid)
+    page.wait_for_function('() => document.getElementById("filmContent") && document.getElementById("filmContent").offsetParent !== null', timeout=20000)
+    assert len(ctx.pages) == pages_before, '出片台该就地打开，不该另开窗口（现有 %d 个页面）' % len(ctx.pages)
+    assert 'active' in (page.locator('#tabNoteFilm').get_attribute('class') or ''), \
+        '出片台现在是发笔记的一颗独立二级 tab：左栏二级该亮在「出片台」上'
+    assert page.evaluate('() => document.getElementById("filmGate").style.display === "none"'), \
+        '成片形式跟着表上那一行定好了，进台子不该再铺一层五选一'
+    print('PASS: 从表上「🎬 出片」就地进出片台（没另开窗口、二级亮在「出片台」），形式跟着这一行 → 盖板不再铺五选一', flush=True)
+
+    # ── 5) 带的是手上那份稿；草稿按篇存进 xhsFilmDocs[这一档]；递过去当场分好幕 ───────
+    page.wait_for_function('''(id) => {
+        const f = document.getElementById('filmFrame');
+        const F = f && f.contentWindow && f.contentWindow.Film;
+        return !!(F && F.noteId === id && F.scenes.length);
+    }''', arg=ar_id, timeout=30000)
+    vf = [f for f in page.frames if 'video.html' in f.url][0]
+    assert vf.locator('#script').input_value() == EDITED, '片台里应该是手改过的那份稿子'
+    page.wait_for_function('''async (a) => {
+        const d = await chrome.storage.local.get('xhsFilmDocs');
+        return ((d.xhsFilmDocs || {})[a[0]] || {}).script === a[1];
+    }''', arg=[ar_id, EDITED], timeout=20000)
+    assert not page.evaluate('async () => (await chrome.storage.local.get("xhsFilmScript")).xhsFilmScript'), \
+        '按篇走的这一趟不该往全局那份里写'
+    scenes = vf.evaluate('() => Film.scenes.length')
+    assert scenes >= 2, ('两行稿子一起递过去该分得出幕', scenes)
+    assert vf.locator('.scene').count() == scenes, '分幕卡该跟着长出来'
+    assert vf.locator('#cv').is_visible() and vf.locator('#popout').is_visible(), '内嵌版该有预览和一个「在新标签页打开」'
+    assert sw.evaluate('self.testVoiceCalls') == 0, '进出片台不该补打一发 AI：%s' % sw.evaluate('self.testVoiceCalls')
+    print('PASS: 手改那格文案原样带进片台、当场分幕 %d 幕；草稿按篇存进 xhsFilmDocs[这一档]，全局那份不动' % scenes, flush=True)
+
+    # ── 6) 皮肤跟全站一套（浅底 + 白卡片 + 跟弹窗同一个主色）：ui.css 那个 <link> 掉了这条就红 ──
+    popup_brand = page.evaluate('() => getComputedStyle(document.documentElement).getPropertyValue("--c-brand").trim()')
+    assert len(popup_brand) == 7 and popup_brand.startswith('#'), '弹窗该有一套 --c-brand：' + popup_brand
+    _br, _bg, _bb = (int(popup_brand[i:i + 2], 16) for i in (1, 3, 5))
+    brand_rgb = 'rgb(%d, %d, %d)' % (_br, _bg, _bb)
+    page.mouse.move(2, 2)                     # 鼠标停在按钮上有 hover 过渡色，量之前先挪开
+    theme, prev = None, None
+    for _ in range(15):
+        theme = vf.evaluate('''() => {
+            const css = (sel) => getComputedStyle(document.querySelector(sel));
+            return { bodyBg: css('body').backgroundColor, cardBg: css('.right .fsec.on').backgroundColor,
+                     goBg: css('#go').backgroundColor, goInk: css('#go').color,
+                     markBg: css('header .mark').backgroundColor };
+        }''')
+        if prev == theme:
+            break
+        prev = theme
+        page.wait_for_timeout(120)
+    popup_on = page.evaluate('() => getComputedStyle(document.documentElement).getPropertyValue("--c-brand-on").trim()')
+    assert len(popup_on) == 7 and popup_on.startswith('#'), '弹窗该有一套 --c-brand-on：' + popup_on
+    _or, _og, _ob = (int(popup_on[i:i + 2], 16) for i in (1, 3, 5))
+    on_rgb = 'rgb(%d, %d, %d)' % (_or, _og, _ob)
+    assert theme['bodyBg'] == 'rgb(246, 247, 249)', ('出片台页面底该用全站浅色（--c-bg）', theme)
+    assert theme['cardBg'] == 'rgb(255, 255, 255)', ('控制区该是白卡片（--c-surface）', theme)
+    assert theme['markBg'] == brand_rgb, ('顶栏图标底该跟弹窗同一个主色（%s）' % brand_rgb, theme, popup_brand)
+    assert theme['goBg'] == brand_rgb and theme['goInk'] == on_rgb, \
+        ('主按钮该是主色底 + 主题算出的对比字色（%s on %s）' % (on_rgb, brand_rgb), theme, popup_brand)
+    print('PASS: 出片台皮肤跟全站一套（浅底 %s / 白卡片 / 主按钮 %s＋对比字色，跟弹窗同一个 --c-brand）'
+          % (theme['bodyBg'], theme['goBg']), flush=True)
+    page.screenshot(path=str(OUT / 'film-embed.png'))
+
+    # ── 7) 在片台换形式 → 卡片画面叙事：只换画面，那格文案不许被改写；没传回图的段走纯色卡 ──
+    page.locator('#filmBar .np-kind-change').click()
+    page.wait_for_function('() => document.querySelectorAll("#filmGate .np-kind-pick").length === 5')
+    page.locator('#filmGate .np-kind-pick[data-k="卡片画面叙事"]').click()
+    page.wait_for_function('''(id) => {
+        const f = document.getElementById('filmFrame');
+        const F = f && f.contentWindow && f.contentWindow.Film;
+        return !!(F && F.noteId === id && F.cfg.frame === 'card' && String(F.script) === %s && F.scenes.length);
+    }''' % json.dumps(EDITED), arg=ar_id, timeout=30000)
+    assert vf.locator('#knobs .chip.on:has-text("卡片轮播")').count() == 1, '④「画面」那颗该亮在卡片轮播上'
+    scenes2 = vf.evaluate('() => Film.scenes.length')
+    assert scenes2 >= 2, ('换形式按新画幅重新排幕', scenes2)
+    assert vf.locator('#cardBody .card-row').count() == scenes2, '第 ⑤ 块该一幕一行'
+    cards = vf.evaluate('() => Film.scenes.map(s => (s.card && s.card.src) ? 1 : 0)')
+    assert sum(cards) == 0, ('这一篇画面表每一段都没传回图 → 各段走纯色卡，不从素材库瞎抓', cards)
+    assert sw.evaluate('self.testVoiceCalls') == 0, '换形式不许顺手重写那格文案'
+    bar = page.locator('#filmBar').inner_text()
+    assert '卡片画面叙事' in bar, bar
+    fk = page.evaluate('''(id) => chrome.storage.local.get('np_notes').then(d => {
+        const n = (d.np_notes || []).find(x => x.id === id) || {}; return n.filmKind || ''; })''', ar_id)
+    assert fk == '卡片画面叙事', '成片形式落在这一档的条目级那一份：%s' % fk
+    # 顶上那颗「← 出片台」回那张表：这一行跟着换成卡片画面叙事
+    page.locator('#filmBar .np-film-task').click()
+    page.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent .np-task-film")')
+    back = page.locator('#noteTaskContent .np-task-film[data-id="%s"]' % rid).locator('xpath=ancestor::tr').inner_text().replace(' ', '')
+    assert '卡片画面叙事' in back, '回表这一行成片形式跟着变成卡片画面叙事：%s' % back
+    print('PASS: 片台「✏️ 换一种」→ 卡片画面叙事：画面切卡片轮播、没传回图的段走纯色卡，那格文案一个字没改；回表这一行跟着落档', flush=True)
+
+    # ── 8) 档位闸门只锁出片：关掉 videoFilm 时表上不摆片那一行 / 那颗「＋ 一片」，图照常 ──
+    page.evaluate('() => { _editionCache = { edition: { features: { videoFilm: false } } }; return 1; }')
+    go_table()
+    page.wait_for_timeout(400)
+    assert page.locator('#noteTaskContent .np-task-film').count() == 0, '没开 videoFilm 时表上不该再摆「🎬 出片」那一行'
+    assert page.locator('#noteTaskContent .np-task-filmopen').count() == 0, '「＋ 一片」那排也该收掉'
+    assert '全功能版' in page.locator('#noteTaskContent').inner_text(), '收掉出片那排后该说一句为什么（全功能版才有）'
+    assert page.locator('#noteTaskContent .np-task-img').count() >= 1, '同档位下图那一行照常摆着'
+    open_out_row()
+    page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+    keys = page.locator('#npImgTabs .np-imgtab').evaluate_all('els => els.map(x => x.getAttribute("data-t"))')
+    assert keys == ['look', 'cut', 'desc', 'preview'], ('造图片该是四档工作流：%s' % keys)
+    assert page.locator('#npImgList').count() == 0, '出图列表那一档整块下线'
+    assert page.locator('.np-path-image, .np-path-video, .np-style').count() == 0, \
+        '旧的「做图片 / 做视频」那条路已整块下线，闸门关着时也不该又长出来'
+    print('PASS: 闸门只锁出片——关掉 videoFilm 表上不摆片那一行 / 那颗＋一片（图照常），造图片仍是四档、出图列表不再回来', flush=True)
+
+    assert not errs, '页面报错：%s' % errs[:3]
+    page.screenshot(path=str(OUT / 'film-entry.png'))
+    print('PASS: 无 pageerror', flush=True)
+    print('SCREENSHOT:', OUT / 'film-entry.png', flush=True)
+    print('\n全绿：那一格文案 → 出片台表 → 点行「🎬 出片」这条入口（就地进台 / 按篇草稿 / 分幕 / 皮肤 / 换形式 / 闸门）', flush=True)
+    ctx.close()

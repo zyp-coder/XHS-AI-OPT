@@ -133,6 +133,10 @@
   //       只要定位又开到同一条评论（不管昵称读不读得到），就放弃，彻底杜绝重复评论 =====
   const _sessionSentSigs = new Set();
 
+  // ===== 会话级防重复（一级评论）：笔记（标题/ID）+ 正文前若干字 作为指纹。
+  //       一级评论没有"评论会话"可指纹，但同一篇笔记的同一句话发两遍同样是重复评论 =====
+  const _sessionNoteCommentSigs = new Set();
+
   // 广播锁状态到 popup 页面（评论助手界面据此显示“操作进行中”横幅）
   function _broadcastLockState(locked, label) {
     try {
@@ -405,143 +409,15 @@
       releaseLock(label);
     }
   }
-
-  // ===== ✍️ 发笔记：在发布页自动填标题/正文/标签/知识库图片 =====
-  const PENDING_NOTE_KEY = 'pending_note_publish';
-  function _npTip(text, isErr) {
+  /* 🛡 互动侧风控闸（四十四改）：评论/回复/私信发出前叫后台过一遍词表（联系方式/链接/平台黑话）。
+     拦下＝这条不发（后台已记一笔+通知），不重处置；后台没答上（网络/更新中）＝放行不误伤。 */
+  async function _interactGuard(text, kind, owner) {
     try {
-      let tip = document.getElementById('xhs-np-tip');
-      if (!tip) {
-        tip = document.createElement('div');
-        tip.id = 'xhs-np-tip';
-        tip.style.cssText = 'position:fixed;z-index:2147483646;left:16px;right:16px;bottom:16px;max-width:440px;margin:0 auto;padding:10px 14px;border-radius:10px;font:600 13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#fff;box-shadow:0 6px 20px rgba(0,0,0,.16);text-align:center;transition:opacity .3s;';
-        document.documentElement.appendChild(tip);
-      }
-      tip.style.color = isErr ? '#d32f2f' : '#1f1f1f';
-      tip.style.border = isErr ? '1px solid #fcd4d4' : '1px solid #e7e7e7';
-      tip.textContent = text;
-      clearTimeout(tip._t);
-      if (text) tip._t = setTimeout(() => { tip.style.opacity = '0'; setTimeout(() => tip.remove(), 350); }, 4200);
-    } catch (_) {}
+      const r = await chrome.runtime.sendMessage({ action: 'interactGuard', data: { text: text, kind: kind, owner: owner || '' } });
+      if (r && r.ok === false) return { ok: false, error: r.error || '这条含风控词，已拦下' };
+      return { ok: true };
+    } catch (_) { return { ok: true }; }
   }
-  function _npWait(fn, timeoutMs, intervalMs) {
-    timeoutMs = timeoutMs || 6000; const int = intervalMs || 300; const t0 = Date.now();
-    return new Promise((resolve) => {
-      (function loop() {
-        let v = null; try { v = fn(); } catch (_) {}
-        if (v) return resolve(v);
-        if (Date.now() - t0 > timeoutMs) return resolve(null);
-        setTimeout(loop, int);
-      })();
-    });
-  }
-  function _npClick(el) {
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    if (!rect.width && !rect.height) return;
-    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
-    const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
-    el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, o, { pointerType: 'mouse' })));
-    el.dispatchEvent(new MouseEvent('mousedown', o));
-    el.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, o, { pointerType: 'mouse' })));
-    el.dispatchEvent(new MouseEvent('mouseup', o));
-    el.dispatchEvent(new MouseEvent('click', o));
-  }
-  function _npType(el, text) {
-    if (!el) return;
-    el.focus();
-    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-      const proto = el.tagName === 'INPUT' ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-      setter.call(el, text);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    } else if (el.isContentEditable) {
-      el.textContent = '';
-      document.execCommand('insertText', false, text);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-  }
-  async function _npEnter(el) {
-    if (!el) return;
-    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-    await sleep(400);
-  }
-  async function _npUploadImage(dataUrl) {
-    if (!dataUrl) return;
-    try {
-      const input = document.querySelector('input[type="file"][accept*="image"], input[type="file"]');
-      if (!input) { _npTip('⚠️ 未找到图片上传框（发布页可能未加载图片区域）', true); return; }
-      const blob = await (await fetch(dataUrl)).blob();
-      const ext = (blob.type || 'image/png').split('/')[1] || 'png';
-      const file = new File([blob], 'note_image.' + ext, { type: blob.type || 'image/png' });
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      await sleep(3500);
-    } catch (e) { _npTip('⚠️ 图片上传失败：' + (e && e.message || e), true); }
-  }
-  function _npTopPublishBtn() {
-    for (const el of document.querySelectorAll('button, [role="button"], a, span, div')) {
-      if (el.offsetParent === null) continue;
-      if ((el.textContent || '').trim() === '发布' && el.querySelector && !el.querySelector('button')) return el;
-    }
-    return null;
-  }
-  function _npSubmitBtn() {
-    const cands = [];
-    for (const el of document.querySelectorAll('button')) {
-      if (el.offsetParent === null) continue;
-      if ((el.textContent || '').trim() === '发布') cands.push(el);
-    }
-    return cands.length ? cands[cands.length - 1] : null;
-  }
-  async function fillNotePublish() {
-    let st = {};
-    try { st = await chrome.storage.local.get(PENDING_NOTE_KEY); } catch (_) {}
-    const pending = st && st[PENDING_NOTE_KEY];
-    if (!pending) return { success: false, error: '没有待发布的内容（请先在插件「发笔记」页选择一篇）' };
-    const pn = location.pathname;
-    if (pn.indexOf('/explore') !== 0 && pn.indexOf('/discovery') !== 0 && pn !== '/') {
-      return { success: false, error: '当前不是小红书信息流页，已取消自动填入' };
-    }
-    try {
-      _npTip('✍️ 开始填写：「' + (pending.title || '').slice(0, 18) + '」');
-      const top = await _npWait(() => _npTopPublishBtn(), 8000);
-      if (!top) return { success: false, error: '找不到「发布」入口，请在信息流页重试' };
-      _npClick(top);
-      await sleep(2500);
-      const titleEl = await _npWait(() => document.querySelector('[class*="title"] input, [placeholder*="标题"], textarea[placeholder*="标题"], input[placeholder="标题"]'), 9000);
-      if (titleEl) { _npType(titleEl, pending.title || ''); await sleep(300); }
-      else return { success: false, error: '发布编辑器未打开（标题输入框未找到）' };
-      const contentEl = document.querySelector('[class*="content"] [contenteditable="true"], [placeholder*="正文"], [contenteditable="true"]');
-      if (contentEl) { _npType(contentEl, pending.content || ''); await sleep(300); }
-      if (Array.isArray(pending.tags) && pending.tags.length) {
-        for (const tag of pending.tags) {
-          const ti = document.querySelector('[placeholder*="话题"], input[placeholder*="#"]');
-          if (!ti) break;
-          _npType(ti, tag); await _npEnter(ti);
-        }
-      }
-      await _npUploadImage(pending.image);
-      const submit = await _npWait(() => _npSubmitBtn(), 7000);
-      if (!submit) {
-        _npTip('✅ 内容已自动填入，请在新页面右下角点「发布」提交', false);
-        try { await chrome.storage.local.remove(PENDING_NOTE_KEY); } catch (_) {}
-        return { success: true, needManual: true };
-      }
-      _npClick(submit);
-      await sleep(2000);
-      try { await chrome.storage.local.remove(PENDING_NOTE_KEY); } catch (_) {}
-      _npTip('✅ 已点击发布！请在小红书页面确认', false);
-      return { success: true, published: true };
-    } catch (e) {
-      _npTip('❌ 发布失败：' + (e && e.message || e), true);
-      return { success: false, error: (e && e.message) || String(e) };
-    }
-  }
-
   // ===== 消息监听 =====
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // ── 轻量页面类型预检（不滚动、不采集）：popup 扫描前先判断是不是笔记详情页，错页立刻重试省时间 ──
@@ -608,9 +484,12 @@
       return; // 不占用操作锁（sendReply/like 等锁内任务不受影响）
     }
     if (request.action === 'sendReply') {
-      runExclusive('sendReply', () => sendReplyToComment(request.author, request.originalText, request.replyText, request.commentIdx, request.userLink, request.images, request.humanize))
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+      _interactGuard(request.replyText, 'comment', request.author).then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('sendReply', () => sendReplyToComment(request.author, request.originalText, request.replyText, request.commentIdx, request.userLink, request.images, request.humanize))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: e.message }));
+      });
       return true;
     }
     if (request.action === 'scrollToComment') {
@@ -644,11 +523,9 @@
         .catch(e => sendResponse({ success: false, error: e.message }));
       return true;
     }
-    // ── ✍️ 发笔记：自动填发布页并发布 ──
-    if (request.action === 'fillNotePublish') {
-      runExclusive('fillNotePublish', () => fillNotePublish())
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+    // ── 🛰 新消息监听·哨兵：只看不滚的一次轻窥（后台闹钟每 30s 问一次） ──
+    if (request.action === 'watchPeek') {
+      try { sendResponse(watchPeek()); } catch (e) { sendResponse({ success: false, error: e.message }); }
       return true;
     }
     // ── 评论跟进：通知页（https://www.xiaohongshu.com/notification）提取通知流 ──
@@ -688,16 +565,22 @@
     }
     // ── 评论跟进：通知页回复指定通知（三重定位保障，见 replyNotification 实现） ──
     if (request.action === 'replyNotification') {
-      runExclusive('replyNotification', () => replyNotification(request))
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+      _interactGuard(request.replyText, 'notif', (request.userName || '通知回访')).then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('replyNotification', () => replyNotification(request))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: e.message }));
+      });
       return true;
     }
     // ── 获客清单：私信（打开用户主页 → 点私信 → 发送） ──
     if (request.action === 'sendUserDm') {
-      runExclusive('sendUserDm', () => sendUserDm(request.userLink, request.text))
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+      _interactGuard(request.text, 'dm', request.userLink).then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('sendUserDm', () => sendUserDm(request.userLink, request.text))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: e.message }));
+      });
       return true;
     }
     // ── 获客清单：只打开私信聊天窗（不发送），用于验证"点私信按钮"一步 ──
@@ -709,9 +592,12 @@
     }
     // ── 获客清单：发私信（Step2，前提是已在用户主页，不再导航） ──
     if (request.action === 'sendDmOnProfile') {
-      runExclusive('sendDmOnProfile', () => sendDmOnProfile(request.userLink, request.text))
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+      _interactGuard(request.text, 'dm', request.userLink).then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('sendDmOnProfile', () => sendDmOnProfile(request.userLink, request.text))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: e.message }));
+      });
       return true;
     }
     // ── 获客清单：现场定位私信按钮并高亮，告知用户找到了哪个按钮 ──
@@ -721,9 +607,12 @@
     }
     // ── 获客清单：在已打开的聊天窗口输入并发送（不导航、不要求主页） ──
     if (request.action === 'sendDmToOpenChat') {
-      runExclusive('sendDmToOpenChat', () => sendDmToOpenChat(request.userLink, request.text))
-        .then(r => sendResponse(r))
-        .catch(e => sendResponse({ success: false, error: e.message }));
+      _interactGuard(request.text, 'dm', request.userLink).then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('sendDmToOpenChat', () => sendDmToOpenChat(request.userLink, request.text))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: e.message }));
+      });
       return true;
     }
     // ── 获客清单：定位用户（A方案：在当前已登录 tab 内直达用户主页） ──
@@ -754,6 +643,11 @@
     // ── 账号绑定：在（本）人主页读取并校验小红书号 ──
     if (request.action === 'verifyOwnProfile') {
       _verifyOwnProfile().then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+    }
+    // ── 首条私信前置甄别：抓"来访者"主页的简介 + 笔记（只读），供 AI 判购买意向 ──
+    if (request.action === 'extractGuestProfile') {
+      extractGuestProfile().then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
     // ── 账号诊断：在本人「我的」主页抓取完整资料（简介/头像/统计/笔记），只读 ──
@@ -798,9 +692,16 @@
       sendResponse(extractSearchResults());
       return true;
     }
-    // ── 一键灌水：驱动搜索页排序/范围筛选（冷启动用；循环默认不开） ──
+    // ── 一键灌水：驱动搜索页排序（排序由搜索动作清单自带；范围筛选已下线，不再勾「未看过」） ──
     if (request.action === 'applySearchFilter') {
-      applySearchFilter(request.sortKey || '', request.scope || '')
+      applySearchFilter(request.sortKey || '')
+        .then(r => sendResponse(r))
+        .catch(e => sendResponse({ ok: false, error: e.message }));
+      return true;
+    }
+    // ── 截流活水：查我的评论在评论区的位置/点赞 ──
+    if (request.action === 'extractMyComment') {
+      extractMyComment(request.names || [])
         .then(r => sendResponse(r))
         .catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
@@ -868,6 +769,21 @@
     // ── 一键灌水：在搜索页点击笔记链接 ──
     if (request.action === 'clickNoteLink') {
       sendResponse(clickNoteLink(request.title, request.noteId, request.rawLinkIndex));
+      return true;
+    }
+    // ── 打开笔记（稳健通路）：当前页没这张卡片时，搜「笔记名」→ 匹配作者名 → 再点开 ──
+    if (request.action === 'openNoteBySearch') {
+      openNoteBySearch(request).then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: (e && e.message) || String(e) }));
+      return true;
+    }
+    // ── 发一条「对笔记本身的一级评论」（抢位/本地/活水 都用它，不点任何「回复」按钮） ──
+    if (request.action === 'sendNoteComment') {
+      _interactGuard(request.text, 'comment', '笔记评论').then(g => {
+        if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
+        runExclusive('✍️ 一级评论', () => sendNoteComment(request))
+          .then(r => sendResponse(r))
+          .catch(e => sendResponse({ success: false, error: (e && e.message) || String(e) }));
+      });
       return true;
     }
     // ── 一键灌水：高亮定位笔记（调试用） ──
@@ -1092,6 +1008,43 @@
     return false;
   }
 
+  // 评论区「属地」词表（省/直辖市/自治区 + 港澳台 + 常见国家）：属地是固定枚举，用它兜底判定，
+  // 避免把评论正文里的普通词误当属地
+  const _REGION_RE = /^(北京|天津|上海|重庆|河北|山西|辽宁|吉林|黑龙江|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|广东|海南|四川|贵州|云南|陕西|甘肃|青海|台湾|内蒙古|广西|西藏|宁夏|新疆|中国香港|中国澳门|中国台湾|香港|澳门|日本|美国|韩国|泰国|新加坡|马来西亚|印度尼西亚|菲律宾|越南|柬埔寨|缅甸|印度|巴基斯坦|阿联酋|沙特|以色列|土耳其|俄罗斯|乌克兰|英国|法国|德国|意大利|西班牙|葡萄牙|荷兰|比利时|瑞士|奥地利|瑞典|挪威|丹麦|芬兰|波兰|希腊|匈牙利|捷克|爱尔兰|冰岛|加拿大|墨西哥|巴西|阿根廷|智利|秘鲁|澳大利亚|新西兰|南非|埃及|摩洛哥|肯尼亚|尼日利亚)$/;
+  const _isRegionWord = (s) => _REGION_RE.test(String(s || '').replace(/\s+/g, ''));
+
+  /** 单条评论的属地（如「福建」）。
+   *  小红书评论区固定把属地与时间同排渲染（.info .date > span.date + span.location）；
+   *  这里以标准结构为主，另备结构兜底（找时间元素，取其后紧邻的短地域词），不依赖哈希 class。
+   */
+  function _pickCommentLocation(el) {
+    const _t = (n) => (n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : '');
+    try {
+      // 1) 标准结构：location 元素
+      const locEl = el.querySelector('.date .location, .info .location, [class*="location"]');
+      if (locEl) {
+        const s = _t(locEl);
+        if (s && s.length <= 12 && !/\d/.test(s)) return s;
+      }
+      // 2) 结构兜底：定位时间元素 → 看紧邻兄弟 / 同元素内「时间 属地」的写法
+      const nodes = el.querySelectorAll('span, div, p');
+      for (const n of nodes) {
+        if (n.children.length) continue;
+        const s = _t(n);
+        if (!s || s.length > 20) continue;
+        if (!/^(\d+[秒分钟小时天周月年]前|昨天|今天|刚刚|\d{2}-\d{2}|\d{4}-\d{2}-\d{2}|编辑于)/.test(s)) continue;
+        let sib = n.nextElementSibling;
+        for (let k = 0; k < 3 && sib; k++, sib = sib.nextElementSibling) {
+          const st = _t(sib);
+          if (st && st.length <= 12 && _isRegionWord(st)) return st;
+        }
+        const m = s.match(/(?:前|刚刚|昨天|今天)\s+([\u4e00-\u9fa5]{2,10})$/);
+        if (m && _isRegionWord(m[1])) return m[1];
+      }
+    } catch (_) {}
+    return '';
+  }
+
   function parseCommentItem(el) {
     const text = el.textContent.trim();
     if (!text || text.length < 1) return null;
@@ -1147,7 +1100,10 @@
     if (isLegalOrGibberish(content)) return null;
     if (_isNoteTitleOrDesc(content)) return null; // ★ 排除笔记标题/正文被误当成评论
 
-    return { author: authorName || '用户', content, replyTo, userLink };
+    // ★ 属地（IP 显示的地区，如「福建」）：随评论一起带给 AI，供「同城」判定用
+    const location = _pickCommentLocation(el);
+
+    return { author: authorName || '用户', content, replyTo, userLink, location };
   }
 
   // ============================
@@ -1974,6 +1930,388 @@
   // ============================
   // 发送回复
   // ============================
+  /* ── 把文本填进底部评论框（回复评论 / 对笔记的一级评论共用；节奏看 fast 与 delay_config.typingCharDelay） ── */
+  async function _fillEditable(inputEl, text, fast) {
+    _showStatus('正在输入内容...');
+    inputEl.focus();
+    await sleep(100);
+    const isEditable = inputEl.contentEditable === 'true' || inputEl.contentEditable === 'plaintext-only';
+
+    // 清空现有内容
+    if (isEditable) {
+      inputEl.innerHTML = '';
+    } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        inputEl.tagName === 'TEXTAREA'
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype,
+        'value'
+      ).set;
+      nativeSetter.call(inputEl, '');
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      inputEl.textContent = '';
+      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await sleep(80);
+
+    // 逐字输入（每字延迟由 delay_config.typingCharDelay 控制，0=不逐字、一次性填入）
+    const totalLen = text.length;
+    const typingCfg = Math.max(0, Number(_delayCfg.typingCharDelay) || 0);
+
+    if (fast || typingCfg <= 0) {
+      // ★ 快速通道（手动一键发送）：一次性填入全部文本，不逐字磨蹭
+      if (isEditable) {
+        document.execCommand('insertText', false, text);
+        inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+        const nativeSetter = Object.getOwnPropertyDescriptor(
+          inputEl.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+          'value'
+        ).set;
+        nativeSetter.call(inputEl, text);
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        inputEl.textContent = text;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      await sleep(50);
+    } else {
+      // ★ 自然节奏通道（自动批量发送）：逐字输入 + 随机停顿，控制操作频率；节奏均基于 typingCfg
+      const perCharMs = typingCfg;
+
+      for (let i = 0; i < totalLen; i++) {
+        const char = text[i];
+
+        // 每 8-14 个字停一次（约 2~4 倍每字延迟）
+        if (i > 0 && i % (8 + Math.floor(Math.random() * 6)) === 0) {
+          await sleep(perCharMs * 2 + Math.random() * perCharMs * 2);
+        }
+        if ('，。！？；、,.!?;'.includes(char)) {
+          await sleep(perCharMs + Math.random() * perCharMs);
+        }
+
+        // 每字延迟：设定值的 50%~100% 随机
+        const delay = perCharMs * (0.5 + Math.random() * 0.5);
+
+        if (isEditable) {
+          document.execCommand('insertText', false, char);
+          inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
+        } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
+          inputEl.value += char;
+          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          inputEl.textContent += char;
+          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        await sleep(delay);
+      }
+
+      // 输入完毕后直接发送，不再长停顿
+      await sleep(perCharMs + Math.random() * perCharMs);
+    }
+  }
+
+  /* ── 提交已填好的评论框（回复评论 / 对笔记的一级评论共用） ──
+     返回 { success, verified, sentOk, sentVia }；opt.locatedSig/author/originalText 只有"回复"传，
+     用于把这条回复记进防重复指纹与"上一条发给了谁"（一级评论不属于任何评论会话，不参与） */
+  async function _submitFilledComment(inputEl, text, fast, opt) {
+    const o = opt || {};
+    _showStatus('发送评论...');
+    await sleep(dwellMs('preSendGap', 400)); // 拟人挡位：点「发送」前先停留，避免打开即秒发
+
+    // ★ 坐标级点击：PointerEvent + MouseEvent + click，覆盖 React 各种事件绑定
+    async function _clickButton(el) {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+      el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerType: 'mouse' }));
+      await sleep(20);
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      await sleep(20);
+      el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerType: 'mouse' }));
+      await sleep(20);
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      await sleep(20);
+      el.click();                                   // trusted event
+      el.dispatchEvent(new MouseEvent('click', opts));
+    }
+
+    let sentOk = false;
+    let sentVia = '';
+
+    // ★ 发送成功三重信号（任一命中即认为已提交，立刻停手，不再补点/补回车）：
+    //   ① 输入框从 DOM 消失（发送后面板收起）
+    //   ② 页面上已出现本次文本（评论已渲染）
+    //   ③ 输入框还在但内容已被清空（小红书有时发送成功只清空、不销毁节点）
+    //   —— 这是"一条评论发出多条"的主因修复：原来只认①，实际已发出却判失败 → 继续点按钮/按 Enter → 重复提交
+    const _echoOnPage = () => {
+      const probe = (text || '').slice(0, 40);
+      if (!probe) return false;
+      const inputAlive = document.contains(inputEl);
+      return Array.from(document.querySelectorAll('div, span, p')).some(el => {
+        // 排除输入框自身及其容器：输入框里还没发出去的文字不算"已渲染的评论"
+        if (inputAlive && (el.contains(inputEl) || inputEl.contains(el))) return false;
+        const t = el.textContent.trim();
+        return t.includes(probe) && t.length < text.length + 80;
+      });
+    };
+    const _inputCleared = () => {
+      try {
+        const cur = (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT')
+          ? (inputEl.value || '')
+          : (inputEl.textContent || '');
+        return cur.trim().length === 0;
+      } catch (_) { return false; }
+    };
+    // 每次"补刀"前后都先自查：已经发出去了就绝不再点第二次
+    function _stopIfSent(where) {
+      if (sentOk) return true;
+      let sig = '';
+      if (!document.contains(inputEl)) sig = 'inputGone';
+      else if (_echoOnPage()) sig = 'echoOnPage';
+      else if (_inputCleared()) sig = 'inputCleared';
+      if (sig) {
+        sentOk = true;
+        sentVia = sig;
+        console.log('[发送] ✅ 已确认提交（' + sig + ' @ ' + where + '），停止后续补点，防重复');
+        return true;
+      }
+      return false;
+    }
+
+    // ── 方案一：面板内找到了发送按钮 → 点击 ──
+    const sendBtn = findSendButtonNear(inputEl);
+    if (sendBtn) {
+      console.log('[发送] ✅ 按钮:', sendBtn.tagName, sendBtn.textContent.trim());
+      for (let attempt = 0; attempt < 3 && !sentOk; attempt++) {
+        if (_stopIfSent('方案一第' + (attempt + 1) + '次点击前')) break;
+        _showStatus(`点击发送 (${attempt + 1}/3)...`);
+        sendBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        await sleep(200);
+        await _clickButton(sendBtn);
+        await sleep(800);
+        if (_stopIfSent('方案一第' + (attempt + 1) + '次点击后')) break;
+      }
+    }
+
+    // ── 方案二：面板内所有靠右的元素（可能按钮没有"发送"文字）──
+    if (!sentOk && !_stopIfSent('方案二前')) {
+      _showStatus('面板右侧按钮...');
+      let panel = inputEl.parentElement;
+      for (let d = 0; d < 10 && panel; d++) {
+        if (panel === document.body) break;
+        if (window.getComputedStyle(panel).position === 'fixed') break;
+        panel = panel.parentElement;
+      }
+      if (panel && panel !== document.body) {
+        const ir = inputEl.getBoundingClientRect();
+        for (const el of panel.querySelectorAll('button, [role="button"], a, span, div')) {
+          if (el.offsetParent === null || el.disabled) continue;
+          const r = el.getBoundingClientRect();
+          // 在输入框同一行且靠右
+          if (r.top < ir.top - 60 || r.top > ir.bottom + 120) continue;
+          if (r.left <= ir.right) continue;
+          _showStatus(`点:${el.textContent.trim().slice(0, 6)}`);
+          await _clickButton(el);
+          await sleep(500);
+          if (_stopIfSent('方案二点击后')) break;
+        }
+      }
+    }
+
+    // ── 方案三：Enter ──
+    if (!sentOk && !_stopIfSent('方案三前')) {
+      inputEl.focus();
+      await sleep(100);
+      for (let attempt = 0; attempt < 3 && !sentOk; attempt++) {
+        if (_stopIfSent('Enter第' + (attempt + 1) + '次前')) break;
+        _showStatus(`Enter (${attempt + 1}/3)...`);
+        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+        await sleep(600);
+        if (_stopIfSent('Enter第' + (attempt + 1) + '次后')) break;
+      }
+    }
+
+    // ── 方案四：全页面暴力 ──
+    if (!sentOk && !_stopIfSent('方案四前')) {
+      _showStatus('全局搜索...');
+      for (const el of document.querySelectorAll('button, [role="button"], a')) {
+        if (el.offsetParent === null || el.disabled) continue;
+        const t = el.textContent.trim();
+        if (t !== '发送' && t !== '发布' && t !== 'Send') continue;
+        const r = el.getBoundingClientRect();
+        if (r.top < window.innerHeight * 0.3 || r.top > window.innerHeight) continue;
+        await _clickButton(el);
+        await sleep(500);
+        if (_stopIfSent('方案四点击后')) break;
+      }
+    }
+
+    // 验证：轮询最多 2s，等内容渲染到页面上（比固定死等更少误报"未验证"）
+    let verified = false;
+    {
+      const VERIFY_TIMEOUT = 2000, VERIFY_STEP = 250;
+      const t0 = Date.now();
+      while (Date.now() - t0 < VERIFY_TIMEOUT) {
+        if (_echoOnPage()) { verified = true; break; }
+        _showStatus('确认是否已出现…');
+        await sleep(VERIFY_STEP);
+      }
+      if (!verified) verified = _echoOnPage();
+      // 验证期间发现成功信号也补记 sentOk（供指纹入库防重复）
+      if (verified && !sentOk) { sentOk = true; sentVia = 'echoOnPage'; }
+    }
+
+    // ★★★ 发送完毕最后一步：强制点击笔记标题关闭输入框 ★★★
+    // 这是"一键发送"的最终收尾动作，必须在释放锁之前完成：
+    //   1. 确保残留输入框彻底关闭（防止下一条发到上一条的框里）
+    //   2. 只有点击标题成功后才算"发送完成"，才释放操作锁
+    _showStatus('收尾：关闭输入框...');
+    try {
+      const curInput = findBottomReplyInput();
+      if (curInput && curInput.offsetParent !== null) {
+        try { curInput.blur(); } catch (_) {}
+      }
+    } catch (_) {}
+    // 无论框是否可见都点标题——确保小红书内部状态也归位
+    _clickNoteTitle();
+    await sleep(500);
+    // 二次确认：如果还没关掉，再点一次
+    const _finalInput = findBottomReplyInput();
+    if (_finalInput && _finalInput.offsetParent !== null) {
+      console.log('[发送] 首次点标题未关闭输入框，再点一次');
+      _clickNoteTitle();
+      await sleep(400);
+    }
+
+    _hideStatus();
+    // ★ 记录本次成功发送的目标，供下一条防重复闸比对（只有"回复评论"需要）
+    if (o.locatedSig || o.author) {
+      _lastSentTarget = {
+        atName: _normName((o.atName || o.author || '')),
+        author: _normName(o.author || ''),
+        textKey: _normName((o.originalText || '').slice(0, 30)),
+      };
+    }
+    // ★ 把本次实际定位到的评论指纹记入会话集合，同一条评论不会再发第二次。
+    // 仅当确实发出去（verified 或 sentOk）才入库，避免"没发成却入库 → 下次补发反被拦"
+    if (o.locatedSig && (verified || sentOk)) _sessionSentSigs.add(o.locatedSig);
+    return { success: true, verified, sentOk, sentVia };
+  }
+
+  /* ── 关闭页面上残留的评论输入框（不许用 Esc——会关掉整个笔记弹层） ──
+   * 三级降级：blur 失焦+滚动收起 → 点笔记标题 → 面板里的关闭类按钮 */
+  async function _closeResidualInput() {
+    const open = () => {
+      try { const el = findBottomReplyInput(); return (el && el.offsetParent !== null) ? el : null; } catch (_) { return null; }
+    };
+    try {
+      _showStatus('关闭已有评论框...');
+      let cur = open();
+      if (!cur) return;
+      try { cur.blur(); } catch (_) {}
+      scrollNoteBy(-120);
+      await sleep(400);
+      cur = open();
+      if (cur && _clickNoteTitle()) { await sleep(400); cur = open(); }
+      if (cur) {
+        const panel = cur.closest('[class*="reply" i], [class*="footer" i], [class*="bottom" i]');
+        if (panel) {
+          const closeBtn = panel.querySelector('button, [class*="close" i], [class*="cancel" i], [class*="del" i]');
+          if (closeBtn) closeBtn.click();
+        }
+      }
+      await sleep(300);
+    } catch (_) {}
+  }
+
+  /* ── 底线判断：这个输入框是不是「对笔记本身」的一级评论框 ──
+   * 一级评论框 placeholder 是「说点什么…/留下你的评论」，不含 @ 与「回复」；
+   * 回复某条评论时 placeholder 会变「回复 @昵称」→ 一律判否，防止一级评论发成对某人的回复。
+   * 提不到任何文案时返回 ok:true（交给 findBottomReplyInput 的位置兜底）。 */
+  function _isNoteLevelInput(inputEl) {
+    const hint = collectReplyBoxHints(inputEl);
+    if (!hint) return { ok: true, hint: '' };
+    if (/回复|reply|@/i.test(hint)) return { ok: false, hint };
+    return { ok: true, hint };
+  }
+
+  /* ── 对「笔记本身」发一条一级评论（最新抢位 / 本地点评 / 活水占位 都用它） ──
+   * 与 sendReplyToComment 的区别：不点任何评论的「回复」按钮，直接用页面底部的一级评论框；
+   * 提交/验证/收尾与回复共用 _submitFilledComment（同一套防重复三重信号）。
+   * 一级评论不属于任何评论会话，故不写 _lastSentTarget / _sessionSentSigs。 */
+  async function sendNoteComment(req) {
+    const r = req || {};
+    const fast = r.humanize !== true; // 默认快速通道；批量自动才逐字打字
+    let text = String(r.text || '').trim();
+    if (!text) return { success: false, error: '评论内容为空' };
+    // 300 字硬截断（与 sendReplyToComment 同口径）
+    if (text.length > 300) {
+      let cut = text.slice(0, 300);
+      const lastPunc = Math.max(
+        cut.lastIndexOf('。'), cut.lastIndexOf('！'), cut.lastIndexOf('~'),
+        cut.lastIndexOf('～'), cut.lastIndexOf('!'), cut.lastIndexOf('？'), cut.lastIndexOf('?')
+      );
+      if (lastPunc >= 240) cut = cut.slice(0, lastPunc + 1);
+      console.warn('[一级评论] 内容 ' + text.length + ' 字超过小红书300字上限，已截断');
+      text = cut;
+    }
+
+    const noteKey = (String(r.title || '') + '|' + String(r.noteId || location.pathname)).slice(0, 120);
+    const textKey = _normName(text.slice(0, 30));
+    const sig = noteKey + '||' + textKey;
+    if (_sessionNoteCommentSigs.has(sig)) {
+      console.warn('[一级评论] ⛔ 防重复：本会话已对同一篇笔记发过同样内容的评论，放弃');
+      return { success: false, error: '防重复：这篇笔记本次会话已经发过同样内容的一级评论了' };
+    }
+
+    // 1. 先关掉残留输入框（尤其别把一级评论填进别人的回复框里）
+    await _closeResidualInput();
+
+    // 2. 等一级评论框出现（最多 5s）
+    let inputEl = null;
+    for (let i = 0; i < 10; i++) {
+      inputEl = findBottomReplyInput();
+      if (inputEl) break;
+      _showStatus(`等待评论框…（${i * 0.5}s / 5s）`);
+      await sleep(500);
+    }
+    if (!inputEl) { _hideStatus(); return { success: false, error: '未找到笔记底部的评论框（笔记可能未打开或未加载完）' }; }
+
+    // 3. 底线校验：必须是「对笔记」的一级评论框，不是对某人回复的框
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const chk = _isNoteLevelInput(inputEl);
+      if (chk.ok) break;
+      if (attempt === 1) {
+        console.warn('[一级评论] ❌ 当前是评论回复框（线索:' + chk.hint + '），不是笔记评论框，放弃防错位');
+        try { inputEl.blur(); } catch (_) {}
+        _hideStatus();
+        return { success: false, error: '当前打开的是对某条评论的回复框（' + chk.hint + '），不是笔记评论框，已放弃' };
+      }
+      // 先把这个回复框收起来，再找一次一级评论框
+      await _closeResidualInput();
+      inputEl = findBottomReplyInput();
+      if (!inputEl) { _hideStatus(); return { success: false, error: '未找到笔记底部的评论框' }; }
+      await sleep(300);
+    }
+
+    // 4. 填入 + 提交（与回复共用同一套发送/验证/收尾）
+    inputEl.focus();
+    await sleep(150);
+    _showStatus('输入一级评论...');
+    await _fillEditable(inputEl, text, fast);
+    const sub = await _submitFilledComment(inputEl, text, fast, {});
+    if (sub.verified || sub.sentOk) _sessionNoteCommentSigs.add(sig);
+    console.log('[一级评论] 完成：verified=' + !!sub.verified + ' sentOk=' + !!sub.sentOk + ' via=' + (sub.sentVia || '-'));
+    return { success: true, verified: sub.verified, sentOk: sub.sentOk, method: sub.verified ? 'confirmed' : (sub.sentOk ? (sub.sentVia || 'sendButton') : 'enterKey') };
+  }
+
   async function sendReplyToComment(author, originalText, replyText, commentIdx, userLink, images, humanize) {
     // humanize=true （自动批量发送）：自然节奏——先停留浏览、逐字输入，控制操作频率。
     // humanize=false（手动逐条一键发送）：走快速通道，跳过浏览滞留、一次性填字，不磨蹭。
@@ -1995,32 +2333,7 @@
     }
 
     // ★ 先关闭已存在的回复输入框（避免上次回复的输入残留导致发错评论）
-    // ⚠️ 不能用 Esc（会关掉笔记弹层），改用 blur 失焦 + 滚动收起 + 点笔记标题 + closeBtn 三级降级
-    try {
-      _showStatus('关闭已有回复框...');
-      const oldInput = findBottomReplyInput();
-      if (oldInput && oldInput.offsetParent !== null) {
-        try { oldInput.blur(); } catch (_) {}
-        scrollNoteBy(-120);
-        await sleep(400);
-        // 降级1：滚动没收起 → 点击笔记标题，用小红书自己的“点击他处收起回复框”机制关闭
-        const stillOpen = findBottomReplyInput();
-        if (stillOpen && stillOpen.offsetParent !== null && _clickNoteTitle()) {
-          console.log('[发送回复] 滚动未收起残留回复框，已点击笔记标题触发收起');
-          await sleep(400);
-        }
-        // 降级2：还在 → 找面板里的关闭按钮
-        const stillOpen2 = findBottomReplyInput();
-        if (stillOpen2 && stillOpen2.offsetParent !== null) {
-          const panel = stillOpen2.closest('[class*="reply" i], [class*="footer" i], [class*="bottom" i]');
-          if (panel) {
-            const closeBtn = panel.querySelector('button, [class*="close" i], [class*="cancel" i], [class*="del" i]');
-            if (closeBtn) closeBtn.click();
-          }
-        }
-        await sleep(300);
-      }
-    } catch (_) {}
+    await _closeResidualInput();
 
     // ===== 0.（已按用户要求移除）自动批量时不再单独“浏览停留阅读”＝点赞之后到发评论之间的等待已去掉，
     //     节奏控制改由“条间随机 3~8 秒间隔”承担（见 popup 批量发送与 auto-bot），不再逐条磨蹭 =====
@@ -2168,85 +2481,7 @@
     }
 
     // ===== 5. 逐字输入回复内容（模拟真实打字，根据字数动态调整速度） =====
-    _showStatus('正在输入回复内容...');
-    inputEl.focus();
-    await sleep(100);
-    const isEditable = inputEl.contentEditable === 'true' || inputEl.contentEditable === 'plaintext-only';
-
-    // 清空现有内容
-    if (isEditable) {
-      inputEl.innerHTML = '';
-    } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
-      const nativeSetter = Object.getOwnPropertyDescriptor(
-        inputEl.tagName === 'TEXTAREA'
-          ? window.HTMLTextAreaElement.prototype
-          : window.HTMLInputElement.prototype,
-        'value'
-      ).set;
-      nativeSetter.call(inputEl, '');
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      inputEl.textContent = '';
-      inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    await sleep(80);
-
-    // 逐字输入（每字延迟由 delay_config.typingCharDelay 控制，0=不逐字、一次性填入）
-    const totalLen = replyText.length;
-    const typingCfg = Math.max(0, Number(_delayCfg.typingCharDelay) || 0);
-
-    if (fast || typingCfg <= 0) {
-      // ★ 快速通道（手动一键发送）：一次性填入全部文本，不逐字磨蹭
-      if (isEditable) {
-        document.execCommand('insertText', false, replyText);
-        inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: replyText }));
-      } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
-        const nativeSetter = Object.getOwnPropertyDescriptor(
-          inputEl.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
-          'value'
-        ).set;
-        nativeSetter.call(inputEl, replyText);
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        inputEl.textContent = replyText;
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-      await sleep(50);
-    } else {
-      // ★ 自然节奏通道（自动批量发送）：逐字输入 + 随机停顿，控制操作频率；节奏均基于 typingCfg
-      const perCharMs = typingCfg;
-
-      for (let i = 0; i < totalLen; i++) {
-        const char = replyText[i];
-
-        // 每 8-14 个字停一次（约 2~4 倍每字延迟）
-        if (i > 0 && i % (8 + Math.floor(Math.random() * 6)) === 0) {
-          await sleep(perCharMs * 2 + Math.random() * perCharMs * 2);
-        }
-        if ('，。！？；、,.!?;'.includes(char)) {
-          await sleep(perCharMs + Math.random() * perCharMs);
-        }
-
-        // 每字延迟：设定值的 50%~100% 随机
-        const delay = perCharMs * (0.5 + Math.random() * 0.5);
-
-        if (isEditable) {
-          document.execCommand('insertText', false, char);
-          inputEl.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
-        } else if (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT') {
-          inputEl.value += char;
-          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        } else {
-          inputEl.textContent += char;
-          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        await sleep(delay);
-      }
-
-      // 输入完毕后直接发送，不再长停顿
-      await sleep(perCharMs + Math.random() * perCharMs);
-    }
+    await _fillEditable(inputEl, replyText, fast);
 
     // ===== 5.5 上传图片（如果有）=====
     if (images && images.length > 0) {
@@ -2283,190 +2518,15 @@
       }
     }
 
-    // ===== 6. 发送（面板搜索+多事件类型点击）=====
+    // ===== 6. 发送（面板搜索+多事件类型点击；与「对笔记的一级评论」共用 _submitFilledComment） =====
     _showStatus('发送回复...');
-    await sleep(dwellMs('preSendGap', 400)); // 拟人挡位：点「发送」前先停留，避免打开即秒发
-
-    // ★ 坐标级点击：PointerEvent + MouseEvent + click，覆盖 React 各种事件绑定
-    async function _clickButton(el) {
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const x = rect.left + rect.width / 2;
-      const y = rect.top + rect.height / 2;
-      const opts = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
-      el.dispatchEvent(new PointerEvent('pointerdown', { ...opts, pointerType: 'mouse' }));
-      await sleep(20);
-      el.dispatchEvent(new MouseEvent('mousedown', opts));
-      await sleep(20);
-      el.dispatchEvent(new PointerEvent('pointerup', { ...opts, pointerType: 'mouse' }));
-      el.dispatchEvent(new MouseEvent('mouseup', opts));
-      await sleep(20);
-      el.click();                                   // trusted event
-      el.dispatchEvent(new MouseEvent('click', opts));
-    }
-
-    let sentOk = false;
-    let sentVia = '';
-
-    // ★ 发送成功三重信号（任一命中即认为已提交，立刻停手，不再补点/补回车）：
-    //   ① 回复框从 DOM 消失（发送后面板收起）
-    //   ② 页面上已出现本次回复文本（评论已渲染）
-    //   ③ 回复框还在但内容已被清空（小红书有时发送成功只清空、不销毁节点）
-    //   —— 这是“一条回复发出多条”的主因修复：原来只认①，实际已发出却判失败 → 继续点按钮/按 Enter → 重复提交
-    const _echoOnPage = () => {
-      const probe = (replyText || '').slice(0, 40);
-      if (!probe) return false;
-      const inputAlive = document.contains(inputEl);
-      return Array.from(document.querySelectorAll('div, span, p')).some(el => {
-        // 排除回复框自身及其容器：输入框里还没发出去的文字不算“已渲染的评论”
-        if (inputAlive && (el.contains(inputEl) || inputEl.contains(el))) return false;
-        const t = el.textContent.trim();
-        return t.includes(probe) && t.length < replyText.length + 80;
-      });
-    };
-    const _inputCleared = () => {
-      try {
-        const cur = (inputEl.tagName === 'TEXTAREA' || inputEl.tagName === 'INPUT')
-          ? (inputEl.value || '')
-          : (inputEl.textContent || '');
-        return cur.trim().length === 0;
-      } catch (_) { return false; }
-    };
-    // 每次“补刀”前后都先自查：已经发出去了就绝不再点第二次
-    function _stopIfSent(where) {
-      if (sentOk) return true;
-      let sig = '';
-      if (!document.contains(inputEl)) sig = 'inputGone';
-      else if (_echoOnPage()) sig = 'echoOnPage';
-      else if (_inputCleared()) sig = 'inputCleared';
-      if (sig) {
-        sentOk = true;
-        sentVia = sig;
-        console.log('[发送] ✅ 已确认提交（' + sig + ' @ ' + where + '），停止后续补点，防重复');
-        return true;
-      }
-      return false;
-    }
-
-    // ── 方案一：面板内找到了发送按钮 → 点击 ──
-    const sendBtn = findSendButtonNear(inputEl);
-    if (sendBtn) {
-      console.log('[发送] ✅ 按钮:', sendBtn.tagName, sendBtn.textContent.trim());
-      for (let attempt = 0; attempt < 3 && !sentOk; attempt++) {
-        if (_stopIfSent('方案一第' + (attempt + 1) + '次点击前')) break;
-        _showStatus(`点击发送 (${attempt + 1}/3)...`);
-        sendBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        await sleep(200);
-        await _clickButton(sendBtn);
-        await sleep(800);
-        if (_stopIfSent('方案一第' + (attempt + 1) + '次点击后')) break;
-      }
-    }
-
-    // ── 方案二：面板内所有靠右的元素（可能按钮没有"发送"文字）──
-    if (!sentOk && !_stopIfSent('方案二前')) {
-      _showStatus('面板右侧按钮...');
-      let panel = inputEl.parentElement;
-      for (let d = 0; d < 10 && panel; d++) {
-        if (panel === document.body) break;
-        if (window.getComputedStyle(panel).position === 'fixed') break;
-        panel = panel.parentElement;
-      }
-      if (panel && panel !== document.body) {
-        const ir = inputEl.getBoundingClientRect();
-        for (const el of panel.querySelectorAll('button, [role="button"], a, span, div')) {
-          if (el.offsetParent === null || el.disabled) continue;
-          const r = el.getBoundingClientRect();
-          // 在输入框同一行且靠右
-          if (r.top < ir.top - 60 || r.top > ir.bottom + 120) continue;
-          if (r.left <= ir.right) continue;
-          _showStatus(`点:${el.textContent.trim().slice(0, 6)}`);
-          await _clickButton(el);
-          await sleep(500);
-          if (_stopIfSent('方案二点击后')) break;
-        }
-      }
-    }
-
-    // ── 方案三：Enter ──
-    if (!sentOk && !_stopIfSent('方案三前')) {
-      inputEl.focus();
-      await sleep(100);
-      for (let attempt = 0; attempt < 3 && !sentOk; attempt++) {
-        if (_stopIfSent('Enter第' + (attempt + 1) + '次前')) break;
-        _showStatus(`Enter (${attempt + 1}/3)...`);
-        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        inputEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
-        await sleep(600);
-        if (_stopIfSent('Enter第' + (attempt + 1) + '次后')) break;
-      }
-    }
-
-    // ── 方案四：全页面暴力 ──
-    if (!sentOk && !_stopIfSent('方案四前')) {
-      _showStatus('全局搜索...');
-      for (const el of document.querySelectorAll('button, [role="button"], a')) {
-        if (el.offsetParent === null || el.disabled) continue;
-        const t = el.textContent.trim();
-        if (t !== '发送' && t !== '发布' && t !== 'Send') continue;
-        const r = el.getBoundingClientRect();
-        if (r.top < window.innerHeight * 0.3 || r.top > window.innerHeight) continue;
-        await _clickButton(el);
-        await sleep(500);
-        if (_stopIfSent('方案四点击后')) break;
-      }
-    }
-
-    // 验证：轮询最多 2s，等回复内容渲染到页面上（比固定死等更少误报"未验证"）
-    let verified = false;
-    {
-      const VERIFY_TIMEOUT = 2000, VERIFY_STEP = 250;
-      const t0 = Date.now();
-      while (Date.now() - t0 < VERIFY_TIMEOUT) {
-        if (_echoOnPage()) { verified = true; break; }
-        _showStatus('确认回复是否已出现…');
-        await sleep(VERIFY_STEP);
-      }
-      if (!verified) verified = _echoOnPage();
-      // 验证期间发现成功信号也补记 sentOk（供指纹入库防重复）
-      if (verified && !sentOk) { sentOk = true; sentVia = 'echoOnPage'; }
-    }
-  
-    // ★★★ 发送完毕最后一步：强制点击笔记标题关闭回复框 ★★★
-    // 这是"一键发送"的最终收尾动作，必须在释放锁之前完成：
-    //   1. 确保残留回复框彻底关闭（防止下一条发到上一条的回复框里）
-    //   2. 只有点击标题成功后才算"发送完成"，才释放操作锁
-    //   3. 释放锁之后系统/用户才能进行下一个操作
-    _showStatus('收尾：关闭回复框...');
-    try { 
-      const curInput = findBottomReplyInput();
-      if (curInput && curInput.offsetParent !== null) {
-        try { curInput.blur(); } catch (_) {}
-      }
-    } catch (_) {}
-    // 无论回复框是否可见都点标题——确保小红书内部状态也归位
-    _clickNoteTitle();
-    await sleep(500);
-    // 二次确认：如果还没关掉，再点一次
-    const _finalInput = findBottomReplyInput();
-    if (_finalInput && _finalInput.offsetParent !== null) {
-      console.log('[发送回复] 首次点标题未关闭回复框，再点一次');
-      _clickNoteTitle();
-      await sleep(400);
-    }
-    console.log('[发送回复] ✅ 收尾完成，回复框已关闭，准备释放锁');
-  
-    _hideStatus();
-    // ★ 记录本次成功发送的目标，供下一条防重复闸比对（回复框 @ 名优先，否则用目标作者）
-    _lastSentTarget = {
-      atName: _normName(check.atName || author || ''),
-      author: _normName(author || ''),
-      textKey: _normName((originalText || '').slice(0, 30)),
-    };
-    // ★ 把本次实际定位到的评论指纹记入会话集合，同一条评论不会再发第二次。
-    // 仅当确实发出去（verified 或 sentOk）才入库，避免"没发成却入库 → 下次补发反被拦"
-    if (locatedSig && (verified || sentOk)) _sessionSentSigs.add(locatedSig);
+    const sub = await _submitFilledComment(inputEl, replyText, fast, {
+      locatedSig,
+      atName: check.atName,
+      author,
+      originalText,
+    });
+    const verified = sub.verified, sentOk = sub.sentOk, sentVia = sub.sentVia;
     return { success: true, verified, method: verified ? 'confirmed' : (sentOk ? (sentVia || 'sendButton') : 'enterKey') };
   }
 
@@ -3049,6 +3109,73 @@ const it = _likerFromContainer(container, name);
     try { (_cScroller()).scrollTop = 0; } catch (_) {} // 回顶部，别让用户以为内容没了
     const items = Array.from(found.values()).sort((a, b) => a.order - b.order); // 有序（最新在前）
     return { success: true, items, count: items.length, url: location.href, reachedBase };
+  }
+
+  /* ── 🛰 新消息监听·哨兵：一次"只看不滚"的轻窥 ──
+     只读当前已渲染的 DOM：不滚动、不点击、不导航 → 页面上零改动。
+     页面锁被别的操作占着就回 busy，让后台本轮直接跳过——哨兵不能走 runExclusive
+     （那把锁会 5s×3 排队等锁 + 每次都跑 settleAfterOperation，30s 一次的哨兵用不起）。 */
+  function watchPeek() {
+    const out = { success: true, at: Date.now(), path: location.pathname, url: location.href, page: 'other' };
+    if (_operationLock) return { success: true, busy: true, page: 'busy' };
+    // ① /chat：会话列表未读标记 + 首屏会话 id（带 * = 有未读）
+    if (/\/chat/.test(location.pathname)) {
+      out.page = 'chat';
+      const items = Array.from(document.querySelectorAll('div.xhs-im-conv-item'));
+      const ids = []; let unread = 0;
+      for (const el of items) {
+        const id = el.getAttribute('data-conv-id') || '';
+        if (!id) continue;
+        const has = _convHasUnread(el);
+        if (has) unread++;
+        if (ids.length < 40) ids.push(has ? id + '*' : id);
+      }
+      out.n = items.length; out.unread = unread; out.convIds = ids;
+      return out;
+    }
+    // ② /notification：前若干条通知的「用户id|互动类型」（是不是生人由后台比对清单）
+    if (/\/notification/.test(location.pathname)) {
+      out.page = 'notif';
+      const cs = Array.from(_getNotificationContainers());
+      const keys = [];
+      for (const c of cs.slice(0, 15)) {
+        const uid = _extractNotificationUserId(c);
+        const txt = (c.textContent || '').replace(/\s+/g, ' ');
+        const kind = (txt.match(/赞了|收藏了|关注了|回复了|评论了|回复了你|关注了你|评论你的|赞了你/) || [''])[0];
+        keys.push((uid || '?') + '|' + kind);
+      }
+      out.n = cs.length; out.notifKeys = keys;
+      return out;
+    }
+    // ③ 其它页：左侧导航的小尺寸纯数字节点（角标选择器未定时的兜底信号）
+    out.navBadges = _navBadgeSnap();
+    return out;
+  }
+  function _convHasUnread(el) {
+    try {
+      const b = el.querySelector('[class*="badge"], [class*="unread"], [class*="count"], [class*="dot"], [class*="notice"]');
+      if (!b) return false;
+      const t = (b.textContent || '').trim();
+      return !!t && (/^\d+$/.test(t) || t === '●' || t === 'NEW');
+    } catch (_) { return false; }
+  }
+  function _navBadgeSnap() {
+    const out = [];
+    try {
+      const els = document.querySelectorAll('[class*="badge"],[class*="unread"],[class*="count"],[class*="dot"]');
+      for (const el of els) {
+        if (el.children && el.children.length) continue;
+        const t = (el.textContent || '').trim();
+        if (!/^\d{1,3}$/.test(t)) continue;
+        let r = null; try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+        if (!r || r.width <= 0 || r.height <= 0 || r.width > 48 || r.height > 32) continue;
+        const host = el.closest('a,[role="link"],li') || el.parentElement || el;
+        let label = '';
+        try { label = String((host.getAttribute && (host.getAttribute('aria-label') || host.getAttribute('title'))) || '').slice(0, 12); } catch (_) {}
+        out.push(label + '#' + String(el.className || '').slice(0, 24) + '=' + t);
+      }
+    } catch (_) {}
+    return out.sort().slice(0, 12);
   }
 
   // ── 获客·消息台：在 /chat 会话页发送消息（复用私信的 native setter + 发送按钮/回车 + 限制检测机制）
@@ -3814,11 +3941,89 @@ async function sendDmOnProfile(userLink, text) {
     return { xhsId, name };
   }
 
+  /** 主页上的城市/属地：本人主页通常渲染「小红书号：xxx  IP属地：广东」这类文本，
+   *  用户设置过的地区（如有）优先，其次 IP 属地。抓不到返回空串，由诊断页手填兜底。 */
+  function pickProfileLocation() {
+    const out = { city: '', ipLocation: '' };
+    try {
+      const t = (document.body ? document.body.innerText : '') || '';
+      const mIp = t.match(/(?:IP\s*属地)[:：]?\s*([\u4e00-\u9fa5]{2,10})/);
+      if (mIp) out.ipLocation = mIp[1];
+      const mCity = t.match(/(?:地区|所在地|常住地)[:：]\s*([\u4e00-\u9fa5]{2,10})/);
+      if (mCity) out.city = mCity[1];
+    } catch (_) {}
+    if (!out.city) out.city = out.ipLocation;
+    return out;
+  }
+
+  /** 单页笔记的统计：互动三连（点赞 / 收藏 / 评论）；失败返 { error } 不抛
+   *  优先 aria-label，DOM 兜底：
+   *   - aria-label 里以 '点赞' / '赞' / '收藏' / '评论' / '回复' 起头
+   *   - 兜底：节点 [+所有 .count / .stat / .num 子节点] 抓 '数字' 部分
+   *  返回 { likes:number, collects:number, comments:number, raw } —— 字段全填不到返 { error } */
+  function parseNoteStats(panel) {
+    if (!panel) return null;
+    const out = { likes: 0, collects: 0, comments: 0, raw: '' };
+    const txt = (el) => (el ? String(el.textContent || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim() : '');
+    const num = (s) => {
+      if (s == null) return 0;
+      const str = String(s).replace(/[^\d.万]/g, '');
+      const m = str.match(/(\d+(?:\.\d+)?)(万)?/);
+      if (!m) return 0;
+      let n = parseFloat(m[1]);
+      if (m[2] === '万') n *= 10000;
+      return Math.round(n);
+    };
+    const elFromAria = (key) => panel.querySelector(
+      '[aria-label*="' + key + '"], [aria-label*="' + key.toUpperCase() + '"]'
+    );
+    /* --- ① 优先 aria-label --- */
+    let cnt = 0;
+    for (const k of ['点赞', '赞']) {
+      const el = elFromAria(k);
+      const v = num(txt(el));
+      if (v > 0) { out.likes = v; cnt++; break; }
+    }
+    for (const k of ['收藏']) {
+      const el = elFromAria(k);
+      const v = num(txt(el));
+      if (v > 0) { out.collects = v; cnt++; break; }
+    }
+    for (const k of ['评论', '回复']) {
+      const el = elFromAria(k);
+      const v = num(txt(el));
+      if (v > 0) { out.comments = v; cnt++; break; }
+    }
+    /* --- ② 兜底：拿 .count/.stat 列表，按出现的顺序配 likes/collects/comments --- */
+    if (cnt < 3) {
+      const cells = Array.from(panel.querySelectorAll('[class*="count"], [class*="stat"], [class*="num"]'))
+        .map(el => num(txt(el))).filter(n => n > 0);
+      if (cells.length >= 1 && !out.likes) out.likes = cells[0];
+      if (cells.length >= 2 && !out.collects) out.collects = cells[1];
+      if (cells.length >= 3 && !out.comments) out.comments = cells[2];
+    }
+    /* --- ③ 兜不住：基本没抓到，返 error --- */
+    if (!out.likes && !out.collects && !out.comments) {
+      return { error: '没抓到任何数字（DOM 没出 .count，或者三连 aria-label 全空）' };
+    }
+    out.raw = JSON.stringify({ likes: out.likes, collects: out.collects, comments: out.comments });
+    return out;
+  }
+
+  /** 抓主页 / 单条详情 — 抓到 stats 后通过 background 落 note_stats 表 */
+  function pushStats(url, stats) {
+    if (!url || !stats) return;
+    const m = String(url).match(/\/explore\/([^?#]+)/);
+    if (!m) return;
+    try { chrome.runtime.sendMessage({ action: 'writeNoteStats', id: m[1], stats }).catch(() => {}); }
+    catch (_) {}
+  }
+
   /** 账号诊断：抓取本人「我的」主页完整资料（只读）。返回 { xhsId, name, desc, avatar, fans, follows, likes, notes } */
   function extractProfileFull(maxNotes) {
     maxNotes = maxNotes || 12;
     const t = (el) => (el ? String(el.textContent || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim() : '');
-    const p = { xhsId: '', name: '', desc: '', avatar: '', fans: '', follows: '', likes: '', profile_url: '', notes: [] };
+    const p = { xhsId: '', name: '', desc: '', avatar: '', fans: '', follows: '', likes: '', profile_url: '', notes: [], city: '', ipLocation: '' };
     // 基础（小红书号 + 昵称）
     const base = extractUserProfile();
     p.xhsId = base.xhsId;
@@ -3876,8 +4081,49 @@ async function sendDmOnProfile(userLink, text) {
         }
       }
     } catch (_) {}
+    // ★ 顺手读每条的 stats（profile 页抓不到时也不报错 —— ⚠️ 标记落库即可）
+    try {
+      for (const n of p.notes) {
+        if (!n || !n.url) continue;
+        const m = n.url.match(/\/explore\/([^?]+)/);
+        if (!m) continue;
+        const panel = document.querySelector('a[href*="/explore/' + m[1] + '"]');
+        if (!panel) continue;
+        const s = parseNoteStats(panel);
+        if (s && !s.error) { n.stats = s; pushStats(n.url, s); }
+        else n.statsError = (s && s.error) || 'unparsed';
+      }
+    } catch (_) {}
     p.profile_url = location.href.split('?')[0];
+    // ★ 城市/属地：供评论助手「同城」判定（诊断页会落库，抓不到可手填）
+    try {
+      const loc = pickProfileLocation();
+      p.city = loc.city;
+      p.ipLocation = loc.ipLocation;
+    } catch (_) {}
     return p;
+  }
+
+  // 抓"来访者"主页：先确认在用户主页 + 等简介/笔记渲染出来，再抓；防导航未完成就抓到旧页面
+  async function extractGuestProfile() {
+    // 一个配置文件/SPA 导航保护：不在用户主页 URL 直接报 notProfile（后台可据此降级/重试）
+    if (!_isProfileUrl()) return { ok: false, notProfile: true, error: '当前不在用户主页(/user/profile/…)' };
+    const _hasProfile = () => {
+      const t = (el) => (el ? (el.textContent || el.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim() : '');
+      const hasDesc = (document.querySelector('[class*="user-desc"]') || [...document.querySelectorAll('[class*="desc"]')].some(s => /简介|签名|介绍/.test(s.className)) || false);
+      const hasNotes = !!document.querySelector('a[href*="/explore/"], div[class*="note-item"], section[class*="note"]');
+      return !!(hasDesc || hasNotes);
+    };
+    // 等到主页真的渲染出来（简介或笔记卡出现），最多 ~8s
+    for (let i = 0; i < 12; i++) {
+      if (_hasProfile()) break;
+      await sleep(650);
+    }
+    const profile = extractProfileFull();
+    if (!profile) return { ok: false, error: '主页读取失败' };
+    // 空简介 + 空笔记 → 大概率没加载到，标记 notReady 让后台重试
+    const hasAny = !!(String(profile.desc || '').trim() || (Array.isArray(profile.notes) && profile.notes.length));
+    return { ok: true, notReady: !hasAny, profile };
   }
 
   function findReplyButtonNear(el) {
@@ -4700,10 +4946,9 @@ async function sendDmOnProfile(userLink, text) {
     return { success: true, method: 'searchInput', selector: searchInput.className || searchInput.tagName };
   }
 
-  // ═══════════ 一键灌水 · 驱动小红书搜索页的排序/范围筛选 ═══════════
-  // sortKey: likes|collects|comments  → 点赞最多/收藏最多/评论最多
-  // scope:   unseen → 范围选「未看过」；其余忽略
-  const _XHS_SORT_LABEL = { likes: '点赞最多', collects: '收藏最多', comments: '评论最多' };
+  // ═══════════ 一键灌水 · 驱动小红书搜索页的排序 ═══════════
+  // sortKey: latest|likes|collects|comments  → 最新/点赞最多/收藏最多/评论最多
+  const _XHS_SORT_LABEL = { latest: '最新', likes: '点赞最多', collects: '收藏最多', comments: '评论最多' };
 
   // 收集文本恰好等于 q 的“叶子元素”（无子元素的最终文本节点宿主）
   function _xfsExactEls(q) {
@@ -4730,8 +4975,8 @@ async function sendDmOnProfile(userLink, text) {
     return false;
   }
 
-  // 在搜索页应用排序 + 范围筛选（宽松按文字匹配，失败只降级不卡死）
-  async function applySearchFilter(sortKey, scope) {
+  // 在搜索页应用排序（宽松按文字匹配，失败只降级不卡死）
+  async function applySearchFilter(sortKey) {
     const applied = [];
     try {
       if (sortKey && _XHS_SORT_LABEL[sortKey]) {
@@ -4745,16 +4990,174 @@ async function sendDmOnProfile(userLink, text) {
         if (!ok) ok = await _xfsClickExact(target, 3, 300);
         if (ok) applied.push('sort:' + sortKey);
       }
-      if (scope === 'unseen') {
-        // 打开筛选面板 → 勾选“未看过”
-        const openedFilter = await _xfsClickExact('筛选', 5, 350);
-        await new Promise(r => setTimeout(r, 450));
-        const okUn = await _xfsClickExact('未看过', 8, 400);
-        if (okUn) applied.push('scope:unseen');
-        else if (!openedFilter) { const direct = await _xfsClickExact('未看过', 3, 300); if (direct) applied.push('scope:unseen'); }
-      }
     } catch (_) {}
     return { ok: applied.length > 0, applied };
+  }
+
+  /* ═══════════ 截流活水 · 查「我的评论」在评论区的位置与点赞 ═══════════
+     names: 我的小红书昵称列表（按 _normName 归一化后比较）；只扫评论区范围。
+     返回 { ok, found, rank, likes, excerpt, author, total } */
+  async function extractMyComment(names) {
+    const want = (names || []).map(n => _normName(n)).filter(Boolean);
+    if (!want.length) return { ok: false, error: '未配置我的小红书昵称' };
+    const scanItems = () => {
+      const root = getCommentScopeRoot() || document;
+      const out = [];
+      const seenEls = new Set();
+      for (const link of root.querySelectorAll('a[href*="/user/"]')) {
+        let el = link.parentElement;
+        while (el && el !== root) {
+          if (el.querySelectorAll('a[href*="/user/"]').length !== 1) { el = el.parentElement; continue; }
+          const linkText = (link.textContent || '').trim();
+          if (el.textContent.trim().replace(linkText, '').trim().length < 3) { el = el.parentElement; continue; }
+          if (!seenEls.has(el)) { seenEls.add(el); out.push({ el, author: linkText }); }
+          break;
+        }
+      }
+      return out;
+    };
+    const parseCount = (t) => {
+      const s = String(t == null ? '' : t).replace(/[,\s]/g, '').trim();
+      if (s === '赞' || s === '点赞') return 0;
+      if (!/^[\d.]+[万w]?$/i.test(s)) return null;
+      const n = parseFloat(s);
+      if (!Number.isFinite(n)) return null;
+      return Math.round(n * (/万|w/i.test(s) ? 10000 : 1));
+    };
+    // 评论项里的点赞数：取项内最后一个数值型 like/count 叶子（评论项的赞控件在右下角）
+    const likesOf = (el) => {
+      let best = null;
+      for (const n of el.querySelectorAll('[class*="like"],[class*="praise"],[class*="count"]')) {
+        const v = parseCount((n.textContent || '').trim());
+        if (v != null) best = v;
+      }
+      return best;
+    };
+    let items = scanItems();
+    for (let round = 0; round < 3; round++) {
+      const hit = items.find(it => it.author && want.includes(_normName(it.author)));
+      if (hit) {
+        const text = (hit.el.textContent || '').replace(hit.author, '').replace(/\s+/g, ' ').trim();
+        return { ok: true, found: true, rank: items.indexOf(hit) + 1, likes: likesOf(hit.el), excerpt: text.slice(0, 60), author: hit.author, total: items.length };
+      }
+      if (round < 2) {   // 没找到：往下滚一屏触发评论区继续加载，再看一眼
+        try { window.scrollBy(0, 700); } catch (_) {}
+        await new Promise(r => setTimeout(r, 700));
+        items = scanItems();
+      }
+    }
+    return { ok: true, found: false, rank: 0, likes: null, excerpt: '', author: '', total: items.length };
+  }
+
+  /* ── 打开笔记（稳健通路）：当前页没这张卡片时，用「标题末尾减3字」站内搜 → 在结果里按作者名定位（等于真人 Ctrl+F 搜作者） → 点开 ──
+     笔记列表里的旧笔记多半早已不在当前搜索页 DOM 里（页面重绘/翻屏/换了关键词），
+     此时既不能直接点（找不到元素）也不能冷开 /explore/ 链接（常出异常页）。
+     搜过一轮仍定位不到（结果里没有该标题+作者）→ 返回 miss=true，由 📋笔记列表 把这篇作废。
+     返回 { ok, method, needNav, miss }：needNav=true 表示当前页连搜索框都没有，由背景侧先导航到搜索页再调一次。 */
+  async function openNoteBySearch(req) {
+    const title = String((req && req.title) || '').trim();
+    const author = String((req && req.author) || '').trim();
+    const noteId = String((req && req.noteId) || '').trim();
+    const terms = _drainSearchTerms(title);
+    // 0）这篇就在当前页 → 直接点（有 noteId 时 clickNoteLink 自己会做 DOM 闸门校验）
+    if (noteId && document.querySelector('a[href*="/explore/' + noteId + '"], a[href*="/note/' + noteId + '"], a[href*="/search_result/' + noteId + '"]')) {
+      const r0 = clickNoteLink(title, noteId, undefined);
+      if (r0 && r0.clicked) return { ok: true, method: 'in_page:' + r0.method, noteId };
+    }
+    if (!terms.length) return { ok: false, needNav: false, searched: true, error: '这篇没标题（也没匹配到卡片），搜不了名字——请在笔记列表补一下标题' };
+    if (!req.resultsReady) {
+      // 1）像真人一样用页头搜索框搜「标题末尾减3字」；页面上没有搜索框 → 交给背景侧导航到搜索页
+      const typed = await searchViaInput(terms[0]);
+      if (!typed || !typed.success) {
+        if (!/\/search_result/.test(location.pathname)) return { ok: false, needNav: true, term: terms[0], error: '当前页没有搜索框' };
+      } else {
+        // 等 SPA 路由切到搜索结果页
+        const rt = Date.now() + 8000;
+        while (Date.now() < rt && !/\/search_result/.test(location.pathname)) await sleep(300);
+      }
+    }
+    // 2）等结果渲染 + 定位：一个搜索词等 ~10s，没有作者命中的卡片就换个写法再搜一次
+    for (let ti = 0; ti < terms.length; ti++) {
+      if (ti > 0) {
+        const again = await searchViaInput(terms[ti]);
+        if (!again || !again.success) break;
+        await sleep(1500);
+      }
+      const deadline = Date.now() + 10000;
+      let scrolled = 0;
+      while (Date.now() < deadline) {
+        await sleep(600);
+        const hit = _findSearchCard({ title, author, noteId });
+        if (hit) {
+          const r = clickNoteLink(hit.title || title, hit.noteId || noteId, hit.rawLinkIndex);
+          if (r && r.clicked) {
+            console.log('[打开·搜索通路] ✅ 命中(' + hit.by + ')：' + String(hit.title || '').slice(0, 20));
+            return { ok: true, method: 'search:' + r.method, matchedBy: hit.by, noteId: hit.noteId || noteId, term: terms[ti] };
+          }
+          return { ok: false, needNav: false, searched: true, error: '搜索结果里找到了这篇卡片，但点击没生效（页面可能还在渲染）' };
+        }
+        if (scrolled < 2 && Date.now() > deadline - 6000) { scrolled++; try { await scrollLoadMore(); } catch (_) {} }
+      }
+    }
+    return { ok: false, needNav: false, searched: true, miss: true, term: terms[0],
+      error: '按「' + terms[0].slice(0, 16) + '」搜过了，结果里没有作者「' + (author || '（没存作者名）') + '」的这篇' };
+  }
+
+  /* 搜索词：首选「标题末尾减3字」——取标题尾部 12 字再去掉最后 3 字（标题常以 emoji/话题标签收尾，整条带上反而搜不出）；
+     没定位到再退回「整条标题去掉末尾 3 字」。两种写法一样时只留一个。 */
+  function _drainSearchTerms(title) {
+    const t = String(title || '').replace(/\s+/g, ' ').trim();
+    if (!t) return [];
+    const out = [];
+    const tail = t.length > 14 ? t.slice(-12) : t;
+    const a = (tail.length > 6 ? tail.slice(0, -3) : tail).trim();
+    if (a.length >= 4) out.push(a);
+    const b = (t.length > 6 ? t.slice(0, -3) : t).trim();
+    if (b.length >= 4 && out.indexOf(b) < 0) out.push(b);
+    return out.length ? out : [t];
+  }
+
+  /* 在搜索结果里找目标卡片：作者名定位（Ctrl+F 的等价物）→ 作者命中的卡片里再用标题确认是哪一篇。
+     没作者名（老笔记没存）才退回纯标题比对；标题可能被平台截断，故留"互相包含/前 12 字前缀"的模糊。 */
+  function _findSearchCard(q) {
+    let notes = [];
+    try { notes = (extractSearchResults() || {}).notes || []; } catch (_) { return null; }
+    if (!notes.length) return null;
+    const nt = _normName(q.title);
+    const na = _normName(q.author);
+    if (q.noteId) {
+      const byId = notes.find(n => n.noteId === q.noteId);
+      if (byId) return Object.assign({}, byId, { by: 'noteId' });
+    }
+    if (!nt) return null;
+    // 标题沾边：完全一致 / 互相包含（我们搜的是「标题末尾减3字」，卡片标题可能被平台截断）
+    const titleHit = (n) => {
+      const t = _normName(n.title);
+      if (!t) return false;
+      if (t === nt || t.includes(nt) || nt.includes(t)) return true;
+      const cut = nt.slice(0, 12);
+      return cut.length >= 6 && t.includes(cut);
+    };
+    if (na) {
+      const same = notes.filter(n => _normName(n.author) === na);
+      if (same.length) {
+        const both = same.find(titleHit);
+        if (both) return Object.assign({}, both, { by: '作者+标题' });
+        if (same.length === 1) return Object.assign({}, same[0], { by: '作者' });
+      }
+      // 卡片上的昵称可能带后缀（「xx的日常」），按 Ctrl+F 的口径放宽成包含匹配，仍要求标题对得上
+      if (na.length >= 2) {
+        const loose = notes.filter(n => { const a = _normName(n.author); return !!a && (a.includes(na) || na.includes(a)); });
+        if (loose.length) {
+          const both2 = loose.find(titleHit);
+          if (both2) return Object.assign({}, both2, { by: '作者(模糊)+标题' });
+          if (loose.length === 1) return Object.assign({}, loose[0], { by: '作者(模糊)' });
+        }
+      }
+    }
+    const byTitle = notes.find(titleHit);
+    if (byTitle) return Object.assign({}, byTitle, { by: na ? '标题(作者没对上)' : '标题' });
+    return null;
   }
 
   // ── 在搜索页找到并点击指定笔记的链接（模拟用户点击） ──
@@ -4837,6 +5240,19 @@ async function sendDmOnProfile(userLink, text) {
     return a + Math.random() * Math.max(0, b - a);
   }
   function _dbSleep(ms) { return new Promise(r => setTimeout(r, Math.max(0, Math.round(ms)))); }
+  // 真人式点击：按中心点派发 pointer/mouse 全套事件（React 卡片只认这种，el.click() 常被吞）
+  function _dbClick(el) {
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    const o = { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 };
+    el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({}, o, { pointerType: 'mouse' })));
+    el.dispatchEvent(new MouseEvent('mousedown', o));
+    el.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, o, { pointerType: 'mouse' })));
+    el.dispatchEvent(new MouseEvent('mouseup', o));
+    el.dispatchEvent(new MouseEvent('click', o));
+  }
   function _dbVisible(el) {
     if (!el || el.offsetParent === null) return false;
     const r = el.getBoundingClientRect();
@@ -4910,7 +5326,7 @@ async function sendDmOnProfile(userLink, text) {
       });
       if (btns.length) {
         const el = btns[btns.length - 1];
-        try { _npClick(el); } catch (_) { try { el.click(); } catch (__) {} }
+        try { _dbClick(el); } catch (_) { try { el.click(); } catch (__) {} }
         await _dbSleep(500);
         return true;
       }
@@ -4935,7 +5351,7 @@ async function sendDmOnProfile(userLink, text) {
         return t.length === 0 || /^(关闭|返回|取消|×|✕|✖)$/.test(t);
       });
       if (closers.length) {
-        try { _npClick(closers[0]); } catch (_) {}
+        try { _dbClick(closers[0]); } catch (_) {}
         await _dbSleep(700);
       }
     } catch (_) {}
@@ -4954,7 +5370,7 @@ async function sendDmOnProfile(userLink, text) {
     try {
       card.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       await _dbSleep(_dbRand(300, 700));
-      try { _npClick(card.el); } catch (_) { try { card.el.click(); } catch (__) {} }
+      try { _dbClick(card.el); } catch (_) { try { card.el.click(); } catch (__) {} }
     } catch (_) { return out; }
     const t0 = Date.now();
     while (Date.now() - t0 < 15000) {
@@ -4984,13 +5400,128 @@ async function sendDmOnProfile(userLink, text) {
     try {
       found.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       await _dbSleep(_dbRand(250, 600));
-      try { _npClick(found.el); } catch (_) { try { found.el.click(); } catch (__) {} }
+      try { _dbClick(found.el); } catch (_) { try { found.el.click(); } catch (__) {} }
       await _dbSleep(_dbRand(600, 1100));
     } catch (e) { return { ok: false, error: (e && e.message) || String(e) }; }
     let ok = false;
     try { const after = _dbFindEngageEl(kind); ok = !!(after && after.active); } catch (_) {}
     if (kind === 'collect') await _dbDismissDialog();
     return { ok, clicked: true };
+  }
+  /* ── 🌿 日常浏览 · 顺手互动（P1 评论 / P2 回复 / P3 关注）──
+     隔离口径：只在本轮返回的计数里记账，绝不写获客台账（见设计文档 §五）。
+     两条硬规矩：
+       ① 动作一律**函数直调**（sendNoteComment / sendReplyToComment / followUser）——
+          走 chrome.runtime 的消息路由会二次抢同一把锁，必然失败；
+       ② AI 只用来"生成一句自然的话 / 挑一条评论"，不带任何产品、知识库、话术资料。 */
+  function _dbNoteMeta() {
+    const out = { title: '', desc: '', author: '' };
+    try {
+      const og = document.querySelector('meta[property="og:title"]');
+      const od = document.querySelector('meta[property="og:description"]');
+      const am = document.querySelector('meta[name="author"]');
+      out.title = String((og && og.content) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      out.desc = String((od && od.content) || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+      out.author = String((am && am.content) || '').trim().slice(0, 30);
+    } catch (_) {}
+    if (!out.author) {
+      try {
+        const a = Array.from(document.querySelectorAll('a[href*="/user/"]'))
+          .map(el => (el.textContent || '').replace(/^@/, '').trim())
+          .filter(t => t && t.length <= 20);
+        if (a.length) out.author = a[0];
+      } catch (_) {}
+    }
+    return out;
+  }
+  // 调后台 AI（只算文本，不抢锁）：超时/没配 Key 都返回 { ok:false }，由调用方兜底
+  function _dbAiAsk(action, data, timeoutMs) {
+    return new Promise((resolve) => {
+      let done = false;
+      const t = setTimeout(() => { if (!done) { done = true; resolve({ ok: false, error: 'AI 超时' }); } }, timeoutMs || 25000);
+      try {
+        chrome.runtime.sendMessage({ action: action, data: data || {} }, (resp) => {
+          if (done) return;
+          done = true;
+          clearTimeout(t);
+          if (chrome.runtime.lastError) resolve({ ok: false, error: chrome.runtime.lastError.message });
+          else resolve(resp || { ok: false, error: '无响应' });
+        });
+      } catch (e) { clearTimeout(t); resolve({ ok: false, error: (e && e.message) || String(e) }); }
+    });
+  }
+  function _dbPoolPick(pool) {
+    return '';
+  }
+  // P1 顺手评论：AI 独立提示词生成一句 → 没有就跳过（不再取本地句池，2026-10-01）
+  async function _dbTryComment(opts, st) {
+    const c = opts.comment || {};
+    if (!(st.commentLeft > 0)) return '';
+    if (Math.random() * 100 >= (Number(c.rate) || 0)) return '';
+    const meta = _dbNoteMeta();
+    let text = '';
+    const r = await _dbAiAsk('aiDailyComment', { title: meta.title, excerpt: meta.desc }, 25000);
+    if (r && r.ok && String(r.text || '').trim()) text = String(r.text).trim().slice(0, 60);
+    if (!text) { console.log('[日常浏览] 顺手评论跳过：AI 没给'); return ''; }
+    _showStatus('🌿 顺手评论一句…');
+    let res = null;
+    try { res = await sendNoteComment({ text: text, noteId: (st.card && st.card.noteId) || '', title: meta.title, humanize: false }); }
+    catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
+    _hideStatus();
+    if (!res || !res.success) { console.log('[日常浏览] 顺手评论没发出去：' + ((res && res.error) || '未知原因')); return ''; }
+    st.comments++; st.commentLeft--;
+    console.log('[日常浏览] 🌿 顺手评论已发：' + text);
+    return text;
+  }
+  // P2 回复别人的评论：取评论 → AI 挑一条「值得回」的并给一句自然回复 → 直调 sendReplyToComment
+  async function _dbTryReply(opts, st) {
+    if (!(st.replyLeft > 0)) return null;
+    let page = null;
+    try { page = extractPageData(); } catch (_) { return null; }
+    const flat = (page && page.comments) || [];
+    if (flat.length < 2) return null;
+    const me = _dbNoteMeta().author;
+    const cands = [];
+    for (let i = 0; i < flat.length && cands.length < 12; i++) {
+      const c = flat[i];
+      if (!c || !c.content) continue;
+      if (String(c.content).trim().length < 4) continue;
+      if (me && c.author && String(c.author).trim() === me) continue;   // 自己发的不回
+      cands.push({ i: i, author: String(c.author || '').trim(), text: String(c.content).trim().slice(0, 120) });
+    }
+    if (!cands.length) return null;
+    const r = await _dbAiAsk('aiDailyReply', { title: (page && page.title) || '', comments: cands }, 25000);
+    if (!r || !r.ok || !String(r.text || '').trim()) return null;
+    const target = cands.find(x => x.i === Number(r.pick)) || null;
+    const text = String(r.text).trim().slice(0, 80);
+    if (!target) return null;
+    _showStatus('🌿 顺手回一条评论…');
+    let res = null;
+    try {
+      res = await sendReplyToComment(target.author, target.text, text, target.i,
+        (((flat[target.i] || {}).userLink) || ''), [], true);
+    } catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
+    _hideStatus();
+    if (!res || !res.success) { console.log('[日常浏览] 顺手回复没发出去：' + ((res && res.error) || '未知原因')); return null; }
+    st.replies++; st.replyLeft--;
+    console.log('[日常浏览] 🌿 顺手回复已发给 @' + target.author + '：' + text);
+    return { author: target.author, text: text };
+  }
+  // P3 关注作者：按概率关注当前笔记的作者（已关注/找不到就跳过）
+  async function _dbTryFollow(opts, st) {
+    const c = opts.follow || {};
+    if (!(st.followLeft > 0)) return false;
+    if (Math.random() * 100 >= (Number(c.rate) || 0)) return false;
+    const author = _dbNoteMeta().author;
+    if (!author) return false;
+    _showStatus('🌿 顺手关注一下作者…');
+    let r = null;
+    try { r = await followUser(author); } catch (e) { r = { success: false, error: (e && e.message) || String(e) }; }
+    _hideStatus();
+    if (!r || !r.success) { console.log('[日常浏览] 关注没完成：' + ((r && r.error) || '未知原因')); return false; }
+    st.follows++; st.followLeft--;
+    console.log('[日常浏览] 🌿 已关注 @' + author);
+    return true;
   }
   // 一轮日常浏览：count 篇；每篇结果顺手落到 daily_browse_last（后台被杀也能对账）
   async function browseRound(opts) {
@@ -5006,17 +5537,34 @@ async function sendDmOnProfile(userLink, text) {
     const maxMs = count * ((dwellMaxS + 30) * 1000) + 60000;   // 本轮硬上限，防止异常卡死
     const items = [];
     const picked = new Set();
-    const _persist = async () => {
+    // 顺手互动的本轮预算（由执行器按"今日还剩多少"给下来）＋本轮已做几条
+    const st = {
+      card: null,
+      comments: 0, replies: 0, follows: 0,
+      commentLeft: Math.max(0, parseInt((opts.comment || {}).left, 10) || 0),
+      replyLeft: Math.max(0, parseInt((opts.reply || {}).left, 10) || 0),
+      followLeft: Math.max(0, parseInt((opts.follow || {}).left, 10) || 0),
+    };
+    const _persist = async (done) => {
       try {
-        await chrome.storage.local.set({
-          daily_browse_last: { roundId, startedAt, items: items.slice(), ts: Date.now(), url: location.href.slice(0, 120) },
-        });
+        const rec = {
+          roundId, startedAt, dirId: String(opts.dirId || ''), dirName: String(opts.dirName || ''),
+          total: count, items: items.slice(), ts: Date.now(), url: location.href.slice(0, 120),
+          comments: st.comments, replies: st.replies, follows: st.follows,
+          done: !!done,
+        };
+        if (done) rec.doneAt = Date.now();
+        await chrome.storage.local.set({ daily_browse_last: rec });
       } catch (_) {}
     };
     const _stopped = async () => {
       try { const d = await chrome.storage.local.get('daily_browse_stop_at'); return (d.daily_browse_stop_at || 0) > startedAt; } catch (_) { return false; }
     };
-    console.log('[日常浏览] 开始一轮：目标 ' + count + ' 篇，停留 ' + dwellMinS + '~' + dwellMaxS + 's，打开 ' + openRate + '%，赞 ' + likeRate + '%，藏 ' + collectRate + '%');
+    // ★ 心跳补密：一轮持锁要 1~3 分钟，中间"点了笔记没打开"那段能有 20 多秒空档 → 定时刷新持锁时间
+    const hb = setInterval(() => { try { _touchLock(); } catch (_) {} }, 3000);
+    try {
+    console.log('[日常浏览] 开始一轮：' + (opts.dirName ? '「' + opts.dirName + '」' : '') + '目标 ' + count + ' 篇，停留 ' + dwellMinS + '~' + dwellMaxS + 's，打开 ' + openRate + '%，赞 ' + likeRate + '%，藏 ' + collectRate + '%');
+    await _persist(false);   // 先落"开跑"标记：执行器靠它对账（不用等长消息返回）
     for (let i = 0; i < count; i++) {
       if (Date.now() - startedAt > maxMs) { console.warn('[日常浏览] 本轮超过时间上限，提前收尾'); break; }
       if (await _stopped()) { console.log('[日常浏览] 收到停止指令，提前收尾'); break; }
@@ -5037,8 +5585,9 @@ async function sendDmOnProfile(userLink, text) {
       if (!cards.length) { console.log('[日常浏览] 当前没有可浏览的卡片，本轮收尾'); break; }
       const card = cards[Math.floor(Math.random() * cards.length)];
       picked.add(card.noteId);
+      st.card = card;
       const item = { noteId: card.noteId, title: card.title, opened: false, liked: false, collected: false, dwellMs: feedDwell, ts: Date.now() };
-      // 3) 按概率打开笔记 → 停留阅读 → 按概率点赞/收藏 → 退回信息流
+      // 3) 按概率打开笔记 → 停留阅读 → 按概率点赞/收藏 → 顺手评论/回复/关注 → 退回信息流
       if (Math.random() * 100 < openRate) {
         const r = await _dbOpenAndRead(card, dwellMinS, dwellMaxS);
         item.opened = !!r.opened;
@@ -5046,25 +5595,43 @@ async function sendDmOnProfile(userLink, text) {
         if (r.opened) {
           if (Math.random() * 100 < likeRate) { const lk = await _dbEngage('like'); item.liked = !!(lk && lk.ok); }
           if (Math.random() * 100 < collectRate) { const cl = await _dbEngage('collect'); item.collected = !!(cl && cl.ok); }
+          // 🌿 顺手互动（P1 评论 / P2 回复 / P3 关注）：只记自己的账，不进获客台账
+          if (!(await _stopped())) {
+            const cmt = await _dbTryComment(opts, st);
+            if (cmt) { item.commented = cmt; item.acts = (item.acts || 0) + 1; await _persist(false); }
+            if (!(await _stopped())) {
+              const rep = await _dbTryReply(opts, st);
+              if (rep) { item.repliedTo = rep.author; item.acts = (item.acts || 0) + 1; await _persist(false); }
+            }
+            if (!(await _stopped())) {
+              if (await _dbTryFollow(opts, st)) { item.followed = true; item.acts = (item.acts || 0) + 1; }
+            }
+          }
           await _dbCloseNote(9000);
         }
       }
       items.push(item);
-      await _persist();
+      await _persist(false);
       console.log('[日常浏览] 第 ' + (i + 1) + '/' + count + ' 篇：' + (card.title || card.noteId) +
         (item.opened ? '（已打开 ' + Math.round(item.dwellMs / 1000) + 's）' : '（仅停留）') +
-        (item.liked ? ' 👍' : '') + (item.collected ? ' ⭐' : ''));
+        (item.liked ? ' 👍' : '') + (item.collected ? ' ⭐' : '') +
+        (item.commented ? ' 💬' : '') + (item.repliedTo ? ' ↩' : '') + (item.followed ? ' ➕' : ''));
     }
-    await _persist();
+    await _persist(true);
+    } finally {
+      clearInterval(hb);
+    }
     const summary = {
       ok: true, roundId, items,
       viewed: items.length,
       openedCount: items.filter(x => x.opened).length,
       likedCount: items.filter(x => x.liked).length,
       collectedCount: items.filter(x => x.collected).length,
+      comments: st.comments, replies: st.replies, follows: st.follows,
       ms: Date.now() - startedAt,
     };
-    console.log('[日常浏览] 本轮结束：浏览 ' + summary.viewed + ' 篇，打开 ' + summary.openedCount + ' 篇，点赞 ' + summary.likedCount + '，收藏 ' + summary.collectedCount);
+    console.log('[日常浏览] 本轮结束：浏览 ' + summary.viewed + ' 篇，打开 ' + summary.openedCount + ' 篇，点赞 ' + summary.likedCount +
+      '，收藏 ' + summary.collectedCount + '，评论 ' + summary.comments + '，回复 ' + summary.replies + '，关注 ' + summary.follows);
     return summary;
   }
 
@@ -5391,4 +5958,238 @@ async function sendDmOnProfile(userLink, text) {
     setInterval(_bootVerify, 8000);
   }
 
+})();
+
+// ══════════════════════════════════════════════════════════════
+// ⏱ 临时块：监听探针（仅 chrome.storage.local.watch_probe_on=true 时运行）
+//   量三件事：
+//     ① 5s 定时器在各可见性状态下的真实 tick 分布 → 判定"5s 提密"能否成立
+//     ② 页面自发的未读/消息类请求时间线 + 重复 URL 排行 → 角标多久自刷新
+//     ③ 角标数字变化时刻 → 顺带定位可用节点
+//   报告落在 chrome.storage.local['watch_probe_report']，每 20s 一次
+//   ★ 测完这一整块连同下面的一起删除（无其他文件依赖）
+// ══════════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+  if (window.__xhsWatchProbe || window.top !== window.self) return;
+  window.__xhsWatchProbe = true;
+
+  const KEY = 'watch_probe_report';
+  const OWNER_KEY = 'watch_probe_owner';   // 多标签页只让一页当领导，避免报告互相覆盖
+  const RESET_AFTER_MS = 6 * 3600e3;   // 旧报告超过 6 小时自动重开，避免跨天混算
+  const _sid = Math.random().toString(36).slice(2, 8);
+  let R = null, _timer = null, _poll = null, _flushAt = 0, _ov = null, _leader = false, _bound = false;
+  let _lastTick = 0, _lastVisAt = 0, _lastFocusAt = 0, _wasHidden = false, _wasFocused = false;
+  const _netKeys = new Set();
+
+  const _blank = () => ({
+    startedAt: Date.now(), lastAt: Date.now(), sessions: 0,
+    visibleMs: 0, hiddenMs: 0, focusedMs: 0, unfocusedMs: 0,
+    tick: { total: 0, onTime: 0, soft: 0, hard: 0, huge: 0, max: 0 },
+    resTotal: 0, netTotal: 0, net: [], hot: [],
+    badgeCand: 0, badgeNow: '', badgeChanges: [], sessionLog: [], summary: '',
+  });
+
+  // ── 未读/消息类请求 + 重复 URL 排行（自己不发请求，只读页面已有的时间线） ──
+  function _scanNet() {
+    let es = [];
+    try { es = performance.getEntriesByType('resource') || []; } catch (_) { return; }
+    R.resTotal = es.length;
+    const cnt = new Map();
+    const WANT = /unread|notice|notif|message|msg|chat|im\/|count|badge|follow|comment|interact/i;
+    for (const e of es) {
+      const u = String(e.name || '');
+      const k = u.split('?')[0].slice(-70);
+      cnt.set(k, (cnt.get(k) || 0) + 1);
+      if (!WANT.test(u)) continue;
+      const id = Math.round(e.startTime) + '|' + k;
+      if (_netKeys.has(id)) continue;
+      _netKeys.add(id);
+      R.net.push({ at: Date.now(), t: Math.round(e.startTime), ms: Math.round(e.duration), url: u.slice(0, 110) });
+      R.netTotal++;
+    }
+    if (R.net.length > 120) R.net.splice(0, R.net.length - 120);
+    if (_netKeys.size > 5000) _netKeys.clear();
+    R.hot = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([u, c]) => c + '×' + u);
+  }
+
+  // ── 角标候选：小尺寸纯数字节点（不含子元素） ──
+  function _badgeSnap() {
+    let els = [];
+    try {
+      els = document.querySelectorAll('[class*="badge"],[class*="count"],[class*="unread"],[class*="dot"],[class*="red"],[class*="nav"],[class*="tab"],[class*="notice"]');
+    } catch (_) { return ''; }
+    const out = [];
+    for (const el of els) {
+      if (el.children && el.children.length) continue;
+      const t = (el.textContent || '').trim();
+      if (!/^\d{1,3}$/.test(t)) continue;
+      let r = null; try { r = el.getBoundingClientRect(); } catch (_) { continue; }
+      if (!r || r.width <= 0 || r.height <= 0 || r.width > 48 || r.height > 32) continue;
+      out.push(String(el.className || el.tagName).slice(0, 40) + '=' + t);
+    }
+    R.badgeCand = out.length;
+    return out.sort().join('|');
+  }
+
+  function _fmt(ms) { return (Math.round(ms / 600) / 100) + 'm'; }
+
+  function _summary() {
+    const t = R.tick;
+    const pct = t.total ? Math.round((t.onTime / t.total) * 100) : 0;
+    return '探针 ' + _fmt(Date.now() - R.startedAt)
+      + '｜tick 准点 ' + pct + '%/共' + t.total
+      + '｜软(6.5-15s) ' + t.soft + ' 硬(15-70s) ' + t.hard + ' 断(>70s) ' + t.huge + ' 最大 ' + t.max + 's'
+      + '｜可见 ' + _fmt(R.visibleMs) + ' 隐藏 ' + _fmt(R.hiddenMs)
+      + '｜有焦点 ' + _fmt(R.focusedMs)
+      + '｜会话 ' + R.sessions + ' 次'
+      + '｜角标变化 ' + R.badgeChanges.length + ' 次(现 ' + (R.badgeNow || '无') + ')'
+      + '｜未读请求 ' + R.netTotal + ' 条';
+  }
+
+  function _flush() {
+    if (!R) return;
+    try {
+      R.lastAt = Date.now();
+      R.summary = _summary();
+      const patch = { [KEY]: R };
+      if (_leader) patch[OWNER_KEY] = { sid: _sid, at: Date.now(), url: location.href.slice(0, 60) };
+      chrome.storage.local.set(patch);
+    } catch (_) {}
+  }
+
+  function _overlay() {
+    if (!_ov) {
+      try {
+        _ov = document.createElement('div');
+        _ov.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:2147483647;background:rgba(0,0,0,.72);color:#0f0;'
+          + 'font:11px/1.5 monospace;padding:6px 9px;border-radius:6px;pointer-events:none;max-width:52vw;white-space:pre-wrap';
+        (document.body || document.documentElement).appendChild(_ov);
+      } catch (_) { _ov = null; }
+    }
+    if (_ov) _ov.textContent = R.summary + '\n' + (R.hot[0] || '') + '\n' + (R.hot[1] || '');
+  }
+
+  function _tick() {
+    const now = performance.now();
+    const gap = now - _lastTick; _lastTick = now;
+    const t = R.tick;
+    t.total++;
+    if (gap <= 6500) t.onTime++;
+    else if (gap <= 15000) t.soft++;
+    else if (gap <= 70000) t.hard++;
+    else t.huge++;
+    if (gap > t.max) t.max = Math.round(gap);
+    _scanNet();
+    const snap = _badgeSnap();
+    if (R.badgeNow && snap && snap !== R.badgeNow) {
+      R.badgeChanges.push({ at: Date.now(), from: R.badgeNow, to: snap });
+      if (R.badgeChanges.length > 50) R.badgeChanges.shift();
+    }
+    if (snap) R.badgeNow = snap;
+    R.summary = _summary();
+    _overlay();
+    if (Date.now() - _flushAt > 20000) {
+      _flushAt = Date.now(); _flush();
+      // 领导位复核：被别的页抢走就退位待命（避免两边同写一份报告）
+      try {
+        chrome.storage.local.get(OWNER_KEY, (d) => {
+          const o = d && d[OWNER_KEY];
+          if (!o || o.sid !== _sid) { _leader = false; R = null; if (_timer) { clearInterval(_timer); _timer = null; } _waitLeader(); }
+        });
+      } catch (_) {}
+    }
+  }
+
+  function _onVis() {
+    if (!R || !_leader) return;   // 退位/停止后事件仍会进来，直接忽略
+    const now = performance.now();
+    const hidden = document.visibilityState === 'hidden';
+    if (hidden !== _wasHidden) {
+      const d = now - _lastVisAt;
+      if (_wasHidden) R.hiddenMs += d; else R.visibleMs += d;
+      _wasHidden = hidden; _lastVisAt = now;
+      R.vis.push({ at: Date.now(), state: document.visibilityState });
+      if (R.vis.length > 50) R.vis.shift();
+      _flush();   // 状态切换是关键时刻，立刻落盘（也防 tab 被丢弃丢数据）
+    }
+    const f = document.hasFocus();
+    if (f !== _wasFocused) {
+      const d = now - _lastFocusAt;
+      if (_wasFocused) R.focusedMs += d; else R.unfocusedMs += d;
+      _wasFocused = f; _lastFocusAt = now;
+      R.focus.push({ at: Date.now(), hasFocus: f });
+      if (R.focus.length > 50) R.focus.shift();
+    }
+  }
+
+  // 抢领导位：已有活着的领导（45s 内有心跳）就让位，只当待命页
+  function _claim(cb) {
+    try {
+      chrome.storage.local.get(OWNER_KEY, (d) => {
+        const o = d && d[OWNER_KEY];
+        if (o && o.sid !== _sid && Date.now() - (o.at || 0) < 45000) return cb(false);
+        try { chrome.storage.local.set({ [OWNER_KEY]: { sid: _sid, at: Date.now(), url: location.href.slice(0, 60) } }, () => cb(true)); }
+        catch (_) { cb(false); }
+      });
+    } catch (_) { cb(false); }
+  }
+
+  function _become() {
+    if (_timer || _leader) return;
+    _leader = true;
+    if (_poll) { clearInterval(_poll); _poll = null; }
+    chrome.storage.local.get(KEY, (d) => {
+      if (!_leader) return;
+      const old = d && d[KEY];
+      R = (old && old.startedAt && Date.now() - old.startedAt < RESET_AFTER_MS) ? old : _blank();
+      R.sessions = (R.sessions || 0) + 1;
+      R.sessionLog = (R.sessionLog || []).concat([{ at: Date.now(), url: location.href.slice(0, 80), total: R.tick.total }]).slice(-20);
+      _lastTick = performance.now(); _lastVisAt = _lastTick; _lastFocusAt = _lastTick;
+      _wasHidden = document.visibilityState === 'hidden';
+      _wasFocused = document.hasFocus();
+      if (!_bound) {
+        _bound = true;
+        document.addEventListener('visibilitychange', _onVis);
+        window.addEventListener('focus', _onVis);
+        window.addEventListener('blur', _onVis);
+        window.addEventListener('pagehide', _flush);
+      }
+      _onVis(); _tick();
+      _timer = setInterval(_tick, 5000);
+      _flush();
+      console.warn('[监听探针] 已启动（领导页 ' + _sid + '）· 报告键 ' + KEY);
+    });
+  }
+
+  // 待命页：每 20s 试接班（领导页被关掉/丢弃时自动顶上）
+  function _waitLeader() {
+    if (_poll || _timer) return;
+    _poll = setInterval(() => { _claim((ok) => { if (ok) _become(); }); }, 20000);
+  }
+
+  function _start() {
+    if (_timer || _poll) return;
+    _claim((ok) => { if (ok) _become(); else _waitLeader(); });
+  }
+
+  function _stop() {
+    if (_timer) { clearInterval(_timer); _timer = null; }
+    if (_poll) { clearInterval(_poll); _poll = null; }
+    if (_leader) {
+      if (R) { R.summary = _summary(); try { chrome.storage.local.set({ [KEY]: R }); } catch (_) {} }
+      try { chrome.storage.local.remove(OWNER_KEY); } catch (_) {}
+    }
+    _leader = false; R = null;
+    if (_ov) { try { _ov.remove(); } catch (_) {} _ov = null; }
+  }
+
+  // 开开关即启动（不必刷新页面）；关开关即停
+  try {
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area !== 'local' || !ch.watch_probe_on) return;
+      if (ch.watch_probe_on.newValue) _start(); else _stop();
+    });
+  } catch (_) {}
+  try { chrome.storage.local.get('watch_probe_on', (d) => { if (d && d.watch_probe_on) _start(); }); } catch (_) {}
 })();

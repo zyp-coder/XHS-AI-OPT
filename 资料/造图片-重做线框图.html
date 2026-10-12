@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>造图片 · 线框图（重做方案）</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --surface:#fff; --surface2:#fafbfc;
+    --line:#e9ecf0; --line2:#dde2e9;
+    --ink:#14181f; --ink2:#58616f; --ink3:#8b95a3; --ink4:#b6bec9;
+    --brand:#1f2329; --brand-soft:#ededee; --brand-text:#1f2329; --brand-on:#fff;
+    --ok:#0f9d58; --ok-soft:#eaf7f0; --warn:#b26a00; --warn-soft:#fff6e6;
+    --danger:#d92d20; --danger-soft:#fef1f0; --danger-line:#f7d3cf;
+    --accent:#6d28d9; --accent-soft:#f4f1fe; --accent-line:#e0d8fb;
+    --r:10px; --sh:0 1px 2px rgba(16,24,40,.05),0 4px 14px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#e9ecf0;color:var(--ink);
+    font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:22px}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-size:18px;margin:0 0 4px}
+  .lead{color:var(--ink2);font-size:13px;margin:0 0 16px}
+
+  /* 顶部三层切换 */
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{border:1px solid var(--line2);background:var(--surface);border-radius:9px;
+    padding:8px 14px;font-size:13px;font-weight:700;color:var(--ink2);cursor:pointer}
+  .tab.on{background:var(--brand);color:var(--brand-on);border-color:var(--brand)}
+  .tab small{display:block;font-weight:400;font-size:11px;opacity:.7}
+
+  .screen{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--sh);overflow:hidden;display:none}
+  .screen.on{display:block}
+  .bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--surface2)}
+  .bar b{font-size:14px}
+  .crumb{font-size:11px;color:var(--ink3)}
+  .spacer{flex:1}
+  .ghostbtn{border:1px solid var(--line2);background:#fff;color:var(--ink2);border-radius:8px;
+    font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer}
+  .body{padding:16px}
+
+  /* ── ① 出图列表 ── */
+  table{width:100%;border-collapse:collapse}
+  th{font-size:11px;color:var(--ink3);text-align:left;font-weight:700;padding:4px 8px;white-space:nowrap;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px;border-bottom:1px solid var(--line);font-size:12px;color:var(--ink);vertical-align:middle}
+  tr.open td{background:var(--brand-soft)}
+  .plat{display:inline-flex;align-items:center;gap:6px}
+  .pill{font-size:10px;font-weight:700;border-radius:5px;padding:1px 6px}
+  .p-xhs{background:#fff0f0;color:#c2410c}
+  .p-dy{background:#eef3fe;color:#2563eb}
+  .p-go{background:#f4f1fe;color:#6d28d9}
+  .stat-ok{color:var(--ok);font-weight:700}
+  .stat-bad{color:var(--danger);font-weight:700}
+  .stat-todo{color:var(--warn);font-weight:700}
+  .mini{border:1px solid var(--line2);background:#fff;color:var(--ink2);border-radius:6px;font-size:11px;font-weight:700;padding:3px 9px;cursor:pointer}
+  .add{border:1px solid var(--accent-line);background:#fff;color:var(--accent);border-radius:7px;font-size:11px;font-weight:700;padding:5px 11px;cursor:pointer;margin:0 4px 0 0}
+  .add.dash{border-style:dashed}
+  .listfoot{margin-top:12px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .listfoot .lab{font-size:12px;font-weight:700;margin-right:4px}
+  .hint{font-size:11px;color:var(--ink3)}
+
+  /* ── ② 分镜表 ── */
+  .steps{display:flex;gap:6px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .step{font-size:11px;font-weight:700;border-radius:999px;padding:3px 11px;border:1px solid var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+  .step .n{opacity:.6;margin-right:3px}
+  .stepflow{font-size:11px;color:var(--ink3)}
+  .story{border:1px solid var(--accent-line);border-radius:12px;overflow:hidden}
+  .story .srow{display:grid;grid-template-columns:52px 1.1fr 1fr 1.05fr 132px;
+    border-bottom:1px solid var(--line)}
+  .story .srow:last-child{border-bottom:none}
+  .story .shead{background:var(--surface2);font-size:11px;font-weight:700;color:var(--ink3)}
+  .story .cell{padding:10px;font-size:12px;border-left:1px solid var(--line)}
+  .story .cell.first{border-left:none}
+  .no{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0;border-left:1px solid var(--line);background:#faf8ff;color:var(--accent);font-weight:700;font-size:12px;cursor:grab}
+  .no .grip{color:var(--ink4);font-size:13px;cursor:grab}
+  .no .tag{font-size:9px;color:var(--ink3);font-weight:400;line-height:1.1;text-align:center}
+  .segtext{border:1px solid var(--line2);border-radius:7px;padding:6px 8px;font-size:12px;line-height:1.6;color:var(--ink);resize:vertical;min-height:52px;width:100%;font-family:inherit;background:#fff}
+  .idea{border:1px dashed var(--accent-line);border-radius:7px;padding:6px 8px;font-size:11px;line-height:1.55;color:var(--ink2);min-height:52px;width:100%;font-family:inherit;resize:vertical;background:#fcfbff}
+  .idea.empty{color:var(--danger)}
+  .prompt{background:#f7f8fa;border:1px solid var(--line);border-radius:7px;padding:7px 8px;font-size:10.5px;line-height:1.55;color:#3b4453;white-space:pre-wrap;max-height:110px;overflow:auto}
+  .prompt .k{color:var(--accent);font-weight:700}
+  .segbtns{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+  .segbtns button{border:1px solid var(--line2);background:#fff;color:var(--ink2);border-radius:6px;font-size:10px;font-weight:700;padding:2px 7px;cursor:pointer}
+  .imgslot{aspect-ratio:3/4;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;text-align:center;padding:6px;line-height:1.4}
+  .imgslot.got{background:linear-gradient(135deg,#dfe7f3,#c9d6ea);border:1px solid var(--line2);color:#41506b}
+  .imgslot.miss{background:var(--danger-soft);border:1.5px dashed #f0b4b4;color:var(--danger)}
+  .cell .mini{margin-top:5px;width:100%}
+  .splitline{height:0;border-top:2px dashed var(--accent-line);position:relative}
+  .splitline span{position:absolute;right:8px;top:-9px;font-size:9px;color:var(--accent);background:#fff;padding:0 5px;border-radius:4px}
+  .genbar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+  .bigbtn{border:none;background:var(--brand);color:var(--brand-on);border-radius:8px;font-size:12px;font-weight:700;padding:8px 16px;cursor:pointer}
+  .src{background:#fafbfc;border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:14px}
+  .src .srchd{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;color:#333}
+  .src textarea{width:100%;border:1px solid var(--line2);border-radius:8px;font-size:12px;line-height:1.7;padding:7px 9px;margin-top:6px;font-family:inherit;color:var(--ink)}
+  .src .note{font-size:10px;color:var(--ink3);margin-top:5px}
+
+  /* ── ③ 预览 ── */
+  .cmp{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .cmp .crow{display:grid;grid-template-columns:1fr 150px;border-bottom:1px solid var(--line);min-height:96px}
+  .cmp .crow:last-child{border-bottom:none}
+  .cmp .crow.head{background:var(--surface2);font-size:11px;font-weight:700;color:var(--ink3);min-height:0}
+  .cmp .ct{padding:12px 14px;font-size:13px;line-height:1.75;color:var(--ink);border-right:1px solid var(--line);display:flex;align-items:center}
+  .cmp .ct .idx{color:var(--accent);font-weight:700;margin-right:6px;flex:none}
+  .cmp .ct.mute{color:var(--ink4);font-style:normal;background:#f7f7f8;font-size:11px}
+  .cmp .ci{padding:8px}
+  .cmp .ci .imgslot{height:100%;min-height:80px;aspect-ratio:auto}
+  .imgslot.none{background:#f7f7f8;border:1px dashed var(--line2);color:var(--ink4)}
+  .legend{font-size:11px;color:var(--ink3);margin-top:10px;line-height:1.7}
+
+  .foot{margin-top:14px;font-size:11px;color:var(--ink3);line-height:1.8}
+  .foot b{color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🖼 造图片 · 重做方案线框图</h1>
+  <p class="lead">一页只干一件事：<b>正文 / 口播稿 → 断句 → 每段图描述 → 提示词 → 图传回来对照</b>。没有「做图 / 做视频」的选择，也不管出片。下面三块点着看。</p>
+
+  <div class="tabs">
+    <div class="tab on" data-s="list">① 出图列表<small>管理出图任务</small></div>
+    <div class="tab" data-s="story">② 分镜表 · 工作流<small>断句 → 图描述 → 提示词</small></div>
+    <div class="tab" data-s="prev">③ 预览 · 图文对照<small>把 AI 图导回来看效果</small></div>
+  </div>
+
+  <!-- ═══════════ ① 出图列表 ═══════════ -->
+  <div class="screen on" id="s-list">
+    <div class="bar"><b>🖼 造图片</b> <span class="crumb">发笔记 › 笔记档案 › 这一篇</span>
+      <span class="spacer"></span>
+      <button class="ghostbtn">← 笔记档案</button></div>
+    <div class="body">
+      <div class="steps"><span class="step"><span class="n">①</span>出图列表</span>
+        <span class="stepflow">一行＝一个出图任务（哪个平台 · 哪种出图形式）；点一行才进下面的分镜表</span></div>
+
+      <table>
+        <thead><tr>
+          <th>平台</th><th>出图形式</th><th>画面</th><th>传回来的图</th><th>更新</th><th style="text-align:right">操作</th>
+        </tr></thead>
+        <tbody>
+          <tr class="open">
+            <td><span class="plat">📕 小红书</span></td>
+            <td>清单卡片式</td>
+            <td>6 段 · 5 张图</td>
+            <td><span class="stat-bad">还缺 1 张</span></td>
+            <td class="hint">10-02 14:22</td>
+            <td style="text-align:right;white-space:nowrap">
+              <span class="pill p-go" style="margin-right:6px">就是下面这份</span>
+              <button class="mini">✕</button>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="plat">🎵 抖音</span></td>
+            <td>经验故事式</td>
+            <td>4 段</td>
+            <td><span class="stat-ok">图齐了</span></td>
+            <td class="hint">10-02 11:05</td>
+            <td style="text-align:right;white-space:nowrap"><button class="mini">打开这一份</button> <button class="mini">✕</button></td>
+          </tr>
+          <tr>
+            <td><span class="plat">📦 闲鱼</span></td>
+            <td>服务介绍式</td>
+            <td><span class="stat-todo">还没断句</span></td>
+            <td class="hint">—</td>
+            <td class="hint">还没动</td>
+            <td style="text-align:right;white-space:nowrap"><button class="mini">打开这一份</button> <button class="mini">✕</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="listfoot">
+        <span class="lab">＋ 新建出图任务</span>
+        <button class="add">📕 清单卡片式</button>
+        <button class="add">📕 经验故事式</button>
+        <button class="add">🎵 一屏一句大字</button>
+        <button class="add dash">✂️ 直接断一份</button>
+      </div>
+      <p class="hint" style="margin-top:8px">一行＝这一篇里的一种出图形式 · 要另一种就加一行、别盖掉上一行 · 多平台的版本（这里灰掉的只读行）各回各档出。</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ ② 分镜表 · 工作流 ═══════════ -->
+  <div class="screen" id="s-story">
+    <div class="bar"><b>清单卡片式 · 出图任务</b> <span class="crumb">📕 小红书 · 来自这一篇的口播稿</span>
+      <span class="spacer"></span>
+      <button class="ghostbtn">← 回出图列表</button></div>
+    <div class="body">
+      <div class="steps">
+        <span class="step"><span class="n">②</span>分镜表 · 工作流</span>
+        <span class="step">断句</span><span class="stepflow">→</span>
+        <span class="step">图描述（中心思想）</span><span class="stepflow">→</span>
+        <span class="step">提示词（本地拼）</span><span class="stepflow">→</span>
+        <span class="step">图传回来</span>
+        <span class="stepflow">｜三段就是这一张表从左往右填满，不用切页</span>
+      </div>
+
+      <div class="src">
+        <div class="srchd">📄 这一篇的口播稿 <span class="hint">（断句的原料；一段一行＝一屏＝一张图）</span>
+          <span class="spacer"></span>
+          <button class="genbig ghostbtn">✂️ AI 断句 + 图描述</button></div>
+        <textarea rows="4">一个人做小红书，最费时间的其实是配图。
+文案写好了，得一句一句想配什么图，来回折腾。
+现在只要把文案一断，每段说清楚这张图要讲什么，提示词工具自己拼。
+图拿去 AI 生成，回来往对应那段一贴，配没配对一眼看得见。
+不用会设计，也不用记得住那一堆术语。
+想试的，私信我，免费给你做一次。</textarea>
+        <div class="note">改这里不会自动重断——下面的段跟它对不上时，顶上一句会提醒你「回断一遍」或直接把那句改了。</div>
+      </div>
+
+      <div class="genbar">
+        <button class="bigbtn">✂️ AI 断句 + 每段中心思想</button>
+        <span class="hint">拖每行左边的 ⇕ 把手，就是「这一段到哪结束」；断完每段 AI 先给一句图描述，你再改。</span>
+      </div>
+
+      <div class="story">
+        <div class="srow shead">
+          <div class="cell first" style="padding:8px">⇕</div>
+          <div class="cell">① 段文本（照抄文案，可改 / 拆 / 并）</div>
+          <div class="cell">② 图描述 · 这张图的中心思想</div>
+          <div class="cell">③ 提示词（按图描述＋固定元素拼）</div>
+          <div class="cell" style="text-align:center">图</div>
+        </div>
+
+        <!-- 段 1 -->
+        <div class="srow">
+          <div class="no"><span class="grip">⇕</span>1</div>
+          <div class="cell"><textarea class="segtext" rows="2">一个人做小红书，最费时间的其实是配图。</textarea>
+            <div class="segbtns"><button>✂ 从这儿断</button><button>⤒ 并上</button><button>过场·不占图</button><button>✕</button></div></div>
+          <div class="cell"><textarea class="idea" rows="2">对比图：左边一堆散乱配图卡、右边一张自动排好的图——说清「配图最费时」</textarea></div>
+          <div class="cell"><div class="prompt"><span class="k">详情图 第 1 张（共 6 张，竖版 3:4）</span>
+这段讲的是：一个人做小红书，最费时间的其实是配图。
+画面上：对比图，左边散乱配图卡、右边自动排好
+统一风格：浅色底＋大字，扁平插画
+图上的字不超过 14 字；不出现二维码／联系方式。</div>
+            <button class="mini">📋 复制这张</button></div>
+          <div class="cell"><div class="imgslot got">画面 1<br>已传回</div><button class="mini">🖼 传这张图</button></div>
+        </div>
+
+        <!-- 段 2 -->
+        <div class="srow">
+          <div class="no"><span class="grip">⇕</span>2</div>
+          <div class="cell"><textarea class="segtext" rows="2">文案写好了，得一句一句想配什么图，来回折腾。</textarea>
+            <div class="segbtns"><button>✂ 从这儿断</button><button>⤒ 并上</button><button>过场·不占图</button><button>✕</button></div></div>
+          <div class="cell"><textarea class="idea" rows="2">一个人对着满屏「这句配什么？」的对话框发愁——说清「来回折腾」</textarea></div>
+          <div class="cell"><div class="prompt"><span class="k">详情图 第 2 张（共 6 张，竖版 3:4）</span>
+这段讲的是：文案写好了，得一句一句想配什么图，来回折腾。
+画面上：满屏「这句配什么？」的对话框
+统一风格：浅色底＋大字，扁平插画
+图上的字不超过 14 字；不出现二维码／联系方式。</div>
+            <button class="mini">📋 复制这张</button></div>
+          <div class="cell"><div class="imgslot got">画面 2<br>已传回</div><button class="mini">🖼 传这张图</button></div>
+        </div>
+
+        <!-- 段 3（中心思想没填 → 提示词那格标红引导） -->
+        <div class="srow">
+          <div class="no"><span class="grip">⇕</span>3</div>
+          <div class="cell"><textarea class="segtext" rows="2">现在只要把文案一断，每段说清楚这张图要讲什么，提示词工具自己拼。</textarea>
+            <div class="segbtns"><button>✂ 从这儿断</button><button>⤒ 并上</button><button>过场·不占图</button><button>✕</button></div></div>
+          <div class="cell"><textarea class="idea empty" rows="2">（还没写这张图要说啥）</textarea></div>
+          <div class="cell"><div class="prompt"><span class="k">详情图 第 3 张（共 6 张，竖版 3:4）</span>
+这段讲的是：现在只要把文案一断…
+<span style="color:var(--danger)">画面上：—（补一句图描述，提示词才全）</span>
+统一风格：浅色底＋大字，扁平插画</div>
+            <button class="mini">📋 复制这张</button></div>
+          <div class="cell"><div class="imgslot miss">⏳ 还没传图</div><button class="mini">🖼 传这张图</button></div>
+        </div>
+
+        <div class="splitline"><span>把手拖到这里＝第 3、4 段并成一张图</span></div>
+
+        <!-- 更多段用省略条 -->
+        <div class="srow">
+          <div class="no"><span class="grip">⇕</span>4–6</div>
+          <div class="cell" style="color:var(--ink3);font-size:11px">（另外 3 段同样一行一段：段文本 · 图描述 · 提示词 · 图；其中一句是过场话，点「过场·不占图」就不出图）</div>
+          <div class="cell"></div><div class="cell"></div>
+          <div class="cell"><div class="imgslot got">画面 4·5<br>齐</div></div>
+        </div>
+
+        <div class="srow" style="background:var(--surface2)">
+          <div class="cell first" style="grid-column:1 / -1;padding:9px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button class="mini" style="border-style:dashed">＋ 自己补一段</button>
+            <span class="hint">6 段里 5 段占图 · 还有 1 张没图</span>
+            <span class="spacer"></span>
+            <button class="bigbtn" style="font-size:11px;padding:6px 13px">📋 一次复制全部提示词（5 段）</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="foot"><b>固定元素</b>（尺寸 / 统一风格 / 图上字 ≤14 字 / 不出现二维码·联系方式）在表头一处填一次，<b>每段提示词本地拼</b>——改哪段、那段当场变，不再烧 AI。</p>
+    </div>
+  </div>
+
+  <!-- ═══════════ ③ 预览 · 图文对照 ═══════════ -->
+  <div class="screen" id="s-prev">
+    <div class="bar"><b>预览 · 图文对照</b> <span class="crumb">📕 小红书 · 清单卡片式</span>
+      <span class="spacer"></span>
+      <button class="ghostbtn">← 回分镜表</button>
+      <button class="ghostbtn">只看图墙</button></div>
+    <div class="body">
+      <div class="steps"><span class="step"><span class="n">③</span>预览</span>
+        <span class="stepflow">左栏把这些段按顺序叠起来＝整篇文案；右栏每行的图天然跟这行对齐，靠「同一行」对上，不再画中间那列连线</span></div>
+
+      <div class="cmp">
+        <div class="crow head"><div class="ct">文案（一段一块，从上读到底就是整篇）</div><div class="ci" style="text-align:center">配过去的图</div></div>
+
+        <div class="crow"><div class="ct"><span class="idx">1</span>一个人做小红书，最费时间的其实是配图。</div><div class="ci"><div class="imgslot got">画面 1</div></div></div>
+        <div class="crow"><div class="ct"><span class="idx">2</span>文案写好了，得一句一句想配什么图，来回折腾。</div><div class="ci"><div class="imgslot got">画面 2</div></div></div>
+        <div class="crow"><div class="ct"><span class="idx">3</span>现在只要把文案一断，每段说清楚这张图要讲什么，提示词工具自己拼。</div><div class="ci"><div class="imgslot miss">⏳ 这句还没图</div></div></div>
+        <div class="crow"><div class="ct"><span class="idx">4</span>图拿去 AI 生成，回来往对应那段一贴，配没配对一眼看得见。</div><div class="ci"><div class="imgslot got">画面 4</div></div></div>
+        <div class="crow"><div class="ct mute">（过场话 · 不占图）不用会设计，也不用记得住那一堆术语。</div><div class="ci"><div class="imgslot none">这句不占图</div></div></div>
+        <div class="crow"><div class="ct"><span class="idx">6</span>想试的，私信我，免费给你做一次。</div><div class="ci"><div class="imgslot got">画面 5</div></div></div>
+      </div>
+
+      <p class="foot">眼睛<b>横着扫一行</b>就知道「这句配这张对不对」；没传回来的那段＝红框空位，一眼看到还缺哪张。<br>
+      想快速通览效果就点顶上<b>「只看图墙」</b>——把图排成网格扫一遍，就这一档，不加别的。</p>
+    </div>
+  </div>
+
+  <p class="foot" style="max-width:1180px;margin:18px auto 0">
+    线框图 · 只表结构和位置，不是最终视觉。<b>砍掉的</b>：图文/视频两颗大卡、造图片里那排成片形式、第 ③ 步整块口播稿（它现在是断句的原料，摆回顶上）。
+    <b>保留的</b>：出图列表（一行一种出图形式 × 平台）。<b>新增的</b>：可拖把手的断句＋每段图描述＋图文对照预览。
+  </p>
+</div>
+
+<script>
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('.screen').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    document.getElementById('s-' + t.getAttribute('data-s')).classList.add('on');
+  }));
+</script>
+</body>
+</html>

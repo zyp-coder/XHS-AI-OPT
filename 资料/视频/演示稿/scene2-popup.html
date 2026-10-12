@@ -2,11 +2,41 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<title>小红书笔记 - AI评论助手扫描中</title>
+<title>小红书笔记 - 工作台扫描中</title>
 <link rel="stylesheet" href="style.css">
+<style>
+  .popup-header .title { font-size: 14px; font-weight: 600; }
+  .prospect-card { padding: 10px 12px; margin-bottom: 8px; }
+  .popup-refresh { font-size: 12px; color: #ff2442; border: 1px solid #ffd0d8; border-radius: 14px; padding: 3px 12px; }
+  .purpose-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #666; margin-bottom: 10px; }
+  .purpose-row .sel { flex: 1; border: 1px solid #e5e5e5; border-radius: 6px; padding: 6px 10px; font-size: 12px; color: #333; background: #fff; }
+  .cq-line { font-size: 12px; color: #856404; background: #fff8e1; border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; }
+  .cq-line b { color: #c62828; }
+  .sum-line { font-size: 12px; color: #666; margin-bottom: 10px; }
+  .sum-line .hl { color: #c62828; font-weight: 600; }
+  .cust-badge { display: inline-block; background: #ff2442; color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 10px; }
+  .loc-badge { display: inline-block; background: #e3f2fd; color: #1565c0; font-weight: 600; font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+  .st-badge { display: inline-block; background: #fff; color: #999; font-size: 10px; border: 1px solid #eee; padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+  .st-badge.ok { background: #e8f5e9; color: #2e7d32; border-color: #c8e6c9; }
+  .tbar { display: inline-block; width: 3px; height: 14px; background: #ff2442; border-radius: 2px; margin-right: 6px; vertical-align: -2px; }
+  .pc-meta { font-size: 12px; color: #333; font-weight: 600; margin: 6px 0 4px; }
+  .pc-meta .ap { font-weight: 400; font-size: 11px; color: #999; margin-left: 4px; }
+  .pc-quote { background: #f7f7f7; border-radius: 6px; padding: 7px 10px; font-size: 12.5px; color: #555; line-height: 1.6; margin-bottom: 6px; }
+  .pc-reason { font-size: 12px; color: #7c3aed; line-height: 1.6; margin-bottom: 8px; }
+  .ver-tabs { display: flex; gap: 4px; margin-bottom: 6px; }
+  .ver-tab { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid #e5e5e5; background: #fff; color: #666; }
+  .ver-tab.active { background: #ff2442; border-color: #ff2442; color: #fff; }
+  .pc-box { border: 1px solid #eee; border-radius: 6px; padding: 8px 10px; font-size: 12.5px; line-height: 1.6; color: #333; background: #fff; }
+  .pc-acts { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .pc-acts .act { font-size: 11px; padding: 3px 9px; border-radius: 4px; border: 1px solid #e5e5e5; background: #fff; color: #555; }
+  .pc-acts .act.send { background: #ff2442; border-color: #ff2442; color: #fff; font-weight: 600; }
+  .pc-acts .act.list { border-color: #7c3aed; background: #f5f3ff; color: #6d28d9; }
+
+  .log-panel .t { color: #bbb; margin-right: 6px; }
+</style>
 </head>
 <body>
-<div class="page">
+<div class="page" style="min-height:980px;">
   <div class="xhs-main">
     <div class="note-author">
       <div class="avatar">房</div>
@@ -35,12 +65,12 @@
         <div class="c-actions"><span>👍 38</span><span>💬 回复</span></div>
       </div>
       <div class="comment-item highlight">
-        <div class="c-head"><div class="c-name">月光族小周 <span class="prospect-tag">🔥 高意向商机</span></div><div class="c-time">1小时前</div></div>
+        <div class="c-head"><div class="c-name">月光族小周 <span class="prospect-tag">潜在客户 #1</span></div><div class="c-time">1小时前</div></div>
         <div class="c-text">月供太高了真的压力好大…我贷了180万，每个月光还款就占工资的70%…</div>
         <div class="c-actions"><span>👍 56</span><span>💬 回复</span></div>
       </div>
       <div class="comment-item highlight">
-        <div class="c-head"><div class="c-name">北漂打工人阿明 <span class="keyword-tag">🔑 命中关键词</span></div><div class="c-time">30分钟前</div></div>
+        <div class="c-head"><div class="c-name">北漂打工人阿明 <span class="prospect-tag">潜在客户 #3</span></div><div class="c-time">30分钟前</div></div>
         <div class="c-text">大佬们，房贷计算器哪个准一点？我自己算的和中介给我的差好多…</div>
         <div class="c-actions"><span>👍 12</span><span>💬 回复</span></div>
       </div>
@@ -48,66 +78,98 @@
   </div>
 </div>
 
-<!-- 扩展 popup 弹窗 -->
-<div class="popup-overlay" style="height: 640px;">
+<!-- 扩展弹窗 -->
+<div class="popup-overlay" style="top:0;height:980px;">
   <div class="popup-header">
-    <div class="title">📄 评论助手 · 本笔记扫描完成</div>
-    <div class="badge">● 在线</div>
+    <div class="title"><span class="tbar"></span>获客助手</div>
+    <div class="popup-refresh">🔄 评论刷新 ▾</div>
   </div>
   <div class="popup-tabs">
-    <div class="tab active">📄 评论助手</div>
-    <div class="tab">💬 评论跟进</div>
-    <div class="tab">🎯 获客清单</div>
+    <div class="tab">任务配置</div>
+    <div class="tab">队列</div>
+    <div class="tab active">工作台</div>
+    <div class="tab">笔记池</div>
   </div>
-  <div class="popup-body">
-    <div class="analysis-summary">
-      <div class="stat"><div class="num">486</div><div class="label">评论总数</div></div>
-      <div class="stat"><div class="num" style="color:#ff2442;">7</div><div class="label">商机评论</div></div>
-      <div class="stat"><div class="num" style="color:#ff8f00;">12</div><div class="label">关键词命中</div></div>
+  <div class="popup-body" style="max-height:none;">
+    <div class="purpose-row">
+      <span>评论目的</span>
+      <div class="sel">🛍️ 卖产品（获客转化）</div>
     </div>
 
-    <div style="font-size:13px;font-weight:600;margin-bottom:10px;">🔥 Top 3 高意向商机</div>
-
-    <div class="prospect-card">
-      <div class="pc-title">
-        <span>① 月光族小周 · 月供压力大</span>
-        <span class="pc-score">匹配度 92%</span>
-      </div>
-      <div class="pc-comment">「月供太高了真的压力好大…我贷了180万，每个月光还款就占工资的70%…」</div>
-      <div class="pc-replies">
-        <div class="pc-reply"><span class="reply-label">朋友分享型：</span>姐妹我懂你！我之前贷180万利率4.9%，月供快9000了，后来用了个小工具算到能调到3.85%，现在每月少还一千多…</div>
-        <div class="pc-reply"><span class="reply-label">专业顾问型：</span>180万贷款如果利率能从4.9%降到3.85%，30年总利息能省约30万。建议你先查一下当前LPR加点情况…</div>
-        <div class="pc-reply"><span class="reply-label">简短直接型：</span>我之前也一样！推荐你去用房贷小工具算一下，输入贷款金额利率，一秒出方案 👇</div>
-      </div>
-    </div>
+    <div class="cq-line">💬 本条商机：待发 <b>2</b> · 已发 <b>1</b></div>
+    <div class="sum-line">📊 共 486 条评论 · 发现 <span class="hl">3</span> 个潜在客户</div>
 
     <div class="prospect-card">
-      <div class="pc-title">
-        <span>② 攒钱买房的小陈 · 利率咨询</span>
-        <span class="pc-score">匹配度 85%</span>
+      <div class="pc-title" style="justify-content:flex-start;">
+        <span class="cust-badge">潜在客户 #1</span>
+        <span class="loc-badge">🏙 同城 · 北京</span>
+        <span class="st-badge">待发</span>
       </div>
-      <div class="pc-comment">「请问首套房现在利率到底多少啊？我最近问了几家银行，说的都不一样…」</div>
+      <div class="pc-meta">@月光族小周<span class="ap">回复</span></div>
+      <div class="pc-quote">“月供太高了真的压力好大…我贷了180万，每个月光还款就占工资的70%…”</div>
+      <div class="pc-reason">💡 求助型：把自己的还款压力摆在明面上，等于开口要一个「怎么算、怎么调」的办法。</div>
       <div class="pc-replies">
-        <div class="pc-reply"><span class="reply-label">朋友分享型：</span>我当时也是一脸懵，不同银行加点不一样差挺多的。可以用房贷计算器对比一下…</div>
-        <div class="pc-reply"><span class="reply-label">专业顾问型：</span>首套利率普遍在LPR-20bp到LPR-40bp之间，当前5年期LPR是3.85%，所以实际利率大概3.45%-3.65%…</div>
+        <div class="ver-tabs">
+          <span class="ver-tab active">⭐ 版本1 · 获客·共情共鸣流</span>
+          <span class="ver-tab">版本2 · 获客·实用教程流</span>
+        </div>
+        <div class="pc-box">姐妹我懂你，我之前也是这个数。后来把利率和年限填进计算器跑了一遍，才发现同一笔钱换个还款方式，月供能差出一千多——你先算一遍自己的数，心里就有底了。</div>
+        <div class="pc-acts">
+          <span class="act">复制</span>
+          <span class="act">📍 定位</span>
+          <span class="act">💗 点赞关注</span>
+          <span class="act send">📤 一键发送</span>
+          <span class="act list">➕ 入清单</span>
+        </div>
       </div>
     </div>
 
     <div class="prospect-card">
-      <div class="pc-title">
-        <span>③ 北漂打工人阿明 · 房贷计算</span>
-        <span class="pc-score">匹配度 78%</span>
+      <div class="pc-title" style="justify-content:flex-start;">
+        <span class="cust-badge">潜在客户 #2</span>
+        <span class="st-badge">待发</span>
       </div>
-      <div class="pc-comment">「大佬们，房贷计算器哪个准一点？我自己算的和中介给我的差好多，怕被坑了。」</div>
+      <div class="pc-meta">@攒钱买房的小陈<span class="ap">回复</span></div>
+      <div class="pc-quote">“请问首套房现在利率到底多少啊？我最近问了几家银行，说的都不一样…”</div>
+      <div class="pc-reason">💡 求助型：问的是口径，几家的说法不一样把他绕晕了，需要有人给个能自己核的准绳。</div>
       <div class="pc-replies">
-        <div class="pc-reply"><span class="reply-label">朋友分享型：</span>中介一般故意给你算得低，好让你赶紧签。我用的是一个专门的房贷计算器…</div>
+        <div class="ver-tabs">
+          <span class="ver-tab active">⭐ 版本1 · 获客·数据科普流</span>
+          <span class="ver-tab">版本2 · 获客·避雷防坑流</span>
+        </div>
+        <div class="pc-box">给的都不是一个口径，所以才对不上。别记数字，记怎么核：把贷款额、年限、利率填进去，月供和总利息当场出来，谁报的数跟它对不上就当场问。</div>
+        <div class="pc-acts">
+          <span class="act">复制</span>
+          <span class="act">📍 定位</span>
+          <span class="act">💗 点赞关注</span>
+          <span class="act send">📤 一键发送</span>
+          <span class="act list">➕ 入清单</span>
+        </div>
       </div>
     </div>
-  </div>
-  <div class="action-bar">
-    <button class="btn-success">✨ 一键全部回复</button>
-    <button class="btn-secondary">⚙️ 设置</button>
-    <div style="margin-left:auto;font-size:12px;color:#888;align-self:center;">已选 0 / 7 条商机</div>
+
+    <div class="prospect-card">
+      <div class="pc-title" style="justify-content:flex-start;">
+        <span class="cust-badge">潜在客户 #3</span>
+        <span class="st-badge ok">已发</span>
+      </div>
+      <div class="pc-meta">@北漂打工人阿明<span class="ap">回复</span></div>
+      <div class="pc-quote">“大佬们，房贷计算器哪个准一点？我自己算的和中介给我的差好多，怕被坑了。”</div>
+      <div class="pc-reason">💡 被坑型：已经吃过亏、带着情绪，要的是「怎么自己核一遍」的依据。</div>
+      <div class="pc-replies">
+        <div class="ver-tabs">
+          <span class="ver-tab active">⭐ 版本1 · 获客·避雷防坑流</span>
+        </div>
+        <div class="pc-box">这种最气人，中介拿的是约数还往高了报。签之前自己核一遍：贷款额、利率、年限输进去，月供和总利息当场出来，跟银行给的数对一下，差得多就当场问。</div>
+        <div class="pc-acts">
+          <span class="act">复制</span>
+          <span class="act">📍 定位</span>
+          <span class="act">💗 点赞关注</span>
+          <span class="act send">📤 一键发送</span>
+          <span class="act list">➕ 入清单</span>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 </body>

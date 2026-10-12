@@ -95,6 +95,15 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
     body.stream_options = { include_usage: true };
   }
 
+  // ★ 超时按「静默」算，不按「总时长」算：原来 AbortSignal.timeout(60000) 把整条请求（含流式读取）
+  //   限制在 60 秒内，成稿这种长输出（尤其推理模型）稍微慢一点就被拦腰掐断，用户只看到一句
+  //   「AI 没返回可用内容」。现在每收到一块数据就重新计时，只有连续 60 秒没有新内容才判超时。
+  const IDLE_MS = 60000;
+  const abortCtrl = new AbortController();
+  let abortTimer = setTimeout(() => abortCtrl.abort(), IDLE_MS);
+  const bumpTimeout = () => { clearTimeout(abortTimer); abortTimer = setTimeout(() => abortCtrl.abort(), IDLE_MS); };
+  const timeoutErr = () => new Error(`AI 请求超时（连续 ${IDLE_MS / 1000} 秒没有新内容）(${url} · ${model})。可稍后重试；老超时就到「设置→AI 配置」换一个更快的模型。`);
+
   let resp;
   try {
     resp = await fetch(url, {
@@ -104,12 +113,10 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
         'Authorization': `Bearer ${key}`,
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
+      signal: abortCtrl.signal,
     });
   } catch (err) {
-    if (err.name === 'TimeoutError') {
-      throw new Error(`AI 请求超时（60秒）(${url} · ${model})。请检查网络能否访问该服务商地址，或稍后重试。`);
-    }
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') throw timeoutErr();
     // 把“headers 含非法字符”这类底层错也转成清晰提示
     if (/non ISO-8859-1|headers' property/i.test(String(err.message || ''))) {
       throw new Error('AI 请求配置异常：API Key 或地址包含非法字符（多半是粘贴进了中文）。请在设置→AI 配置重新填写正确的 API Key。');
@@ -169,6 +176,7 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        bumpTimeout();   // 有数据在流动就不算超时（长输出不再被总时限掐断）
         rawChunks.push(value);
         buffer += decoder.decode(value, { stream: true });
         // SSE 以 \n\n 分隔事件，逐行取 data:
@@ -199,7 +207,9 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
         }
       }
     } catch (err) {
-      throw new Error(`AI 流式读取中断：${err.message}`);
+      throw abortCtrl.signal.aborted ? timeoutErr() : new Error(`AI 流式读取中断：${err.message}`);
+    } finally {
+      clearTimeout(abortTimer);
     }
     // ★ 容错：整个响应没有 data: 行 → 中转站把 stream 忽略、直接回了完整 JSON，整体解析兜底
     let fullRawText = ''; // 原始响应全文（空内容诊断用：展示服务端到底回了什么）
@@ -229,11 +239,28 @@ async function _chatOnce(aiConfig, systemPrompt, userPrompt, onProgress) {
     };
   }
 
-  const data = await resp.json();
-  const content = data?.choices?.[0]?.message?.content || '';
-  const usage = data?.usage || {};
-
-  return { content: _ensureNonEmpty(content, JSON.stringify(data)), usage };
+  try {
+    const data = await resp.json();
+    const choice = (data && Array.isArray(data.choices) && data.choices[0]) || {};
+    const msg = choice.message || {};
+    const content = msg.content || '';
+    const usage = data?.usage || {};
+    // ★ 非流式也要带诊断：推理模型走非流式时同样可能"只回思考、正文为空"，
+    //   不带 reasoningLen/finishReason 的话上层就拿不到 reasoningOvershoot 标记、不会加码重试（实机报过）
+    const reasoningLen = String(msg.reasoning_content || '').length;
+    const finishReason = String(choice.finish_reason || '');
+    return {
+      content: _ensureNonEmpty(content, {
+        fullRaw: JSON.stringify(data),
+        chunkCount: 1,
+        reasoningLen: reasoningLen,
+        finishReason: finishReason,
+      }),
+      usage,
+    };
+  } finally {
+    clearTimeout(abortTimer);
+  }
 }
 
 /** 内容为空时给出明确错误（而不是让上层误报“JSON 格式错误”），并把服务端原始响应附在 err.aiRaw 上
@@ -255,8 +282,10 @@ function _ensureNonEmpty(content, diag) {
         hint = `服务端返回 ${chunkCount || 0} 个数据块但正文为空${finishReason ? `（finish_reason=${finishReason}）` : ''}`;
       }
       if (fullRaw) {
-        hint += `。原始响应：${String(fullRaw).slice(0, 150)}`;
+        // 「思考占满」已经把原因说清了，再糊 150 字 SSE 原文只会把人看晕（用户报错时就是这么贴回来的）；
+        // 原文仍挂在 err.aiRaw 上供后台/日志用
         aiRaw = String(fullRaw);
+        if (!(reasoningLen > 0 && finishReason === 'length')) hint += `。原始响应：${String(fullRaw).slice(0, 150)}`;
       }
     } else {
       hint = `服务端响应：${String(diag || '').slice(0, 150)}`;

@@ -1,0 +1,308 @@
+# -*- coding: utf-8 -*-
+"""造图片「① 这一套图的风格」那一档自检（老板 2026-10-02 五十五改立、五十七改对齐五档、五十八改④ 对齐四档横置 tab）。
+
+老板口径：风格要当工作流里单独一格来设计——不只字体颜色大小，而是成图风格 / 主题 / 博主特色；
+四类轴（画面出身 · 主题 · 版式 · 博主印记）在账号级定一次，某一套要不一样就在那一套上改，只记那一套。
+配文方式（说一次 / 辅助标注 / 整段上屏 / 只一句大字）也是这一格的事（六十二改，替掉旧的字量档），提示词里不再写死「不超过 14 字」。
+五十八改④对齐：造图片做成四档横置 tab（① 风格 → ② 断句 → ③ 分镜 → ④ 预览），这一档就是第一档——
+  🔁 那颗跟着它管的事挪到 ③ 的表头（这一档不摆）；四轴＋配文方式只进本地拼的提示词尾巴（改一次都不烧 AI），流派名才进 AI 那一发。
+六十一改（老板：「风格都改成统一的小红书风格」）：这一档从「关卡」变「旋钮」——
+  层级三份：内置统一小红书打底（NP_LOOK_XHS：真人工作场景 ＋ 实拍照片 ＋ 暗调实拍·单一暖光源 ＋ 实拍底图·字压暗角一侧，配文说一次，博主印记留空）
+  → 账号默认（任务配置 · 🎨 出图默认）→ 这一套自己改的那几轴；没挑流派不会再落在 ①，直接落到该干活的那一档。
+
+口径（这一支只管 ① 那一档，段怎么拖归 check_note_cut.py）：
+  1) 加一行零 AI：刚加的一段都还没圈 → 进来落在 ② 断句（风格有打底，不挡在前面）；切到 ① 才摊开风格面板；
+  2) 打底 ＋ 账号默认（config.imgLook）→ 这一套四轴与配文档直接跟它走（默认没设的那几轴落回打底），面板说「现在整份跟默认走」，
+     且不许把默认抄进这一套的存档（shots.look 里没有 born 那一项）；
+  3) 这一套点一轴＝只记这一套（那颗 chip 带「·这一套」），别的轴仍跟默认；↺ 一次全交回（配文档按现在生效的那档留着）；
+  4) 回传配置那一行＝四轴按顺序拼出来的一行令牌（永远不为空：打底兜着）；③ 那张表每一行的提示词当场带上「每一张都带的固定元素」——全程零 AI；
+  5) 配文方式四档：说一次另写字、整段上屏搬段原文、只一句大字不许贴原文、辅助标注字只当标注；四档共用同一条配色与层级；四档都不许出现写死的「14 字」；
+  6) 这一套的 look 落进档案，从档案再进来读得回（零 AI）；落点跟着 npImgLand 走：段有了、分镜还空＝回来落在 ③。
+  7) 发笔记 · 任务配置 → 🎨 出图默认：这一页按「打底 ＋ 已存默认」回显；选两轴 + 换配文档 →「💾 保存出图默认」落库，切走再回来还在。
+
+跑法：python3 -X utf8 scripts/dev/check_note_look.py
+临时 profile 加载真扩展（msedge），AiClient 全程走桩、不烧真接口。
+"""
+import pathlib
+import shutil
+import sys
+import tempfile
+import time
+
+from playwright.sync_api import sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(tempfile.gettempdir())
+ERRORS = []
+
+BODY = '开场钩子。\n\n第一段干货。\n\n结尾引导。'
+SENTS = ['开场钩子。', '第一段干货。', '结尾引导。']
+# 账号默认只设了三轴：博主印记那一轴打底留空（实拍那挂不压水印），配文也落回打底那一档（说一次）
+TOKEN = '扁平矢量插画；浅底＋单色点缀；一行大字居中'
+
+SEED = r'''async (payload) => {
+    await Storage.initializeDefaults(DEFAULT_PROMPTS);
+    await ensureTenantInit();
+    const cfg = await Storage.getConfig();
+    cfg.product.name = '风格节点测试产品';
+    cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
+    cfg.ai.apiKey = 'test-local-only';
+    cfg.imgLook = { born: '扁平矢量插画', theme: '浅底＋单色点缀', layout: '一行大字居中' };
+    await Storage.setConfig(cfg);
+    await chrome.storage.local.set({
+        np_notes: [{id: 'look-1', title: '省时间三步', status: '待发', platform: 'xhs',
+                    form: '图文', draft: payload.body, createdAt: Date.now()}],
+        np_assets: [],
+    });
+    // 这一支全程不点 AI 那两发（🔮 建议断点 / 🔁 重出分镜），一次都不该响
+    self.aiCalls = 0;
+    AiClient.chatCompletion = async () => { self.aiCalls++; return {content: '{}'}; };
+    return true;
+}'''
+
+
+def boot(p):
+    for i in range(5):
+        prof = OUT / ('look-profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+with sync_playwright() as p:
+    ctx = boot(p)
+    try:
+        sw = ctx.service_workers[0]
+        assert sw.evaluate('chrome.runtime.onMessage.hasListeners()'), '后台路由没注册上'
+        sw.evaluate(SEED, {'body': BODY})
+
+        page = ctx.new_page()
+        page.on('pageerror', lambda e: ERRORS.append(str(e)[:200]))
+        page.set_viewport_size({'width': 1180, 'height': 900})
+        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        page.wait_for_function('typeof switchMainTab === "function" && typeof npLookPanelHtml === "function"')
+        page.set_default_timeout(25000)
+
+        def calls():
+            return sw.evaluate('self.aiCalls')
+
+        def tab_on(t):
+            return page.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t)
+
+        def goto_tab(t):
+            tab_on(t).click()
+            page.wait_for_timeout(260)
+
+        def cur_tab():
+            return page.evaluate('() => npTabOf(npS())')
+
+        def tab_badge(t):
+            return tab_on(t).inner_text().replace(' ', '')
+
+        def gut_box(i):
+            el = page.locator('#npCutWrap .np-cutline').nth(i).locator('.np-cut-gut')
+            el.scroll_into_view_if_needed()
+            return el.bounding_box()
+
+        def poke(i):
+            """点一行没归段的行号＝这一句自己成一段（② 那边验过拖，这里只要「一句一段」这份料）"""
+            box = gut_box(i)
+            page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+            page.wait_for_timeout(300)
+
+        def goto_out(note_id, add_row=False, tab=None):
+            page.evaluate('() => switchMainTab("noteArchive")')
+            page.wait_for_function('() => !!document.querySelector(\'#noteArchiveContent .npar-task[data-id="%s"]\')' % note_id)
+            page.locator('#noteArchiveContent .npar-task[data-id="%s"]' % note_id).click()
+            page.wait_for_function('() => _npMode === "task" && !!document.querySelector("#noteTaskContent .np-img-addopen, #noteTaskContent .np-task-img")')
+            if add_row:
+                page.locator('#noteTaskContent .np-img-addopen').click()
+                page.wait_for_function('() => !!document.querySelector("#noteTaskContent .np-img-add[data-k=\\"\\"]")')
+                page.locator('#noteTaskContent .np-img-add[data-k=""]').click()
+                page.wait_for_function('() => document.querySelectorAll("#noteTaskContent .np-task-img").length === 1')
+            page.locator('#noteTaskContent .np-task-img').first.click()
+            page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+            if tab:
+                goto_tab(tab)
+
+        def prompts():
+            """这一套拼好的整份提示词（③ 那一格显示的就是它）：站在 ① 这一档也能读，不用切来切去"""
+            return page.evaluate('() => String(((npS() || {}).visual || {}).images || "")')
+
+        # ── 1) 加一行＝零 AI：风格有打底，进来直接落在 ② 断句；① 是旋钮，切过去才摊开面板 ──
+        goto_out('look-1', add_row=True)
+        assert cur_tab() == 'cut', '这一段都还没圈＝进来该落在 ② 断句（风格有内置打底，① 不再当关卡）：%s' % cur_tab()
+        assert calls() == 0, '加一行带打开都不该烧 AI：%s' % calls()
+        assert page.locator('#npCutWrap').count() == 1, '② 那一档摊开的就是断句台'
+        assert page.locator('#npImgTabs .np-imgtab').count() == 4
+        assert '真人工作场景' in tab_badge('look'), '① 那一档的标签＝打底那一派（不挑也是它）：%s' % tab_badge('look')
+        assert page.evaluate('() => (npS().shots.items || []).length') == 0, '刚加的一行一段都还没圈'
+        goto_tab('look')
+        assert page.locator('#npLookBox').count() == 1, '切到 ① 才摊开风格面板'
+        panel = page.locator('#npLookBox').inner_text()
+        assert '现在整份跟默认走' in panel, panel[:200]
+        assert TOKEN in panel, '回传配置那一行＝账号默认那三轴拼出来的（博主印记打底留空）：%s' % panel[:300]
+        assert '打底＝统一小红书那一挂' in panel, '回传配置那行要说清最低一层是打底：%s' % panel[:300]
+        assert page.locator('#npLookBox .np-look').count() >= 20, '四类轴的旋钮都该摆出来'
+        assert page.locator('#npLookBox .np-motif').count() >= 10, '画面流派那一排也在这一档'
+        assert page.locator('#npLookBox .np-look[data-a="born"][data-v="扁平矢量插画"]').inner_text().count('这一套') == 0, \
+            '账号默认带上来的那一轴不算「这一套自己定的」（不该带 ·这一套）'
+        assert page.locator('#npLookBox .np-capd').count() == 4, '配文方式四档都摆在这一档'
+        assert page.evaluate('() => npCapOf(npLookOf(npS()))') == 'say', '账号默认没配配文＝落回打底那一档（说一次）'
+        assert page.locator('#npLookBox .np-desc-regen').count() == 0, '🔁 跟着它管的事挪去 ③ 的表头了，这一档不摆'
+        print('PASS: ① 是旋钮不是关卡：没圈段直接落 ②，① 那一档自带统一小红书打底（账号默认没写的轴与配文档落回打底），零 AI', flush=True)
+
+        # ── 2) 圈出三段之后：每条提示词都带上账号默认那行令牌，默认没被抄进存档，🔁 只在 ③ ──
+        goto_tab('cut')
+        assert '一段都还没圈' in tab_badge('cut') and '在等②' in tab_badge('desc'), tab_badge('desc')
+        for k in range(3):
+            poke(k)
+        page.wait_for_function('() => (npS().shots.items || []).length === 3')
+        assert calls() == 0, '点行号成段是本地的事，一次 AI 都不该烧：%s' % calls()
+        goto_tab('desc')
+        p0 = page.locator('.np-shot-pout').first.inner_text()
+        assert '固定元素：' + TOKEN in p0, p0[-260:]
+        assert '第 1 张（共 3 张' in p0, p0[:150]
+        assert not page.evaluate('() => !!npS().shots.look.born'), '只是跟着默认走，不许把默认抄进这一套存档'
+        assert page.locator('#npRegenBar .np-desc-regen').count() == 1, '有段了才摆 🔁，而且摆在这一档的表头（这一支不点它）'
+        goto_tab('look')
+        assert page.locator('#npLookBox').count() == 1 and page.locator('.np-shot').count() == 0, '一档一块：站在 ① 就不该同时摊出 ③ 那张表'
+        print('PASS: 每条提示词自动带上「每一张都带的固定元素」（账号默认那行令牌），存档里没抄默认；🔁 挂在 ③ 表头', flush=True)
+
+        # ── 3) 这一套改一轴＝只记这一套；↺ 一次全交回账号默认 ──
+        page.locator('#npLookBox .np-look[data-a="mark"][data-v="左上角小图标"]').click()
+        page.wait_for_function('() => npS().shots.look.mark === "左上角小图标"')
+        assert page.evaluate('() => npS().shots.look.born') is None, '改一轴不该把别的轴也抄进这一套'
+        page.wait_for_function('() => ((npS().visual || {}).images || "").indexOf("左上角小图标") >= 0')
+        assert '带「·这一套」的那几颗是这一套自己定的' in page.locator('#npLookBox').inner_text()
+        assert page.locator('#npLookBox .np-look[data-a="mark"][data-v="左上角小图标"]').inner_text().count('这一套') == 1, \
+            '这一套自己定过的那一轴要标出来'
+        page.locator('#npLookBox .np-look[data-a="born"][data-v="手绘线稿"]').click()
+        page.wait_for_function('() => npS().shots.look.born === "手绘线稿"')
+        assert page.evaluate('() => npLookToken(npLookOf(npS()))') == '手绘线稿；浅底＋单色点缀；一行大字居中；左上角小图标'
+        assert page.locator('#npLookBox .np-look-back').count() == 1, '定过才有「↺ 全部改回账号默认」'
+        page.locator('#npLookBox .np-look-back').click()
+        page.wait_for_function('() => !npS().shots.look.mark && !npS().shots.look.born')
+        assert page.evaluate('() => npLookToken(npLookOf(npS()))') == TOKEN, '↺ 一次把这一套自定的轴全交回默认'
+        assert '左上角小图标' not in prompts(), '提示词跟着一起退回去'
+        assert calls() == 0, '点轴 / 退默认都只是本地重排：%s' % calls()
+        goto_tab('desc')
+        p0 = page.locator('.np-shot-pout').first.inner_text()
+        assert '固定元素：' + TOKEN in p0 and p0.count('左上角小图标') == 0, '站在 ③ 看那一格：退默认之后不带这一套那点改动'
+        goto_tab('look')
+        print('PASS: 点一轴＝只记这一套（带「·这一套」），↺ 退回＝那一套自定的轴一次全交回账号默认（零 AI）', flush=True)
+
+        # ── 4) 配文方式四档：换档只换图上那套字的身份，段原文上不上屏跟着变，整套共用同一条配色 ──
+        say = prompts()
+        assert '【图上就这些字：说一次】' in say, say[:300]
+        assert '大字「开场钩子」' in say, '大字空着＝本地取这段第一句：%s' % say[say.index('【图上'):say.index('【图上') + 160]
+        assert '这段原文别另外贴上去' in say, '说一次这一档不许把段原文再抄一遍'
+        page.locator('#npLookBox .np-capd[data-k="whole"]').click()
+        page.wait_for_function('() => ((npS().visual || {}).images || "").indexOf("整段上屏") >= 0')
+        whole = prompts()
+        assert '【图上就这些字：整段上屏】' in whole and '「开场钩子。」' in whole, '整段上屏：段原文一字不改排上屏'
+        page.locator('#npLookBox .np-capd[data-k="only"]').click()
+        page.wait_for_function('() => ((npS().visual || {}).images || "").indexOf("只这一句大字") >= 0')
+        only = prompts()
+        assert '这段原文也别贴上去' in only, '只一句大字：这段原文一个字都不许上屏：%s' % only[only.index('【图上'):only.index('【图上') + 220]
+        page.locator('#npLookBox .np-capd[data-k="label"]').click()
+        page.wait_for_function('() => ((npS().visual || {}).images || "").indexOf("字只当标注用") >= 0')
+        lab = prompts()
+        assert '还没写标注' in lab, '标注一条都没填时那一格要提示补：%s' % lab[lab.index('【图上'):lab.index('【图上') + 240]
+        for name, v in (('说一次', say), ('整段上屏', whole), ('只一句大字', only), ('辅助标注', lab)):
+            assert '14 字' not in v, name + ' 这一档不许再写死字数上限'
+            assert '【配色与层级' in v and '#F5A623' in v, name + ' 这一档也该带整套共用的配色与层级'
+        assert calls() == 0, '换配文档只是本地重拼：%s' % calls()
+        page.locator('#npLookBox .np-capd[data-k="only"]').click()
+        page.wait_for_function('() => npCapOf(npLookOf(npS())) === "only"')
+        goto_tab('desc')
+        p0 = page.locator('.np-shot-pout').first.inner_text()
+        assert '【图上只这一句大字，≤12 字】' in p0, '③ 那一格跟着这一档：%s' % p0[-260:]
+        assert page.locator('.np-cap').count() == 4 * 3, '③ 每一行都摆四档 chips（某一张要单独换就在行里拨）'
+        goto_tab('look')
+        print('PASS: 配文方式四档（说一次 / 整段上屏 / 只一句大字 / 辅助标注）各说各的口径，段原文上不上屏跟着换，整套共用一条配色，零 AI、无写死字数', flush=True)
+
+        # ── 5) 落档：这一套的 look 与圈好的段一起进档，从档案再进来读得回（零 AI） ──
+        page.wait_for_timeout(700)
+        got = None
+        t0 = time.time()
+        while time.time() - t0 < 15:
+            arr = page.evaluate('async () => (await chrome.storage.local.get("np_notes")).np_notes || []')
+            row = ((arr[0] or {}).get('imgDocs') or [{}])[0]
+            sh = row.get('shots') or {}
+            if sh.get('look', {}).get('cap') == 'only' and len(sh.get('sents') or []) == 3:
+                got = sh
+                break
+            page.wait_for_timeout(300)
+        assert got, '这一套的 look / 句子层没落进档案：%s' % got
+        before = calls()
+        goto_out('look-1')
+        assert cur_tab() == 'desc', '段有了、分镜还空＝回来该落在 ③ 分镜（风格有打底，不再拦在 ①）：%s' % cur_tab()
+        assert calls() == before, '从档案再进来不该重烧 AI：%s' % calls()
+        assert page.evaluate('() => npCapOf(npLookOf(npS()))') == 'only'
+        goto_tab('look')
+        assert '现在整份跟默认走' in page.locator('#npLookBox').inner_text(), '↺ 之后这一套没自定的轴，回来还该这么说'
+        assert '真人工作场景' in tab_badge('look'), '① 那一档的标签跟着说打底那一派：%s' % tab_badge('look')
+        goto_tab('desc')
+        page.wait_for_function('() => document.querySelectorAll(".np-shot").length === 3')
+        assert page.evaluate('() => (npS().shots.items || []).map(x => x.text)') == SENTS, '圈出来的三段读得回（这一档不动它的分组）'
+        assert calls() == before, '切到 ③ 也不重烧 AI：%s' % calls()
+        print('PASS: 这一套的风格与配文档连同分组落进这一档，从档案再进来直接读回、零 AI', flush=True)
+
+        # ── 6) 任务配置 → 🎨 出图默认：选两轴 + 换配文档 → 保存落库 ──
+        page.evaluate('() => switchMainTab("noteTaskCfg")')
+        page.wait_for_function('() => !!document.querySelector("#noteToneTabs .nt-tab[data-sec=look]")')
+        page.locator('#noteToneTabs .nt-tab[data-sec="look"]').click()
+        page.wait_for_function('() => !!document.querySelector(".diagLookChip")')
+        assert page.locator('.diagLookChip.on[data-a="born"][data-v="扁平矢量插画"]').count() == 1, '账号默认那几轴该亮着'
+        assert page.locator('.diagLookChip.on[data-a="mark"]').count() == 0, '博主印记打底留空（实拍那挂不压水印），没存过就不该亮着任何一颗'
+        assert page.locator('.diagLookCap[data-k="say"]').inner_text().startswith('✓'), '配文没存过＝亮着打底那一档（说一次）'
+        assert '打底＝统一小红书那一挂' in page.locator('#diagStyleResult').inner_text(), '这一页要说清最低一层是打底'
+        assert '配文方式（整套默认）' in page.locator('#diagStyleResult').inner_text(), '回传配置那行要单独说清配文档落在哪一档'
+        page.locator('.diagLookChip[data-a="born"][data-v="实拍照片"]').click()
+        page.locator('.diagLookChip[data-a="layout"][data-v="左文右图·大留白"]').click()
+        page.locator('.diagLookCap[data-k="label"]').click()
+        page.locator('.diagLookSave').click()
+        page.wait_for_function('''async () => {
+            const d = await chrome.storage.local.get('config');
+            const c = d.config || {};
+            return !!(c.imgLook && c.imgLook.born === '实拍照片' && c.imgLook.layout === '左文右图·大留白' && c.imgLook.cap === 'label');
+        }''')
+        assert '已保存' in page.locator('#diagLookMsg').inner_text()
+        # 切走再回来：这一页按库里的值回显（不是按刚才点过的内存态）
+        page.evaluate('() => switchMainTab("noteArchive")')
+        page.evaluate('() => switchMainTab("noteTaskCfg")')
+        page.wait_for_function('() => !!document.querySelector("#noteToneTabs .nt-tab[data-sec=look]")')
+        page.locator('#noteToneTabs .nt-tab[data-sec="look"]').click()
+        page.wait_for_function('() => !!document.querySelector(".diagLookChip")')
+        assert page.locator('.diagLookChip.on[data-a="born"][data-v="实拍照片"]').count() == 1, '保存过的值切走再回来要还在'
+        assert page.locator('.diagLookCap[data-k="label"]').inner_text().startswith('✓'), '配文档也要回显'
+        assert '实拍照片；浅底＋单色点缀；左文右图·大留白' in page.locator('#diagStyleResult').inner_text()
+        print('PASS: 发笔记 · 任务配置 → 🎨 出图默认：选轴 + 定配文档 → 保存落进 config.imgLook，切走再回来还在', flush=True)
+
+        assert calls() == before, '① 这一整条路（含任务配置保存）一次 AI 都没烧：%s' % calls()
+        assert not ERRORS, '有 pageerror：%s' % ERRORS[:2]
+        print('PASS: 无 pageerror', flush=True)
+        page.screenshot(path=str(OUT / 'xhs-note-look.png'))
+        print('SHOT: %s' % (OUT / 'xhs-note-look.png'), flush=True)
+    finally:
+        ctx.close()
+
+print('\n全绿：造图片 ① 这一档（四轴 + 配文方式四档 + 打底/账号默认/这一套三层 · 全程零 AI）', flush=True)

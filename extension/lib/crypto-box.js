@@ -175,28 +175,36 @@
     const o = opts || {};
     return new Promise((resolve) => {
       if (typeof document === 'undefined') { resolve({ ok: false, password: '' }); return; }
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(15,18,28,.55);z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:12px;';
+      const wrap = document.createElement('dialog');
+      wrap.setAttribute('aria-labelledby', 'cbTitle');
+      wrap.setAttribute('aria-describedby', 'cbHint');
+      wrap.style.cssText = 'position:fixed;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;box-sizing:border-box;border:0;background:rgba(15,18,28,.55);display:flex;align-items:center;justify-content:center;padding:12px;';
       const needConfirm = o.confirm === true;
       wrap.innerHTML = `
-        <div style="background:#fff;border-radius:14px;padding:18px 18px 14px;width:min(360px,100%);box-shadow:0 12px 40px rgba(0,0,0,.28);box-sizing:border-box;">
-          <div style="font-size:15px;font-weight:700;color:#1f2430;margin-bottom:6px;">${o.title || '加密口令'}</div>
-          <div style="font-size:12px;color:#6b7280;line-height:1.7;margin-bottom:12px;">${o.hint || ''}</div>
-          <input type="password" id="cbPwd" placeholder="${o.placeholder || '请输入口令'}" autocomplete="new-password"
+        <div style="background:#fff;border-radius:14px;padding:18px 18px 14px;width:min(360px,100%);max-height:100%;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.28);box-sizing:border-box;">
+          <div id="cbTitle" style="font-size:15px;font-weight:700;color:#1f2430;margin-bottom:6px;"></div>
+          <div id="cbHint" style="font-size:12px;color:#6b7280;line-height:1.7;margin-bottom:12px;"></div>
+          <input type="password" id="cbPwd" aria-labelledby="cbTitle" autocomplete="new-password"
                  style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #dfe3ea;border-radius:9px;font-size:13px;outline:none;">
           ${needConfirm ? '<input type="password" id="cbPwd2" placeholder="再输一次确认" autocomplete="new-password" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #dfe3ea;border-radius:9px;font-size:13px;outline:none;margin-top:8px;">' : ''}
           <div id="cbErr" style="font-size:12px;color:#c62828;min-height:16px;margin-top:6px;"></div>
           <div style="display:flex;gap:8px;justify-content:flex-end;">
             <button id="cbCancel" style="font-size:13px;padding:8px 14px;border:1px solid #dfe3ea;background:#fff;color:#4b5563;border-radius:9px;cursor:pointer;">取消</button>
-            <button id="cbOk" style="font-size:13px;padding:8px 16px;border:none;background:#ff274b;color:#fff;border-radius:9px;cursor:pointer;font-weight:600;">${o.okText || '确定'}</button>
+            <button id="cbOk" style="font-size:13px;padding:8px 16px;border:none;background:var(--c-brand,#1f2329);color:var(--c-brand-on,#fff);border-radius:9px;cursor:pointer;font-weight:600;"></button>
           </div>
         </div>`;
       document.body.appendChild(wrap);
       const $ = (id) => wrap.querySelector('#' + id);
       const pwd = $('cbPwd'), pwd2 = $('cbPwd2'), err = $('cbErr');
-      setTimeout(() => pwd.focus(), 30);
-      const close = (val) => { wrap.remove(); resolve(val); };
+      $('cbTitle').textContent = o.title || '加密口令';
+      $('cbHint').textContent = o.hint || '';
+      $('cbOk').textContent = o.okText || '确定';
+      pwd.placeholder = o.placeholder || '请输入口令';
+      wrap.showModal();
+      pwd.focus();
+      const close = (val) => { wrap.close(); wrap.remove(); resolve(val); };
       $('cbCancel').onclick = () => close({ ok: false, password: '' });
+      wrap.oncancel = (e) => { e.preventDefault(); close({ ok: false, password: '' }); };
       wrap.onclick = (e) => { if (e.target === wrap) close({ ok: false, password: '' }); };
       const submit = () => {
         const v = String(pwd.value || '');
@@ -208,8 +216,8 @@
       $('cbOk').onclick = submit;
       wrap.addEventListener('keydown', (e) => {
         e.stopPropagation();
-        if (e.key === 'Enter') submit();
-        if (e.key === 'Escape') close({ ok: false, password: '' });
+        if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); submit(); }
+        if (e.key === 'Escape') { e.preventDefault(); close({ ok: false, password: '' }); }
       });
     });
   }

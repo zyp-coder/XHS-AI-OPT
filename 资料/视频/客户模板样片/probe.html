@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>B2 技术验证 · canvas → WebCodecs → MP4</title>
+<style>
+  body{font:14px/1.7 "Microsoft YaHei",sans-serif;background:#0f1115;color:#e8e8e8;padding:24px;margin:0}
+  h3{margin:0 0 12px;font-size:16px}
+  canvas{width:216px;height:384px;border:1px solid #333;border-radius:6px;background:#000}
+  button{padding:8px 16px;border-radius:8px;border:0;background:#e8503a;color:#fff;font-weight:700;cursor:pointer;margin:10px 8px 10px 0}
+  button:disabled{opacity:.5;cursor:default}
+  pre{background:#181c22;padding:12px;border-radius:8px;white-space:pre-wrap;font-size:12.5px;max-width:900px}
+</style>
+</head>
+<body>
+<h3>B2 技术验证：canvas 逐帧 → WebCodecs 离线编码 → MP4 封装</h3>
+<canvas id="cv" width="1080" height="1920"></canvas>
+<div>
+  <button id="runBtn" onclick="run()">▶ 跑验证（编码 1 秒 30 帧）</button>
+  <button onclick="dl()" id="dlBtn" disabled>⬇ 下载测试 MP4</button>
+  <button onclick="dlTxt()">⬇ 下载落地测试（txt）</button>
+</div>
+<pre id="log">待运行…</pre>
+<script src="mp4-muxer.js"></script>
+<script>
+const W = 1080, H = 1920, FPS = 30;
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d', { alpha: false });
+function log(s) { document.getElementById('log').textContent += s + '\n'; console.log(s); }
+
+let __blob = null;
+
+function drawFrame(i) {
+  const t = i / FPS;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, `hsl(${(i * 4) % 360} 60% 14%)`);
+  g.addColorStop(1, `hsl(${(i * 4 + 60) % 360} 55% 8%)`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // 移动竖条：用来看 30 帧是否连续（应匀速划过）
+  const x = (i / (FPS - 1)) * (W - 80);
+  ctx.fillStyle = '#D4AF37'; ctx.fillRect(x, 700, 80, 520);
+  ctx.fillStyle = '#F5F5F5';
+  ctx.font = '700 96px "Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('编码测试', W / 2, 560);
+  ctx.fillText('第 ' + (i + 1) + ' / ' + FPS + ' 帧', W / 2, 1380);
+  ctx.font = '400 48px "Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#9aa4b0';
+  ctx.fillText((W + '×' + H + ' @ ' + FPS + 'fps'), W / 2, 1470);
+}
+
+async function pickCodec() {
+  const cands = ['avc1.640028', 'avc1.4d0028', 'avc1.42002a', 'avc1.420028', 'avc1.42001f'];
+  const out = [];
+  for (const codec of cands) {
+    try {
+      const s = await VideoEncoder.isConfigSupported({ codec, width: W, height: H, bitrate: 10000000, framerate: FPS });
+      out.push(codec + '=' + (s.supported ? '✓' : '✗'));
+      if (s.supported) return { codec, report: out.join('  ') };
+    } catch (e) { out.push(codec + '=err:' + e.name); }
+  }
+  return { codec: null, report: out.join('  ') };
+}
+
+async function run() {
+  document.getElementById('log').textContent = '';
+  document.getElementById('runBtn').disabled = true;
+  log('UA: ' + navigator.userAgent);
+  log('VideoEncoder: ' + (typeof VideoEncoder !== 'undefined'));
+  log('AudioEncoder: ' + (typeof AudioEncoder !== 'undefined'));
+  if (typeof VideoEncoder === 'undefined') { log('❌ 该浏览器不支持 WebCodecs，验证终止'); document.getElementById('runBtn').disabled = false; return; }
+  const pick = await pickCodec();
+  log('编码器探测: ' + pick.report);
+  if (!pick.codec) { log('❌ 无可用 H.264 编码器'); document.getElementById('runBtn').disabled = false; return; }
+
+  const t0 = performance.now();
+  const target = new Mp4Muxer.ArrayBufferTarget();
+  const muxer = new Mp4Muxer.Muxer({
+    target,
+    video: { codec: 'avc', width: W, height: H },
+    fastStart: 'in-memory',
+  });
+  let encErr = null;
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      const tsUs = Math.round((chunk.timestamp || 0));
+      muxer.addVideoChunk(chunk, meta, tsUs);
+    },
+    error: (e) => { encErr = e; log('❌ 编码器错误: ' + e.message); },
+  });
+  encoder.configure({ codec: pick.codec, width: W, height: H, bitrate: 10000000, framerate: FPS });
+
+  const keyEvery = FPS; // 1 秒一个关键帧
+  for (let i = 0; i < FPS; i++) {
+    drawFrame(i);
+    const frame = new VideoFrame(cv, { timestamp: Math.round(i * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+    encoder.encode(frame, { keyFrame: i % keyEvery === 0 });
+    frame.close();
+    if (encoder.encodeQueueSize > 6) { await new Promise(r => setTimeout(r, 0)); }
+    if (i % 10 === 9) await new Promise(r => setTimeout(r, 0));
+  }
+  await encoder.flush();
+  encoder.close();
+  if (encErr) { log('❌ 未通过：编码中断'); document.getElementById('runBtn').disabled = false; return; }
+
+  muxer.finalize();
+  const buf = target.buffer;
+  __blob = new Blob([buf], { type: 'video/mp4' });
+  log('✅ 封装完成：' + (buf.byteLength / 1024).toFixed(1) + ' KB，耗时 ' + ((performance.now() - t0) / 1000).toFixed(1) + 's');
+  log('   预计 15 秒成片大小 ≈ ' + (buf.byteLength * 15 / 1024 / 1024).toFixed(1) + ' MB');
+  document.getElementById('dlBtn').disabled = false;
+  document.getElementById('runBtn').disabled = false;
+  window.__probeDone = true;
+}
+
+function dl() {
+  if (!__blob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(__blob);
+  a.download = 'probe-encode-test.mp4';
+  document.body.appendChild(a); a.click(); a.remove();
+  log('已触发下载：probe-encode-test.mp4');
+}
+
+function dlTxt() {
+  const blob = new Blob(['download-landing-test'], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'probe-download-test.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  log('已触发下载：probe-download-test.txt');
+}
+</script>
+</body>
+</html>

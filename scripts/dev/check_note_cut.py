@@ -1,0 +1,525 @@
+# -*- coding: utf-8 -*-
+"""🎯 断句台自检（老板 2026-10-02 五十八改② 立的那个带行号的正文框；六十三改起它是 ③ 那一档；
+六十四改③ 由「✂️ 断句」改名「🎯 划重点」；六十五改：★ 选句挪进 ④ 的配文栏、这一档退回去只管「断句」——
+老板「断句就是分段，分了段之后立刻就是配置画面和配文就好了」）。
+
+口径（五档：① 🎨 风格 → ② 🖼 封面 → ③ 🎯 断句 → ④ 🖋 分镜 → ⑤ 👀 预览）：
+  1) ③ 断句不烧 AI：摊开这一档就把文案按标点逐句列成「一行一句」，左边那一列就是行号；
+  2) 主用法＝按住行号拖：从第 m 行拖到第 n 行＝这几行圈成一屏；只点一行没拖＝那一行自己占一屏；
+     压到哪几屏就并过来，重叠最多的那一屏活下来，拖出去的边界外那几句先回「没归屏」；被并掉的那屏不留空壳；
+  3) ③ 不再定「哪句当大字」（六十五改：★ 挪进 ④ 的配文栏）——屏头只剩结构旋钮：
+     📷 不占图 / ✂拆 / ⤒并上 / ⇧⇩ 边界挪一行 / ✕ 散掉；每行右边 ✂ 句中补一刀、✎ 改这一句的字；
+  4) 文案那一格只读（正文只有一个编辑口：回「笔记档案」那一行点「下一步」）；
+     改了要点 ⟳ 才重列：没改过字的那几行还在原来那一屏里，对不上的那几行退出分组并说给人听；
+  5) AI 在这一档只剩 ④ 表头那一发 🔮：只回 {"提名句":[{"句","理由"}]}；没归屏的行、已是那句的行一律滤掉；
+     人点一下「🔮 用这句（第 N 行）」才算数——只换那一屏那句，绝不重排人圈好的边界；
+  6) 老档不回填：只有 items 的那一行，行号照样列出来，那一屏留它自己那份字（挂在旧屏那一叠里），对得上才点 ⟳ 绑行号；
+  7) 落档往返回来：sents、每屏 sids 与 keySid 都在（keyText 是派生读数、不进档案），分组不散，一次 AI 都不重烧。
+
+跑法：python3 -X utf8 scripts/dev/check_note_cut.py
+临时 profile 加载真扩展（msedge headful），全程 AI 走桩、不烧真接口。
+"""
+import pathlib
+import shutil
+import sys
+import tempfile
+import time
+
+from playwright.sync_api import sync_playwright
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+EXT = ROOT / 'extension'
+OUT = pathlib.Path(tempfile.gettempdir())
+ERRORS = []
+
+BODY = ('开场钩子一句。\n\n第一个卖点这一句比较长，中间有个停顿。\n\n它后面紧跟一句补充。\n'
+        '第二个卖点这一句。\n\n再补一句实证。\n\n第三段是个提醒。\n\n收尾这一句。')
+
+# 本地逐句列（零 AI）应该列出来的那 7 行：一行＝一句，按标点（。！？；）切
+BODY_LINES = ['开场钩子一句。', '第一个卖点这一句比较长，中间有个停顿。', '它后面紧跟一句补充。',
+              '第二个卖点这一句。', '再补一句实证。', '第三段是个提醒。', '收尾这一句。']
+
+MOTIF_A = '方案页'
+# 改过正文（末句换成 ✎ 改过的那句、末尾再多给一句）之后 ⟳ 重列应该列出来的那 8 行
+VOICE = BODY.replace('收尾这一句。', '收尾这句我自己改过了。') + '\n\n最后再多给一句。'
+LINES_8 = BODY_LINES[:6] + ['收尾这句我自己改过了。', '最后再多给一句。']
+NOTES = "async () => (await chrome.storage.local.get('np_notes')).np_notes || []"
+
+STATE = r'''() => {
+  const s = (npS() || {}).shots || {};
+  const items = s.items || [], sents = s.sents || [];
+  const pos = {};
+  sents.forEach((x, i) => { pos[x.id] = i; });
+  const owner = (id) => items.find(it => (it.sids || []).indexOf(id) >= 0);
+  return {
+    order: sents.map(x => x.id),
+    texts: sents.map(x => x.text),
+    segs: items.map(it => {
+      const ls = (it.sids || []).map(id => pos[id]).filter(v => typeof v === 'number');
+      return {
+        id: it.id, sids: (it.sids || []).slice(), lines: ls,
+        text: String(it.text || ''), off: !!it.off, desc: String(it.desc || ''),
+        key: String(it.keySid || ''), keyText: String(it.keyText || ''),
+        legacy: !(it.sids || []).length && !!String(it.text || '').trim(),
+      };
+    }),
+    pool: sents.filter(x => !owner(x.id)).map(x => x.id),
+    sug: (s.suggest || []).map(x => x.sid),
+  };
+}'''
+
+SEED = r'''async (payload) => {
+    await Storage.initializeDefaults(DEFAULT_PROMPTS);
+    await ensureTenantInit();
+    const cfg = await Storage.getConfig();
+    cfg.product.name = '断句测试产品';
+    cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
+    cfg.ai.apiKey = 'test-local-only';
+    await Storage.setConfig(cfg);
+    const legacyItems = [
+      {id: 'old1', text: payload.legacy1, desc: '旧档第一段'},
+      {id: 'old2', text: '老档自己另写的一段，不在现在这份文案里。', desc: '旧档第二段'},
+    ];
+    await chrome.storage.local.set({
+        np_notes: [
+            {id: 'cut-1', title: '省时间三步', status: '待发', platform: 'xhs', form: '图文',
+             draft: payload.body, createdAt: Date.now()},
+            {id: 'cut-old', title: '老档那篇', status: '待发', platform: 'xhs', form: '图文',
+             draft: payload.body, createdAt: Date.now() - 1000,
+             imgDocs: [{id: 'g-old', pid: 'xhs', style: '清单卡片式', updatedAt: 1,
+                        shots: {style: '', items: legacyItems}}],
+             shots: {style: '', items: legacyItems}},
+        ],
+        np_assets: [],
+    });
+    self.aiCalls = 0;
+    self.otherCalls = [];
+    self.cutSystems = [];
+    self.cutUsers = [];
+    self.cutIds = [];
+    AiClient.chatCompletion = async (cfg2, system, user) => {
+        const sys = String(system || '');
+        if (sys.indexOf('你在帮一条') < 0) {
+            self.otherCalls.push(sys.slice(0, 24));
+            return {content: '{"__stub":"不该烧的这一发"}'};
+        }
+        const ids = String(user).match(/\[([A-Za-z0-9]+)\]/g).map(x => x.slice(1, -1));
+        self.cutSystems.push(sys);
+        self.cutUsers.push(String(user));
+        self.aiCalls++;
+        const want = (self.cutIds || []).filter(x => ids.indexOf(x) >= 0);
+        // 六十五改的契约：提名句（这一屏要上的那一句），不是「该在第几行后面断一刀」
+        return {content: JSON.stringify({'提名句': want.map(id => ({'句': id, '理由': '这句站得住这一屏'}))})};
+    };
+    return true;
+}'''
+
+
+def boot(p):
+    for i in range(5):
+        prof = OUT / ('cutline-profile%d' % i)
+        shutil.rmtree(prof, ignore_errors=True)
+        ctx = p.chromium.launch_persistent_context(
+            str(prof), headless=False, channel='msedge',
+            ignore_default_args=['--disable-extensions'],
+            args=[f'--disable-extensions-except={EXT}', f'--load-extension={EXT}'])
+        t0 = time.time()
+        while time.time() - t0 < 25 and not ctx.service_workers:
+            time.sleep(0.3)
+        if ctx.service_workers:
+            return ctx
+        print('  扩展没装起来（第 %d 趟），重来' % (i + 1), flush=True)
+        ctx.close()
+    raise RuntimeError('扩展装不上：连试 5 趟都没有 service worker')
+
+
+def main():
+    with sync_playwright() as p:
+        ctx = boot(p)
+        try:
+            run(ctx)
+        finally:
+            ctx.close()
+
+
+def run(ctx):
+    sw = ctx.service_workers[0]
+    assert sw.evaluate('chrome.runtime.onMessage.hasListeners()'), '后台路由没注册上'
+    sw.evaluate(SEED, {'body': BODY, 'legacy1': BODY_LINES[0] + BODY_LINES[1]})
+
+    page = ctx.new_page()
+    page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
+    page.set_viewport_size({'width': 1280, 'height': 1400})
+    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    page.wait_for_function('typeof switchMainTab === "function" && typeof npCutBoxHtml === "function"')
+    page.set_default_timeout(25000)
+
+    def st():
+        return page.evaluate(STATE)
+
+    def calls():
+        return sw.evaluate('self.aiCalls')
+
+    def gut_box(n):
+        el = page.locator('#npCutWrap .np-cutline').nth(n).locator('.np-cut-gut')
+        el.scroll_into_view_if_needed()
+        return el.bounding_box()
+
+    def pull(a, b):
+        """按住第 a 行的行号拖到第 b 行＝中间这几句圈成一屏（真鼠标走 mousedown／move／up）
+        两端的坐标分开量：按下之后页面可能自己滚过，一次量好的第二端就成了旧值。"""
+        pa = gut_box(a)
+        page.mouse.move(pa['x'] + pa['width'] / 2, pa['y'] + pa['height'] / 2)
+        page.mouse.down()
+        pb = gut_box(b)
+        page.mouse.move(pb['x'] + pb['width'] / 2, pb['y'] + pb['height'] / 2, steps=8)
+        page.mouse.up()
+        page.wait_for_timeout(320)
+
+    def poke(a):
+        """点一行行号不拖：还没归屏＝那一行自己占一屏；已归屏＝报一句、结构不动（真鼠标点一下）"""
+        box = gut_box(a)
+        page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2)
+        page.wait_for_timeout(280)
+
+    def K(cls, sid):
+        return '#npCutWrap .%s[data-id="%s"]' % (cls, sid)
+
+    def lines_of(segs):
+        return [x['lines'] for x in segs]
+
+    def pool_lines(s):
+        return sorted(s['order'].index(x) for x in s['pool'])
+
+    def tab_on(t):
+        return page.locator('#npImgTabs .np-imgtab[data-t="%s"]' % t)
+
+    def goto_tab(t):
+        tab_on(t).click()
+        page.wait_for_timeout(260)
+
+    def cur_tab():
+        return page.evaluate('() => npTabOf(npS())')
+
+    def tab_badge(t):
+        return tab_on(t).inner_text().replace(' ', '')
+
+    def goto_out(note_id, add_row=False, tab=None, motif=MOTIF_A):
+        """直开这一篇的「🖼 出图」（档案那一行「下一步」走的同一条路，别再过旧的行选择器；七十改：渲染任务表已撤）；
+        加一行＝④ 分镜 空态那颗「＋ 起一套图」＋ ① 风格 挑流派，加完再进一次这一页（npImgLand 照旧算落档，保住下面 cur_tab() 那批断言）"""
+        def enter():
+            page.evaluate('''async (id) => {
+                const list = await npNotesAll();
+                const n = list.find(x => x && x.id === id) || null;
+                switchMainTab('noteOut', n);
+            }''', note_id)
+            page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
+        enter()
+        if add_row:
+            goto_tab('desc')
+            page.wait_for_function('() => !!document.querySelector("#npShotTable .np-img-add")')
+            page.locator('#npShotTable .np-img-add').click()
+            page.wait_for_function('() => (npS().imgDocs || []).length === 1 && !!npS().imgOpen')
+            if motif:
+                goto_tab('look')
+                page.locator('#npLookBox .np-motif[data-k="%s"]' % motif).click()
+                page.wait_for_function('(m) => String(((npS().shots || {}).look || {}).motif || "") === m', arg=motif)
+            enter()
+        if tab:
+            goto_tab(tab)
+
+    def no_cover():
+        """② 那一档点「不出封面」：这一支只管 ③，别拿封面当路障"""
+        page.locator('#npCoverBox .np-cover-on[data-v="0"]').click()
+        page.wait_for_function('() => npS().shots.cv.on === false')
+
+    # ── 1) 摊开就是带行号的正文框：本地列 7 行、一屏都还没圈、零 AI ──
+    goto_out('cut-1', add_row=True)
+    assert cur_tab() == 'cover', '新加的一行（流派有了、封面那份还没写）先停在 ② 封面——它是独立一档：%s' % cur_tab()
+    no_cover()   # ② 那一版点「不出封面」：这一支只管 ③④ 那条路，② 归 check_note_cover.py，别拿它当路障
+    assert calls() == 0, '进这一页、列行号一次 AI 都没烧：%s' % calls()
+    goto_tab('cut')
+    assert cur_tab() == 'cut' and page.locator('#npCutWrap').count() == 1
+    s = st()
+    assert len(s['order']) == 7 and s['segs'] == [], '刚加的一行＝7 行、0 屏：%s' % s
+    assert s['texts'] == BODY_LINES, '一行一句，就是原文那 7 句：%s' % s['texts']
+    assert len(s['pool']) == 7, '7 行都还没归屏'
+    assert page.locator('#npCutWrap .np-cut-gut').count() == 7, '左边那一列是行号'
+    assert page.locator('#npCutWrap .np-sent-key').count() == 0, '★ 已挪进 ④ 配文栏，③ 只剩圈行'
+    assert page.locator('#npCutWrap .np-key-pick').count() == 0, '选句器也不在 ③'
+    assert '还有7行还没归屏' in page.locator('#npCutFrame').inner_text().replace(' ', '')
+    assert '按住行号把第m–n行圈成一屏' in page.locator('#npCutBox').inner_text().replace(' ', ''), \
+        '③ 那档顶上要说清主用法＝拖行号圈屏：%s' % page.locator('#npCutBox').inner_text()[:200]
+    assert not page.locator('#npVoiceTa').is_visible(), '文案那格收在折叠块里（先查看、按需展开）'
+    assert page.locator('#npVoiceTa').evaluate('(el) => el.readOnly === true'), '那一格只读：改正文回「笔记档案」行点「下一步」'
+    assert page.locator('#npNodes').count() == 0, '旧那条竖排节点条已随横置 tab 下线'
+    assert page.locator('#npImgTabs .np-imgtab').count() == 5, '横置五档：风格／封面／断句／分镜／预览'
+    assert MOTIF_A in tab_badge('look'), '① 风格那一档的标签就是这一行的流派：%s' % tab_badge('look')
+    assert '一行都还没圈' in tab_badge('cut'), tab_badge('cut')
+    assert '在等③' in tab_badge('desc'), '④ 还没屏要说清在等什么：%s' % tab_badge('desc')
+    assert '在等③' in tab_badge('preview'), '⑤ 同理：%s' % tab_badge('preview')
+    goto_tab('desc')
+    assert page.locator('#npShotTable').count() == 1 and page.locator('.np-shot').count() == 0, '④ 那一档一块，没屏就是一行都没有'
+    assert '这一档在等 ③' in page.locator('#npShotTable').inner_text(), '空表要说清在等谁'
+    assert '按住第m行的行号拖到第n行' in page.locator('#npShotTable').inner_text().replace(' ', ''), \
+        '空表那句指路要指「拖行号圈屏」：%s' % page.locator('#npShotTable').inner_text()[:240]
+    goto_tab('cut')
+    assert page.locator('#npCutWrap .np-cutline').count() == 7, '切回来还是那 7 行（切档不动结构）'
+    print('PASS: ③ 断句台冷启动零 AI（7 行带行号、0 屏、文案那格只读收起、★ 全在 ④）＋ 五档标签各带状态', flush=True)
+
+    # ── 2) 点一行行号＝那一行自己占一屏；再拖宽＝第 2 行收进同一屏（不替人往后收）──
+    poke(0)
+    s = st()
+    assert len(s['segs']) == 1, '点一行行号＝那一行自己占一屏：%s' % lines_of(s['segs'])
+    assert s['segs'][0]['lines'] == [0], '只算点到的那一行（没收后面那几行）：%s' % s['segs'][0]['lines']
+    assert s['segs'][0]['key'] == s['order'][0], '没人挑过那句＝顶这一屏头一句'
+    assert s['segs'][0]['keyText'] == BODY_LINES[0], 'keyText 是派生读数（那句的原文）：%s' % s['segs'][0]['keyText']
+    assert len(s['pool']) == 6, '第 2~7 行还没归屏：%s' % len(s['pool'])
+    assert calls() == 0, '圈屏是本地的事，一次 AI 都不该烧：%s' % calls()
+    pull(0, 1)
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1]], '从第 1 行拖到第 2 行＝这两行一屏：%s' % lines_of(s['segs'])
+    assert len(s['pool']) == 5, '第 3~7 行还没归屏'
+    print('PASS: 点一行行号＝那行自占一屏；再拖宽＝第 2 行收进同一屏（顶头一句当那句），零 AI', flush=True)
+
+    # ── 3) 拖行号圈屏：第 3–5 行＝第 2 屏，屏序跟着行号排；④ 一屏一张卡、配文栏里 ★ 标着那句 ──
+    pull(2, 4)
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1], [2, 3, 4]], '拖出来的那一屏接在前面那屏后面（按行号，不是按圈的先后）：%s' % lines_of(s['segs'])
+    assert len(s['pool']) == 2, '还剩第 6、7 行没归屏'
+    assert s['segs'][1]['key'] == s['order'][2], '没人挑过那句的屏＝顶这一屏头一句：%s' % s['segs'][1]['key']
+    head = page.locator('#npCutWrap .np-cutseg').first.inner_text().replace(' ', '')
+    assert '第1屏' in head and '第1–2行' in head and '2句' in head, head
+    assert '★' not in head, '③ 屏头不再摆那句（★ 挪去 ④ 的配文栏了）：%s' % head
+    assert '2屏·2行没归' in tab_badge('cut'), '圈完两屏标签跟着变：%s' % tab_badge('cut')
+    goto_tab('desc')
+    assert page.locator('.np-shot').count() == 2 and page.locator('.np-shot-pout').count() == 2, '④ 一屏一张卡、每张一份提示词'
+    assert '缺2屏分镜' in tab_badge('desc'), '④ 的标签要说清还缺几屏：%s' % tab_badge('desc')
+    card0 = ''.join(page.locator('.np-shot').first.inner_text().split())
+    assert '★开场钩子一句。' in card0, '④ 配文栏里 ★ 标着这一屏那句：%s' % card0[:220]
+    cell = page.locator('.np-shot-txt').first
+    assert cell.evaluate('e => e.tagName') == 'DIV', '这段原文在卡里只读（要改回 ③ 拉行号）'
+    goto_tab('cut')
+    segA = s['segs'][0]['id']
+    print('PASS: 拖行号圈屏（第 3–5 行＝第 2 屏）＋ 屏头摆「第几屏 · 第 m–n 行 · n 句」；★ 那句在 ④ 的配文栏', flush=True)
+
+    # ── 4) 重新拉一屏＝边界以这一拖为准：压到的两屏并成一屏，拖出去那句先回没归屏 ──
+    pull(1, 3)
+    s = st()
+    assert lines_of(s['segs']) == [[0], [1, 2, 3]], '第 2–4 行重新圈一屏：第 1 行自己剩一屏，第 5 行回到没归屏 %s' % lines_of(s['segs'])
+    assert len(s['pool']) == 3, '没归屏＝第 5、6、7 行这三句 %s' % len(s['pool'])
+    assert s['texts'] == BODY_LINES, '重圈只动分组：正文一个字没改'
+    assert s['segs'][1]['key'] == s['order'][2], '活下来的那一屏还留着原来那句（边界动了 keySid 没被顶掉）'
+    print('PASS: 拖到新边界＝以这一拖为准（并屏／吐出的行回没归屏），原屏那句跟着活下来', flush=True)
+
+    # ── 5) 屏头 ⇧ ⇩：跟邻屏之间挪一行；抽干的那一屏并进邻屏、不留空壳 ──
+    seg1, seg2 = s['segs'][0]['id'], s['segs'][1]['id']
+    page.locator(K('np-seg-edge', seg2) + '[data-d="-1"]').click()
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1], [2, 3]], '⇧＝这一屏头一句还给上一屏'
+    page.locator(K('np-seg-edge', seg1) + '[data-d="1"]').click()
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1, 2], [3]], '⇩＝把下一屏头一句拉进这一屏'
+    page.locator(K('np-seg-edge', seg1) + '[data-d="1"]').click()
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1, 2, 3]], '再 ⇩ 把邻屏抽干了：那一屏并进来，表上不留一行空壳'
+    assert len(s['segs']) == 1, s['segs']
+    assert s['pool'] and len(s['pool']) == 3, '剩下的第 5、6、7 行还是没归屏'
+    segA = s['segs'][0]['id']
+    assert page.locator(K('np-seg-edge', segA)).count() == 0, '就一屏了，⇧ ⇩ 不摆（没有邻屏可挪）'
+
+    # ── 6) 📷 不占图／✕ 散掉 ──
+    page.locator(K('np-shot-key', segA)).click()
+    s = st()
+    assert s['segs'][0]['off'] is True, '📷 点一下＝这一屏不单独出图'
+    goto_tab('desc')
+    assert '不占图' in page.locator('#npShotTable .np-shot').first.inner_text()
+    assert page.locator('.np-shot-pout').count() == 0, '不占图的屏不拼提示词'
+    assert '都不占图' in tab_badge('desc'), '全不成图时 ④ 要说明：%s' % tab_badge('desc')
+    goto_tab('cut')
+    page.locator(K('np-shot-key', segA)).click()
+    page.locator(K('np-seg-del', segA)).click()
+    s = st()
+    assert s['segs'] == [] and len(s['pool']) == 7, '✕ 散掉只散分组：7 行全回到没归屏'
+    assert s['texts'] == BODY_LINES, '正文一个字没动'
+    print('PASS: 屏头旋钮各管一件事（⇧ ⇩ 挪一行／📷 不占图／✕ 散掉），抽干的那一屏自己收掉', flush=True)
+
+    # ── 7) 行号上只点不拉＝不动结构；④ 配文栏点一行＝只换那句大字、边界不动 ──
+    pull(0, 2)
+    before = st()
+    poke(1)
+    s = st()
+    assert lines_of(s['segs']) == lines_of(before['segs']), '行号上只点不拉（而这一行已归屏），不该把三行那一屏顶成一行的'
+    assert s['segs'][0]['key'] == before['segs'][0]['key'], '点行号也不换那句大字（换那句去 ④ 配文栏点一行）'
+    goto_tab('desc')
+    page.locator('.np-key-pick[data-sid="%s"]' % before['order'][2]).click()
+    page.wait_for_timeout(300)
+    s = st()
+    assert lines_of(s['segs']) == lines_of(before['segs']), '④ 点一行＝只换那句：边界一个字不动'
+    assert s['segs'][0]['key'] == s['order'][2], '那句大字换成第 3 行：%s' % s['segs'][0]['key']
+    page.locator('.np-key-pick[data-sid="%s"]' % before['order'][2]).click()
+    page.wait_for_timeout(250)
+    s = st()
+    assert s['segs'][0]['key'] == s['order'][2], '再点一次已经是那句的那一行：报一句、什么都不动'
+    goto_tab('cut')
+    print('PASS: 行号上只点不拉＝不动结构；④ 点一行＝只换那句大字、边界不动', flush=True)
+
+    # ── 8) ✂ 句中补一刀：多出一行，还在同一屏里 ──
+    sid1 = st()['order'][1]
+    page.locator('.np-sent-cut[data-sid="%s"]' % sid1).click()
+    page.wait_for_timeout(320)
+    s = st()
+    assert len(s['order']) == 8 and lines_of(s['segs']) == [[0, 1, 2, 3]], '拆句补的那一刀落在同一屏里：这一屏跟着多一行 %s' % lines_of(s['segs'])
+    assert s['texts'][1] == '第一个卖点这一句比较长，' and s['texts'][2] == '中间有个停顿。', s['texts']
+    assert '第1–4行' in page.locator('#npCutWrap .np-cutseg').first.inner_text().replace(' ', '')
+    assert '4句' in page.locator('#npCutWrap .np-cutseg').first.inner_text().replace(' ', '')
+
+    # ── 9) ✎ 改这一行这一句的字：回车提交，所在那一屏不散 ──
+    seg_before = [list(x['sids']) for x in s['segs']]
+    sid_last = s['order'][7]
+    page.locator('.np-sent-fix[data-sid="%s"]' % sid_last).click()
+    page.wait_for_function('() => !!document.querySelector(".np-sent-in")')
+    inp = page.locator('.np-sent-in[data-sid="%s"]' % sid_last)
+    inp.press('Control+a')
+    inp.type('收尾这句我自己改过了。')
+    inp.press('Enter')
+    page.wait_for_function('() => npS().shots.editing === ""')
+    s = st()
+    assert s['texts'][7] == '收尾这句我自己改过了。', '改的是那一行本身：%s' % s['texts'][7]
+    assert [list(x['sids']) for x in s['segs']] == seg_before, '改一句的字：分组一个字没散'
+    print('PASS: ✂ 句中补一刀（还在同一屏）／✎ 改这一句的字（回车提交、分组不散）', flush=True)
+
+    # ── 10) 正文改了 → ⟳ 重列：照文案重排行号，没改过字的行不散，对不上的那两行退出（那一刀没写回文案）──
+    page.evaluate('(v) => { npS().voice = v; npCutPaint(npActiveC()); return true; }', VOICE)
+    page.wait_for_function('() => npCutStale(npS())')
+    assert '对不上' in page.locator('#npSrcStale').inner_text(), '改了文案要先说对不上了'
+    page.locator('#npCutWrap .np-cut-relest').click()
+    page.wait_for_function('() => (npS().shots.sents || []).length === 8')
+    s = st()
+    assert s['texts'] == LINES_8, '重列＝照那份文案列 8 行（7 句 + 多给那句）：%s' % s['texts']
+    assert lines_of(s['segs']) == [[0, 2]], '没改过字的第 1、3 行还在原来那一屏里；句中补的那一刀对不上文案，退出分组等重拉 %s' % lines_of(s['segs'])
+    assert pool_lines(s) == [1, 3, 4, 5, 6, 7], '没归屏的就是对不上那行加没圈的那几行：%s' % pool_lines(s)
+    assert '退出' in page.locator('body').inner_text(), '重列要把「有行退出了那一屏」说出口（别让那一刀无声没掉）'
+    print('PASS: 正文改了要点 ⟳ 才重列（照文案重排行号、没改过字的行不散、对不上的行退出并说给人听）', flush=True)
+
+    # ── 11) 🔮 AI 帮我挑每屏那句（桩，钮在 ④ 的表头）：只提名「已归屏且还没当那句」的行，点「用这句」才落 ──
+    pull(0, 1)
+    pull(2, 4)
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1], [2, 3, 4]], '按新行号重圈两屏：%s' % lines_of(s['segs'])
+    before = st()
+    # 一句在已圈好的那一屏里（不是那句 ★），一句还没归屏：后者该被滤掉（提名摆在 ④ 那一屏的选句器下面，没有屏就摆不下）
+    sw.evaluate('(v) => { self.cutIds = v; return true; }', [before['order'][3], before['order'][6]])
+    goto_tab('desc')
+    page.locator('.np-cut-suggest').click()
+    page.wait_for_function('() => npS().shots.cutBusy === false')
+    assert calls() == 1, '🔮 那一发＝一发 AI：%s' % calls()
+    assert sw.evaluate('self.otherCalls') == [], '除了那一发不该碰别的 AI：%s' % sw.evaluate('self.otherCalls')
+    s = st()
+    assert [x['sids'] for x in s['segs']] == [x['sids'] for x in before['segs']], '🔮 回来只是提名：一个边界都没动'
+    assert s['sug'] == [before['order'][3]], '屏内那一句摆出来等人点；没归屏的第 7 行那条被滤掉：%s' % s['sug']
+    assert page.locator('.np-shot .np-cutseam').count() == 1, '提名挂在它那一屏的选句器下面'
+    first = page.locator('.np-shot .np-cutseam').first.inner_text()
+    assert '用这句（第 4 行）' in first, '按钮上写的是「第几行这句」：%s' % first
+    assert '这句站得住这一屏' in first, '理由要跟着摆出来：%s' % first
+    sysmsg = sw.evaluate('() => self.cutSystems[0]')
+    assert '提名句' in sysmsg and '不许改写句子' in sysmsg and '{"提名句"' in sysmsg, sysmsg[:300]
+    assert '你给的每一句只是提名' in sysmsg, sysmsg[:300]
+    assert '整篇 4~8 屏为宜' in sysmsg, '没硬定张数就说 4~8 屏：%s' % sysmsg[:400]
+    assert '断点' not in sysmsg, '那一发不再提「断点」：%s' % sysmsg[:300]
+    # 采纳（第 4 行已在第 2 屏里）＝只换那一屏的那句话，边界一个字不动
+    page.locator('.np-key-adopt[data-sid="%s"]' % before['order'][3]).click()
+    s = st()
+    assert lines_of(s['segs']) == [[0, 1], [2, 3, 4]], '采纳＝只换那句 ★，边界一个字不动：%s' % lines_of(s['segs'])
+    assert s['segs'][1]['key'] == before['order'][3], '第 2 屏那句话换成第 4 行了'
+    assert s['sug'] == [], '点过的提名就该收掉：%s' % s['sug']
+    assert calls() == 1, '采纳不重烧 AI'
+    page.locator('.np-cut-suggest').click()
+    page.wait_for_function('() => npS().shots.cutBusy === false')
+    assert calls() == 2, '再点一次 🔮 才第二次烧 AI'
+    u2 = sw.evaluate('() => self.cutUsers[1]')
+    assert '★ ' in u2 and '还没归屏' in u2 and '已在第' in u2, '那一发要把每行归了哪一屏、当前那句报给 AI：%s' % u2[:400]
+    print('PASS: 🔮 只提名「每屏那句」（一发 AI、边界不动；没归屏的行滤掉），点「用这句（第 N 行）」才落——只换 ★', flush=True)
+
+    # ── 12) 落档往返：sents／每屏 sids＋keySid 进档，回来分组不散，零重烧 ──
+    before = st()
+    keymap = {x['id']: x['key'] for x in before['segs']}
+    base = calls()
+    page.evaluate('() => npArchiveFlushTouch()')
+    got = None
+    t0 = time.time()
+    while time.time() - t0 < 15:
+        got = next((x for x in page.evaluate(NOTES) if x and x.get('id') == 'cut-1'), {}).get('imgDocs')
+        if got and (got[0].get('shots') or {}).get('items'):
+            break
+        page.wait_for_timeout(300)
+    assert got and len(got) == 1, '这一行要落进档案：%s' % got
+    row = got[0]['shots']
+    assert len(row.get('sents') or []) == 8, '行号层要落档：%s' % len(row.get('sents') or [])
+    assert all(x.get('sids') for x in row['items']), '每屏记住自己收了第几行'
+    assert all(x.get('keySid') for x in row['items']), '★ 那句（keySid）进档案：' + str([x.get('keySid') for x in row['items']])
+    assert {x['id']: x['keySid'] for x in row['items']} == keymap, '落的就是台面上那几句 ★'
+    assert all('keyText' not in x for x in row['items']), 'keyText 是派生读数，不进档案'
+    by_id = {x['id']: x['text'] for x in row['sents']}
+    assert row['items'][0]['text'] == ''.join(by_id[i] for i in row['items'][0]['sids']), '这段原文与 sids 对得上（派生物不另存真源）'
+    goto_out('cut-1')
+    assert cur_tab() == 'desc', '② 那一版早在 §1 关了、分镜还空着＝回来落在 ④（走到活儿那一档）：%s' % cur_tab()
+    assert page.evaluate('() => npS().shots.cv.on === false'), '「不出封面」那一版的选择还在'
+    goto_tab('desc')
+    s = st()
+    assert [list(x['sids']) for x in s['segs']] == [list(x['sids']) for x in before['segs']], '回来分组一模一样'
+    assert s['pool'] == before['pool'], '没归屏的行还是那几个'
+    assert [x['key'] for x in s['segs']] == [x['key'] for x in before['segs']], '回来每屏那句 ★ 还在'
+    assert s['texts'][6] == '收尾这句我自己改过了。', '✎ 改过、又写进文案的那句带回来了'
+    assert calls() == base, '从档案再进来一次 AI 都没重烧'
+    print('PASS: 落档往返（行号层＋每屏 sids 与 keySid 进档、keyText 不落、回来分组不散、零 AI 重烧）', flush=True)
+
+    # ── 13) 老档不回填：行号照样列，旧屏挂在下面那一叠，对得上才点 ⟳ 绑行号 ──
+    goto_out('cut-old')
+    assert cur_tab() == 'cover', '老档那两屏都有分镜，可封面是六十三改新加的一档＝先停在 ② 让它写那份：%s' % cur_tab()
+    no_cover()
+    assert page.evaluate('() => npImgLand(npS())') == 'preview', '点了「不出封面」，老档就落在 ⑤ 预览'
+    goto_tab('look')
+    assert page.locator('#npLookBox .np-motif').count() == 4, '① 那一档摊开＝三颗短名单＋跟账号默认（六十六改收口，四类轴已撤下这一排）'
+    assert page.locator('#npLookBox .np-capd').count() == 4, '配文方式四档跟流派摆在同一档'
+    goto_tab('cut')
+    s = st()
+    assert len(s['order']) == 7 and len(s['pool']) == 7, '老档摊开照样本地列行号（不烧 AI、也不替人绑）：%s' % len(s['order'])
+    assert all(x['legacy'] for x in s['segs']) and len(s['segs']) == 2, '两屏都还没绑行号'
+    assert s['segs'][0]['text'] == BODY_LINES[0] + BODY_LINES[1], '没绑的屏留它自己那份字'
+    strip = page.locator('#npCutBox').inner_text()
+    assert '有 2 屏还是旧档' in strip, '旧档那一叠要说清楚：%s' % strip[:160]
+    base2 = calls()
+    old0, old1 = s['segs'][0]['id'], s['segs'][1]['id']
+    page.locator('#npCutBox details:has(.np-seg-bind) > summary').click()
+    page.locator(K('np-seg-bind', old0)).click()
+    s = st()
+    assert [x['lines'] for x in s['segs']] == [[0, 1], []], '对得上才绑：照那一屏原文连着对上第 1–2 行 %s' % s['segs']
+    assert s['segs'][0]['key'] == s['order'][0], '绑上行号那句 ★ 跟着落到位'
+    assert s['segs'][1]['legacy'] and s['segs'][1]['text'].startswith('老档自己另写的一段'), '另一屏还是旧档那份字'
+    page.locator('#npCutBox details:has(.np-seg-bind) > summary').click()
+    page.locator(K('np-seg-bind', old1)).click()
+    page.wait_for_timeout(500)
+    s = st()
+    assert s['segs'][1]['legacy'], '对不上现在文案的那一屏：绑不上就说明，不硬绑把字顶掉'
+    pull(4, 5)
+    s = st()
+    assert len(s['segs']) == 3 and [x['lines'] for x in s['segs']][2] == [4, 5], '旧档那一屏不挡路：拖行号照样能圈新屏 %s' % [x['lines'] for x in s['segs']]
+    assert calls() == base2, '老档这一整段路一次 AI 都没烧：%s' % calls()
+    assert sw.evaluate('self.otherCalls') == [], '没碰别的 AI 通路：%s' % sw.evaluate('self.otherCalls')
+    print('PASS: 老档不回填（行号照样列、旧屏挂在下面那一叠、对得上才绑、绑上才跟着行号走）', flush=True)
+
+    assert not ERRORS, '页面报错：%s' % ERRORS[:3]
+    print('\n断句台链路全绿：③ 只管断句（点一行自占一屏／拖行号圈屏 → ⇧⇩ 挪一行 → 拆句／改句 → 改正文 ⟳ 重列不散组 → 老档不回填），'
+          '那句大字与 🔮 提名都在 ④ 的配文栏', flush=True)
+    print('（全程 AI：%s 发＝只有 🔮 那两发；其余都在本地）' % calls(), flush=True)
+
+
+if __name__ == '__main__':
+    main()

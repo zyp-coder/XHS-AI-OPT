@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "远程指令演示（最小证明）",
+  "version": "1.0",
+  "description": "证明：服务器可以隔空指挥浏览器里的扩展干活。只在本机演示页面上工作。",
+  "permissions": ["tabs", "scripting"],
+  "host_permissions": ["http://127.0.0.1:8798/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:8798/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
