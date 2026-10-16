@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小红书运营助手</title>
+<!-- ============================================================
+  起始页（一屏简版问卷）——客户进门第一页（2026-10-14 起 / 直接指这里）
+  ------------------------------------------------------------
+  干什么：客户打开网址先看到这一页：填 7 道题（一屏），点一下，
+          AI 依次生成 人设 → 卖点 → 知识库 → 内容规划，全落在服务器账本里；
+          生成结果当场摊开给你看，进「工作台」就是完整的界面。
+  怎么跑：只走服务器三个口——/api/action（动作）、/api/storage/*（读账本）。
+          不碰任何“翻译层”，这页本身就是服务器版的（不是扩展界面副本）。
+  规矩：这是外挂页——扩展界面的副本一个字节不用动。
+  前置门（2026-10-16 流程重排，判断逻辑在 gate.js）：
+          旧号（问卷已生成、非演示号）→ 自动直进工作台；
+          演示号（建材店样例）→ 每次进门都重新弹引导（当新号给人看）；
+          新号/没号 → 本号没看过引导先弹引导，看过就留在这一页填问卷（引导 → 问卷 → 进系统）；
+          从引导页过来带 ?fromGuide=1，不再回弹。
+  ============================================================ -->
+<script src="gate.js"></script>
+<script>window.__xhsEntry = XhsGate.entry();</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #c77700;
+    --brand: #1f2329; --brand-soft: #f0f1f3;
+  }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  /* ── 页头 ── */
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .acct { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 7px 13px; white-space: nowrap; }
+  .top .acct b { color: var(--ink); }
+  .top .acct a { color: var(--ink2); text-decoration: underline; cursor: pointer; }
+  .sub { color: var(--ink2); font-size: 13px; margin-bottom: 16px; }
+  .sub b { color: var(--ink); }
+
+  a.btn { display: inline-block; text-decoration: none; text-align: center; }
+
+  /* ── 配对号小框（账号那行里，点一下复制）── */
+  .pcode { font-family: ui-monospace, Consolas, monospace; font-weight: 700; letter-spacing: 1px; color: var(--ink); }
+  .pcode-box { display: inline-flex; align-items: center; gap: 7px; background: var(--brand-soft); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; cursor: pointer; }
+  .pcode-box:hover { border-color: #c4cad4; }
+
+  /* ── 领号 / 登录小卡（弹层）── */
+  .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal-mask { position: absolute; inset: 0; background: rgba(20, 24, 30, .45); }
+  .modal-card { position: relative; width: 100%; max-width: 430px; background: #fff; border-radius: 16px; padding: 20px 22px 18px; box-shadow: 0 18px 60px rgba(0, 0, 0, .25); }
+  .modal-x { position: absolute; top: 8px; right: 12px; border: none; background: none; font-size: 22px; line-height: 1; color: var(--ink3); cursor: pointer; padding: 4px; }
+  .modal-x:hover { color: var(--ink); }
+  .modal-head { font-size: 16.5px; font-weight: 700; margin-bottom: 4px; }
+  .modal-sub { font-size: 12.5px; color: var(--ink2); margin-bottom: 14px; line-height: 1.7; }
+  .modal-body .f { display: block; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .modal-body .f input { display: block; width: 100%; margin-top: 5px; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font: inherit; font-size: 13.5px; color: var(--ink); outline: none; background: #fcfcfd; }
+  .modal-body .f input:focus { border-color: #b9c0cc; background: #fff; }
+  .modal-err { background: #fdeeee; border: 1px solid #f2cccc; color: var(--err); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; margin-bottom: 10px; }
+  .modal-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 2px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .hidden { display: none !important; }
+
+  /* ── 提示条 ── */
+  .notice { border-radius: 12px; padding: 11px 15px; font-size: 13px; margin-bottom: 14px; line-height: 1.7; }
+  .notice.info { background: #eef6f1; border: 1px solid #cfe7db; color: #14532d; }
+  .notice.warn { background: #fdf6e7; border: 1px solid #f0e0b8; color: #7a5a00; }
+  .notice.err  { background: #fdeeee; border: 1px solid #f2cccc; color: var(--err); }
+  .notice a { color: inherit; font-weight: 600; }
+
+  /* ── 问卷 ── */
+  .quiz { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .q { display: flex; flex-direction: column; }
+  .q > label { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+  .q .hint { font-weight: 400; color: var(--ink3); font-size: 12px; margin-left: 4px; }
+  .q textarea { margin-top: 7px; width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font: inherit; font-size: 13px; color: var(--ink); outline: none; background: #fcfcfd; }
+  .q textarea:focus { border-color: #b9c0cc; background: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+  .chip { border: 1px solid var(--line); background: #fff; color: var(--ink2); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; cursor: pointer; font-family: inherit; }
+  .chip:hover { border-color: #c4cad4; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 18px; padding-top: 15px; border-top: 1px dashed var(--line); }
+  .btn { border: none; border-radius: 10px; padding: 11px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.primary:disabled { opacity: .45; cursor: default; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink2); font-weight: 500; font-size: 13px; }
+  .actions .tip { font-size: 12px; color: var(--ink3); }
+  .paths-why { font-size: 13px; color: var(--ink2); line-height: 1.7; }
+
+  /* ── 生成进度 ── */
+  .steps { display: flex; flex-direction: column; gap: 9px; }
+  .step { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 9px; font-size: 13.5px; }
+  .step .icon { width: 18px; text-align: center; flex: none; }
+  .step .st-name { font-weight: 600; }
+  .step .st-desc { color: var(--ink3); font-size: 12.5px; }
+  .step .st-msg { color: var(--ink3); font-size: 12.5px; }
+  .step.done .icon { color: var(--ok); }
+  .step.error .icon, .step.error .st-msg { color: var(--err); }
+  .step.running .icon { animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .run-head { font-weight: 700; font-size: 15px; margin-bottom: 12px; }
+  .run-head .sec { color: var(--ink3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+  .run-note { color: var(--ink3); font-size: 12.5px; margin: -7px 0 12px; line-height: 1.7; }
+
+  /* ── 结果 ── */
+  .res-head { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .res-sub { color: var(--ink3); font-size: 12.5px; margin-bottom: 12px; }
+  .sec-block { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: #fdfdfe; }
+  .sec-block h3 { font-size: 13.5px; margin-bottom: 6px; }
+  .sec-block .cnt { color: var(--ink3); font-weight: 400; font-size: 12px; margin-left: 6px; }
+  .sec-block .body { font-size: 13px; color: #333a45; white-space: pre-wrap; }
+  .sec-block ul { margin: 2px 0 0 18px; }
+  .sec-block li { font-size: 13px; margin: 3px 0; }
+  .sec-block li .dim { color: var(--ink3); }
+  .sec-block .bad { color: var(--err); font-size: 12.5px; }
+  .cat-tag { display: inline-block; font-size: 11px; color: var(--ink2); background: var(--brand-soft); border-radius: 6px; padding: 1px 7px; margin-right: 6px; }
+  .res-foot { font-size: 12.5px; color: var(--ink3); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>小红书运营助手</h1>
+    <div class="top-right">
+      <span class="acct hidden" id="acctRow"></span>
+    </div>
+  </div>
+  <div class="sub">填下面 7 道题，AI 一次把你的<b>人设 · 卖点 · 知识库 · 内容规划</b>都生成好。</div>
+
+  <section class="card" id="quizCard">
+    <div class="quiz">
+      <div class="q">
+        <label for="q1">1. 你是做什么的？<span class="hint">哪个行业、卖什么 / 提供什么服务、帮客户解决什么问题</span></label>
+        <textarea id="q1" rows="3" placeholder="例：我在本地建材城开了 12 年建材店，卖瓷砖和卫浴——帮装修的业主把主材一次配齐、少花冤枉钱"></textarea>
+      </div>
+      <div class="q">
+        <label for="q2">2. 相比同行，你最拿得出手的 2-3 个优势 / 凭据？<span class="hint">干了多少年、服务过多少客户、一手货源、资质、亲身经历……有数字更值钱</span></label>
+        <textarea id="q2" rows="3" placeholder="例：干了 12 年，帮上千户配齐主材；瓷砖卫浴都是厂家一手货源；送货上楼自己带车"></textarea>
+      </div>
+      <div class="q">
+        <label for="q3">3. 客户最常问你的 3 个问题？<span class="hint">这题最值钱——它就是你的选题库，想不起来就写「多少钱」</span></label>
+        <textarea id="q3" rows="3" placeholder="例：瓷砖多少钱一片？多久能送货？怎么分辨好坏？"></textarea>
+      </div>
+      <div class="q">
+        <label>4. 这行里你最看不惯、最想吐槽什么？<span class="hint">可多选，跳过也行</span></label>
+        <div class="chips" id="chips-q4"></div>
+      </div>
+      <div class="q">
+        <label>5. 你手上有什么能用的真实素材？<span class="hint">可多选——排内容规划要看这个</span></label>
+        <div class="chips" id="chips-q5"></div>
+      </div>
+      <div class="q" style="gap:12px;">
+        <div>
+          <label>6. 你打算怎么称呼读者？</label>
+          <div class="chips" id="chips-q6"></div>
+        </div>
+        <div>
+          <label>7. 内容节奏：多久发一篇？</label>
+          <div class="chips" id="chips-q7"></div>
+        </div>
+      </div>
+    </div>
+    <div id="notice" class="notice info hidden"></div>
+    <div class="paths-why">两条路：要么花 1 分钟让 AI 把你的账号底子生成好，要么先进去随便逛，回头再填。</div>
+    <div class="actions">
+      <button id="genBtn" class="btn primary">生成我的账号底子</button>
+      <a class="btn ghost" id="goBig" href="popup.html?mode=big">不填，先进去随便逛 →</a>
+    </div>
+  </section>
+
+  <section class="card hidden" id="runCard">
+    <div class="run-head">正在生成<span class="sec" id="runElapsed">已等 0 秒</span></div>
+    <div class="run-note">AI 正在现写四份材料——人设、卖点、知识库、发文计划。写完一份亮一格，大约 1 分钟，不是卡住了。</div>
+    <div class="steps" id="runSteps"></div>
+  </section>
+
+  <section class="card hidden" id="resultCard">
+    <div class="res-head" id="resHead">生成完毕</div>
+    <div class="res-sub" id="resSub"></div>
+    <div id="resBody"></div>
+    <div class="actions">
+      <a class="btn primary" style="text-decoration:none;display:inline-block;" href="popup.html?mode=big">进工作台看完整界面 →</a>
+      <button class="btn ghost" id="againBtn">重新填 / 重新生成</button>
+    </div>
+  </section>
+
+  <section class="card hidden" id="errCard">
+    <div class="res-head" style="color:var(--err);">这次没跑完</div>
+    <div class="res-sub" id="errSub"></div>
+    <div id="errBody" style="font-size:13px;color:#333a45;white-space:pre-wrap;"></div>
+    <div class="actions">
+      <button class="btn primary" id="retryBtn">重试没成功的部分</button>
+      <a class="btn ghost" style="text-decoration:none;" href="popup.html?mode=big">先进工作台逛逛 →</a>
+    </div>
+  </section>
+
+</div>
+
+<!-- ── 领号 / 登录小卡（点生成那一下弹；不用短信验证） ── -->
+<div class="modal hidden" id="acctModal">
+  <div class="modal-mask" id="acctMask"></div>
+  <div class="modal-card">
+    <button class="modal-x" id="acctClose" type="button" aria-label="关闭">×</button>
+    <div class="modal-head" id="acctHead">先领个号</div>
+    <div class="modal-sub" id="acctSub">一个手机号一个号，不用短信验证——填好点继续，就接着生成。</div>
+    <div class="modal-body">
+      <label class="f" id="fNameWrap">称呼<input id="acctName" type="text" maxlength="24" placeholder="例：张老板 / 老周 / 小唐"></label>
+      <label class="f">手机号（当账号用）<input id="acctPhone" type="tel" maxlength="13" inputmode="numeric" placeholder="11 位手机号"></label>
+      <label class="f">密码（自设一个，登录用）<input id="acctPass" type="password" maxlength="32" placeholder="至少 6 位"></label>
+      <div class="modal-err hidden" id="acctErr"></div>
+      <div class="modal-actions">
+        <button class="btn primary" id="acctGo" type="button">领号并继续</button>
+        <button class="btn ghost" id="acctSwitch" type="button">已经有号？直接登录</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+
+  /* ── 问卷定义：题文本（进 AI 的）＋ 选项。Q5/Q7 的措辞跟后端的
+   *    「料怎么数 / 节奏怎么读」对齐（几十张→素材充足、一周3篇→节奏），改词前先看后台的解析。 ── */
+  const QTEXT = {
+    q1: '你是做什么的？在哪个行业、卖什么 / 提供什么服务、帮客户解决什么问题？',
+    q2: '相比同行，你最拿得出手的 2-3 个优势或凭据是什么？（干了多少年、服务过多少客户、一手货源、资质证书、亲身经历……有数字更值钱）',
+    q3: '客户最常问你的 3 个问题是什么？',
+    q4: '这行里你最看不惯、最想吐槽什么？',
+    q5: '你手上有什么能用的真实素材？',
+    q6: '你打算怎么称呼读者？',
+    q7: '内容节奏：多久发一篇？',
+  };
+  const CHIPS = {
+    q4: { multi: true, opts: ['同行乱报价', '以次充好、假的当真的卖', '只会吹参数不讲实话', '强推、不管你需不需要', '制造焦虑催你下单', '说一套做一套'] },
+    q5: { multi: true, opts: ['真实照片（几十张以上）', '真实照片（只有几张）', '拍得出来的视频', '老物件·工具·原料', '顾客反馈截图·聊天记录', '几乎没有'] },
+    q6: { multi: false, opts: ['你', '姐妹们', '宝子们', '家人们', '朋友们'] },
+    q7: { multi: false, opts: ['每天', '隔天一篇', '一周3篇', '一周1篇', '先帮我定'] },
+  };
+  const STEPS = [
+    { key: 'persona', name: '账号人设', desc: '摸清你的店、你的经历、你说话的样子' },
+    { key: 'product', name: '产品卖点', desc: '从你说的优势里，提炼六七条能打动人的卖点' },
+    { key: 'knowledge', name: '知识库', desc: '把客户最常问的问题，写成一条条标准答法' },
+    { key: 'plan', name: '内容规划', desc: '排好往后发什么——先排 12 篇' },
+  ];
+  const TYPE_NAME = { tale: '感悟', echo: '情绪', meme: '热梗', hot: '热点', howto: '知识·干货' };
+
+  /* ── 服务器口子：三条——动作 / 账本 / 账号。错误一律抛人话。 ── */
+  async function apiRaw(path, body) {
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    if (!r.ok) throw new Error('服务器回了 HTTP ' + r.status);
+    return r.json();
+  }
+  async function api(path, body) {
+    const j = await apiRaw(path, body);
+    if (!j || !j.ok) throw new Error((j && j.error) || '服务器回错了');
+    return j;
+  }
+  async function act(name, data) {
+    const j = await api('api/action', { action: name, data: data || {} });
+    const res = j.result;
+    if (res && res.ok === false) throw new Error(res.error || ('动作「' + name + '」没成'));
+    return res || {};
+  }
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  /* ── 账号（v5）：一个手机号一个号。顶栏显示「称呼 · 尾号 + 退出」；
+   *    点生成那一下如果还没号，弹领号小卡，领完接着生成。 ── */
+  let me = null;         // 当前账号（null＝还没领号/没登录）
+  let quota = null;      // {used, max}
+  let modalIntent = 'gen';   // gen＝领完接着生成 / browse＝领完进工作台
+  let modalMode = 'signup';  // signup＝领号 / login＝登录
+
+  /* ── 配对号复制：安全上下文才有 clipboard，http 上走临时文本框抄 ── */
+  function copyCode(text, box) {
+    const orig = box.innerHTML;
+    const ok = () => { box.textContent = '已复制 ✓'; setTimeout(() => { box.innerHTML = orig; }, 1500); };
+    const pick = () => { box.textContent = '照着抄：' + text; setTimeout(() => { box.innerHTML = orig; }, 3000); };
+    const fallback = () => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text; ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+        ok();
+      } catch (_) { pick(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback);
+    else fallback();
+  }
+
+  function renderAccount() {
+    const row = $('acctRow');
+    if (!me) { row.classList.add('hidden'); row.innerHTML = ''; return; }
+    const q = (quota && quota.max) ? '　免费次数 ' + quota.used + '/' + quota.max : '';
+    const code = me.pairCode ? '　<span class="pcode-box" id="acctCodeBox" title="点一下复制配对号">配对号 <span class="pcode">' + esc(me.pairCode) + '</span></span>' : '';
+    row.innerHTML = '👤 <b>' + esc(me.name) + '</b> · 尾号' + esc(me.phoneTail) + q + code + '　<a id="acctOut">退出/换账号</a>';
+    row.classList.remove('hidden');
+    const box = $('acctCodeBox');
+    if (box) box.addEventListener('click', () => copyCode(me.pairCode, box));
+    $('acctOut').addEventListener('click', async () => {
+      try { await apiRaw('api/auth/logout', {}); } catch (_) {}
+      try { XhsGate.invalidate(); } catch (_) {}
+      location.reload();
+    });
+  }
+  async function refreshMe() {
+    try { const j = await apiRaw('api/auth/me', {}); me = j.account || null; quota = j.quota || quota; renderAccount(); } catch (_) {}
+  }
+  function showAcctModal(intent) {
+    modalIntent = intent || 'gen';
+    $('acctModal').classList.remove('hidden');
+    $('acctErr').classList.add('hidden');
+    const focusEl = modalMode === 'signup' ? $('acctName') : $('acctPhone');
+    setTimeout(() => focusEl.focus(), 60);
+  }
+  function hideAcctModal() { $('acctModal').classList.add('hidden'); }
+  function setModalMode(mode) {
+    modalMode = mode;
+    const signup = mode === 'signup';
+    $('fNameWrap').classList.toggle('hidden', !signup);
+    $('acctHead').textContent = signup ? '先领个号' : '登录你的号';
+    $('acctSub').textContent = signup
+      ? '一个手机号一个号，不用短信验证——填好点继续，就接着生成。'
+      : '用领号时的手机号和密码登录，之前的东西都在。';
+    $('acctGo').textContent = signup ? '领号并继续' : '登录并继续';
+    $('acctSwitch').textContent = signup ? '已经有号？直接登录' : '还没号？领一个';
+  }
+  async function acctSubmit() {
+    const err = $('acctErr'); err.classList.add('hidden');
+    const go = $('acctGo'); go.disabled = true; const old = go.textContent; go.textContent = '请稍等…';
+    try {
+      const body = { phone: $('acctPhone').value.trim(), password: $('acctPass').value };
+      if (modalMode === 'signup') { body.name = $('acctName').value.trim(); }
+      const j = await apiRaw(modalMode === 'signup' ? 'api/auth/signup' : 'api/auth/login', body);
+      if (!j.ok) throw new Error(j.error || '没成，再试一下');
+      me = j.account || null;
+      if (j.quota) quota = j.quota;
+      try { XhsGate.invalidate(); } catch (_) {}   // 换号了：门的重判（看没看过引导按号记）
+      renderAccount();
+      hideAcctModal();
+      if (modalIntent === 'browse') { location.href = 'popup.html?mode=big'; return; }
+      runGen();
+    } catch (e) {
+      err.textContent = e.message; err.classList.remove('hidden');
+    } finally {
+      go.disabled = false; go.textContent = old;
+    }
+  }
+
+  /* ── 选项片渲染 + 采集 ── */
+  for (const [qid, def] of Object.entries(CHIPS)) {
+    const box = $('chips-' + qid);
+    box.innerHTML = def.opts.map((v) => '<button type="button" class="chip" data-v="' + esc(v) + '">' + esc(v) + '</button>').join('');
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      if (def.multi) b.classList.toggle('on');
+      else { Array.from(box.querySelectorAll('.chip')).forEach((x) => x.classList.toggle('on', x === b && !b.classList.contains('on'))); }
+    });
+  }
+  function collectAnswers() {
+    const out = [];
+    for (const qid of Object.keys(QTEXT)) {
+      let ans = '';
+      if (CHIPS[qid]) ans = Array.from(document.querySelectorAll('#chips-' + qid + ' .chip.on')).map((b) => b.dataset.v).join('；');
+      else ans = String(($(qid) || {}).value || '').trim();
+      if (ans) out.push({ q: QTEXT[qid], answer: ans });
+    }
+    return out;
+  }
+  function restoreAnswers(answers) {
+    const list = Array.isArray(answers) ? answers : [];
+    list.forEach((a, i) => {
+      const ans = String((a && a.answer) || '');
+      const qid = Object.keys(QTEXT)[i];
+      if (!qid || !ans) return;
+      if (!CHIPS[qid]) { $(qid).value = ans; return; }
+      const box = $('chips-' + qid);
+      ans.split('；').forEach((v) => { const b = Array.from(box.querySelectorAll('.chip')).find((x) => x.dataset.v === v.trim()); if (b) b.classList.add('on'); });
+    });
+  }
+
+  /* ── 进度：生成中每 2.5 秒看一眼后台问诊进度（每一步落账本后就能看见） ── */
+  let pollTimer = null, secTimer = null, t0 = 0;
+  function renderSteps(diagnosis) {
+    const results = (diagnosis && diagnosis.results) || {};
+    $('runSteps').innerHTML = STEPS.map((s) => {
+      const st = results[s.key] || {};
+      const status = st.status || 'pending';
+      const icon = status === 'done' ? '✓' : status === 'error' ? '✕' : status === 'running' ? '●' : '…';
+      const msg = st.message ? '<span class="st-msg">' + esc(st.message) + '</span>' : (status === 'pending' ? '<span class="st-msg">等待前面的步骤</span>' : '');
+      return '<div class="step ' + status + '"><span class="icon">' + icon + '</span><span class="st-name">' + s.name + '</span><span class="st-desc">' + esc(s.desc) + '</span>' + msg + '</div>';
+    }).join('');
+  }
+  function startTimers() {
+    t0 = Date.now();
+    secTimer = setInterval(() => { $('runElapsed').textContent = '已等 ' + Math.round((Date.now() - t0) / 1000) + ' 秒'; }, 1000);
+    const poll = async () => {
+      try { const cfg = await act('getConfig'); renderSteps(cfg.config && cfg.config.diagnosis); } catch (_) {}
+    };
+    pollTimer = setInterval(poll, 2500);
+    poll();
+  }
+  function stopTimers() { clearInterval(pollTimer); clearInterval(secTimer); pollTimer = secTimer = null; }
+
+  /* ── 生成入口 ── */
+  let running = false;
+  async function runGen() {
+    if (running) return;
+    const answers = collectAnswers();
+    if (!answers.length) { showNotice('warn', '至少先答一题（第 1 题随手写两句就够）再点生成。'); return; }
+    if (!me) { showAcctModal('gen'); return; }   // 还没领号：先领号，领完接着跑
+    running = true;
+    $('genBtn').disabled = true; $('genBtn').textContent = '生成中…';
+    $('errCard').classList.add('hidden'); $('resultCard').classList.add('hidden');
+    $('runCard').classList.remove('hidden');
+    renderSteps(null);
+    startTimers();
+    $('runCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    try {
+      const res = await act('aiDiagnosisSync', { profile: { name: '我的账号', fans: '0' }, bio: '', answers, accountType: '' });
+      stopTimers();
+      renderSteps(res.diagnosis);
+      await showResults(res.diagnosis, res.complete !== true);
+    } catch (e) {
+      stopTimers();
+      if (/先领个号|need-account/.test(String((e && e.message) || ''))) {
+        me = null; renderAccount();
+        showNotice('warn', '号的状态过期了（可能换了浏览器/清了缓存）——重新登录一下接着跑。');
+        showAcctModal('gen');
+      } else showError(e);
+    } finally {
+      running = false;
+      $('genBtn').disabled = false; $('genBtn').textContent = '生成我的账号底子';
+      try { XhsGate.invalidate(); } catch (_) {}   // 生成完了，前置门的缓存作废
+      refreshMe();
+    }
+  }
+
+  /* ── 结果摊开 ── */
+  async function showResults(diagnosis, partial) {
+    const cfgRes = await act('getConfig'); const cfg = cfgRes.config || {};
+    const persona = cfg.persona || null;
+    const product = cfg.product || {};
+    const sellPoints = Array.isArray(product.sellPoints) ? product.sellPoints : [];
+    let kb = [];
+    try { const r = await act('getKnowledgeBase'); kb = Array.isArray(r.entries) ? r.entries : []; } catch (_) {}
+    let plan = null;
+    try { const j = await api('api/storage/get', { keys: ['note_plan'] }); plan = (j.items || {}).note_plan || null; } catch (_) {}
+    const results = (diagnosis && diagnosis.results) || {};
+
+    $('resHead').textContent = partial ? '跑完了，但有几处没成功' : '✓ 生成完毕';
+    $('resSub').innerHTML = '结果已经存进你这个号里——工作台里「账号规划」也看得到。';
+    const blocks = [];
+
+    const stTag = (key) => { const st = results[key] || {}; return st.status === 'done' ? '' : '<span class="bad">（这一步没成：' + esc(st.message || '未知原因') + '，点下面「重试」再跑一次）</span>'; };
+
+    blocks.push('<div class="sec-block"><h3>账号人设' + stTag('persona') + '</h3><div class="body">' +
+      (persona && persona.text ? esc(persona.text) : '<span class="dim" style="color:var(--ink3)">（还没生成出来）</span>') +
+      (persona && persona.coverHook ? '<div style="margin-top:6px;color:var(--ink3);font-size:12px;">封面短语：' + esc(persona.coverHook) + '</div>' : '') +
+      '</div></div>');
+
+    blocks.push('<div class="sec-block"><h3>产品卖点' + (product.name ? '：' + esc(product.name) : '') + stTag('product') + '</h3>' +
+      (sellPoints.length
+        ? '<ul>' + sellPoints.map((s) => '<li><b>' + esc(s.title || '') + '</b>　' + esc(s.content || '') + '</li>').join('') + '</ul>'
+        : '<div class="body" style="color:var(--ink3)">（还没生成出来）</div>') +
+      '</div>');
+
+    blocks.push('<div class="sec-block"><h3>知识库<span class="cnt">' + kb.length + ' 条</span>' + stTag('knowledge') + '</h3>' +
+      (kb.length
+        ? '<ul>' + kb.slice(0, 12).map((e) => '<li><span class="cat-tag">' + esc(e.category || '') + '</span><b>' + esc(e.title || '') + '</b>　<span class="dim" style="color:var(--ink3)">' + esc(String(e.content || '').slice(0, 60)) + (String(e.content || '').length > 60 ? '…' : '') + '</span></li>').join('') + '</ul>' + (kb.length > 12 ? '<div class="res-foot">…共 ' + kb.length + ' 条，进工作台看全部。</div>' : '')
+        : '<div class="body" style="color:var(--ink3)">（还没生成出来）</div>') +
+      '</div>');
+
+    const items = plan && Array.isArray(plan.items) ? plan.items : [];
+    blocks.push('<div class="sec-block"><h3>内容规划<span class="cnt">' + (items.length ? items.length + ' 篇' : '') + '</span>' + stTag('plan') + '</h3>' +
+      (items.length
+        ? (plan.stageName || plan.stage ? '<div class="res-foot" style="margin:0 0 6px;">成长阶段：' + esc(plan.stageName || '') + (plan.rhythm ? '　·　节奏：' + esc(plan.rhythm) : '') + '</div>' : '') +
+          '<ul>' + items.map((it, i) => '<li><span class="dim" style="color:var(--ink3)">' + (i + 1) + '. [' + esc(TYPE_NAME[it.type] || it.type || '') + ']</span> <b>' + esc(it.title || '') + '</b>' +
+            (it.angle ? '<span style="color:var(--ink3);font-size:12px;">　' + esc(it.angle) + '</span>' : '') + '</li>').join('') + '</ul>'
+        : '<div class="body" style="color:var(--ink3)">（还没生成出来）</div>') +
+      '</div>');
+
+    $('resBody').innerHTML = blocks.join('');
+    $('resultCard').classList.remove('hidden');
+    $('resultCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function showError(e) {
+    const msg = String((e && e.message) || e);
+    let extra = '';
+    if (/未配置 API Key|还没配/.test(msg)) extra = '\n服务器还没配 AI Key：把 Key 填进 server/.env（说明见「配AIKey-看这里.txt」）再重启，就能真出结果。';
+    else if (/免费次数用完了/.test(msg)) extra = '\n到工作台左栏「设置 → AI 模型配置」，把你自己那把 AI Key 填上、保存，就能接着用。';
+    else if (/同步/.test(msg)) extra = '\n可能另一个窗口正在生成——等它跑完再试。';
+    else if (/fetch|NetworkError|Failed to fetch|HTTP/.test(msg)) extra = '\n看下服务器小黑窗还在不在（可能被关了）。';
+    $('errSub').textContent = '生成没走完：' + msg + extra;
+    $('errBody').innerHTML = '';
+    // 有部分成功的步骤就把进度也摊开，别让人干瞪眼
+    if (lastDiag) { $('errBody').innerHTML = '<div class="steps">' + $('runSteps').innerHTML + '</div>'; }
+    $('errCard').classList.remove('hidden');
+    $('errCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function showNotice(kind, html) { const n = $('notice'); n.className = 'notice ' + kind; n.innerHTML = html; n.classList.remove('hidden'); }
+
+  /* ── 开场：服务器在不在 / 有没有 Key / 有没有号 / 号里有没有现成结果 ── */
+  let lastDiag = null;
+  async function boot() {
+    const needAcct = new URLSearchParams(location.search).get('need') === '1';
+    let serverHasKey = true;
+    try {
+      const j = await apiRaw('api/auth/me', {});
+      me = j.account || null;
+      quota = j.quota || null;
+      serverHasKey = !!j.serverHasKey;
+    } catch (e) {
+      showNotice('err', '连不上服务器（' + esc(e.message) + '）——看下服务器小黑窗还在不在。');
+      return;
+    }
+    renderAccount();
+    if (!serverHasKey) {
+      showNotice('warn', '<b>服务器还没配 AI Key</b>——把 Key 填进 server/.env（说明见「配AIKey-看这里.txt」）再重启服务器，这里就能真出结果。现在可以先 <a href="popup.html?mode=big">进工作台逛界面</a>。');
+    }
+    if (needAcct && !me) {
+      showNotice('warn', '进工作台要一个号——领一下（不用短信验证），领完直接带你进去。');
+      showAcctModal('browse');
+    }
+    if (!me) return;   // 还没号：账本类的东西先不翻，领了号再说
+    if (!serverHasKey) return;   // 没 Key 就说不了"生成"，上面那条 warn 留着
+    try {
+      const preset = await api('api/storage/get', { keys: ['demo_preset'] });
+      const isDemo = !!(preset.items && preset.items.demo_preset);
+      const cfgRes = await act('getConfig');
+      lastDiag = (cfgRes.config && cfgRes.config.diagnosis) || null;
+      const results = (lastDiag && lastDiag.results) || {};
+      const done = STEPS.every((s) => results[s.key] && results[s.key].status === 'done');
+      if (isDemo) {
+        showNotice('info', '你这个号里<b>预置了一份演示结果</b>（一个建材店的样例：人设 / 卖点 / 知识库 / 规划都在）——先进工作台逛逛，想换成你自己的，改改上面答案重新生成。');
+      } else if (done) {
+        showNotice('info', '你这个号已经有生成结果了——<a href="javascript:;" id="viewLast">在这里看上次结果</a>，或改改上面答案重新生成（会覆盖人设 / 卖点 / 规划；知识库按标题去重合并）。');
+        const v = $('viewLast'); if (v) v.addEventListener('click', () => showResults(lastDiag, false));
+      } else {
+        showNotice('info', '上次没跑完——改改上面答案，再点一次生成就行。');
+      }
+    } catch (_) { /* 开场读不到就算了，不挡人填问卷 */ }
+  }
+
+  /* ── 小卡与顶栏的线 ── */
+  $('acctGo').addEventListener('click', acctSubmit);
+  $('acctSwitch').addEventListener('click', () => setModalMode(modalMode === 'signup' ? 'login' : 'signup'));
+  $('acctClose').addEventListener('click', hideAcctModal);
+  $('acctMask').addEventListener('click', hideAcctModal);
+  $('acctModal').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); acctSubmit(); } });
+  $('goBig').addEventListener('click', (e) => { if (!me) { e.preventDefault(); showAcctModal('browse'); } });
+  $('genBtn').addEventListener('click', runGen);
+  $('retryBtn').addEventListener('click', runGen);
+  $('againBtn').addEventListener('click', () => { $('resultCard').classList.add('hidden'); $('quizCard').scrollIntoView({ behavior: 'smooth' }); });
+  /* 前置门判完再开场：被送走（进工作台 / 弹引导）就不跑本页（gate.js） */
+  Promise.resolve(window.__xhsEntry).then((stay) => { if (stay) boot(); }, () => boot());
+})();
+</script>
+</body>
+</html>
