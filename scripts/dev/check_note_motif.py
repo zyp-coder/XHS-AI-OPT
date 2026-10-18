@@ -6,7 +6,7 @@
      （七十改：旧的「🎬 出片台」/ 渲染任务表整页已撤），流派记进 shots.look.motif；
      老档没记过 imgDocs＝从档案直接合成一行，旧「出图形式」只留档、不再铺角标，流派不回填、跟着打底那一派算（六十二改：真人工作场景 · 实拍那一挂）；
   2) 两条通道分开走：流派只进 AI 那几发（🔮 提名每屏那句 / 🔁 重出分镜），不进提示词尾巴
-     （六十五改字后压：尾巴的令牌只出画面出身与主题两轴，字那一层只写「字位」——字是扩展本地后压的）
+     （六十五改字后压：尾巴的令牌只出画面形式与主题两轴，字那一层只写「字位」——字是扩展本地后压的）
      → 换流派不重排提示词、换轴不烧 AI；
   3) 换流派（① 风格 那档的 chip；六十六改：这一排只摆三颗短名单＋「跟账号默认」，自加那派选中时补位一颗亮着）不作废画面表：
      段文本 / 顺序 / ⬜ 不占图 / 传回来的图一律不动，只 toast 提示「分镜还是旧派写的」；
@@ -25,6 +25,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -44,7 +45,7 @@ SENTS = ['开场钩子一句。', '这句讲第一个卖点。', '它后面紧�
 
 MOTIF_A = '方案页'
 MOTIF_B = '手写笔记·纸感'   # 六十六改：① 那排只摆三颗短名单（真人工作场景 / 方案页 / 手写笔记·纸感）＋跟账号默认，换派就从这三颗里点
-TOKEN = '扁平矢量插画；浅底＋单色点缀'   # 尾巴令牌（六十五改：只出画面出身＋主题两轴；字那一层只写「字位」）
+TOKEN = '扁平矢量插画；浅底＋单色点缀'   # 尾巴令牌（六十五改：只出画面形式＋主题两轴；字那一层只写「字位」）
 MOTIF_DEF = '真人工作场景'   # 内置打底那一派（六十二改＝实拍）：账号默认没配流派时，没定过的那一行跟着它
 BLOCKS = {'look': '#npLookBox', 'cover': '#npCoverBox', 'cut': '#npCutWrap',
           'desc': '#npShotTable', 'preview': '#npPreviewBox'}
@@ -141,7 +142,7 @@ def run(ctx):
     page = ctx.new_page()
     page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
     page.set_viewport_size({'width': 1280, 'height': 980})
-    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
     page.wait_for_function('typeof switchMainTab === "function" && typeof npDescsRegen === "function" '
                            '&& typeof npLookOf === "function"')
     page.set_default_timeout(25000)
@@ -253,7 +254,7 @@ def run(ctx):
     assert texts() == [x['text'] for x in LEGACY], '换派不许重排画面表'
     assert descs() == [x['desc'] for x in LEGACY], '换派不重写分镜（那是 🔁 的活）'
     p0 = pout(0)
-    assert MOTIF_A not in p0, '流派不进提示词尾巴（尾巴令牌只出画面出身与主题两轴）'
+    assert MOTIF_A not in p0, '流派不进提示词尾巴（尾巴令牌只出画面形式与主题两轴）'
     assert '每一张都带的固定元素：' + TOKEN in p0, p0[-240:]
     to_out('motif-old')
     assert st('npLookOf(npS()).motif') == MOTIF_A, '挑的新派跟着这一行（再进来还是它）'
@@ -301,7 +302,7 @@ def run(ctx):
     assert ai('cut') == 0 and ai('desc') == 1, '拖行号成段不烧 AI：%s / %s' % (ai('cut'), ai('desc'))
     assert texts() == SENTS
     tab('desc')
-    assert MOTIF_A not in pout(0), '流派不进尾巴（令牌只出画面出身与主题两轴）'
+    assert MOTIF_A not in pout(0), '流派不进尾巴（令牌只出画面形式与主题两轴）'
     print('PASS: ④ 空态那颗「＋ 起一套图」零 AI 加一行 → ① 挑流派 → 行号上就地拖出 6 屏，尾巴令牌仍只有两轴', flush=True)
 
     # ── B2) 🔮 那一发按这一派取材（流派走的就是这一发；六十五改：那颗挂在 ④ 的表头）──

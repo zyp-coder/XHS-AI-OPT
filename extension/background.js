@@ -19,6 +19,7 @@ importScripts(
   'lib/platforms.js',
   'lib/pub-adapt.js',
   'lib/visual-motif.js',
+  'lib/asset-kinds.js',
   'lib/note-architecture.js',
   'lib/note-plan.js',
   'lib/auto-water.js',
@@ -713,6 +714,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     genNoteCover: (data) => requireKnowledge(() => genNoteCoverBg(data || {})),
     genAssetNeeds: (data) => requireNotePublish(() => genAssetNeedsBg(data || {})),
     assocAsset: (data) => requireNotePublish(() => assocAssetBg(data || {})),
+    configAssetKinds: (data) => requireNotePublish(() => configAssetKindsBg(data || {})),
     voiceRewrite: (data) => requireVideoFilm(() => voiceRewriteBg(data || {})),
     genNoteVoiceScript: (data) => requireVideoFilm(() => genNoteVoiceScriptBg(data || {})),
     genNoteDvSegs: (data) => requireVideoFilm(() => genNoteDvSegsBg(data || {})),
@@ -721,6 +723,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     genNoteFilmScript: (data) => requireVideoFilm(() => genNoteFilmScriptBg(data || {})),
     // 🖋 图文分镜（三十改·图文并进写稿流）：发笔记闸门（三档都开）
     genNoteShots: (data) => requireNotePublish(() => genNoteShotsBg(data || {})),
+    // 🎭 IP 玩法线（五十二改）：按「主题×方式」编 3 段故事候选 / 照挑中的那段写整篇（发笔记闸门）
+    genIpStories: (data) => requireNotePublish(() => genNoteIpStoriesBg(data || {})),
+    genIpDraft: (data) => requireNotePublish(() => genNoteIpDraftBg(data || {})),
     // ── 🌿 日常浏览（受 dailyBrowse 版本闸门控制）──
     dailyBrowseStatus: () => requireDailyBrowse(() => DailyBrowse.getStatus()),
     dailyBrowseSaveConfig: (data) => requireDailyBrowse(async () => {
@@ -7128,9 +7133,10 @@ async function aiRewriteNoteBg(data) {
     ...(prDraft.lines || []),
     '7) 卖货话术的比例＝' + _talk.name + '（' + (_talk.share === '0' ? '这篇不卖' : '约占正文 ' + _talk.share) + '）：' + _talkLine +
       '产品出现在哪一步、占多少篇幅，按上面【这一篇】的篇幅配比来。',
+    '7b) 标题给 6 条：同一篇的 6 个不同钩子（疑问 / 数字 / 痛点 / 反常识 / 身份代入 / 结果前置…），条条角度不同，别是同一句换词。',
     ...Platforms.complianceOf(pid),
     '只输出一个严格 JSON（不要任何解释/代码块/前后缀）：',
-    '{"titles":["标题A","标题B","标题C"],"content":"正文，可用\\n分段","tags":["标签1","标签2",...],"timeTip":"建议时段"}'
+    '{"titles":["标题A","标题B","标题C","标题D","标题E","标题F"],"content":"正文，可用\\n分段","tags":["标签1","标签2",...],"timeTip":"建议时段"}'
   ];
   // ★ 注入当前产品对应的「笔记结构」（品类矩阵：页数 + 每页功能 + 选图构图）——
   //   这张品类矩阵是图文笔记的写法，只对小红书那一套成立；短视频/闲鱼有各自的平台规则段
@@ -7489,7 +7495,10 @@ async function reviseNoteBg(data) {
   const content = String((data && data.content) || '').trim();
   if (!content) throw new Error('还没有正文可改');
   const ask = String((data && data.ask) || '').trim();
-  if (!ask) throw new Error('先说一句想怎么改');
+  // 🎯 单条标题重写（改稿页每条标题的「🔁 换一个」）：只换这一条，正文与其余候选一个字不动
+  const onlyTitle = String((data && data.onlyTitle) || '').trim();
+  const existTitles = (Array.isArray(data && data.titles) ? data.titles : []).map(t => String(t).trim()).filter(Boolean);
+  if (!ask && !onlyTitle) throw new Error('先说一句想怎么改');
   const persona = getPersonaText(config);
   const topic = String((data && data.topic) || '').trim();
   // ③ 给这个题配的一句真事（四十六改）：改稿也不许把它换成别的情形
@@ -7521,8 +7530,13 @@ async function reviseNoteBg(data) {
   // 🔥 引流线改稿：通篇不卖——「料 → 转 → 专业」的结构与转法那句是硬约束，一个承接字都不许出现
   const drainTurn = String((data && data.drainTurn) || '').trim();
   const drainLine = String((data && data.drainLine) || '').trim();
-  // 第 4 条硬要求按线分岔：引流稿任何承接都不许提；其余稿承接只走「主页简介 / 私信我」
-  const ctaLineRv = drainTurn
+  // 🎭 IP 玩法稿改稿（五十二改）：通篇不卖、按这一招的调子改；带骨架段的稿子，骨架原句一个都不许动
+  const ipPlay = String((data && data.ipPlay) || '').trim();
+  const ipTheme = String((data && data.ipTheme) || '').trim();
+  const ipHow = String((data && data.ipHow) || '').trim();
+  const keepSents = (Array.isArray(data && data.keepSents) ? data.keepSents : []).map(s => String(s).trim()).filter(Boolean);
+  // 第 4 条硬要求按线分岔：引流稿 / IP 稿任何承接都不许提；其余稿承接只走「主页简介 / 私信我」
+  const ctaLineRv = (drainTurn || ipPlay)
     ? '通篇不出现任何承接——不写微信/小程序/公众号/加V/链接/二维码/电话，也不提主页或私信'
     : '承接只用「' + guide + ' / ' + home + '」，绝不写微信/小程序/公众号/加V/链接/二维码/电话';
   // 🎯 逐句改：用户在正文里点了某一句，这一发只改那一句，整篇别动
@@ -7531,8 +7545,17 @@ async function reviseNoteBg(data) {
     pr.role,
     (hotRv ? '★ 这篇借的由头：' + String(hotRv.name).trim() + '——只借它的角度（' + String(hotRv.angle || '').trim() + '），别硬扯产品；不许写出具体日期、热搜名次或"最近很火"这类无法核实的说法；只借公开内容，私事（绯闻 / 婚姻家庭 / 健康）与"网传 / 疑似"的爆料不许写进正文。' : ''),
     (drainTurn ? '★ 这是一篇引流稿（通篇不卖）：' + (drainLine ? '走「' + drainLine + '」这条线；' : '') + '结构固定「料 → 转 → 专业」——前三句讲料，一句转法落到本行，之后全是专业的话；转法那句（' + drainTurn + '）一个字都不许动；通篇不出现产品、价格、优惠与任何承接。' : ''),
+    (ipPlay ? '★ 这是一篇「IP 玩法」稿（主题「' + ipTheme + '」× 方式「' + ipPlay + '」）：通篇不卖——不出现产品、价格、优惠与任何承接；调子按这个方式的玩法来：' + (ipHow || '讲账号自己的真事与现场') + '，别改成通用分享稿。' : ''),
+    (!onlySent && !onlyTitle && keepSents.length ? '★ 标了骨架的段一个字都不许动——就是下面这几句，原样照抄进改后的正文里，位置别挪、别换成别的说法、别删：\n' + keepSents.map(s => '「' + s + '」').join('\n') : ''),
+    (onlyTitle ? '★ 这一发只给标题：把用户现有的这一条换一个新的写法——「' + onlyTitle + '」；' +
+      (existTitles.filter(t => t !== onlyTitle).length ? '其余候选也别与它们重复：「' + existTitles.filter(t => t !== onlyTitle).join('」「') + '」；' : '') +
+      '新标题要和它角度不同（换个钩子：疑问 / 数字 / 痛点 / 反常识 / 身份代入，任选一种），别只换几个词。' : ''),
     '硬要求：',
-    (onlySent ? [
+    (onlyTitle ? [
+      '1) 只输出一条新的标题——不要《》不要引号，不要正文、不要解释、不要代码块；',
+      '2) 与现有的那几条都要不同：换的是切入角度/钩子，不是把原句换个词；',
+      '3) 贴合这篇正文与人设口吻；不承诺效果、不报数字化成效、不做保证性表述。',
+    ].join('\n') : onlySent ? [
       '1) 只改用户【要点的那一句】，输出只给改后的那一句——不要整篇正文、不要标题、不要解释、不要代码块；',
       '2) 改完要和上下文接得上：原有的事实、卖点、人设口吻、称呼与前后句的衔接都保住，别编造原文没有的数字或承诺；',
       '3) 长度贴着原句来（最多比它长一句），别把一句改成一段；',
@@ -7551,9 +7574,10 @@ async function reviseNoteBg(data) {
     (colRv ? '★ 这一篇是本账号长期栏目「' + colRv + '」的' + (colDayRv ? '（每周' + NotePlan.columnDayName(colDayRv) + '发）' : '') +
       '——改稿也只能在这个栏目的定位里改，别改成别的栏目那一类。' : ''),
     (pr.lines && pr.lines[0]) || '',
-    onlySent ? '输出严格 JSON：{"sentence":"改后的那一句"}——只这一句，不要引号，不要前后带别的句子，不要输出 content / tags / titles。'
+    onlyTitle ? '输出严格 JSON：{"title":"新的那一条标题"}——只这一条，不要正文、不要 tags、不要其余标题、不要解释。'
+      : onlySent ? '输出严格 JSON：{"sentence":"改后的那一句"}——只这一句，不要引号，不要前后带别的句子，不要输出 content / tags / titles。'
       : ('输出严格 JSON：{"content":"改后的正文，可用\\n分段"}；若这次修改也要动标签，加 "tags":["标签1",...]（' + (pr.tagHint || '') + '）；'
-        + '只有修改要求明确涉及标题时，才加 "titles":["标题A","标题B","标题C"]（' + (pr.titleHint || '') + '），否则不要输出 titles。')
+        + '只有修改要求明确涉及标题时，才加 "titles":["标题A","标题B","标题C","标题D","标题E","标题F"]（' + (pr.titleHint || '') + '），否则不要输出 titles。')
   ].filter(Boolean).join('\n');
   const user = [
     topic ? '【这篇的话题】' + topic : '',
@@ -7561,12 +7585,18 @@ async function reviseNoteBg(data) {
     sellPoint ? '【主打卖点】' + sellPoint : '',
     persona ? '【账号人设】' + persona : '',
     tags.length ? '【现有标签】' + tags.join('、') : '',
-    (onlySent ? '【整篇正文（只当上下文，别重写）】\n' + content : '【现有正文】\n' + content),
+    ((onlySent || onlyTitle) ? '【整篇正文（只当上下文，别重写）】\n' + content : '【现有正文】\n' + content),
     onlySent ? '【要点的那一句】' + onlySent : '',
+    onlyTitle ? '【要换掉的那一条标题】' + onlyTitle + '\n【现有的全部标题（新的不能与其中任何一条重复或近似）】' + existTitles.join('\n') : '',
     '【这次要怎么改】' + ask,
   ].filter(Boolean).join('\n\n---\n\n');
   const raw = await _chatAiRetry(config, system, user, 4096, _npStreamProgress('noterevise'));
   const d = parseJsonObject(raw) || {};
+  if (onlyTitle) {
+    const t = String(d.title || (Array.isArray(d.titles) && d.titles[0]) || d.content || '').trim().replace(/^["“「]|["”」]$/g, '');
+    if (!t) throw new Error('AI 没给出新标题，再点一次试试');
+    return { title: t.slice(0, 40) };
+  }
   if (onlySent) {
     const s = String(d.sentence || d.content || '').trim().replace(/^["“「]|["”」]$/g, '');
     if (!s) throw new Error('AI 没给出改后的那一句，换个说法再试');
@@ -7581,7 +7611,7 @@ async function reviseNoteBg(data) {
   }
   if (Array.isArray(d.titles)) {
     const ttl = d.titles.map(t => String(t).replace(/^[A-C][.、:：\s]*/, '').trim()).filter(Boolean);
-    if (ttl.length) res.titles = ttl.slice(0, 3);
+    if (ttl.length) res.titles = ttl.slice(0, 6);
   }
   return res;
 }
@@ -7631,7 +7661,12 @@ const NP_DESC_SHAPE =
   '每一条都得是画面上拍得到的一个东西（人、手、桌上的实物、界面区块、格子、纸、箭头都算），是这段没一字一字写、但照着这段的意思摆出来一定有的；' +
   '其中至少一条自己带一句「这就是……的凭据」（一个真数、一处圈和叉的多少、一个前后对照、一样多出来的东西都算），别三条全是氛围；' +
   '清单里点名的数字与日期，画面上就得是那一个数，不许另编；这段真给不出元素，就照实写「缺：要客户自己补的 ××」，别拿装饰凑；\n' +
-  '   『背景』这一张在哪儿拍、光从哪一边来、按什么拍法、不许摆成什么样（例：晚上家里书桌，台灯从左上方单光源，浅景深随手抓拍，不要棚拍不要广告片）。\n' +
+  '   『背景』这四样一个都不许省（出来的图一眼假，根子基本都在这一格）：\n' +
+  '      ① 在哪儿拍——哪个屋／哪条楼道，夜里还是白天；\n' +
+  '      ② 唯一那一处光源，点名到那一个东西（那颗灯泡／那块屏幕／那扇窗）＋光从哪一边来＋照不到的地方怎么黑下去；\n' +
+  '      ③ 机位——谁举着手机拍的、隔多远、高过还是低过被拍的东西、画面哪一边被切掉一角；\n' +
+  '      ④ 不许摆成什么样（不要棚拍、不要广告片、不要样板间），再补两三件上面没写但当场一定有的小东西。\n' +
+  '   拍法顺着客户定的画面形式写：写着「手机随拍」就照旧手机随手抓拍那样写（有噪点、手歪、一边过曝、背景看得出乱、人不看镜头），别写成相机正经拍的；写着画的那几挂就别塞实拍的词。\n' +
   '   这段里有容易被读歪的词（如「第二周」跟运动配速无关），在最前面加一行『先说清楚：这张跟××一点关系都没有，不许出现……』。\n' +
   '   字块留在哪儿不归你写（跟着客户那一档「配文方式」走，界面上那一格『字位』是九宫格）；图上放哪句文案也不归你写，而且你不许把它画进图里：' +
   '本波（2026-10-04 字后压）那几句话由扩展本地压在干净底图上，压根不进这一发，也不进拼给生图引擎的提示词；这一格里不许逐字给出图上那几个字、也不许把那段原文抄进来。' +
@@ -7646,7 +7681,7 @@ const NP_COVER_SHAPE =
   '   『画面里必须出现的元素』照上面那条转译配方，把它变成看得见的具体东西，按 1. 2. 3. 逐条列、至少三条：' +
   '每一条都得是画面上拍得到的一个东西（人、手、桌上的实物、界面区块、格子、纸、箭头都算），其中至少一条自己带一句「这就是凭据」；' +
   '清单里点名的数字与日期，画面上就是那个数，不许另编；真给不出元素就照实写「缺：要客户自己补的 ××」，别拿装饰凑；\n' +
-  '   『背景』在哪儿拍、光从哪一边来、按什么拍法、不许摆成什么样（例：晚上家里书桌，台灯从左上方单光源，浅景深随手抓拍，不要棚拍不要广告片）。\n' +
+  '   『背景』四样一个都不许省：① 在哪儿拍（哪个屋／夜里还是白天）② 唯一那一处光源，点名到那一个东西＋从哪一边来＋照不到的地方怎么黑 ③ 机位（谁举着手机、隔多远、高过还是低过、哪一边被切掉一角）④ 不许摆成什么样（不要棚拍／广告片／样板间）＋两三件当场一定有的小东西；拍法顺着客户定的画面形式写，写着「手机随拍」就照旧手机随手抓拍那样写。\n' +
   '   这篇里有容易被读歪的词，在最前面加一行『先说清楚：这张跟××一点关系都没有，不许出现……』。';
 /* 五十八改③（老板：「图描述你可以多出几个，让用户选好了再出提示词」）：每段一次回三条。
    三条是三种摆法，不是同一份的三种措辞——客户点哪条，分镜那一格就换成哪条，提示词跟着那条拼。
@@ -8315,6 +8350,101 @@ async function genNoteShotsBg(data) {
   return { ok: true, items: items };
 }
 
+/* 🎭 IP 玩法线（五十二改）：按「主题×方式」编 3 段故事候选——每段＝梗概＋开头第一句＋发布标题＋备选标题。
+   通篇不卖是这条线的底线：不出现产品/价格/优惠/承接；只讲账号自己行当里的真事与现场，不编数字不承诺效果。 */
+async function genNoteIpStoriesBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 AI，请先到设置页填写 API Key');
+  const persona = String((data && data.persona) || '').trim();
+  const theme = String((data && data.theme) || '').trim();
+  const themeLine = String((data && data.themeLine) || '').trim();
+  const method = String((data && data.method) || '').trim();
+  const how = String((data && data.how) || '').trim();
+  const rhythm = String((data && data.rhythm) || '').trim();
+  const hint = String((data && data.hint) || '').trim();
+  if (!method) throw new Error('还没挑组合——先挑一套「主题×方式」再编故事');
+  const system = [
+    '你是一名小红书账号的「IP 玩法编剧」：账号主做' + (persona ? '（人设：' + persona + '）' : '这一行') + '。按指定的玩法方式，编 3 段能拿来发笔记的「故事底子」。',
+    '这一招的规矩：' + how,
+    (rhythm ? '发布节奏：' + rhythm + '。' : ''),
+    (hint ? '写的时候注意：' + hint + '。' : ''),
+    '硬要求：',
+    '1) 每段给出——梗概：这条讲的是什么事、怎么拍法，一两句说清；开头第一句：正文真的要从这句写起，口语、有钩子、带具体的现场细节（时间 / 地点 / 手里的活），别用「大家好」这类开场；发布标题：≤20 字带钩子；再加 2 个备选标题；',
+    '2) 三段要真的不一样——三件不同的事 / 不同拍法，别一段换个说法；',
+    '3) 通篇不卖——不出现产品、价格、优惠与任何承接（微信 / 小程序 / 公众号 / 加V / 链接 / 二维码 / 电话 / 私信）；只讲这一行里的真事与现场，别编造具体数字成绩、别承诺效果；',
+    '4) 只输出一个 JSON 对象，不要解释、不要 markdown 代码块：{"故事":[{"梗概":"…","开头":"…","标题":"…","备选":["…","…"]}]}',
+  ].filter(Boolean).join('\n');
+  const user = [
+    persona ? '【账号人设】' + persona : '',
+    '【这一段的主题】' + theme + (themeLine ? '（' + themeLine + '）' : ''),
+    '【这次用的方式】' + method,
+    how ? '【方式怎么玩】' + how : '',
+  ].filter(Boolean).join('\n\n---\n\n');
+  const raw = await _chatAiRetry(config, system, user, 4096, _npStreamProgress('ipstory'));
+  const obj = parseJsonObject(String(raw || '').replace(/```[a-zA-Z]*\n?/g, ''));
+  if (!obj) throw new Error('AI 这次没编出故事，再点一次试试');
+  const list = (Array.isArray(obj['故事']) ? obj['故事'] : []).slice(0, 3);
+  const items = list.map(s => ({
+    t: String((s && (s['梗概'] || s.t)) || '').trim(),
+    first: String((s && (s['开头'] || s.first)) || '').trim(),
+    title: String((s && (s['标题'] || s.title)) || '').trim(),
+    alts: (Array.isArray(s && (s['备选'] || s.alts)) ? (s['备选'] || s.alts) : []).map(x => String(x).trim()).filter(Boolean).slice(0, 3),
+  })).filter(s => s.t || s.first);
+  if (!items.length) throw new Error('AI 这次没编出故事，再点一次试试');
+  return { ok: true, items: items };
+}
+
+/* 🎭 IP 玩法线（五十二改）：照挑中的那段故事（或用户自己写的一段）写整篇——开头第一句起步，按这一招的调子写全文。
+   出稿只出第一版（改稿在客户端逐句 / 整篇改）；标题给 6 条、标签从标签池里挑。 */
+async function genNoteIpDraftBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 AI，请先到设置页填写 API Key');
+  const persona = String((data && data.persona) || '').trim();
+  const theme = String((data && data.theme) || '').trim();
+  const themeLine = String((data && data.themeLine) || '').trim();
+  const method = String((data && data.method) || '').trim();
+  const how = String((data && data.how) || '').trim();
+  const lockWhy = String((data && data.lockWhy) || '').trim();
+  const lock = (Array.isArray(data && data.lock) ? data.lock : []).map(Number).filter(isFinite);
+  const story = (data && data.story && typeof data.story === 'object') ? data.story : null;
+  const selfText = String((data && data.selfText) || '').trim();
+  const vAsk = String((data && data.vAsk) || '').trim();
+  const tagSeed = (Array.isArray(data && data.tagSeed) ? data.tagSeed : []).map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
+  if (!story && !selfText) throw new Error('先挑一段故事、或自己写一段，再来出稿');
+  if (!method) throw new Error('还没挑组合——先挑一套「主题×方式」再出稿');
+  const system = [
+    '你是一名小红书账号的写手：账号主做' + (persona ? '（人设：' + persona + '）' : '这一行') + '。把下面这段「故事底子」写成一篇完整的小红书笔记正文。',
+    '这一招的规矩：' + how,
+    '硬要求：',
+    (selfText
+      ? '1) 开头就用用户自己写的那句起步（原样、或用最贴的写法顺一下），他事里的细节一个都别丢——你只负责把它顺进整篇；'
+      : '1) 开头第一句用给出的「开头第一句」原文起步，一个字都别改；'),
+    '2) 正文 60~150 字，口语化、分段清晰（段落之间用 \\n 分隔），读起来像真人在讲自己行当里的事；',
+    '3) 通篇不卖——不出现产品、价格、优惠与任何承接（微信 / 小程序 / 公众号 / 加V / 链接 / 二维码 / 电话 / 私信）；不承诺效果、不报数字化成效；',
+    '4) 标题给 6 条：同一篇的 6 个不同钩子（疑问 / 数字 / 痛点 / 反常识 / 身份代入 / 结果前置…），条条角度不同，别是同一句换词，每个 ≤20 字；标签从给定标签池里挑 2~4 个（挑最贴这篇的，不带 # 号）；',
+    '5) 只输出一个 JSON 对象，不要解释、不要 markdown 代码块：{"content":"…","titles":["…","…","…","…","…","…"],"tags":["…"]}',
+    (lock.length && lockWhy ? '★ 这一招有骨架段：' + lockWhy + '——这一处必须原样出现在正文里、就放在开头这一带的原位，它是这个玩法的命根子，不许换成别的说法、不许删。' : ''),
+    (vAsk ? '★ 这次是重写：' + vAsk : ''),
+  ].filter(Boolean).join('\n');
+  const user = [
+    persona ? '【账号人设】' + persona : '',
+    '【这一段的主题】' + theme + (themeLine ? '（' + themeLine + '）' : ''),
+    '【这次用的方式】' + method,
+    story ? ('【这段故事】梗概：' + String(story.t || '') + '\n开头第一句：' + String(story.first || '')) : '',
+    selfText ? '【用户自己写的一段（底子）】\n' + selfText : '',
+    tagSeed.length ? '【标签池】' + tagSeed.join('、') : '',
+    lock.length && lockWhy ? '【骨架段说明】' + lockWhy : '',
+  ].filter(Boolean).join('\n\n---\n\n');
+  const raw = await _chatAiRetry(config, system, user, 4096, _npStreamProgress('ipdraft'));
+  const obj = parseJsonObject(String(raw || '').replace(/```[a-zA-Z]*\n?/g, ''));
+  if (!obj) throw new Error('AI 这次没把稿子写出来，再点一次试试');
+  const content = String(obj.content || '').trim();
+  if (!content) throw new Error('AI 这次没把稿子写出来，再点一次试试');
+  const titles = (Array.isArray(obj.titles) ? obj.titles : []).map(t => String(t).trim()).filter(Boolean).slice(0, 6);
+  const tags = (Array.isArray(obj.tags) ? obj.tags : []).map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
+  return { ok: true, content: content, titles: titles, tags: tags.slice(0, 4) };
+}
+
 /* 📚 素材库：按「卖点 × 知识库」算一遍「要备哪些素材」（集合化后＝列出要备料的集合）。
    产出只是清单（要什么 + 来源），用户按单去备；因此这一发不看成稿、不产出文案，可反复重算。 */
 async function genAssetNeedsBg(data) {
@@ -8414,6 +8544,87 @@ async function assocAssetBg(data) {
     .filter((x, i, a) => a.indexOf(x) === i)
     .slice(0, 2);
   return { ok: true, kb: clean(d.kb, kbTitles), sell: clean(d.sell, sp), hint: String(d.hint || '').trim().slice(0, 60) };
+}
+
+/* 📚 素材库两签改版（2026-10-15）：按账号诊断判「素材 18 类里这个账号该备哪几类」，顺手把现有集合各归一类。
+   只判「这类该不该有料」＋「这一集算哪一类」两件事；「这一集这次用不用」由扩展本地按类判定 + 有没有料推出来，
+   不再问一次 AI（少一发、结果也不会漂）。判据吃诊断已有的格子：问卷第 1 题身份 / 第 3 题凭据 / 第 11 题手上有什么真实素材
+   ＋ 账号类型 ＋ 知识库八分类 ＋ 产品形态——不新开问题。真源表在 lib/asset-kinds.js。 */
+async function configAssetKindsBg(data) {
+  const config = await Storage.getConfig();
+  if (!config.ai.apiKey && !config.ai.fallbackApiKey) throw new Error('未配置 AI，请先到设置页填写 API Key');
+  const dz = config.diagnosis || {};
+  const answers = (Array.isArray(dz.answers) ? dz.answers : [])
+    .map(a => {
+      const q = String((a && a.q) || '').trim().slice(0, 40);
+      const an = String((a && a.answer) || '').trim().slice(0, 160);
+      return q && an ? q + '→' + an : '';
+    }).filter(Boolean).slice(0, 16);
+  if (!answers.length) throw new Error('还没答账号诊断问卷：先到「诊断&配置 → 账号诊断」答完问卷，再回来配素材');
+  const name = String(config.product.name || '').trim();
+  const sp = (Array.isArray(config.product.sellPoints) ? config.product.sellPoints : [])
+    .filter(s => s && (String(s.title || '').trim() || String(s.content || '').trim()))
+    .slice(0, 10)
+    .map(s => String(s.title || '').trim().slice(0, 20) + '：' + String(s.content || '').trim().slice(0, 90));
+  let kb = [];
+  try {
+    kb = ((await Storage.getKnowledgeBase()) || [])
+      .filter(e => e && e.isActive !== false && String(e.title || '').trim())
+      .map(e => '【' + String(e.category || '默认') + '】' + String(e.title).trim().slice(0, 30))
+      .slice(0, 40);
+  } catch (_) {}
+  const colsIn = (Array.isArray(data && data.cols) ? data.cols : [])
+    .map(c => {
+      const n = String((c && c.name) || '').trim().slice(0, 30);
+      if (!n) return '';
+      const d = String((c && c.desc) || '').trim().slice(0, 90);
+      const s = String((c && c.source) || '').trim().slice(0, 40);
+      return n + '｜' + (d || '（没说明）') + '｜' + (s || '自己加的') + '｜' + (Number(c && c.has) || 0) + ' 条料';
+    }).filter(Boolean).slice(0, 40);
+  const kindTable = NP_ASSET_KINDS.map(x => x.k + '｜' + x.n + '｜' + x.need + (x.gray ? '｜（灰档：不是手上有没有的事，默认不用备）' : ''));
+  const system = [
+    '你是素材备料的判定助手。小红书做笔记要提前备图 / 截图 / 实拍，行业底层把料分成下面固定的 18 类。你按这个账号的诊断回答，判两件事：① 这 18 类里哪些他该备、哪些不用备、哪些你判不准；② 他现有那些素材集合，各归进哪一类。',
+    '硬要求：',
+    '1) kinds 必须把 18 类一条不漏地各判一次；k 原样抄类 id（左边那列，英文那几个字母），不许编新类；v 只能是 need（该备）/ no（不用备）/ ask（判不准，交回人定）；',
+    '2) 判据只吃下面给的诊断回答、账号类型、知识库分类、产品名称与卖点，不许脑补他没写过的经历、数字或案例；理由（why）一句话，写清吃的是哪一格的回答（比如「凭据题勾了有资质证书」），不超过 40 字；',
+    '3) 标了（灰档）的三类（版式件、时效件、调性件）默认 v=no；只有账号明显靠它（比如时令农产品、包装就是招牌）才翻案成 need，并在 why 里写「翻案：……」；',
+    '4) 拿不准就给 ask，别硬判 need 或 no——跨形态的账号（既有线上软件又有实物）最容易判不准；',
+    '5) cols 只把他给的集合名原样抄回来，kind 填一个类 id；真对不上任何一类就填 ""，宁缺勿滥；',
+    '6) 不出现二维码、微信、链接、电话这类承接物；不写效果承诺、不写保证性表述。',
+    '18 类清单（id｜名字｜这类要什么料）：',
+    kindTable.join('\n'),
+    '输出严格 JSON：{"kinds":[{"k":"team","v":"need","why":"一句话判据"}],"cols":[{"name":"集合名原样","kind":"team"}]}',
+  ].join('\n');
+  const user = [
+    name ? '【产品】' + name : '',
+    sp.length ? '【卖点】\n' + sp.join('\n') : '',
+    '【账号类型】' + (String(dz.accountType || '').trim() || '（没选）'),
+    '【账号诊断问卷回答】\n' + answers.join('\n'),
+    kb.length ? '【知识库条目（带八分类）】\n' + kb.join('\n') : '',
+    colsIn.length ? '【现有素材集合（名目｜说明｜来源｜料数）】\n' + colsIn.join('\n') : '【现有素材集合】（还没有集合，cols 返回空数组）',
+  ].filter(Boolean).join('\n\n---\n\n');
+  const raw = await _chatAiRetry(config, system, user, 4096, _npStreamProgress('assetkinds'));
+  const d = parseJsonObject(raw) || {};
+  const kinds = {};
+  (Array.isArray(d.kinds) ? d.kinds : []).forEach(x => {
+    if (!x) return;
+    const k = String(x.k || x.id || '').trim();
+    const v = String(x.v || x.verdict || '').trim();
+    if (!npAssetKindOf(k)) return;
+    if (v !== 'need' && v !== 'no' && v !== 'ask') return;
+    if (kinds[k]) return;
+    kinds[k] = { v, why: String(x.why || x.whyTxt || '').trim().slice(0, 90) };
+  });
+  if (!Object.keys(kinds).length) throw new Error('AI 没判出这 18 类，点「🤖 重新配置」再试一次');
+  const byName = {};
+  (Array.isArray(d.cols) ? d.cols : []).forEach(x => {
+    if (!x) return;
+    const n = String(x.name || '').trim();
+    const k = npAssetKindMatch(x.kind || x.k || '');
+    if (n && k && !byName[n]) byName[n] = k;
+  });
+  const cols = Object.keys(byName).map(n => ({ name: n, kind: byName[n] }));
+  return { ok: true, kinds, cols };
 }
 
 async function _npProductContext(config, kbList, kbBrief, kbQuery) {

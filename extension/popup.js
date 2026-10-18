@@ -436,7 +436,28 @@ function _embedSettingsFrame(frameId, tab) {
   if (!f.getAttribute('src')) { f.setAttribute('src', 'settings.html?embed=1#' + tab); return; }
   try { f.contentWindow.settingsOpenTab(tab); } catch (_) {}
 }
+/* ★ 前置门（2026-10-16 流程重排）：进系统之前的分流
+   老产品（问卷四步都已生成）→ 直接进系统，不拦；
+   新产品/新装 → 这个产品还没看过新手引导就先弹 guide.html（按产品记「看过」，换产品重新弹）。 */
+async function extPreGate() {
+  let cur = 'default';
+  try { cur = (await chrome.storage.local.get('current_tenant_id')).current_tenant_id || 'default'; } catch (_) {}
+  let seen = false;
+  try { seen = localStorage.getItem('xhs_guide_seen:' + cur) === '1'; } catch (_) {}
+  if (seen) return true;
+  let isOld = false;
+  try {
+    const cfg = await readConfigPlain();
+    const res = (cfg && cfg.diagnosis && cfg.diagnosis.results) || {};
+    isOld = ['persona', 'product', 'knowledge', 'plan'].every((k) => res[k] && res[k].status === 'done');
+  } catch (_) {}
+  if (isOld) return true;
+  location.replace('guide.html?from=popup' + (TARGET_TAB_ID ? ('&tabId=' + TARGET_TAB_ID) : ''));
+  return false;
+}
 document.addEventListener('DOMContentLoaded', async () => {
+  // ★ 前置门：新产品的第一屏＝新手引导（老产品直接进系统，不经过这步）
+  if (MODE_BIG) { if (!(await extPreGate())) return; }
   initDelayPresetSelector();
   // ★ A1+A2~A6 schema 迁移：把 _sv<2 的旧档补全集默认值；幂等，第二次再跑就跳过
   try {
@@ -515,10 +536,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   initHeaderMenu();
   // ★ 默认落到「获客 · 工作台」（日常主力）
   switchMainTab('comment');
+  // ★ 从引导页「下一步：填写信息」进来时：直接落到「账号规划 · 问卷」
+  if (MODE_BIG && urlParams.get('openQuiz') === '1') { try { switchMainTab('diagnose'); diagGo(2); } catch (_) {} }
   bindProspectModals();
   wireAccountGuardWatcher();
   renderGuardBadge();   // 🛡 账号安全小标：首次进来先画出当前挡位（之后由 storage 订阅随手刷）
   document.getElementById('adminBtn')?.addEventListener('click', () => openSettingsTab(''));
+  // ❓ 新手引导：顶栏回看（from=bar——引导页出口只回工作台，不再赶去问卷）
+  document.getElementById('hdrGuideBtn')?.addEventListener('click', () => {
+    location.href = 'guide.html?from=bar' + (TARGET_TAB_ID ? ('&tabId=' + TARGET_TAB_ID) : '');
+  });
   addLog('获客助手已加载', 'info');
   // ★ 先应用版本限制（隐藏不属于本版本的功能、到期锁定）
   await applyEditionToPopup();
@@ -963,13 +990,13 @@ function switchMainTab(name, arg) {
     return;
   }
   if (name === 'noteFilm') {
-    // 字效编辑器：口播稿 → 分幕 → 配音 → 本机出片（内嵌 video.html?embed=1，不再另开窗口）——入口＝档案那一行的「下一步」
+    // 字效编辑器：口播稿 → 分幕 → 配音 → 本机出片（台子就搭在本页 #filmPane 上，不再隔一层网页）——入口＝档案那一行的「下一步」
     _markTop(tabNote); _hideSub(); _hideAll();
     if (noteTabs) noteTabs.style.display = '';
     _markNote(tabNoteA);   // 从档案衍生的站内页：二级栏停在「笔记档案」上
-    if (fmc) fmc.style.display = '';
+    if (fmc) fmc.style.display = 'flex';   // 外壳三段（顶栏／工作流条／内容）竖着排，内容那格自己滚
     _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
-    filmFrameGo();
+    filmPaneGo();          // 首次进这一屏才把那几个脚本请进来（先露出来再请，尺寸才量得准）
     npFilmPaint();   // 盖板（第一步选成片形式）跟着这一篇重画：露台还是盖住、盖哪一层都在这儿定
     return;
   }
@@ -1194,6 +1221,8 @@ async function renderNotePublish(container, preset) {
                                                   // 🔥 热点线：④ 点到热点线就同步去找一条公开由头（why/angle 就是这篇的基调），不用另点按钮
     drainPick: null, drainVariants: null, drainError: '',   // 🔥 引流线：③ 挑稿页——挑中的那版（{cat,title,line,turn,body}）+ 这一批 18 版 + 出错话；挑中的那版进档，其余只活在台上
   };
+  _npIp = null;          // 🎭 IP 线（五十二改）：挑组合台的会话态（第几批 / 自己配的两步 / 临时选）每次重开归零
+  _npIpCard = null;      // 🎭 IP 卡（问卷一句话 + 招牌）：也重读一次——人设改了它跟着变
   container.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);">
       <span style="display:flex;align-items:center;gap:8px;min-width:0;"><button type="button" class="np-wiz-back" title="回到「笔记档案」——这一篇有没存的改动会先问一句" style="border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer;flex:none;">← 返回档案</button><span>✍️ 写稿 · 卖点到发稿</span></span>
@@ -1287,6 +1316,11 @@ async function npWizLoadArchive(n, container) {
   w.filmKind = npKindFromLegacy(n);   // 这一档选过的成片形式（老档只记过视频表现形式的，反推回来）
   w.kOut = String(n.kOut || '');      // 六卡定的方向（知识线交付分流）：灌回来再存不许丢
   w.dOut = String(n.dOut || '');      // 引流线的交付分流
+  w.dir = String(n.dir || '');        // 🎭 六卡定的方向（含 IP 玩法线）：灌回来再存不许丢——npIsI 认它
+  w.ipPlay = String((n.wip && n.wip.ipPlay) || n.ipPlay || '');           // 🎭 这一篇挑中的方式（招牌）
+  w.ipTheme = String((n.wip && n.wip.ipTheme) || n.ipTheme || '');        // 🎭 这一篇挑中的主题
+  w.ipThemeFam = String((n.wip && n.wip.ipThemeFam) || n.ipThemeFam || '');
+  w.ipCustom = !!((n.wip && n.wip.ipCustom) || n.ipCustom);               // ✍️ 自己配的：没有骨架段
   // 成稿：正文 / 标题 / 标签 / 建议发布
   if (String(n.draft || '').trim()) {
     w.draft = { content: String(n.draft), titles: (n.titles || []).map(String), tags: (n.tags || []).map(String), timeTip: String(n.timeTip || '') };
@@ -1302,7 +1336,16 @@ async function npWizLoadArchive(n, container) {
   // 老步值往回收，不许停在没有站的 1 / 2 / 3 / 5
   if (npIsK(w)) w.step = w.step >= 4 ? 4 : 0;
   // 引流线：图文线站点 3 挑稿 / 4 改稿 / 5 🎯 挑重点 / 6 ✍️ 配文 / 7 📋 整组提示词（五十一改改口）；文案直出视频线多一站 5 分镜出词——老步值往回收
-  if (npIsD(w)) w.step = (w.dOut === 'film') ? (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3)) : (w.step >= 7 ? 7 : (w.step >= 6 ? 6 : (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3))));
+  if (npIsD(w) && !npIsI(w)) w.step = (w.dOut === 'film') ? (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3)) : (w.step >= 7 ? 7 : (w.step >= 6 ? 6 : (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3))));
+  // 🎭 IP 线〔五十二改〕：站点 0 挑组合 / 1 编故事 / 4 改稿 / 8 出料（5·6·7＝出料里的挑重点/配文/整组提示词半段，与图文线共用）——老步值往回收
+  if (npIsI(w)) w.step = w.draft ? (w.step >= 8 ? 8 : (w.step >= 5 ? w.step : 4)) : (w.step >= 1 ? 1 : 0);
+  // 片台顶上那条工作流条点了「挑知识／改稿」回来（五十四改）：载完把这一步摆到那一站（消费即清）
+  if (_npFilmLand) {
+    const land = _npFilmLand; _npFilmLand = '';
+    if (npIsK(w)) w.step = land === 'pick' ? 0 : 4;
+    else if (npIsI(w)) w.step = land === 'pick' ? 0 : (w.draft ? 4 : 1);
+    else if (npIsD(w)) w.step = land === 'pick' ? 3 : 4;
+  }
   // 档案「🎬 分镜出词 / 拼片配音」直落：这份档就是那一条视频线，直接停在分镜站（载完即消费）
   if (_npForcedDv) {
     _npForcedDv = false;
@@ -2021,6 +2064,7 @@ async function npDFinishImg() {
 let _npDvBusy = false;      // 正在找 AI 排分镜
 let _npDvError = '';        // 上一次排分镜失败的话（挡住自动重发；点「分镜出词」/「🔁 再排一次」才清）
 let _npForcedDv = false;    // 档案「下一步」直落分镜站用：载档完置 step=5（消费即清）
+let _npFilmLand = '';       // 片台顶上点「挑知识／改稿」回写稿流用：载档完把向导摆回那一站（'pick'／'rewrite'，消费即清）
 const NP_DV_SAY = {};       // 试听缓存：音色＋首条文本 → blob URL
 let _npDvPlay = null;       // 正在试听的那个 Audio
 let _npDvAsmStep = -1;      // 真拼片走到哪一步了：-1＝没在拼；0~4＝拼片钮上就显示这个词
@@ -2858,8 +2902,10 @@ async function npDshDone() {
   await npArchiveSave(w, '代发');
   const on = npShotsOn(w);
   const gap = on.filter(x => !((x.imgs || []).length)).length;
+  const isIp = npIsI(w);   // 🎭 IP 篇（五十二改）：排期方式还没定——不自动找位子，提示老板自己挑
   switchMainTab('noteArchive');
-  if (typeof toast === 'function') toast(gap > 0 ? ('存好了——还缺 ' + gap + ' 张，档案「🖼 出图」随时回来补') : '这套齐了——到发布台到点自己发');
+  if (typeof toast === 'function') toast(gap > 0 ? ('存好了——还缺 ' + gap + ' 张，档案「🖼 出图」随时回来补')
+    : (isIp ? '这套齐了——先在「🆕 写好等排期」里「📅 自己选位子」挑个位子排上' : '这套齐了——到发布台到点自己发'));
 }
 /* ── 五十一改：本机压字整块撤——原「合成卡 / 封面单独那套 / cvTxt」全下岗（npDshCvTextOf / npDshCvPlan /
    npDshCardSize / npDshCapCardOf / npDshPaintCard 删）。字写进整组提示词，AI 连字带图一起出，图回来就带字。 ── */
@@ -5070,34 +5116,77 @@ async function npSaveNow(nc) {
   if (el) { el.textContent = '已存入档案'; setTimeout(() => { if (el.textContent === '已存入档案') el.textContent = ''; }, 2500); }
 }
 
-/* 弹窗里的字效编辑器 iframe：首次进入才挂 src（跟设置页同一手），之后切页不重载——
-   里面正在调的旋钮、已经分好的幕都留着 */
-let _filmReady = false, _filmPending = null;   // 首屏还没加载好时，先把稿子记着，load 回来再递
-function filmFrameGo() {
-  const f = document.getElementById('filmFrame');
-  if (!f) return;
-  if (!f.getAttribute('src')) {
-    f.addEventListener('load', () => {
-      _filmReady = true;
-      const p = _filmPending; _filmPending = null;
-      if (p) filmHandScript(p.s, p.opts);
-    }, { once: true });
-    f.setAttribute('src', 'video.html?embed=1');
-  }
+/* 弹窗里的字效编辑器：稿／幕／预览那台就搭在本页的 #filmPane 上（第 3 批「拆墙」——
+   不再隔一层网页，它跟「挑知识／改稿」那几屏在同一个页面里，零件与样式都归 lib/video/video.css 那套）。
+   这台引擎的脚本共 7 个（里头那条打包器 74KB），首次进入这一屏才请进来，之后切页不回来重跑——
+   里面正调着的旋钮、已经分好的幕都留着。 */
+const FILM_SCRIPTS = ['lib/video/mp4-muxer.js', 'lib/video/fonts.js', 'lib/video/styles.js',
+  'lib/video/scenes.js', 'lib/video/audio.js', 'lib/video/encoder.js', 'video.js'];
+let _filmReady = false, _filmPending = null, _filmBooting = null;   // 台子还没起来时，先把稿子记着，起来再递
+function filmPaneGo() {
+  if (_filmReady) { filmHandPending(); return Promise.resolve(); }
+  if (_filmBooting) return _filmBooting;
+  if (!document.getElementById('filmPane')) return Promise.resolve();   // 这一档没开本机出片：台子整块被摘掉了
+  _filmBooting = FILM_SCRIPTS.reduce((p, src) => p.then(() => new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = res;
+    s.onerror = () => rej(new Error(src));
+    document.body.appendChild(s);
+  })), Promise.resolve())
+    .then(() => window.Film && window.Film.ready)     // 等它把默认风格与稿子从存档读齐，再递这一篇（别把刚递的盖掉）
+    .then(() => {
+      _filmReady = true; _filmBooting = null;
+      window.Film.onState = filmStateTake;            // 它每动一下递一份小抄上来，外壳三件跟着重画
+      window.Film.onDone = filmDoneBack;              // 里面那颗「✓ 完成，回档案」交给我们带路
+      _filmState = window.Film.state || null;
+      filmHandPending();
+      npFilmShellRefresh();
+    })
+    .catch((e) => {
+      _filmBooting = null;
+      if (typeof toast === 'function') {
+        toast('字效编辑器没请进来（' + String((e && e.message) || e) + '）——重新打开弹窗再试', 'error');
+      }
+    });
+  return _filmBooting;
+}
+function filmHandPending() {
+  const p = _filmPending; _filmPending = null;
+  if (p) filmHandScript(p.s, p.opts);
 }
 
-/* 字效编辑器里点「✓ 完成，回档案」（出完片那一下）或左上「← 返回档案」：编辑器那头已经把稿与幕存好
-   （完成还多写了一条成片），这边只负责带路——回档案页，把刚运作过的那一行滚到眼前闪一下，别让人在黑压压一张表里自己找。 */
-window.addEventListener('message', async (ev) => {
-  if (ev.origin !== location.origin) return;
-  const f = document.getElementById('filmFrame');
-  if (!f || ev.source !== f.contentWindow) return;
-  const d = ev.data || {};
-  if (d.type !== 'xhsFilmDone' && d.type !== 'xhsFilmBack') return;
-  await npFilmBackArchive();
-  if (d.noteId) npArFlashRow(String(d.noteId));
-  if (d.type === 'xhsFilmDone' && typeof toast === 'function') toast('✓ 片已存进这一篇——点「🎬 成片预览」能看片、也能再下一遍');
-});
+/** 台子每动一下递上来的小抄：只认手上这一篇的（换篇途中迟到的那份丢掉），顶栏／条／底栏跟着重画 */
+function filmStateTake(p) {
+  if (String((p && p.noteId) || '') !== String((_npFilmNote && _npFilmNote.id) || '')) return;
+  _filmState = p;
+  npFilmShellRefresh();
+}
+
+/** 台子里那颗「✓ 完成，回档案」：那边已经把稿／幕／成片存好，这边只管带路。 */
+function filmDoneBack(d) {
+  npFilmBackArchive().then(() => {
+    if (d && d.noteId) npArFlashRow(String(d.noteId));
+    if (typeof toast === 'function') toast('✓ 片已存进这一篇——点「🎬 成片预览」能看片、也能再下一遍');
+  });
+}
+
+/** 台子露着的时候才重画外壳（盖板盖上＝这一篇还没定成片形式，没什么可画的） */
+function npFilmShellRefresh() {
+  const head = document.getElementById('filmHead');
+  if (!head || head.style.display !== 'flex') return;
+  npFilmHeadPaint(); npFilmStepsPaint(); npFilmFootPaint();
+}
+
+/** 片台里点「挑知识／改稿」那一站（或底栏「上一步」）：先落盘，再把写稿向导摆回那一站 */
+async function npFilmGotoWizard(to, noteId) {
+  await npFilmFlush();
+  npArchiveFlushTouch();
+  const n = noteId ? await npArFindById(noteId) : null;
+  if (!n) { switchMainTab('noteArchive'); return; }
+  _npFilmLand = to === 'pick' ? 'pick' : 'rewrite';
+  switchMainTab('notePublish', n);
+}
 
 /** 档案里把某一篇那行滚到眼前、闪一道边：档案是异步重渲的，等它出来再找（试几次没找着就算了） */
 function npArFlashRow(id, tries) {
@@ -5122,18 +5211,18 @@ function npArFlashRow(id, tries) {
  *  opts.shots＝「🖼 出图」那张画面表（[{no, text, assetIds}]）——卡片轮播照它把第 N 幕安第 N 张图；
  *  三十七改：再把这一篇的正文 / 写法 / 卖点 / 人群 / 平台一并递过去——没口播稿时进站自动调一版要用。 */
 function filmHandScript(s, opts) {
-  const f = document.getElementById('filmFrame');
-  if (!f) return '';
+  const F = window.Film;
+  if (!F) return '';
   const o = opts || {};
   let r = '';
   try {
     r = o.noteId
-      ? f.contentWindow.Film.loadNote({
+      ? F.loadNote({
           id: o.noteId, title: o.title || '', script: String(s || ''), frame: o.frame || '', shots: o.shots || null,
           kind: o.kind || '', body: o.body || '', style: o.style || '', sellPoint: o.sellPoint || '',
-          people: o.people || null, platform: o.platform || '',
+          people: o.people || null, platform: o.platform || '', flow: o.flow || null,
         })
-      : f.contentWindow.Film.loadScript(s, o);
+      : F.loadScript(s, o);
   } catch (_) {}
   if (r === 'busy' && typeof toast === 'function') toast('字效编辑器正在出片——等这条编完再换稿，或点右上「在新标签页打开」', 'error');
   return r;
@@ -5145,7 +5234,7 @@ function npOpenFilm(script, opts) {
   const o = opts || {};
   const go = () => {
     switchMainTab('noteFilm');
-    if (!_filmReady) { _filmPending = (s || o.noteId) ? { s, opts: o } : null; return; }   // 首屏还在加载：load 回来递
+    if (!_filmReady) { _filmPending = (s || o.noteId) ? { s, opts: o } : null; return; }   // 台子还没起来：起来那一下再递
     if (s || o.noteId) filmHandScript(s, o);
   };
   // 带 noteId＝这一篇有自己的草稿，别再往全局那份里写（那个 key 是「单开一页」的续命稿）
@@ -5177,8 +5266,10 @@ function npGoFilm(o) {
     kind: (open && open.kind) || kind, shots: npFilmShots(n.shots),
     body: String(n.body || ''), style: String(n.style || ''), sellPoint: String(n.sellPoint || ''),
     people: Array.isArray(n.people) ? n.people : [], platform: String(n.platform || ''),
+    flow: Array.isArray(n.flow) ? n.flow : [],
     rows: rows, openId: open ? open.id : '', pid: String(n.pid || 'xhs') };
   _npFilmChange = false;
+  _filmState = null;                                             // 换了一篇：里面那份状态小抄先作废（递稿过去它会重新递一份上来）
   ensureNpDelegation();                                        // 盖板上那几颗按钮挂的是 document 委托：直接从档案进片台时它还没注册过
   switchMainTab('noteFilm');                                   // 里面把 iframe 挂起来
   if (fixed && arId) { try { npFilmRowsSave(arId, rows, kind); } catch (_) {} }   // 顺手把这一行的形式落回档（出图页换过形式没落 filmDocs）
@@ -5206,25 +5297,118 @@ function npFilmShots(sh) {
 
 function npFilmPaint() {
   const gate = document.getElementById('filmGate');
-  const bar = document.getElementById('filmBar');
-  const fr = document.getElementById('filmFrame');
-  if (!gate || !bar || !fr) return;
+  const head = document.getElementById('filmHead');
+  const steps = document.getElementById('filmSteps');
+  const foot = document.getElementById('filmFoot');
+  if (!gate || !head || !steps || !foot) return;
   const n = _npFilmNote, kind = (n && n.kind) || '';
   const local = !!kind && npKindLocal(kind);
   const cover = !n || !local || _npFilmChange;   // 没定形式／不在本机出片／要重选 → 台子盖着
   gate.style.display = cover ? 'block' : 'none';
-  bar.style.display = (n && !cover) ? 'flex' : 'none';
-  fr.style.top = (n && !cover) ? '30px' : '0';
-  fr.style.height = (n && !cover) ? 'calc(100% - 30px)' : '100%';
+  const show = !!n && !cover;
+  head.style.display = show ? 'flex' : 'none';
+  steps.style.display = show ? 'block' : 'none';
+  foot.style.display = show ? 'flex' : 'none';
   if (!n) { gate.innerHTML = npFilmNoNoteHtml(); return; }
   gate.innerHTML = (!kind || _npFilmChange) ? npFilmPickHtml(n) : npFilmOffHtml(n, kind);
-  if (n && !cover) {
-    const d = npKindDef(kind) || {};
-    /* 三十七改：返回只留编辑器顶栏那一颗（左上）；这条窄只是「这一片是什么片」的信息条＋换一种入口 */
-    bar.innerHTML = '🎬 这一片的成片形式：<b>' + esc(kind) + '</b>' + (d.frame ? '（' + (d.frame === 'card' ? '卡片轮播' : '大字动效') + '）' : '') +
-      '<span style="flex:1;"></span>' +
-      '<button type="button" class="np-kind-change" style="border:1px solid var(--line);border-radius:7px;background:#fff;color:#666;font-size:11px;padding:3px 9px;cursor:pointer;">✏️ 换一种</button>';
-  }
+  if (show) { npFilmHeadPaint(); npFilmStepsPaint(); npFilmFootPaint(); }
+}
+
+/* ═════════ 片台那一屏的外壳（七十二改）═════════
+   以前 iframe 里那页自己画一套顶栏＋一条按钮款工作流条＋一颗底栏，从「改稿」跳过来像换了个软件：
+   条子没了、也回不去上一步。现在这三件由这一页画（跟写稿向导同一个画法），
+   里面那一页带 bare 只留稿／幕／预览，状态每动一下递一份小抄过来（xhsFilmState）。 */
+const FILM_FLOW_SUB = { '挑知识': '讲哪条', '改稿': '改到满意', '挑组合': '挑一组', '挑稿': '挑一篇' };
+let _filmState = null;   // 里面那页递出来的状态（跑到哪一步／几幕／出没出过片／进度）
+
+function filmShellCall(fn) {
+  filmPaneGo().then(() => {
+    const sh = window.Film && window.Film.shell;
+    if (sh && typeof sh[fn] === 'function') { sh[fn](); return; }
+    if (typeof toast === 'function') toast('台子还没起来——稍等一下再点', 'error');
+  });
+}
+
+function npFilmStations() {
+  const flow = ((_npFilmNote && _npFilmNote.flow) || (_filmState && _filmState.flow) || [])
+    .map(x => ({ t: String((x && x.t) || ''), to: String((x && x.to) || '') })).filter(x => x.t);
+  return flow.concat([{ t: '🎬 分幕', s: '左稿右幕' }, { t: '发布', s: '去发布台' }]);
+}
+
+/** 顶栏那一行：跟「写稿」那几页同一句标题，右边两颗工具钮（换一种／音色与风格）；回上一站走底栏「← 上一步」。 */
+function npFilmHeadPaint() {
+  const el = document.getElementById('filmHead');
+  if (!el) return;
+  const n = _npFilmNote || {}, st = _filmState || {};
+  const kind = String(st.kind || n.kind || '');
+  const d = npKindDef(kind) || {};
+  const title = String(st.title || n.title || '');
+  const mini = 'border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex:none;';
+  el.innerHTML =
+    '<span style="display:flex;align-items:center;gap:8px;min-width:0;">' +
+      '<span style="white-space:nowrap;flex:none;">✍️ 写稿 · 卖点到发稿</span>' +
+      '<span style="font-size:11px;font-weight:500;color:#8a929e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">' +
+        (title ? '这一篇《' + esc(title) + '》' : '') +
+        (kind ? ' · 这一片：' + esc(kind) + (d.frame ? '（' + (d.frame === 'card' ? '卡片轮播' : '大字动效') + '）' : '') : '') +
+      '</span>' +
+      (Number(st.outAt || 0) ? '<span style="font-size:11px;font-weight:700;color:#0a7b5a;flex:none;">🎬 已出过片</span>' : '') +
+    '</span>' +
+    '<span style="display:flex;align-items:center;gap:6px;font-weight:500;flex:none;">' +
+      '<button type="button" class="np-kind-change" style="' + mini + '" title="这一片换成别的成片形式——稿子不动">✏️ 换一种</button>' +
+      '<button type="button" class="np-film-cfg" style="' + mini + '" title="配音的嗓子与语速、画面风格">⚙ 音色与风格</button>' +
+    '</span>';
+}
+
+/** 工作流条：跟写稿向导那条同一个画法（圆点＋站名＋一行小字），点前几站＝回那一站 */
+function npFilmStepsPaint() {
+  const el = document.getElementById('filmSteps');
+  if (!el) return;
+  const sts = npFilmStations();
+  const curIdx = sts.length - 2;                      // 本台这一站（🎬 分幕）＝当前站，最后一站是「发布」
+  const canBack = !!(_npFilmNote && _npFilmNote.id);
+  const outDone = !!(_filmState && _filmState.outAt);
+  el.innerHTML = '<div style="display:flex;align-items:flex-start;">' + sts.map((s, i) => {
+    const done = i < curIdx, cur = i === curIdx;
+    const attr = s.to ? (canBack ? 'data-filmto="' + esc(s.to) + '"' : '')
+      : s.t === '发布' ? (outDone && canBack ? 'data-filmpub="1"' : '') : '';
+    const tip = s.to ? (canBack ? '回「' + s.t + '」站接着走' : '这篇是从档案直接进台子的——回档案那一行点「✍️ 写稿」才回得去')
+      : s.t === '发布' ? (outDone && canBack ? '出过片了——回档案，那一行下一步去发布台' : '先出片才到发布')
+        : '正在这一站：左边口播稿、右边分幕';
+    return '<div style="display:flex;flex-direction:column;align-items:center;min-width:58px;flex:none;padding:0 3px;">' +
+      npDotBadge({ lit: done || cur, cur: cur, done: done, open: !!attr && !done && !cur,
+        n: i + 1, attr: attr, title: tip }) +
+      npDotLabel({ t: s.t, s: s.s || FILM_FLOW_SUB[s.t] || '', cur: cur, done: done }) + '</div>' +
+      (i < sts.length - 1 ? npDotLink(i <= curIdx) : '');
+  }).join('') + '</div>';
+  el.querySelectorAll('[data-filmto]').forEach(b => b.addEventListener('click', () => {
+    npFilmGotoWizard(b.getAttribute('data-filmto'), (_npFilmNote && _npFilmNote.id) || '');
+  }));
+  el.querySelectorAll('[data-filmpub]').forEach(b => b.addEventListener('click', () => {
+    npFilmBackArchive().then(() => { if (_npFilmNote) npArFlashRow(_npFilmNote.id); });
+  }));
+}
+
+/** 底栏那颗钉子：← 上一步｜🎬 出片（配音 + 画面）＋进度与状态（跟向导底栏同一位置同一画法） */
+function npFilmFootPaint() {
+  const el = document.getElementById('filmFoot');
+  if (!el) return;
+  const st = _filmState || {}, n = _npFilmNote || {};
+  const busy = !!st.busy, scenes = Number(st.scenes || 0);
+  const ghost = 'padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;font-weight:700;cursor:pointer;flex:none;';
+  const prog = Math.max(0, Math.min(1, Number(st.prog || 0)));
+  el.innerHTML =
+    (n.id ? '<button type="button" class="np-film-prev" style="' + ghost + '" title="回「改稿」站接着改正文——稿与幕先替你存好">← 上一步</button>' : '') +
+    (busy
+      ? '<button type="button" class="np-film-stop" style="' + ghost + '">⏹ 停</button>' +
+        '<span style="display:inline-flex;align-items:center;gap:6px;flex:none;color:#8a929e;font-size:11px;">' +
+        '<span style="width:80px;height:4px;border-radius:2px;background:#eceef2;overflow:hidden;display:inline-block;">' +
+        '<i style="display:block;height:100%;width:' + (prog * 100).toFixed(0) + '%;background:var(--grad-brand);"></i></span>' +
+        esc(String(st.st || '正在出片…')) + '</span>'
+      : '<button type="button" class="np-film-start" style="padding:6px 14px;border:none;border-radius:8px;background:' +
+        (scenes ? 'var(--grad-brand)' : '#c9ccd4') + ';color:var(--c-brand-on);font-size:12px;font-weight:700;flex:none;' +
+        (scenes ? 'cursor:pointer;"' : 'cursor:not-allowed;" disabled ') +
+        ' title="' + (scenes ? '配音 + 逐帧画面，出一条带声的竖版 MP4' : '还没分幕——AI 正在出片稿、切幕，跑完就能出片') + '">🎬 出片（配音 + 画面）</button>') +
+    '<span style="font-size:11px;color:#8a929e;max-width:260px;line-height:1.5;">' + esc(String(st.foot || '')) + '</span>';
 }
 
 function npFilmNoNoteHtml() {
@@ -5361,16 +5545,14 @@ function npFilmHand() {
   if (npKindLocal(r.kind)) npOpenFilm(n.script, {
     noteId: r.key, title: n.title, frame: npKindFrame(r.kind), shots: n.shots, kind: r.kind,
     body: n.body, style: n.style, sellPoint: n.sellPoint, people: n.people, platform: n.platform,
+    flow: n.flow,
   });
 }
 
 /** 让片台把「手上这一行」立刻落盘（换片／开列表前叫一声，别丢最后那 600ms） */
 function npFilmFlush() {
-  try {
-    const f = document.getElementById('filmFrame');
-    const F = f && f.contentWindow && f.contentWindow.Film;
-    if (F && typeof F.flush === 'function') return F.flush();
-  } catch (_) {}
+  const F = window.Film;
+  if (F && typeof F.flush === 'function') return F.flush();
   return Promise.resolve();
 }
 
@@ -5431,9 +5613,12 @@ function npFilmDocDrop(key) {
   })();
 }
 
-/** 知识线（六卡建的 dir='k'）走自己的三站：挑知识 → 改稿 → 出口（🧠 导图 / ✨ 出片 / 🎙 口播）。
+/** 知识线（六卡建的 dir='k'）走自己的站点：挑知识 → 改稿 → 出口那一站 → 发布。
  *  二十九改撤掉「定话题」站：挑了知识就是定了题，出稿时 AI 自己从挑好的知识里挑角度（防重表跟着出稿走）。
- *  与 demo 的 WF_STEPS.k 对齐：入口站＝0、出口站 k=-1（不可点，按下即离开向导，回档案）。 */
+ *  五十四改把出口「✨ 出片」拆成 🎙 口播稿 → 🎬 分幕 两站；七十一改（老板「口播稿和分幕都能 AI 一步直达，那就并成一屏」）
+ *  再并回一站「🎬 分幕」——这一站就是字效编辑器那一屏（第 3 批拆墙后跟向导同一页，条上点得动）。
+ *  与 demo 的 WF_STEPS.k 对齐：入口站＝0、出口站 k=-1（稿子有了才放开，点了就地进这一屏）、
+ *  「发布」站 k=-2（出过片才放开，点了回档案那一行，下一步去发布台）。 */
 function npIsK(w) { return !!(w && w.kOut); }
 function npKStations(w) {
   const out = (w && w.kOut) || 'img';
@@ -5445,8 +5630,8 @@ function npKStations(w) {
   if (out === 'film') return [
     { k: 0, t: '挑知识', s: '讲哪条' },
     { k: 4, t: '改稿', s: '改到满意' },
-    { k: -1, t: '✨ 出片', s: '进字效' },
-    { k: -2, t: '发布', s: '去发布台' },
+    { k: -1, t: '🎬 分幕', s: '左稿右幕', go: 'film' },
+    { k: -2, t: '发布', s: '去发布台', go: 'pub' },
   ];
   return [
     { k: 0, t: '挑知识', s: '讲哪条' },
@@ -5478,40 +5663,613 @@ function npDStations(w) {
   ];
 }
 
+/* ═══ 🎭 IP 玩法线（五十二改 ?v=73 复刻：主题×方式选择表）═══
+   账号 IP 层：引流之上立人设——AI 按问卷给账号配一张「IP 卡」（定位一句话 + 招牌 1~3 个）。
+   发内容两步定：🎯 主题（37 个按 7 类码好）× 🎭 方式（21 招：A 互动 / B 追更 / C 共鸣 / D 人设 / E 实用）。
+   三条路：路一 组合卡（按主题×对味的方式码好，🔀 换一批）/ 路二 ✍️ 自己配（先挑主题 → 再挑方式）/ 路三 🎲 随机。
+   选完 AI 编 3 段故事候选，挑一段（或自己写），AI 出稿；出料只出图文（走「造图片」那条子流程）。 */
+function npIsI(w) { return !!(w && w.dir === 'i'); }
+/** IP 线的步骤条：挑组合(0) / AI 编故事(1) / 改稿(4) / 出料(8，进造图片子流程) / 发布(-2 不可点) */
+function npIStations(w) {
+  return [
+    { k: 0, t: '挑组合', s: '主题×方式' },
+    { k: 1, t: 'AI 编故事', s: '挑一段' },
+    { k: 4, t: '改稿', s: '改到满意' },
+    { k: 8, t: '出料', s: '出图文' },
+    { k: -2, t: '发布', s: '去发布台' },
+  ];
+}
+/** 挑组合这一趟的会话状态（换篇即复位，见 renderNotePublish）：批次 / 自己配展开 / 暂挑的主题与方法 */
+let _npIp = null;
+/** 账号 IP 卡（会话级缓存，进来重读）：定位一句话＝问卷里「用一句话介绍你自己」那题，没答就看人设第一行 */
+let _npIpCard = null;
+async function npLoadIpCard() {
+  if (_npIpCard) return _npIpCard;
+  let line = '';
+  try {
+    const c = await readConfigPlain();
+    const answers = (c && c.diagnosis && Array.isArray(c.diagnosis.answers)) ? c.diagnosis.answers : [];
+    for (let i = 0; i < answers.length; i++) {
+      const a = answers[i] || {};
+      if (String(a.q || '').indexOf('用一句话介绍你自己') >= 0) { line = String(a.answer || '').trim(); break; }
+    }
+    if (!line) line = String(((c && c.persona && c.persona.text) || '')).split('\n')[0].trim();
+  } catch (_) {}
+  _npIpCard = { line: line, plays: ['出题纠错', '猜价猜量', '工地连续剧'] };
+  return _npIpCard;
+}
+/* 玩法骨架表（五十二改 ?v=73，逐字镜像 demo）：name 名 / grp 组 / how 一句话怎么玩 / rhythm 节奏（防疲劳建议）/
+   show 挑方式时的「大概长这样」/ lock 骨架段下标（AI 改稿不碰——手改可以）/ lockWhy 骨架说明 / hint 发布前提醒 */
+const NP_IP_PLAYS = [
+  { name: '出题纠错', grp: 'A 互动型', how: '拿真实施工里的对错出题，让评论区来找茬——互动最猛', rhythm: '每周 2~3 条（别日更——题会枯）', show: '出个题让评论区找茬', lock: [0], lockWhy: '题目是骨架——AI 改稿不碰它，免得把「题眼」改没；发布前自己核对答案。', hint: '题目和答案照你自己的真实经验来——AI 编的是样稿。' },
+  { name: '猜价猜量', grp: 'A 互动型', how: '晒一单活让大家猜价钱 / 用量，竞猜氛围拉评论', rhythm: '每周 1~2 条', show: '晒一单让大家猜价', lock: [0], lockWhy: '数字是骨架——AI 改稿不碰；发布前把样例数字换成你自己工单里的真实数。', hint: '数字建议换成真实工单的数——编的数字被同行一眼看穿。' },
+  { name: '选边投票', grp: 'A 互动型', how: '抛一个同行天天吵的问题，两派自己来站队', rhythm: '每周 1~2 条', show: '抛个争论让大家站队' },
+  { name: '求助军师', grp: 'A 互动型', how: '把接单里答不上来的难题丢出来，请评论区支招', rhythm: '有料才发', show: '把难题丢给评论区支招', hint: '难题用你真实碰到的——AI 编的没那个着急劲儿。' },
+  { name: '答疑翻牌', grp: 'A 互动型', how: '攒几条评论区的问题，一条条翻牌答', rhythm: '每周 1 条（攒几个问题）', show: '攒几个问题挨个翻牌答', hint: '问题用评论区真问的——AI 编的问题评论区没共鸣。' },
+  { name: '编号连载', grp: 'B 追更型', how: '固定栏目编号（小课堂 / 避坑连载），一期一个小点', rhythm: '每周 1 条（编号排好，别断更）', show: '固定栏目一期一个小点' },
+  { name: '工地连续剧', grp: 'B 追更型', how: '手头这单从开工跟到完工，一天一条进度', rhythm: '开工期日更（有工地在跑才更）', show: '从开工跟到完工一天一条', hint: '进度用你手头真在干的单——跟拍的照片/片段直接配。' },
+  { name: '客户故事连载', grp: 'B 追更型', how: '一个客户的事分几期讲完，过程和结局吊住人', rhythm: '每周 1 条', show: '一个客户的事分几期讲', hint: '客户的事用你手头的真单（隐去隐私）——AI 编的当结构参考。' },
+  { name: '挑战打卡', grp: 'B 追更型', how: '立个小挑战，每天打卡给大家看', rhythm: '打卡期日更（就那几天）', show: '立个挑战每天打卡', hint: '挑战得你真做得到——立了就得跑完，不然掉粉。' },
+  { name: '心情贴图', grp: 'C 共鸣型', how: '当天的心情配一张工地照（可以配一张动漫感的图）', rhythm: '随手发（有情绪的那天）', show: '当天的心情配一张工地照', hint: '心情和照片得是你当天真实的——AI 的只当配文参考。' },
+  { name: '老物件故事', grp: 'C 共鸣型', how: '讲一件跟着你多年的工具 / 老物件', rhythm: '有料才发', show: '讲一件跟了多年的老物件', hint: '物件得是你真有的——拍实拍图，故事挑一件真事。' },
+  { name: '反差人设', grp: 'D 人设型', how: '亮一个和你职业反差的面（粗手写字 / 硬汉养猫）', rhythm: '两周 1 条（多了就腻）', show: '亮一个和职业反差的面', hint: '反差得是你真有的那一面——别立没有的人设。' },
+  { name: '行业黑话解密', grp: 'D 人设型', how: '把行内术语一个个翻译成业主听得懂的话', rhythm: '每周 1~2 条', show: '把行话翻译成大白话' },
+  { name: '公开账本', grp: 'D 人设型', how: '把一单的收支摊开算——透明得让人服', rhythm: '每月 1 条（数字要真）', show: '把一单的收支摊开算', lock: [0], lockWhy: '账目数字是骨架——AI 改稿不碰；发布前照真实单据核一遍。', hint: '账目照真实单据写——AI 编的账别当账报。' },
+  { name: '年度复盘', grp: 'D 人设型', how: '把这一年 / 这一阵的事收一收，讲给人听', rhythm: '每月 / 年末 1 条', show: '把这段时间的事收一收', hint: '经历得是你自己的——AI 编的总结没人信。' },
+  { name: '避坑指南', grp: 'E 实用型', how: '把踩过的坑一条条列出来，先给坑、再给躲法', rhythm: '每周 1~2 条', show: '把坑和躲法列给你', hint: '坑得是你真踩过的——AI 编的当结构参考。' },
+  { name: '清单合集', grp: 'E 实用型', how: '把一类东西收成一张清单，照着买 / 照着做', rhythm: '有料才发', show: '收成一张清单给你' },
+  { name: '教程步骤', grp: 'E 实用型', how: '一步一步带着做，照着能上手', rhythm: '每周 1 条', show: '一步一步带着做' },
+  { name: '测评对比', grp: 'E 实用型', how: '两样东西摆一起比，告诉你哪个值', rhythm: '有料才发', show: '两样摆一起比一比', hint: '两样都得是你真用过的——AI 编的对比经不起评论区问。' },
+  { name: '省钱攻略', grp: 'E 实用型', how: '算一笔省钱的账，把钱省在哪讲清楚', rhythm: '每周 1~2 条', show: '算一笔省钱的账', hint: '省的钱照真实单据算——AI 编的价差经不起对。' },
+  { name: '资源盘点', grp: 'E 实用型', how: '把你攒的好东西盘点一遍，哪来的、怎么用', rhythm: '有料才发', show: '把好用的归一堆给你', hint: '资源得是你真在用的——AI 编的一搜就穿。' },
+];
+const NP_IP_BY_NAME = {};
+NP_IP_PLAYS.forEach(p => { NP_IP_BY_NAME[p.name] = p; });
+/* 主题池（五十二改 ?v=73，逐字镜像 demo）：7 类 37 个；best＝跟这个主题对味的方式（自己配时排前面） */
+const NP_IP_THEMES = [
+  { fam: '💬 社会现象', items: [
+    { n: '平替和消费降级', line: '这两天好几个业主来问，便宜料到底能不能用', best: ['公开账本', '测评对比', '省钱攻略'] },
+    { n: '报价刺客', line: '说好八千的活，结账变一万二——这种吐槽天天有', best: ['避坑指南', '选边投票', '行业黑话解密'] },
+    { n: '业主和师傅的信任', line: '业主盯我干活像防贼，其实他怕的不是我', best: ['心情贴图', '客户故事连载', '反差人设'] },
+    { n: '年轻人不装修改换租', line: '越来越多年轻人不装修了，你身边是不是也这样', best: ['选边投票', '年度复盘', '答疑翻牌'] },
+    { n: '中年转行的手艺人', line: '四十岁转行干装修的师傅，这两年明显多了', best: ['反差人设', '年度复盘', '求助军师'] },
+  ] },
+  { fam: '📰 时事热点', items: [
+    { n: '暴雨过后', line: '暴雨刚过，漏水报修的电话就没停过', best: ['避坑指南', '教程步骤', '工地连续剧'] },
+    { n: '梅雨季', line: '梅雨季一到，返潮发霉的活就排上了', best: ['清单合集', '答疑翻牌', '心情贴图'] },
+    { n: '高温季施工', line: '四十度的天施工，人遭罪料也遭罪', best: ['心情贴图', '工地连续剧', '挑战打卡'] },
+    { n: '台风前的加固', line: '台风预警一出，屋顶这处得先加固', best: ['教程步骤', '避坑指南', '清单合集'] },
+    { n: '回南天', line: '回南天墙上「流泪」，这锅真不全是防水的', best: ['行业黑话解密', '测评对比', '答疑翻牌'] },
+  ] },
+  { fam: '🎬 娱乐媒体', items: [
+    { n: '装修节目里的翻车', line: '看了档改造节目，里头的防水做得真糙', best: ['出题纠错', '答疑翻牌', '选边投票'] },
+    { n: '影视剧里的工地', line: '电视剧里一句台词，一看编剧就没下过工地', best: ['反差人设', '心情贴图', '出题纠错'] },
+    { n: '装修短剧的套路', line: '最近装修短剧火了，为了流量坑了不少人', best: ['避坑指南', '年度复盘', '公开账本'] },
+  ] },
+  { fam: '🏘 本地生活', items: [
+    { n: '老小区改造', line: '这个老小区又要改造了，防水是老大难', best: ['工地连续剧', '清单合集', '资源盘点'] },
+    { n: '楼上楼下漏水纠纷', line: '楼上楼下为漏水吵到居委会，这局面怎么破', best: ['选边投票', '求助军师', '答疑翻牌'] },
+    { n: '逛建材市场', line: '周末逛了趟建材市场，这里头水太深', best: ['测评对比', '避坑指南', '省钱攻略'] },
+    { n: '房东和租客', line: '房东想花最少的钱修漏水，租客在旁边催', best: ['客户故事连载', '心情贴图', '求助军师'] },
+  ] },
+  { fam: '🎮 游戏', items: [
+    { n: '游戏里的建造玩法', line: '孩子玩的造房子游戏，讲究得让我有点意外', best: ['心情贴图', '反差人设', '答疑翻牌'] },
+    { n: '和工友开黑', line: '跟工友开黑输了，第二天干活都带着劲', best: ['心情贴图', '挑战打卡', '反差人设'] },
+    { n: '手游里的装修', line: '手游里的装修全是花架子，真干活没这么简单', best: ['行业黑话解密', '出题纠错', '测评对比'] },
+  ] },
+  { fam: '🧱 行内的争论', items: [
+    { n: '装修群的争论', line: '装修群里又吵起来了：全屋防水是不是智商税', best: ['选边投票', '公开账本', '答疑翻牌'] },
+    { n: '全包还是半包', line: '全包半包吵了这么多年，说到底是个信任问题', best: ['选边投票', '公开账本', '避坑指南'] },
+    { n: '老师傅和新工艺', line: '老师傅看不上的新工艺，我悄悄试了半年', best: ['测评对比', '挑战打卡', '教程步骤'] },
+    { n: '低价接单的活法', line: '低价接单再慢慢加钱，这路数能走多远', best: ['选边投票', '公开账本', '年度复盘'] },
+  ] },
+  { fam: '🏗 自己的日常', items: [
+    { n: '刚收工的一单', line: '刚收工的一单，八十平全屋防水', best: ['猜价猜量', '心情贴图', '编号连载'] },
+    { n: '老房翻新', line: '又接了个老房翻新，墙面一敲全是故事', best: ['工地连续剧', '老物件故事', '客户故事连载'] },
+    { n: '十件老工具', line: '翻工具包，十件老伙计排排坐', best: ['老物件故事', '资源盘点', '心情贴图'] },
+    { n: '收工那一刻', line: '收工那一刻的工地最好看，可惜没人看', best: ['心情贴图', '编号连载', '挑战打卡'] },
+    { n: '漏水三年那家', line: '漏水三年的那家今天收尾，想起第一次进门', best: ['客户故事连载', '老物件故事', '答疑翻牌'] },
+    { n: '验收现场', line: '验收现场，业主一句话让我挺欣慰', best: ['出题纠错', '清单合集', '答疑翻牌'] },
+    { n: '一次返工', line: '上周返工了一单，原因说出来你不信', best: ['出题纠错', '避坑指南', '年度复盘'] },
+    { n: '带徒弟', line: '带的徒弟问了个问题，把我问住了', best: ['求助军师', '答疑翻牌', '反差人设'] },
+    { n: '接单的规矩', line: '什么样的单我不接？说说我的规矩', best: ['行业黑话解密', '公开账本', '选边投票'] },
+    { n: '辨材料的真假', line: '业主拿了桶料让我辨真假，我教了他一招', best: ['测评对比', '避坑指南', '教程步骤'] },
+    { n: '手写的感谢信', line: '收到一封手写的感谢信，看了好几遍', best: ['客户故事连载', '老物件故事', '心情贴图'] },
+    { n: '淡季怎么过', line: '冬天淡季，师傅们其实都闲不住', best: ['年度复盘', '答疑翻牌', '挑战打卡'] },
+    { n: '第一单的工地', line: '翻到第一单的老照片，那时候没电梯', best: ['老物件故事', '年度复盘', '客户故事连载'] },
+  ] },
+];
+function npIpThemeOf(n) {
+  for (const g of NP_IP_THEMES) { const t = g.items.find(x => x.n === n); if (t) return { fam: g.fam, t: t }; }
+  return null;
+}
+/** 从方式反查主题（玩法效果「🎭 挑一个开写」用）：第一个把它收进 best 的主题——没有＝null */
+function npIpThemeForMethod(m) {
+  for (const g of NP_IP_THEMES) for (const t of g.items) if ((t.best || []).indexOf(m) >= 0) return { fam: g.fam, t: t };
+  return null;
+}
+function npIpLabelOf(w) { w = w || _npWiz || {}; return (w.ipTheme ? w.ipTheme + ' × ' : '') + (w.ipPlay || ''); }
+function npIpIsStar(m) { return (_npIpCard ? _npIpCard.plays : []).indexOf(m) >= 0; }
+/** 组合池（真实版现配）：37 主题 × 每主题对味的方式平铺；一批 5 套，🔀 换一批往后翻 */
+let _npIpPool = null;
+function npIpComboPool() {
+  if (_npIpPool) return _npIpPool;
+  const out = [];
+  NP_IP_THEMES.forEach(g => g.items.forEach(t => (t.best || []).forEach(m => out.push({ th: t.n, line: t.line, m: m }))));
+  _npIpPool = out;
+  return out;
+}
+function npIpBatchCount() { return Math.max(1, Math.ceil(npIpComboPool().length / 5)); }
+function npIpBatchOf(b) { return npIpComboPool().slice(b * 5, b * 5 + 5); }
+function npIpSt() {
+  if (!_npIp) _npIp = { batch: 0, selfOpen: false, tmpTheme: null, tmpMethod: null };
+  return _npIp;
+}
+/** IP 卡片上的小按钮样式（这一线内共用：白底描边 / 淡底两种） */
+const NP_IP_BTN = 'padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:11px;font-weight:700;cursor:pointer;';
+/** ① 挑组合站（五十二改复刻）：IP 卡 → 组合卡（AI 配好，一批 5 套）→ ✍️ 自己配（挑主题 → 挑方式两步） */
+function npIpPickHtml() {
+  const card = _npIpCard || { line: '', plays: [] };
+  const st = npIpSt();
+  const starChips = card.plays.map(n => '<span style="font-size:10.5px;background:#e8f7ef;color:#0a7b5a;border:1px solid #bfe3cf;border-radius:8px;padding:1px 8px;">⭐ ' + esc(n) + '</span>').join('');
+  const combos = npIpBatchOf(st.batch);
+  const comboHtml = combos.map((cb, i) => {
+    const p = NP_IP_BY_NAME[cb.m] || {};
+    return '<div class="np-ip-use" data-b="' + st.batch + '" data-i="' + i + '" title="就用这套＝AI 按它编 3 段故事" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;background:#fff;">' +
+      '<div style="font-size:12px;font-weight:700;color:#333;line-height:1.55;">' + esc(cb.line) + '</div>' +
+      '<div style="margin-top:5px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--c-brand-text);background:var(--c-brand-soft);border:1px solid #d3e7dd;border-radius:999px;padding:1px 9px;">🎯 ' + esc(cb.th) + ' <span style="color:#9fb4ab;">×</span> 🎭 ' + esc(cb.m) + (npIpIsStar(cb.m) ? ' ⭐' : '') + '</span></div>' +
+      '<div style="font-size:11px;color:#8a929e;margin-top:4px;line-height:1.6;">' + esc(p.how || '') + '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;align-items:center;">' +
+        '<span style="font-size:10px;color:#8a929e;">' + esc(p.rhythm || '') + '</span>' +
+        (p.lock ? '<span style="font-size:10px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:0 6px;">🔒 有骨架段</span>' : '') +
+        '<span style="font-size:11px;font-weight:700;color:var(--c-brand-text);margin-left:auto;">就用这套 →</span>' +
+      '</div></div>';
+  }).join('');
+  let selfHtml = '';
+  if (st.selfOpen) {
+    if (!st.tmpTheme) {
+      const total = NP_IP_THEMES.reduce((n, g) => n + g.items.length, 0);
+      const rows = NP_IP_THEMES.map((g, gi) =>
+        '<div style="padding:5px 11px;font-size:10.5px;font-weight:700;color:#6b7280;background:#f7f9fc;border-bottom:1px solid #eef1f5;">' + esc(g.fam) + '</div>' +
+        g.items.map((t, ii) =>
+          '<div class="np-ip-theme" data-g="' + gi + '" data-i="' + ii + '" title="先定这篇讲什么" style="display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid #eef1f5;cursor:pointer;flex-wrap:wrap;">' +
+            '<span style="font-size:12px;font-weight:700;color:#333;white-space:nowrap;">' + esc(t.n) + '</span>' +
+            '<span style="font-size:11px;color:#8a929e;flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(t.line) + '</span>' +
+            '<span style="font-size:11px;font-weight:700;color:var(--c-brand-text);white-space:nowrap;">选它 →</span>' +
+          '</div>').join('')
+      ).join('');
+      selfHtml =
+        '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;margin-bottom:12px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<b style="font-size:12.5px;">① 挑主题</b>' +
+            '<span style="font-size:10px;color:#8a929e;">这篇讲什么——' + total + ' 个主题按 ' + NP_IP_THEMES.length + ' 类码好</span>' +
+            '<span style="flex:1;"></span>' +
+            '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">收起</button>' +
+          '</div>' +
+          '<div style="border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;margin-top:8px;">' + rows + '</div>' +
+        '</div>';
+    } else {
+      const g = npIpThemeOf(st.tmpTheme.n);
+      const best = (g && g.t.best) || [];
+      const rest = NP_IP_PLAYS.map(p => p.name).filter(n => best.indexOf(n) < 0);
+      const sel = st.tmpMethod;
+      const chip = (name, on) => {
+        const p = NP_IP_BY_NAME[name] || {};
+        const tip = String(p.how || '') + '（' + String(p.rhythm || '') + '）' + (npIpIsStar(name) ? ' · ⭐ 招牌' : '');
+        return '<span class="np-ip-method" data-m="' + escAttr(name) + '" title="' + escAttr(tip) + '" style="display:inline-block;font-size:11px;padding:3px 10px;border:1px solid ' + (on ? 'var(--c-ok)' : 'var(--line)') + ';border-radius:999px;background:' + (on ? 'var(--c-ok-soft)' : '#fff') + ';color:' + (on ? '#0a7b5a' : '#555') + ';font-weight:' + (on ? '700' : '500') + ';cursor:pointer;">' + esc(name) + (npIpIsStar(name) ? ' ⭐' : '') + '</span>';
+      };
+      const preview = sel
+        ? '这篇大概长这样：' + esc(g.t.line) + '，' + esc((NP_IP_BY_NAME[sel] || {}).show || '') + '。'
+        : '挑一个方式——这行字就是这篇大概长什么样。';
+      selfHtml =
+        '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;margin-bottom:12px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+            '<b style="font-size:12.5px;">② 挑方式</b>' +
+            '<span style="font-size:10px;color:var(--c-brand-text);background:var(--c-brand-soft);border:1px solid var(--c-brand-soft2);border-radius:8px;padding:1px 8px;font-weight:700;">🎯 ' + esc(st.tmpTheme.n) + '</span>' +
+            '<span style="font-size:10px;color:#8a929e;">怎么讲——AI 把对味的排前面</span>' +
+            '<span style="flex:1;"></span>' +
+            '<button type="button" class="np-ip-themeback" style="' + NP_IP_BTN + '">‹ 重挑主题</button>' +
+            '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">收起</button>' +
+          '</div>' +
+          '<div style="font-size:10px;color:#8a929e;margin:9px 0 4px;">✨ AI 觉得对味的</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + best.map(n => chip(n, n === sel)).join('') + '</div>' +
+          '<div style="font-size:10px;color:#8a929e;margin:10px 0 4px;">其它方式（都挑得动）</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + rest.map(n => chip(n, n === sel)).join('') + '</div>' +
+          '<div style="margin-top:10px;font-size:11px;color:#4b5563;line-height:1.7;background:#fff9ec;border:1px solid #f3e3c0;border-radius:8px;padding:6px 10px;">📝 ' + preview + '</div>' +
+          '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;">' +
+            '<button type="button" class="np-ip-selfconfirm" style="padding:6px 14px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">就这套，开始编 →</button>' +
+            '<span style="font-size:10px;color:#8a929e;">定了＝AI 编故事去了——不满意随时回来换。</span>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+  return '<div style="border:1px solid #cfe8d4;border-radius:10px;padding:10px 12px;background:linear-gradient(135deg,#f2fbf6,#f7fbff);margin-bottom:10px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<b style="font-size:13px;">🎭 你的账号 IP</b>' +
+        (card.line
+          ? '<span style="font-size:12.5px;font-weight:700;color:#0a7b5a;">' + esc(card.line) + '</span>'
+          : '<span style="font-size:12px;color:#8a929e;">（还没填一句话人设——去「诊断&amp;配置 → 人设」写一句）</span>') +
+        '<span style="flex:1;"></span>' +
+        '<button type="button" class="np-ip-reip" style="' + NP_IP_BTN + '" title="去「诊断&amp;配置 → 人设」改那句话——改完回来重进这篇就更新">🔄 重出 IP</button>' +
+      '</div>' +
+      '<div style="font-size:10px;color:#8a929e;margin-top:5px;">⭐ 招牌：' + starChips + ' <span style="color:#8a929e;">——AI 按人设 ＋ 哪招评论带得动的推荐的；这张 IP 卡在「诊断&amp;配置 → 人设」里看、跟着问卷同步链更新。</span></div>' +
+    '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 6px;">' +
+      '<span style="font-size:12px;font-weight:700;color:#333;">🎯 AI 给你配好的组合</span>' +
+      '<span style="font-size:10px;color:#8a929e;">主题 × 方式——点一张＝直接开写</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button type="button" class="np-ip-swap" style="' + NP_IP_BTN + '">🔀 换一批</button>' +
+      '<button type="button" class="np-ip-dice" style="' + NP_IP_BTN + '">🎲 给我来一个</button>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;margin-bottom:12px;">' + comboHtml + '</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 6px;">' +
+      '<span style="font-size:12px;font-weight:700;color:#333;">✍️ 自己配</span>' +
+      '<span style="font-size:10px;color:#8a929e;">先挑主题、再挑方式——两步；挑不动就让 AI 提</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">' + (st.selfOpen ? '收起' : '展开自己配 →') + '</button>' +
+    '</div>' +
+    selfHtml;
+}
+/* ── ① 站的动作：组合卡 / 换一批 / 🎲 / 自己配两步 ── */
+function npIpUseCombo(b, i, quiet) {
+  const cb = npIpBatchOf(b)[i];
+  const w = _npWiz;
+  if (!cb || !w) return;
+  const th = npIpThemeOf(cb.th);
+  w.ipPlay = cb.m; w.ipTheme = cb.th; w.ipThemeFam = th ? th.fam : '';
+  w.ipCustom = false; w.ipStories = null; w.ipStoryIdx = -1; w.ipStoryErr = '';
+  w.step = 1;
+  npWizRender(npActiveC());
+  if (!quiet) toast('就用这套「' + cb.th + ' × ' + cb.m + '」——AI 正按它编故事');
+}
+function npIpBatchSwap(c) {
+  const st = npIpSt();
+  st.batch = (st.batch + 1) % npIpBatchCount();
+  npWizRender(c || npActiveC());
+  toast('换了一批组合——再看 ' + npIpBatchOf(st.batch).length + ' 套');
+}
+function npIpDice(c) {
+  const st = npIpSt();
+  const arr = npIpBatchOf(st.batch);
+  if (!arr.length) return;
+  const i = Math.floor(Math.random() * arr.length);
+  const cb = arr[i];
+  npIpUseCombo(st.batch, i, true);
+  toast('🎲 让 AI 拍板了——「' + cb.th + ' × ' + cb.m + '」，故事这就编');
+}
+function npIpSelfOpenToggle(c) {
+  const st = npIpSt();
+  st.selfOpen = !st.selfOpen;
+  if (!st.selfOpen) { st.tmpTheme = null; st.tmpMethod = null; }
+  npWizRender(c || npActiveC());
+}
+function npIpThemePick(gi, ii, c) {
+  const g = NP_IP_THEMES[gi];
+  if (!g) return;
+  const t = g.items[ii];
+  if (!t) return;
+  const st = npIpSt();
+  st.tmpTheme = { fam: g.fam, n: t.n };
+  st.tmpMethod = null;
+  npWizRender(c || npActiveC());
+}
+function npIpThemeBack(c) {
+  const st = npIpSt();
+  st.tmpTheme = null; st.tmpMethod = null;
+  npWizRender(c || npActiveC());
+}
+function npIpMethodPick(name, c) {
+  const st = npIpSt();
+  st.tmpMethod = name;
+  npWizRender(c || npActiveC());
+}
+function npIpSelfConfirm(c) {
+  const st = npIpSt();
+  const w = _npWiz;
+  if (!st.tmpTheme || !st.tmpMethod || !w) { toast('先挑一个方式——这行字就是这篇大概长什么样'); return; }
+  w.ipPlay = st.tmpMethod; w.ipTheme = st.tmpTheme.n; w.ipThemeFam = st.tmpTheme.fam;
+  w.ipCustom = false; w.ipStories = null; w.ipStoryIdx = -1; w.ipStoryErr = '';
+  st.selfOpen = false; st.tmpTheme = null; st.tmpMethod = null;
+  w.step = 1;
+  npWizRender(c || npActiveC());
+  toast('配好了「' + w.ipTheme + ' × ' + w.ipPlay + '」——AI 正按这套编故事');
+}
+
+/* ── ② AI 编故事（五十二改）：AI 按「主题 × 方式」编 3 段候选（梗概＋开头第一句）；挑一段＝AI 照它写整篇 ──
+   话题标签种子（逐字镜像 demo IP_TAGS）：AI 没给标签时兜底，也当出稿时的挑词来源 */
+const NP_IP_TAGS = {
+  '出题纠错': ['防水知识', '装修避坑'], '猜价猜量': ['防水施工', '装修经验'], '选边投票': ['装修讨论', '防水'],
+  '求助军师': ['装修求助', '防水师傅'], '答疑翻牌': ['装修问答', '防水答疑'], '编号连载': ['防水小课堂', '装修避坑'], '工地连续剧': ['施工现场', '防水日记'],
+  '客户故事连载': ['客户故事', '防水维修'], '挑战打卡': ['工地打卡', '防水日记'], '心情贴图': ['工地日常', '防水人'], '老物件故事': ['工地日常', '手艺人'],
+  '反差人设': ['手艺人', '工地日常'], '行业黑话解密': ['装修黑话', '避坑'], '公开账本': ['防水报价', '装修账本'],
+  '年度复盘': ['防水人', '年度总结'], '避坑指南': ['装修避坑', '防水知识'], '清单合集': ['装修清单', '防水施工'],
+  '教程步骤': ['防水教程', '装修施工'], '测评对比': ['防水材料', '装修评测'], '省钱攻略': ['装修省钱', '防水报价'],
+  '资源盘点': ['装修资源', '手艺人'],
+};
+let _npIpStoryBusy = false;   // 正在编故事候选
+let _npIpDraftBusy = false;   // 正在按挑中的那段出整篇
+/** ② 站整页（demo renderIP ipStep2 同款）：IP 卡顶条＋提醒＋3 段候选卡＋自己写一段 */
+function npIpStoryHtml() {
+  const w = _npWiz || {};
+  const st = npIpSt();
+  const p = NP_IP_BY_NAME[w.ipPlay] || null;
+  const cands = (w.ipStories || []);
+  const hint = (p && p.hint) ? '<div style="margin:0 0 10px;font-size:11px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:5px 9px;line-height:1.7;">📌 ' + esc(p.hint) + '</div>' : '';
+  const wait = _npIpStoryBusy
+    ? '<div id="npIpWait" style="font-size:12px;color:#555;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:8px;"></div>'
+    : '';
+  const errBox = w.ipStoryErr
+    ? '<div style="font-size:12px;color:#d32f2f;background:#fff5f5;border:1px solid #f3c9c9;border-radius:8px;padding:8px 10px;margin-bottom:8px;">' + esc(w.ipStoryErr) +
+      ' <button type="button" class="np-ip-reroll" style="margin-left:6px;border:1px solid var(--line);background:#fff;color:#666;border-radius:8px;font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">🔁 再试一次</button></div>'
+    : '';
+  const cards = cands.map((c, i) =>
+    '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:8px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<span style="font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;">第 ' + (i + 1) + ' 段</span>' +
+        '<b style="font-size:12.5px;color:#333;">' + esc(c.t || '') + '</b></div>' +
+      (c.first ? '<div style="font-size:12px;color:#4b5563;margin-top:6px;line-height:1.8;background:#fafbfc;border-left:3px solid #d5dbe6;border-radius:0 8px 8px 0;padding:6px 10px;">开头先这样写：<br>' + esc(c.first) + '</div>' : '') +
+      '<div style="margin-top:8px;"><button type="button" class="np-ip-pick" data-i="' + i + '" style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">✍️ 用这段，出稿 →</button></div>' +
+    '</div>').join('');
+  const draftWait = _npIpDraftBusy
+    ? '<div id="npIpDraftWait2" style="font-size:12px;color:#555;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:8px;">AI 正在把整篇写出来——写完自动落到改稿页</div>'
+    : '';
+  const selfBox = st.storySelf
+    ? '<div style="border:1px solid #cfe3ff;background:#f7fbff;border-radius:10px;padding:10px;margin-top:10px;">' +
+        '<div style="font-size:11px;font-weight:700;color:#1f6feb;">✍️ 自己写一段——你有真事就写你的事，几句话就行</div>' +
+        '<textarea id="npIpSelfTx" rows="4" placeholder="例：今天在老小区修漏，业主递来一瓶水，说上一家来人三次都没修好……" style="width:100%;box-sizing:border-box;margin-top:6px;border:1px solid #dbe4f0;border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.7;resize:vertical;"></textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;">' +
+        '<button type="button" class="np-ip-useself" style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">就用我这段 →</button>' +
+        '<button type="button" class="np-ip-selftoggle" style="border:1px solid var(--line);background:#fff;color:#666;border-radius:8px;font-size:12px;padding:6px 10px;cursor:pointer;">收起</button>' +
+        '<span style="font-size:10px;color:#8a929e;">这段直接当正文起步——AI 会按它顺进整篇</span></div></div>'
+    : '';
+  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<b style="font-size:13px;">🎭 ' + esc(npIpLabelOf(w)) + '</b>' +
+        '<span class="note-xs">' + esc(p ? p.how : '') + '</span>' +
+        '<span style="flex:1;"></span>' +
+        (p && p.rhythm ? '<span style="font-size:10px;color:#8a929e;background:#f4f5f7;border-radius:8px;padding:0 6px;">节奏 ' + esc(p.rhythm) + '</span>' : '') +
+      '</div></div>' +
+    hint +
+    '<div style="font-size:12px;font-weight:700;color:#333;margin:4px 0;">AI 按「' + esc(npIpLabelOf(w)) + '」编了 3 段（梗概＋开头第一句）——挑一段最顺眼的，AI 就照它把整篇写出来</div>' +
+    '<div class="note-xs" style="margin-bottom:8px;">故事是编的、调子按你挑的这套来——不满意「🔀 再换 3 段」；你自己有真事，点「✍️ 自己写一段」写多少都行。</div>' +
+    wait + errBox + cards + draftWait + selfBox;
+}
+/** 编 3 段故事候选（进站自动一发 / 🔀 再换 3 段点发）；loud＝手动点的那发，成了给句 toast */
+async function npIpStoriesLoad(container, loud) {
+  const w = _npWiz;
+  if (!w || _npIpStoryBusy || !w.ipPlay) return;
+  container = container || npActiveC();
+  const arId0 = String(w.arId || '');
+  _npIpStoryBusy = true;
+  w.ipStoryErr = '';
+  if (npS() === w && w.step === 1) await npWizRender(container);   // 先把「正在编」的等待卡画上
+  const stopWait = npWaitInto(container, 'npIpWait', 'AI 正在按「' + npIpLabelOf(w) + '」编 3 段故事', 'ipstory', () => npS() === w && w.step === 1);
+  try {
+    const p = NP_IP_BY_NAME[w.ipPlay] || null;
+    const r = await chrome.runtime.sendMessage({
+      action: 'genIpStories',
+      data: {
+        persona: (function () { try { return _ntPersonaLine(); } catch (_) { return ''; } })(),
+        theme: String(w.ipTheme || ''),
+        themeLine: ((npIpThemeOf(w.ipTheme) || { t: {} }).t || {}).line || '',
+        method: String(w.ipPlay || ''),
+        how: String((p && p.how) || ''),
+        rhythm: String((p && p.rhythm) || ''),
+        hint: String((p && p.hint) || ''),
+      },
+    });
+    if (String(w.arId || '') !== arId0 || _npWiz !== w) return;   // 趁编故事切去别的篇：这一发作废
+    if (!r || r.ok === false || !(r.items || []).length) throw new Error((r && r.error) || 'AI 这次没编出故事，再点一次试试');
+    w.ipStories = (r.items || []).slice(0, 3).map(x => ({
+      t: String((x && x.t) || ''),
+      first: String((x && x.first) || ''),
+      title: String((x && x.title) || ''),
+      alts: (Array.isArray(x && x.alts) ? x.alts : []).map(String),
+    })).filter(x => x.t || x.first);
+  } catch (e) { w.ipStoryErr = '编故事失败：' + ((e && e.message) || e); }
+  stopWait();
+  _npIpStoryBusy = false;
+  if (_npWiz === w && npS() === w && w.step === 1) await npWizRender(container);
+  if (loud && !w.ipStoryErr && typeof toast === 'function') toast('又编了一批——挑一段');
+}
+/** 🔀 再换 3 段：把这一批丢掉重编（报过错的这句也清掉——手动点了就该重试） */
+function npIpReroll(container) {
+  const w = _npWiz;
+  if (!w || _npIpStoryBusy) return;
+  w.ipStories = null; w.ipStoryErr = '';
+  npIpStoriesLoad(container || npActiveC(), true);
+}
+/** ✍️ 自己写一段 / 收起 */
+function npIpSelfToggle(container) {
+  const st = npIpSt();
+  st.storySelf = !st.storySelf;
+  npWizRender(container || npActiveC());
+}
+/** 挑中哪段 → AI 照它出整篇；自己写的走 selfText；🔄 再出一版走 vAsk（同一段故事换个收法） */
+async function npIpBuildDraft(container, how) {
+  const w = _npWiz;
+  if (!w || _npIpDraftBusy) return;
+  container = container || npActiveC();
+  const story = (how && how.story) || null;
+  const selfText = String((how && how.selfText) || '').trim();
+  const vAsk = String((how && how.vAsk) || '').trim();
+  if (!story && !selfText) return;
+  const custom = !!selfText;
+  const arId0 = String(w.arId || '');
+  _npIpDraftBusy = true;
+  const same = !!vAsk && !!(w.draft && String(w.draft.content || '').trim());   // 🔄 再出一版：留旧稿当「上一版」
+  if (same) w.revisePrev = String((w.draft && w.draft.content) || '');
+  else {
+    w.revisePrev = '';
+    w.draft = null;
+    _npNote = { draft: null, title: '', tags: [], titleIdx: 0 };
+    w.ipCustom = custom;
+    w.ipStoryIdx = custom ? -1 : (w.ipStories || []).indexOf(story);
+  }
+  w.revSentIdx = -1; w.revTextMode = false;
+  w.step = 4;
+  await npWizRender(container);   // 落到改稿页（正文格先空着，状态行报进度）
+  const stopWait = npWaitInto(container, 'npDraftStatus', custom ? 'AI 正按你写的那段把整篇顺出来' : 'AI 正按这段故事把整篇写出来', 'ipdraft', () => npS() === w && w.step === 4);
+  let okMsg = '', errMsg = '';
+  try {
+    const p = NP_IP_BY_NAME[w.ipPlay] || null;
+    const r = await chrome.runtime.sendMessage({
+      action: 'genIpDraft',
+      data: {
+        persona: (function () { try { return _ntPersonaLine(); } catch (_) { return ''; } })(),
+        theme: String(w.ipTheme || ''),
+        themeLine: ((npIpThemeOf(w.ipTheme) || { t: {} }).t || {}).line || '',
+        method: String(w.ipPlay || ''),
+        how: String((p && p.how) || ''),
+        lockWhy: String((p && p.lockWhy) || ''),
+        lock: (p && p.lock) || [],
+        story: story ? { t: String(story.t || ''), first: String(story.first || '') } : null,
+        selfText: selfText,
+        vAsk: vAsk,
+        tagSeed: (NP_IP_TAGS[w.ipPlay] || []).slice(),
+      },
+    });
+    if (String(w.arId || '') !== arId0 || _npWiz !== w) return;   // 趁写稿切去别的篇：这一发作废
+    if (!r || r.ok === false || !String(r.content || '').trim()) throw new Error((r && r.error) || 'AI 这次没把稿子写出来，再点一次试试');
+    const titles = (Array.isArray(r.titles) ? r.titles : []).map(t => String(t).trim()).filter(Boolean);
+    if (!titles.length && story) { titles.push(String(story.title || '').trim()); (story.alts || []).forEach(x => titles.push(String(x || '').trim())); }
+    const ft = titles.filter(Boolean).slice(0, 3);
+    const tags = (Array.isArray(r.tags) ? r.tags : []).map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
+    w.draft = { content: String(r.content || ''), titles: ft, tags: tags.length ? tags.slice(0, 4) : (NP_IP_TAGS[w.ipPlay] || []).slice(), timeTip: '' };
+    _npNote = { draft: w.draft, title: (ft[0] || ''), tags: w.draft.tags.slice(), titleIdx: 0 };
+    okMsg = custom ? '就用你写的这段——稿子照它顺好了，进改稿' : '就用这段——AI 按「' + npIpLabelOf(w) + '」的调子把整篇写出来了，进改稿';
+  } catch (e) { errMsg = '出稿失败：' + ((e && e.message) || e); }
+  stopWait();
+  _npIpDraftBusy = false;
+  if (_npWiz === w && npS() === w) {
+    if (w.step === 4) await npWizRender(container);
+    const stEl = _npEl(container, 'npDraftStatus');
+    if (stEl) { stEl.textContent = okMsg ? '✅ ' + okMsg : errMsg; stEl.style.color = okMsg ? '#2e7d32' : '#d33'; }
+    if (okMsg && typeof toast === 'function') toast(okMsg);
+  }
+}
+/** ✍️ 用这段，出稿 →（挑中的那段故事编整篇） */
+function npIpPickCand(i, container) {
+  const w = _npWiz;
+  if (!w || _npIpDraftBusy) return;
+  const c = (w.ipStories || [])[i];
+  if (!c) return;
+  npIpBuildDraft(container || npActiveC(), { story: c });
+}
+/** ✍️ 自己写一段 →：用户那段直接当底子，AI 顺着写完整 */
+function npIpUseSelf(container) {
+  const w = _npWiz;
+  if (!w || _npIpDraftBusy) return;
+  const c = container || npActiveC();
+  const ta = _npEl(c, 'npIpSelfTx');
+  const v = String((ta && ta.value) || '').trim();
+  if (!v) { if (typeof toast === 'function') toast('先把你那段写两句——一句话也行，AI 顺着写'); if (ta) ta.focus(); return; }
+  npIpSelfToggle(c);   // 收起输入框
+  npIpBuildDraft(c, { selfText: v });
+}
+/** 🔄 再出一版（同一个故事、换个收法）：只对 AI 编的故事有效——自己写的那版由用户自己改 */
+function npIpRewrite(container) {
+  const w = _npWiz;
+  if (!w || _npIpDraftBusy) return;
+  if (w.ipCustom) { if (typeof toast === 'function') toast('这版是你自己写的——「再出一版」只对 AI 编的故事有效；想重写就点句子改'); return; }
+  const story = (w.ipStories || [])[Math.max(0, Number(w.ipStoryIdx) || 0)] || null;
+  if (!story) { if (typeof toast === 'function') toast('先挑一段故事——回上一步点「↩ 换一段故事」'); return; }
+  npIpBuildDraft(container || npActiveC(), { story: story, vAsk: '同一个故事，换一个收法：开头第一句原样保留，过程和收尾换一种讲法（别复读上一版的句子）。' });
+}
+/* ── 🔒 骨架段（出题纠错 / 猜价猜量 / 公开账本）：AI 改稿不碰，逐句改不进；「✍️ 全文手改」照旧能改 ── */
+function npIpLockSetOf(w) {
+  w = w || _npWiz || {};
+  if (w.ipCustom) return null;   // 自己写的：没有骨架（demo ipUseSelf 清 lockSet 同口径）
+  const p = NP_IP_BY_NAME[w.ipPlay] || null;
+  const lock = (p && p.lock) || [];
+  return lock.length ? new Set(lock) : null;
+}
+/** 锁住的句（[{i, t}]）——改稿 payload 的 keepSents 与补位守卫都用它 */
+function npIpLockTextsOf(w, sents) {
+  const set = npIpLockSetOf(w);
+  if (!set) return [];
+  const out = [];
+  (sents || []).forEach((s, i) => { if (set.has(i) && s && s.t) out.push({ i: i, t: s.t }); });
+  return out;
+}
+/** AI 改稿回来：锁的句子要是被改写 / 弄丢了，按原句原位补回去（before＝改之前的正文） */
+function npIpKeepGuard(before, after) {
+  const locks = npIpLockTextsOf(_npWiz, npSplitSents(before));
+  if (!locks.length) return after;
+  const sents = npSplitSents(after);
+  locks.forEach(lk => {
+    if (sents.some(s => s && s.t === lk.t)) return;
+    const at = Math.max(0, Math.min(lk.i, sents.length));
+    sents.splice(at, 0, { t: lk.t });
+  });
+  return npJoinSents(sents);
+}
+/* ── ④ 出料站（五十二改 ?v=73）：IP 玩法只出图文——点卡片＝标「代发」并进「造图片」的挑重点站 ── */
+function npIpOutHtml() {
+  const w = _npWiz || {};
+  const again = (w.imgDocs || []).some(d => d && d.kind !== 'mind' && (d.items || []).length > 0);
+  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px;">' +
+      '<b style="font-size:13px;">🎭 ' + esc(npIpLabelOf(w)) + ' · 出料</b>' +
+      '<div class="note-xs" style="margin-top:4px;line-height:1.7;">IP 玩法只出图文——走「造图片」：AI 从正文提炼重点句（一条重点＝一张图）→ ✍️ 配文定每张的字 → 一条<b>整组提示词</b>（字已经写进去，AI 连字带图一起出）复制去生成 → 图传回来「✓ 存好」就完（多选 / 粘贴都行；字效片 / 口播不走这条线）。</div>' +
+    '</div>' +
+    '<div class="np-ip-fin" style="border:1.5px solid #2e7d32;box-shadow:0 0 0 3px rgba(46,125,50,.12);border-radius:10px;background:#fff;padding:12px 14px;cursor:pointer;">' +
+      '<b style="font-size:14px;">🖼 出图文</b>' +
+      (again ? '<span style="font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;margin-left:6px;">接着出——上次的格还在</span>' : '') +
+      '<p style="margin:5px 0 0;font-size:11px;color:#666;line-height:1.7;">正文照发＋一套卡图——进「造图片」：挑重点 → 配文 → 一条整组提示词（字写进去）→ 复制去生成 → 图传回来就完（第 1 张兼封面）。</p>' +
+      '<span style="display:inline-block;margin-top:6px;font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;">出一套卡图</span>' +
+    '</div>';
+}
+/** 点「🖼 出图文」：稿子落档标「代发」，原地进「🎯 挑重点」（走造图片子流程；排期方式还没定——不自动找位子） */
+async function npIpFinish() {
+  const w = _npWiz;
+  if (!w) return;
+  if (!String((w.draft && w.draft.content) || '').trim()) { if (typeof toast === 'function') toast('这篇还没稿子——先挑一段故事', 'error'); return; }
+  w.dOut = 'img';          // 出料只出图文：先把分流定上，落档才带得走（排期由老板自己在发布台挑位子）
+  const n = await npDFinishBase('image');
+  if (!w || !n || w !== _npWiz) return;
+  npDshSeedDocs(w, n);
+  npDshEnsureRow(w);
+  w.step = 5;
+  if (typeof toast === 'function') toast('标成「代发」了——出料走图文：挑重点 → 配文 → 一条整组提示词（字写进去，AI 连字带图一起出），图传回来就完');
+  await npWizRender(npActiveC() || _npActiveContainer);
+}
+
+/* ── 工作流圆点条的唯一画法（七十二改）：写稿向导那几条站 ＋ 片台那一屏的外壳共用这三件。
+   以前片台在 iframe 里自己画一条按钮款、步进还撤了——从「改稿」跳过去条子没了、也回不去上一站，像换了个软件。 ── */
+function npDotBadge(o) {
+  const skin = o.open
+    ? 'color:var(--c-brand-text);background:var(--c-brand-soft2);'          // 还没走到、但已经放开的站：浅底深字
+    : 'color:' + (o.lit ? '#fff' : '#9aa0ac') + ';background:' + (o.lit ? 'var(--grad-brand)' : '#eef0f4') + ';';
+  const css = 'width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;' +
+    'font-size:11px;font-weight:800;line-height:1;flex:none;border:none;' + skin +
+    'box-shadow:' + (o.cur ? '0 0 0 3px var(--c-brand-soft2);' : 'none');
+  const body = (o.done ? '✓' : o.n);
+  return (o.attr
+    ? '<button type="button" ' + o.attr + ' style="' + css + ';cursor:pointer;" title="' + esc(o.title || '跳转到此步骤') + '">' + body + '</button>'
+    : '<span style="' + css + ';" title="' + esc(o.title || '走完前面才到这步') + '">' + body + '</span>');
+}
+function npDotLabel(o) {
+  return '<span style="text-align:center;font-size:11px;line-height:1.2;color:' +
+    (o.cur ? 'var(--c-brand-text)' : (o.done ? '#333' : '#9aa0ac')) + ';font-weight:' + (o.cur ? '800' : '600') + ';">' +
+    o.t + '<br><span style="color:' + (o.done ? 'var(--c-brand-text)' : '#c6cad2') + ';font-weight:500;font-size:10px;">' + (o.s || '') + '</span></span>';
+}
+const npDotLink = (lit) => '<span style="flex:1;height:2px;border-radius:2px;background:' +
+  (lit ? 'var(--grad-brand)' : '#e5e6eb') + ';margin:0 4px 20px;"></span>';
+
 function npStepBar(container) {
   const el = _npEl(container, 'npSteps');
   if (!el || !_npWiz) return;
   const step = _npWiz.step;
   if (npIsK(_npWiz)) { npStepBarK(el, step, container); return; }
+  if (npIsI(_npWiz)) { npStepBarI(el, step, container); return; }   // 🎭 IP 线（五十二改）：必须先于 npIsD——出料后 dOut='img'，npIsD 也会真
   if (npIsD(_npWiz)) { npStepBarD(el, step, container); return; }
-  // 连接线（分隔两个 step），step 已过或当前进度后的线点亮
-  const link = (after) =>
-    '<span style="flex:1;height:2px;border-radius:2px;background:' +
-    ((after < step || after <= step) ? 'var(--grad-brand);' : '#e5e6eb;') +
-    'margin:0 4px 20px;"></span>';
-  const badge = (i) => {
-    const on = i < step;         // 已完成
-    const cur = i === step;      // 当前
-    const done = on || cur;
-    const clickable = i <= step; // 可跳转：回到已完成/当前步骤
-    return (clickable
-      ? '<button type="button" data-ngo="' + i + '" style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;flex:none;border:none;cursor:pointer;color:' +
-        (done ? '#fff' : '#9aa0ac') +
-        ';background:' + (done ? 'var(--grad-brand)' : '#eef0f4') +
-        ';box-shadow:' + (cur ? '0 0 0 3px var(--c-brand-soft2);' : 'none') + '" title="跳转到此步骤">' + (on ? '✓' : (i + 1)) + '</button>'
-      : '<span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;flex:none;color:#9aa0ac;background:#eef0f4;">' + (i + 1) + '</span>');
-  };
-  const label = (i) =>
-    '<span style="text-align:center;font-size:11px;line-height:1.2;color:' +
-    (i === step ? 'var(--c-brand-text)' : (i < step ? '#333' : '#9aa0ac')) +
-    ';font-weight:' + (i === step ? '800' : '600') + ';">' +
-    _npWizKeys[i] + '<br><span style="color:' + (i < step ? 'var(--c-brand-text)' : '#c6cad2') + ';font-weight:500;font-size:10px;">' +
-    (onLabel(i)) + '</span></span>';
   el.innerHTML =
     '<div style="display:flex;align-items:flex-start;">' +
     _npWizKeys.map((s, i) =>
-      '<div style="display:flex;flex-direction:column;align-items:center;width:44px;flex:none;">' + badge(i) + label(i) + '</div>' +
-      (i < _npWizKeys.length - 1 ? link(i) : '')
+      '<div style="display:flex;flex-direction:column;align-items:center;width:44px;flex:none;">' +
+      npDotBadge({ lit: i <= step, cur: i === step, done: i < step, n: i + 1, attr: i <= step ? 'data-ngo="' + i + '"' : '' }) +
+      npDotLabel({ t: s, s: onLabel(i), cur: i === step, done: i < step }) + '</div>' +
+      (i < _npWizKeys.length - 1 ? npDotLink(i <= step) : '')
     ).join('') + '</div>';
   el.querySelectorAll('[data-ngo]').forEach(elBtn => elBtn.addEventListener('click', function () {
     npGo(container, parseInt(this.getAttribute('data-ngo'), 10));
@@ -5521,40 +6279,64 @@ function npStepBar(container) {
 function npStepBarK(el, step, container) { npStepBarSt(el, step, container, npKStations(_npWiz)); }
 /** 引流线的步骤条：同上，站点按 npDStations */
 function npStepBarD(el, step, container) { npStepBarSt(el, step, container, npDStations(_npWiz)); }
-/** 知识 / 引流两条线步骤条的通用形：站点表喂进来，画法（可点巡航 / 出口站灰态）一致 */
+/** 🎭 IP 线的步骤条（五十二改）：站点 5/6/7＝出料里的挑重点/配文/整组提示词半段——显示上并到「出料」站（step>=5 一律按 8 画） */
+function npStepBarI(el, step, container) { npStepBarSt(el, step >= 5 ? 8 : step, container, npIStations(_npWiz)); }
+/** 知识 / 引流两条线步骤条的通用形：站点表喂进来，画法（可点巡航 / 出口站灰态）一致。
+ *  带 go 的站（知识线出片那两站）＝还没走到、但条件到了就放开（浅底深字）：
+ *  go:'film' 正文有了才放开（点了跟底那颗「下一步 →」同一条路）、go:'pub' 这一篇出过片才放开（点了回档案那一行）。 */
+let _npWizOutDone = {};   // {档案id: 出过片}——条上「发布」站放开的记号（往 xhsFilmDocs 读一次就记住）
 function npStepBarSt(el, step, container, sts) {
   const curIdx = Math.max(0, sts.findIndex(s => s.k === step));
-  const link = (after) =>
-    '<span style="flex:1;height:2px;border-radius:2px;background:' + (after <= curIdx ? 'var(--grad-brand);' : '#e5e6eb;') + 'margin:0 4px 20px;"></span>';
-  const badge = (i, st) => {
-    const done = i < curIdx, cur = i === curIdx;
-    const clickable = st.k >= 0 && st.k <= step;
-    return (clickable
-      ? '<button type="button" data-ngo="' + st.k + '" style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;flex:none;border:none;cursor:pointer;color:' +
-        ((done || cur) ? '#fff' : '#9aa0ac') +
-        ';background:' + ((done || cur) ? 'var(--grad-brand)' : '#eef0f4') +
-        ';box-shadow:' + (cur ? '0 0 0 3px var(--c-brand-soft2);' : 'none') + '" title="跳转到此步骤">' + (done ? '✓' : (i + 1)) + '</button>'
-      : '<span style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;line-height:1;flex:none;color:#9aa0ac;background:#eef0f4;" title="走完前面才到这步">' + (i + 1) + '</span>');
-  };
-  const label = (i, st) =>
-    '<span style="text-align:center;font-size:11px;line-height:1.2;color:' +
-    (i === curIdx ? 'var(--c-brand-text)' : (i < curIdx ? '#333' : '#9aa0ac')) +
-    ';font-weight:' + (i === curIdx ? '800' : '600') + ';">' +
-    st.t + '<br><span style="color:' + (i < curIdx ? 'var(--c-brand-text)' : '#c6cad2') + ';font-weight:500;font-size:10px;">' + st.s + '</span></span>';
+  const w = _npWiz || {};
+  const hasDraft = String((w.draft && w.draft.content) || '').trim();
   el.innerHTML =
     '<div style="display:flex;align-items:flex-start;">' +
-    sts.map((s, i) =>
-      '<div style="display:flex;flex-direction:column;align-items:center;width:64px;flex:none;">' + badge(i, s) + label(i, s) + '</div>' +
-      (i < sts.length - 1 ? link(i) : '')
-    ).join('') + '</div>';
+    sts.map((s, i) => {
+      const back = s.k >= 0 && s.k <= step;
+      const early = back ? '' : (s.go === 'film' && hasDraft ? 'film'
+        : s.go === 'pub' && _npWizOutDone[w.arId] ? 'pub' : '');
+      const tip = back ? '回「' + s.t + '」站接着走'
+        : early === 'film' ? '正文有了——点这一站直接进去（跟底下那颗「下一步 →」同一条路）'
+          : early === 'pub' ? '出过片了——回档案，那一行下一步去发布台'
+            : s.go === 'film' ? '先把正文整出来，这一站才到得了'
+              : s.go === 'pub' ? '先出片才到发布' : '';
+      return '<div style="display:flex;flex-direction:column;align-items:center;min-width:58px;flex:none;padding:0 3px;">' +
+        npDotBadge({ lit: i <= curIdx, cur: i === curIdx, done: i < curIdx, open: !!early, n: i + 1,
+          attr: back ? 'data-ngo="' + s.k + '"' : early ? 'data-ngo="' + early + '"' : '', title: tip }) +
+        npDotLabel({ t: s.t, s: s.s, cur: i === curIdx, done: i < curIdx }) + '</div>' +
+        (i < sts.length - 1 ? npDotLink(i <= curIdx) : '');
+    }).join('') + '</div>';
   el.querySelectorAll('[data-ngo]').forEach(elBtn => elBtn.addEventListener('click', function () {
-    npGo(container, parseInt(this.getAttribute('data-ngo'), 10));
+    const v = this.getAttribute('data-ngo');
+    if (v === 'film') { npKFinishFilm(); return; }
+    if (v === 'pub') {
+      npFilmBackArchive().then(() => { if (_npWiz && _npWiz.arId) npArFlashRow(_npWiz.arId); });
+      return;
+    }
+    npGo(container, parseInt(v, 10));
   }));
+  if (sts.some(s => s.go === 'pub') && w.arId && !_npWizOutDone[w.arId]) {
+    const cid = String(w.arId), box = container;
+    npArFilmDoc(cid).then(d => {
+      if (!d || !d.outAt || _npWizOutDone[cid] || _npWiz !== w) return;
+      _npWizOutDone[cid] = true;
+      npStepBar(box);
+    }).catch(() => {});
+  }
 }
 function npGo(container, i) {
   if (!_npWiz || _npWiz.loading) return;
-  const top = (npIsD(_npWiz) && _npWiz.dOut !== 'film') ? 7 : (_npWizKeys.length - 1);   // 图文线站到 ⑦ 📋 整组提示词（三十改；五十一改改口）
-  if (i < 0 || i > top || i > _npWiz.step) return; // 只能回到已达步骤，不许跳未来
+  const isI = npIsI(_npWiz);
+  const top = isI ? 8 : ((npIsD(_npWiz) && _npWiz.dOut !== 'film') ? 7 : (_npWizKeys.length - 1));   // 图文线站到 ⑦ 📋 整组提示词（三十改；五十一改改口）；🎭 IP 线的「出料」站＝k 8
+  // 🎭 IP 线：出料半段（step 5/6/7＝挑重点/配文/整组提示词）在步骤条上显示为第 4 站——它已达成，允许点回
+  const reached = isI ? ((_npWiz.step >= 5 && _npWiz.step < 8) ? 8 : _npWiz.step) : _npWiz.step;
+  if (i < 0 || i > top || i > reached) return; // 只能回到已达步骤，不许跳未来
+  // 点在「出料」站上：出料半段有哪站就落哪站（没出过重点就从头挑）
+  if (isI && i === 8 && _npWiz.step >= 5 && _npWiz.step < 8) {
+    _npWiz.step = npDshLandOf(_npWiz);
+    npWizRender(container);
+    return;
+  }
   if (_npWiz.step === 5 && i < 5) npVerRestoreBase(_npWiz);   // 从出图退回写稿半段：视图落回小红书原稿
   _npWiz.step = i;
   // 回到某一步 = 想重来这一步：把上一次的报错清掉，让它能重新拉一次
@@ -5806,32 +6588,6 @@ function npWriteRestore() {
   _npVariantsInvalidate();
   _npStyleState.dirty = !!_npWiz.draft;
   _npRefreshStyleStep();
-}
-/** 知识线改稿页「✏️ 换个写法重写」（demo kRewrite 口径）：题不动，把这条线底下的写法轮下一格，
-    按新写法原地重烧一版正文——不跳站（知识线没有挑稿站，落过去＝老挑稿页＋白烧一发） */
-function npKRewrite(container) {
-  const w = _npWiz;
-  if (!w || _npDraftBusy) return;
-  const now = npWritePickNow(w);
-  const t = now.type ? NotePlan.typeOf(now.type) : null;
-  const kinds = t ? (NotePlan.kindsOfType(t.key) || []) : [];
-  if (!kinds.length) return;
-  const curIdx = kinds.map(k => k.key).indexOf(now.kind);
-  const next = kinds[(curIdx + 1) % kinds.length];
-  w.write = { type: t.key, kind: next.key };
-  npWizRender(container);
-  npBuildDraft(container);
-  if (typeof toast === 'function') toast('换写法重烧：「' + t.name + ' · ' + next.name + '」，同一个题重写一版');
-}
-/** 知识线改稿页「🎲 换个角度重写」（二十九改）：撤了「定话题」站后 AI 自挑角度出稿，
-    角度不对时得有出口——把上一版的开头交给写手当"别再这么写"，同一条知识换一个切入角度重烧 */
-function npKAngleRewrite(container) {
-  const w = _npWiz;
-  if (!w || _npDraftBusy) return;
-  w.kAvoidDraft = String((w.draft && w.draft.content) || '').slice(0, 300);
-  npWizRender(container);
-  npBuildDraft(container);
-  if (typeof toast === 'function') toast('换角度重烧：同一条知识，另挑一个切入角度写');
 }
 /** 🔥 热点线那张「本篇借的由头」卡：④ 一挑到热点线，AI 就同步去找（找的期间摆进度）——
     找到的这条就是这批稿子的引子，「这篇的基调」也由它定；没找到就把原因摆出来，别偷偷按泛话题写。 */
@@ -6467,6 +7223,27 @@ function npDStyleLineHtml() {
     '<button type="button" class="np-d-back btn btn-outline" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">✏️ 换内容类型和写法</button>' +
     '</div>';
 }
+/** 🎭 IP 线改稿页简报行（五十二改，镜像 demo rvBriefHtml('i')）：🎯 主题 ｜ 🎭 方式 ｜ ⏱ 节奏 */
+function npIpBriefLineHtml() {
+  const w = _npWiz || {};
+  const ip = NP_IP_BY_NAME[w.ipPlay] || {};
+  const seg = (icon, label, val) => val
+    ? '<span style="color:#8a929e;">' + icon + ' ' + label + '</span> <b style="color:#333;font-weight:600;">' + esc(val) + '</b>'
+    : '';
+  const line = [seg('🎯', '主题', w.ipTheme), seg('🎭', '方式', w.ipPlay), seg('⏱', '节奏', ip.rhythm)]
+    .filter(Boolean).join('<span style="color:#ddd;margin:0 8px;">｜</span>');
+  return '<div style="font-size:11px;line-height:1.8;margin-bottom:6px;">' + line + '</div>';
+}
+/** 🎭 IP 线改稿页风格行（五十二改，镜像 demo rvStyleLineHtml('i')）：这稿不卖货、不报配比——调子由这招自带；出口＝换一段故事 / 再出一版 */
+function npIpStyleLineHtml() {
+  const w = _npWiz || {};
+  const ip = NP_IP_BY_NAME[w.ipPlay] || {};
+  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#8a929e;margin-bottom:6px;">' +
+    '🎭 ' + esc(npIpLabelOf(w)) + (ip.grp ? ' · ' + esc(ip.grp) : '') + ' · AI 按这套的调子直出 · 📝 字数 60~150' +
+    '<button type="button" class="btn btn-outline np-ip-backstory" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">↩ 换一段故事</button>' +
+    (w.ipCustom ? '' : '<button type="button" class="btn btn-outline np-ip-rewrite" style="font-size:11px;padding:1px 8px;">🔄 再出一版</button>') +
+    '</div>';
+}
 // 成稿页顶部那一行：这条按哪条线·哪种写法、三块配比多少、卖货话术占多少、写多长 + 一点就回 ④ 改
 function npStyleLineHtml() {
   const sh = npShape();
@@ -6482,23 +7259,24 @@ function npStyleLineHtml() {
     '📐 ' + (sh ? sh.build + '/' + sh.sell : '—') + ' · 广告占比 ' + esc(talk ? talk.name : '') + ' · 字数 ' + esc(words ? words.range : '') +
     ((cur.sellTalk || cur.words) ? '（占比／字数这条改过）' : '') +
     (_npStyleState.dirty ? '<span style="color:#c77700;"> · 这条改过了，回上一步点「🔀 重写这批」才会按新的写</span>' : '') +
-    (npIsK(_npWiz)
-      ? '<button type="button" id="npKAngle" class="btn btn-outline" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">🎲 换个角度重写</button>' +
-        '<button type="button" id="npKRewrite" class="btn btn-outline" style="font-size:11px;padding:1px 8px;">✏️ 换个写法重写</button>'
+    (npIsK(_npWiz) ? ''
       : '<button type="button" id="npStyleOpenFromDraft" class="btn btn-outline" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">✏️ 换内容类型和写法</button>') +
     '</div>';
 }
 
 async function npWizRender(container) {
   if (!_npWiz) return;
-  if (npIsK(_npWiz)) {
+  if (npIsI(_npWiz)) {
+    // 🎭 IP 线（五十二改）：① 站要的是「IP 卡」（问卷那句话 + 招牌）——没读过先读一次；其余站不烧 AI，点了才动
+    if (_npWiz.step === 0 && !_npIpCard && !_npWiz.loading) await npLoadIpCard();
+  } else if (npIsK(_npWiz)) {
     // 知识线：① 站要的是知识库清单＋卖点候选（候选不摆出来让人挑——出稿时 AI 自己挑 1~2 个轻带；没维护也不拦路）
     if (_npWiz.step === 0 && !_npWiz.kbLoaded && !_npWiz.loading) { await npLoadSellPoints(container); return; }
   } else if (_npWiz.step === 0 && !_npWiz.sellPoints.length && !_npWiz.loading) { await npLoadSellPoints(container); return; }
-  if (!npIsK(_npWiz) && _npWiz.step === 1 && !_npWiz.people && !_npWiz.peopleError && !_npWiz.loading) { await npLoadPeople(container); return; }
-  if (!npIsK(_npWiz) && _npWiz.step === 2 && !_npWiz.topics && !_npWiz.topicError && !_npWiz.loading) { await npLoadTopics(container); return; }
+  if (!npIsK(_npWiz) && !npIsI(_npWiz) && _npWiz.step === 1 && !_npWiz.people && !_npWiz.peopleError && !_npWiz.loading) { await npLoadPeople(container); return; }
+  if (!npIsK(_npWiz) && !npIsI(_npWiz) && _npWiz.step === 2 && !_npWiz.topics && !_npWiz.topicError && !_npWiz.loading) { await npLoadTopics(container); return; }
   // 话题到手就自动勾第一个：否则「就用这篇 →」是禁用的，点了毫无反应（像卡死）
-  if (!npIsK(_npWiz) && _npWiz.step === 2 && _npWiz.chosenTopicIdx < 0 && (_npWiz.topics || []).length) _npWiz.chosenTopicIdx = 0;
+  if (!npIsK(_npWiz) && !npIsI(_npWiz) && _npWiz.step === 2 && _npWiz.chosenTopicIdx < 0 && (_npWiz.topics || []).length) _npWiz.chosenTopicIdx = 0;
   npStepBar(container);
   renderStep(container);
   npNav(container, navForStep());
@@ -7000,6 +7778,8 @@ function renderStep(container) {
     return;
   }
   if (s === 0) {
+    // 🎭 IP 线（五十二改）：① 站＝挑组合——IP 卡＋组合卡＋自己配；不回摆通用卖点表
+    if (npIsI(_npWiz)) { npBody(container, npIpPickHtml()); return; }
     const sp = _npWiz.sellPoints || [];
     const chosenIdx = _npWiz.chosen.map(x => x.__i);
     const strategyHtml = (_npWiz.strategy ? '<div style="font-size:11px;color:#666;background:var(--c-brand-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px;">🎯 你的产品整体打法：' + esc(_npWiz.strategy) + '</div>' : '');
@@ -7068,6 +7848,13 @@ function renderStep(container) {
     return;
   }
   if (s === 1) {
+    // 🎭 IP 线（五十二改）：这一步是「AI 编故事」——AI 按挑好的主题×方式编 3 段候选（梗概＋开头第一句）；点了挑一段
+    if (npIsI(_npWiz)) {
+      npBody(container, npIpStoryHtml());
+      const w = _npWiz;
+      if (w.ipPlay && !(w.ipStories || []).length && !w.ipStoryErr && !_npIpStoryBusy) npIpStoriesLoad(container, false);
+      return;
+    }
     const opts = (_npWiz.people && _npWiz.people.people_options) || [];
     const selIdx = (_npWiz.chosenPeople || []).map(p => p && p.__i);
     const pTip = (p) => ['痛点：' + (p.pain || ''), '场景：' + (p.scene || ''), '时机：' + (p.timing || '')]
@@ -7154,31 +7941,34 @@ function renderStep(container) {
   }
   if (s === 4) {
     // 引流线改稿页（demo renderD dStep2 同款）：简报行＋风格行＋转法那句当硬约束；稿子＝挑中那版正文
-    if (npIsD(_npWiz)) {
+    // 🎭 IP 线（五十二改）dOut 要到出料才落，改稿站得把 npIsI 一并放进来走这个分支
+    if (npIsD(_npWiz) || npIsI(_npWiz)) {
       const dp = _npWiz.drainPick || {};
-      npBody(container, npDBriefLineHtml() +
-        npDStyleLineHtml() +
-        '<div style="font-size:12px;font-weight:700;color:#333;margin:2px 0 4px;">改稿（先看一眼；不满意就让 AI 改，改到满意再往下一步）</div>' +
-        (String(dp.turn || '').trim() ? '<div class="note-xs" style="margin-bottom:8px;">转法那句（' + esc(String(dp.turn)) + '）是硬约束——前三句讲料，一句转折落到你这行，之后全是专业的话；AI 改稿也不许动它。</div>' : '') +
+      const ip = npIsI(_npWiz);   // 🎭 IP 线改稿（五十二改）：简报行＋风格行换主题×方式，锁的骨架段按玩法标
+      const ipP = ip ? (NP_IP_BY_NAME[_npWiz.ipPlay] || null) : null;
+      const ipLocks = (ip && ipP && ipP.lock) ? npIpLockTextsOf(_npWiz, npSplitSents(String(((_npWiz.draft || {}).content) || ''))) : [];
+      npBody(container, (ip ? npIpBriefLineHtml() + npIpStyleLineHtml() : npDBriefLineHtml() + npDStyleLineHtml()) +
+        '<div style="font-size:12px;font-weight:700;color:#333;margin:2px 0 4px;">改稿</div>' +
+        (ip
+          ? '<div class="note-xs" style="margin-bottom:8px;">这版是 AI 按「' + esc(npIpLabelOf(_npWiz)) + '」的调子直出的' + (_npWiz.ipCustom ? '（你写的底子）' : '') + '——想换段故事点右上「↩ 换一段故事」' + (_npWiz.ipCustom ? '。' : '，想换个收法点「🔄 再出一版」。') + '</div>' +
+            (ipLocks.length ? '<div style="margin:0 0 8px;font-size:11px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:5px 9px;line-height:1.7;">🔒 ' + esc((ipP && ipP.lockWhy) || '骨架段——AI 改稿不碰；要改点「✍️ 全文手改」。') + '</div>' : '')
+          : (String(dp.turn || '').trim() ? '<div class="note-xs" style="margin-bottom:8px;">转法那句（' + esc(String(dp.turn)) + '）是硬约束——前三句讲料，一句转折落到你这行，之后全是专业的话；AI 改稿也不许动它。</div>' : '')) +
         '<div id="npDraftStatus" style="font-size:12px;color:#888;margin-bottom:6px;"></div>' +
-        '<div id="npTitles" style="margin-bottom:8px;"></div>' +
+        '<div id="npRevise" style="margin:0 0 8px;">' + npReviseHtml() + '</div>' +
+        '<div id="npTitles" style="margin:8px 0;"></div>' +
         '<div id="npDraftBody">' + npDraftBodyHtml(_npWiz) + '</div>' +
-        '<div id="npTags" style="margin:8px 0;"></div>' +
-        '<div id="npRevise" style="margin:10px 0 0;">' + npReviseHtml() + '</div>');
+        '<div id="npTags" style="margin:8px 0;"></div>');
       renderNpMaterial(container, _npWiz.draft);
       return;
     }
-    const nNow = npWritePickNow(_npWiz);
-    const nKd = nNow.kind ? NotePlan.kindOf(nNow.kind) : null;
     npBody(container, npBriefLineHtml() +
       npStyleLineHtml() +
-      '<div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;">⑤ 改稿（先看一眼；不满意就让 AI 改，改到满意再往下一步）</div>' +
-      (npIsK(_npWiz) ? '<div class="note-xs" style="margin-bottom:8px;">AI 已从挑好的知识里自己挑了角度直接出稿（这版用的写法：<b>' + esc(nKd ? nKd.name : '默认') + '</b>）。角度不对点「🎲 换个角度重写」，写法不对点「✏️ 换个写法重写」。</div>' : '') +
+      '<div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;">改稿</div>' +
       '<div id="npDraftStatus" style="font-size:12px;color:#888;margin-bottom:6px;"></div>' +
-      '<div id="npTitles" style="margin-bottom:8px;"></div>' +
+      '<div id="npRevise" style="margin:0 0 8px;">' + npReviseHtml() + '</div>' +
+      '<div id="npTitles" style="margin:8px 0;"></div>' +
       '<div id="npDraftBody">' + npDraftBodyHtml(_npWiz) + '</div>' +
-      '<div id="npTags" style="margin:8px 0;"></div>' +
-      '<div id="npRevise" style="margin:10px 0 0;">' + npReviseHtml() + '</div>');
+      '<div id="npTags" style="margin:8px 0;"></div>');
     renderNpMaterial(container, _npWiz.draft);
     if (!_npWiz.draft && !_npDraftBusy) npBuildDraft(container);
     return;
@@ -7249,6 +8039,11 @@ function renderStep(container) {
     npBody(container, npDshPromptHtml(_npWiz));
     return;
   }
+  // 🎭 IP 线的「出料」站（五十二改 ?v=73）：只出图文——点卡片＝标「代发」并进「造图片」的挑重点站
+  if (s === 8 && npIsI(_npWiz)) {
+    npBody(container, npIpOutHtml());
+    return;
+  }
 }
 
 /** 这篇的底子是哪条线：优先 ③ 里点选的排产表那一篇；自己想的题就用话题自带的那条线（③ 里 AI 判的）。
@@ -7267,7 +8062,7 @@ function npBasePlanItem(w) {
   const t = tl[(ww.chosenTopicIdx >= 0 && ww.chosenTopicIdx < tl.length) ? ww.chosenTopicIdx : 0] || null;
   const ty = (t && t.type && NotePlan.typeOf(t.type)) ? NotePlan.typeOf(t.type).key : '';
   // 知识线撤了「定话题」站（二十九改）：没有话题可判线了——知识类的这篇默认按「知识·干货」写；
-  // 不兜这一下，type 空着 → 成稿没类型块、「✏️ 换个写法重写」也没写法可轮（点了不动）
+  // 不兜这一下，type 空着 → 成稿没类型块，写法也就落不下来
   if (!ty && npIsK(ww)) return { no: null, title: '', type: 'howto', kind: '', goal: '', scope: 'related', credential: '', arc: null, fromTopic: false, kDefault: true };
   if (!ty) return null;
   const kd = (t && t.kind && NotePlan.kindOf(t.kind)) ? NotePlan.kindOf(t.kind) : null;
@@ -7399,7 +8194,7 @@ async function npBuildDraft(container) {
     if (ok) { _npStyleState.dirty = false; _npRefreshStyleStep(); }   // 新成稿已是当前配比/字数写的
     const st = _npEl(container, 'npDraftStatus');
     if (st) st.innerHTML = ok
-      ? (looseWarn ? '<span style="color:#b45309;">⚠️ AI 这次没按格式交稿，正文已整段放进下面——可直接手改，或用下面的「🤖 AI 改稿」换一版</span>' : '')
+      ? (looseWarn ? '<span style="color:#b45309;">⚠️ AI 这次没按格式交稿，正文已整段放进下面——可直接手改，或用下面的「🖊 AI 改整篇」换一版</span>' : '')
       : ('<span style="color:#d32f2f;">❌ ' + esc(failMsg || '这次没写出内容') + '，点「上一步」再点「🔀 重写这批」再试一次</span>');
     const navEl = _npEl(container, 'npWizNav');
     if (navEl) npNav(container, navForStep());   // 按钮复位
@@ -7427,6 +8222,18 @@ function navForStep() {
       : out === 'voice' ? btnWiz('np-k-fin-voice', '✓ 完成，回档案', true)
         : btnWiz('np-k-fin-img', '下一步 →', true) + ' <span style="font-size:11px;color:#8a929e;">出导图长图</span>';
     return backK + ' <span style="flex:1;"></span> ' + prim;
+  }
+  // 🎭 IP 玩法线（五十二改）：站点 0 挑组合 / 1 编故事 / 4 改稿 / 8 出料；出料半段（5·6·7）落到下面图文线那套共用
+  if (npIsI(_npWiz) && (s <= 4 || s === 8)) {
+    const backI = (s > 0) ? btnWiz('np-wiz-prev', '上一步', false) : '';
+    if (s === 0) return backI + ' <span style="flex:1;"></span> ' + btnWiz('np-ip-next', '下一步 →', true, false, '上面点一套组合、或自己配一套') + ' <span style="font-size:11px;color:#8a929e;">去编故事</span>';
+    if (s === 1) return btnWiz('np-ip-backcombo', '‹ 重挑组合', false) + ' <span style="flex:1;"></span> ' +
+      btnWiz('np-ip-reroll', '🔀 再换 3 段', false) + ' ' + btnWiz('np-ip-selftoggle', '✍️ 自己写一段', false);
+    if (s === 4) return btnWiz('np-ip-backstory', '上一步', false) +
+      ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">出料（图文）——挑重点 → 配文 → 整组提示词，一条复制去生成</span> ' +
+      btnWiz('np-ip-toout', '下一步 →', true, false, '正文还没写出来——等它写完');
+    // s === 8 出料站
+    return btnWiz('np-ip-backdraft', '上一步', false) + ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">点这张卡＝标「代发」并进「造图片」</span>';
   }
   // 引流线（三十一改 → 四十四改）：图文线 3 挑稿 / 4 改稿；文案直出视频线多一站 5 分镜出词
   if (npIsD(_npWiz)) {
@@ -7648,7 +8455,17 @@ function ensureNpDelegation() {
       const kp = t.closest('.np-kind-pick');
       if (kp) { npFilmPickKind(kp.getAttribute('data-k') || ''); return; }
       if (t.closest('.np-kind-change')) { _npFilmChange = true; npFilmPaint(); return; }
-      if (t.closest('.np-film-archive')) { switchMainTab('noteArchive'); return; }
+      if (t.closest('.np-film-archive')) {
+        // 台子露着＝里面正在编这一篇：先落盘再回档案，并把那一行闪一下（以前这颗只在盖板上，直接切页）
+        if (_npFilmNote && _npFilmNote.id) { const id = _npFilmNote.id; npFilmBackArchive().then(() => npArFlashRow(id)); }
+        else switchMainTab('noteArchive');
+        return;
+      }
+      // 片台外壳那几颗——出片／停／⚙／单开一页都是叫台子里那几件活（同一页了，直接叫），上一步走工作流
+      if (t.closest('.np-film-start')) { filmShellCall('start'); return; }
+      if (t.closest('.np-film-stop')) { filmShellCall('stop'); return; }
+      if (t.closest('.np-film-cfg')) { filmShellCall('cfg'); return; }
+      if (t.closest('.np-film-prev')) { npFilmGotoWizard('rewrite', (_npFilmNote && _npFilmNote.id) || ''); return; }
       const cp = t.closest('.np-film-copy');
       if (cp) {
         const s = String((_npFilmNote && _npFilmNote.script) || '');
@@ -7716,6 +8533,39 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-dsh-back')) { npGo(nc, 5); return; }
     if (t && t.closest('.np-dsh-back2')) { npGo(nc, 6); return; }
     if (t && t.closest('.np-dsh-done')) { npDshDone(); return; }
+    // 🎭 IP 玩法线（五十二改）：挑组合（点卡 / 换批 / 骰子 / 自己配两步）→ 编故事（用这段 / 自己写 / 再换 3 段）→ 改稿出口（换故事 / 再出一版）→ 出料
+    if (t && t.closest('.np-ip-use')) {
+      const card = t.closest('.np-ip-use');
+      npIpUseCombo(parseInt(card.getAttribute('data-b'), 10) || 0, parseInt(card.getAttribute('data-i'), 10) || 0, false);
+      return;
+    }
+    if (t && t.closest('.np-ip-swap')) { npIpBatchSwap(nc); return; }
+    if (t && t.closest('.np-ip-dice')) { npIpDice(nc); return; }
+    if (t && t.closest('.np-ip-selfopen')) { npIpSelfOpenToggle(nc); return; }
+    if (t && t.closest('.np-ip-theme')) {
+      const row = t.closest('.np-ip-theme');
+      npIpThemePick(parseInt(row.getAttribute('data-g'), 10) || 0, parseInt(row.getAttribute('data-i'), 10) || 0, nc);
+      return;
+    }
+    if (t && t.closest('.np-ip-themeback')) { npIpThemeBack(nc); return; }
+    if (t && t.closest('.np-ip-method')) { npIpMethodPick(String(t.closest('.np-ip-method').getAttribute('data-m') || ''), nc); return; }
+    if (t && t.closest('.np-ip-selfconfirm')) { npIpSelfConfirm(nc); return; }
+    if (t && t.closest('.np-ip-reip')) { switchMainTab('diagnose'); diagGo(3); return; }
+    if (t && t.closest('.np-ip-next')) { if (typeof toast === 'function') toast('上面点一套组合、或自己配一套——点了 AI 就按它编 3 段故事'); return; }
+    if (t && t.closest('.np-ip-pick')) { npIpPickCand(parseInt(t.closest('.np-ip-pick').getAttribute('data-i'), 10) || 0, nc); return; }
+    if (t && t.closest('.np-ip-useself')) { npIpUseSelf(nc); return; }
+    if (t && t.closest('.np-ip-selftoggle')) { npIpSelfToggle(nc); return; }
+    if (t && t.closest('.np-ip-reroll')) { npIpReroll(nc); return; }
+    if (t && t.closest('.np-ip-backcombo')) { npGo(nc, 0); return; }
+    if (t && t.closest('.np-ip-backstory')) { if (_npWiz) { _npWiz.step = 1; npWizRender(nc); } return; }
+    if (t && t.closest('.np-ip-rewrite')) { npIpRewrite(nc); return; }
+    if (t && t.closest('.np-ip-toout')) {
+      if (_npWiz && String(((_npWiz.draft || {}).content) || '').trim()) { _npWiz.step = 8; npWizRender(nc); }
+      else if (typeof toast === 'function') toast('正文还没写出来——等它写完，或回上一步点「↩ 换一段故事」');
+      return;
+    }
+    if (t && t.closest('.np-ip-backdraft')) { if (_npWiz) { _npWiz.step = 4; npWizRender(nc); } return; }
+    if (t && t.closest('.np-ip-fin')) { npIpFinish(); return; }
     // 📮 发稿：勾完平台点一下，逐平台各改写一版（原来这一步挂在「成稿」页底，现在归发稿这步）
     if (t && t.closest('.np-ver-go')) {
       const w = _npWiz;
@@ -7807,9 +8657,12 @@ function ensureNpDelegation() {
       _npVariantsInvalidate(); npWizRender(nc);
       return;
     }
-    if (t && nc.contains(t) && t.closest('#npKAngle')) { npKAngleRewrite(nc); return; }
-    if (t && nc.contains(t) && t.closest('#npKRewrite')) { npKRewrite(nc); return; }
     if (t && nc.contains(t) && t.closest('#npStyleOpenFromDraft')) { npGo(nc, 3); return; }
+    // 选择标题：只摆当前这条，「🔁 换一个」轮池里的，池轮完了现让 AI 再写一条
+    if (t && nc.contains(t) && t.closest('.np-title-next')) { npTitleNext(nc); return; }
+    if (t && nc.contains(t) && t.closest('.np-title-edit')) { _npTitleEditing = true; npFillTitles(nc); return; }
+    if (t && nc.contains(t) && t.closest('.np-title-save')) { npTitleSave(nc); return; }
+    if (t && nc.contains(t) && t.closest('.np-title-cancel')) { _npTitleEditing = false; npFillTitles(nc); return; }
     // ⑤ 成稿：AI 改稿（可撤销一版）
     if (t && t.closest('.np-rv-go')) { npReviseGo(nc); return; }
     if (t && t.closest('.np-rv-chip')) { const c = t.closest('.np-rv-chip'); const askEl = _npEl(nc, 'npReviseAsk'); if (askEl) askEl.value = c.getAttribute('data-ask') || ''; npReviseGo(nc); return; }
@@ -7818,6 +8671,8 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-draft-mode')) { npDraftModeToggle(nc); return; }
     if (t && t.closest('.np-sent-cancel')) { if (_npWiz) _npWiz.revSentIdx = -1; npSentPaint(nc); return; }
     if (t && t.closest('.np-sent-go')) { npReviseSentence(nc); return; }
+    // 🎭 IP 线（五十二改）：骨架段点一下只提示——改它走「✍️ 全文手改」
+    if (t && t.closest('.np-ip-lock')) { if (typeof toast === 'function') toast('🔒 骨架段——AI 改稿不碰它；想改点右上「✍️ 全文手改」'); return; }
     const sentRow = t && t.closest('.np-sent-row');
     if (sentRow) {
       const i = parseInt(sentRow.getAttribute('data-i'), 10);
@@ -7865,7 +8720,9 @@ function ensureNpDelegation() {
     if (cvOn) { npCoverToggle(nc, cvOn.getAttribute('data-v') !== '0'); return; }
     const cg = t && t.closest('.np-check-go');
     if (cg) { npCheckJump(nc, cg.getAttribute('data-t') || '', cg.getAttribute('data-id') || ''); return; }
-    // 🎨 ① 风格节点（六十六改按 demo 收口：画面风格三颗＋跟账号默认 / 配文方式 / 退回账号默认；三类轴与出图张数旋钮撤下）
+    // 🎨 ① 风格节点（六十六改按 demo 收口：画面风格三颗＋跟账号默认 / 配文方式 / 退回账号默认；出图张数旋钮撤下；七十一改补回画面形式那一排）
+    const bornChip = t && t.closest('.np-born');
+    if (bornChip) { npLookPick(nc, 'born', bornChip.getAttribute('data-v') || ''); return; }
     const motifChip = t && t.closest('.np-motif');
     if (motifChip) { npMotifPick(nc, motifChip.getAttribute('data-k') || ''); return; }
     const capDefault = t && t.closest('.np-capd');
@@ -8110,29 +8967,94 @@ async function getProductName() {
   try { const c = await readConfigPlain(); return (c.product && c.product.name) || ''; } catch (_) { return ''; }
 }
 
-/** 标题单选（复制发布文案取的是选中的这条） */
+/** 标题：屏上只摆当前这一条（AI 一次给的几条当池藏在后面）——
+    「🔁 换一个」按顺序轮池里的，池轮完了现让 AI 再写一条接上；「✏️ 编辑」改完仍是这一条。 */
+let _npTitleEditing = false;
+let _npTitleBusy = false;
+function npTitleMsg(container, text, color) {
+  const m = _npEl(container, 'npTitleMsg');
+  if (m) { m.textContent = text; m.style.color = color || '#9aa0ac'; }
+}
 function npFillTitles(container) {
   const box = _npEl(container, 'npTitles'); if (!box) return;
   const titles = ((_npWiz && _npWiz.draft && _npWiz.draft.titles) || []);
   if (!titles.length) { box.innerHTML = ''; _npNote.title = ''; return; }
   if (!(_npNote.titleIdx >= 0 && _npNote.titleIdx < titles.length)) _npNote.titleIdx = 0;
-  box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#333;margin-bottom:4px;">选择标题（复制发布文案时用这条）</div>' + titles.map((t, i) =>
-    '<label style="display:flex;gap:6px;align-items:flex-start;padding:6px 8px;margin-bottom:4px;border:1px solid ' + (i === _npNote.titleIdx ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:8px;background:' + (i === _npNote.titleIdx ? 'var(--c-brand-soft)' : '#fff') + ';cursor:pointer;font-size:12px;line-height:1.5;color:#333;">' +
-    '<input type="radio" name="npTitle" value="' + i + '"' + (i === _npNote.titleIdx ? ' checked' : '') + ' style="margin-top:2px;">' +
-    '<span>' + esc(t) + '</span></label>').join('');
-  box.querySelectorAll('input[name="npTitle"]').forEach(r => r.addEventListener('change', function () {
-    _npNote.titleIdx = parseInt(this.value, 10) || 0;
+  _npNote.title = titles[_npNote.titleIdx] || '';
+  const cur = _npNote.title;
+  const btnStyle = 'border:1px solid var(--line);background:#fff;color:#1f6feb;border-radius:8px;font-size:11px;font-weight:700;padding:4px 9px;cursor:pointer;white-space:nowrap;';
+  if (_npTitleEditing) {
+    box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#333;margin-bottom:4px;">选择标题</div>' +
+      '<input id="npTitleInput" type="text" maxlength="40" value="' + esc(cur) + '" style="width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid var(--c-brand);border-radius:8px;font-size:12px;">' +
+      '<div style="display:flex;gap:6px;align-items:center;margin-top:6px;">' +
+      '<button type="button" class="np-title-save" style="' + btnStyle + '">✅ 就用这条</button>' +
+      '<button type="button" class="np-title-cancel" style="' + btnStyle + '">取消</button>' +
+      '<span id="npTitleMsg" style="font-size:10px;color:#8a929e;"></span></div>';
+    const inp = _npEl(container, 'npTitleInput'); if (inp) inp.focus();
+    return;
+  }
+  box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#333;margin-bottom:4px;">选择标题</div>' +
+    '<div style="display:flex;gap:6px;align-items:flex-start;border:1px solid var(--c-brand);border-radius:8px;background:var(--c-brand-soft);padding:6px 8px;">' +
+    '<span style="flex:1;min-width:0;font-size:12px;line-height:1.5;color:#333;">' + esc(cur) + '</span>' +
+    '<button type="button" class="np-title-next" style="' + btnStyle + '">🔁 换一个</button>' +
+    '<button type="button" class="np-title-edit" style="' + btnStyle + '">✏️ 编辑</button>' +
+    '</div><div id="npTitleMsg" style="font-size:10px;color:#8a929e;margin-top:4px;"></div>';
+}
+
+/** 🔁 换一个：池里还有没摆过的就往后轮；轮到头了让 AI 现写一条接进池尾 */
+async function npTitleNext(container) {
+  const w = _npWiz; if (!w || !w.draft || _npTitleBusy) return;
+  const titles = (w.draft.titles || []);
+  if (!titles.length) return;
+  if (_npNote.titleIdx + 1 < titles.length) {
+    _npNote.titleIdx += 1;
     _npNote.title = titles[_npNote.titleIdx] || '';
     npFillTitles(container);
-    npArchiveTouch(_npWiz);   // 换了标题：档案里也换成这条
-  }));
-  _npNote.title = titles[_npNote.titleIdx] || '';
+    npArchiveTouch(w);   // 换了标题：档案里也换成这条
+    return;
+  }
+  const cur = String(titles[_npNote.titleIdx] || '');
+  _npTitleBusy = true;
+  npFillTitles(container);
+  npTitleMsg(container, '⏳ 这几条轮完了，正在让 AI 现写一条新的…');
+  const stopWait = npWaitInto(container, 'npTitleMsg', 'AI 正在另写一条标题', 'noterevise', () => _npWiz === w && w.step === 4);
+  let errMsg = '';
+  try {
+    const r = await chrome.runtime.sendMessage({ action: 'reviseNote', data: npRevisePayload(w, { content: String((w.draft && w.draft.content) || ''), onlyTitle: cur, titles: titles.slice() }) });
+    const t = String((r && r.title) || '').trim();
+    if (!t) throw new Error('AI 没给出新标题，再点一次试试');
+    titles.push(t);
+    _npNote.titleIdx = titles.length - 1;
+    _npNote.title = t;
+    npArchiveSave(w);   // 新标题也补进档案
+  } catch (e) { errMsg = ((e && e.message) || e); }
+  stopWait();
+  _npTitleBusy = false;
+  if (_npWiz === w) {
+    npFillTitles(container);
+    if (errMsg) npTitleMsg(container, errMsg, '#d33');
+  }
+}
+
+/** ✏️ 编辑：改完就地替换当前这条（其余候选不动），复制发布文案用的就是这条 */
+function npTitleSave(container) {
+  const w = _npWiz; if (!w || !w.draft) return;
+  const inp = _npEl(container, 'npTitleInput');
+  const v = String((inp && inp.value) || '').trim();
+  if (!v) { npTitleMsg(container, '标题别空着', '#d33'); return; }
+  const titles = (w.draft.titles || []);
+  if (!(_npNote.titleIdx >= 0 && _npNote.titleIdx < titles.length)) _npNote.titleIdx = 0;
+  titles[_npNote.titleIdx] = v;
+  _npNote.title = v;
+  _npTitleEditing = false;
+  npFillTitles(container);
+  npArchiveTouch(w);   // 手改的标题同步进档案
 }
 
 /** 把成稿铺进 ④ 页面；同一份稿子重绘时保留用户已删的标签 / 已选的标题 */
 function renderNpMaterial(container, d) {
   if (!d) return;
-  if (_npNote.draft !== d) _npNote = { draft: d, title: '', tags: (d.tags || []).slice(), titleIdx: 0 };
+  if (_npNote.draft !== d) { _npNote = { draft: d, title: '', tags: (d.tags || []).slice(), titleIdx: 0 }; _npTitleEditing = false; }
   npFillTitles(container);
   const resultEl = _npEl(container, 'npResult'); if (resultEl) resultEl.value = d.content || '';
   npSentPaint(container);   // 默认视图是逐句列表，新正文要按它重拆
@@ -8145,16 +9067,17 @@ function renderNpMaterial(container, d) {
 const _npReviseChips = ['更口语一点', '再短一点，删掉废话', '开头三行更勾人', '补一个具体数字/例子', '别太像广告'];
 function npReviseHtml() {
   return '<div style="border:1px solid #cfe3ff;background:#f7fbff;border-radius:10px;padding:10px;">' +
-    '<div style="font-size:11px;font-weight:700;color:#1f6feb;margin-bottom:6px;">🖊 不满意就让 AI 改这版（正文原位替换，可撤销一次）</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">' +
     _npReviseChips.map(c => '<button type="button" class="np-rv-chip" data-ask="' + esc(c) + '" style="border:1px solid #bfdbfe;background:#fff;color:#1d4ed8;border-radius:999px;font-size:11px;padding:3px 10px;cursor:pointer;">' + esc(c) + '</button>').join('') +
     '</div>' +
     '<input id="npReviseAsk" type="text" maxlength="120" placeholder="也可以自己写一句：例「保留结论，把中间那段压成两句」" style="width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid #dbe4f0;border-radius:8px;font-size:12px;">' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">' +
-    '<button type="button" class="np-rv-go" style="padding:7px 14px;border:none;border-radius:8px;background:linear-gradient(135deg,#1f6feb,#4d94ff);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🤖 AI 改稿</button>' +
+    '<button type="button" class="np-rv-go" style="padding:7px 14px;border:none;border-radius:8px;background:linear-gradient(135deg,#1f6feb,#4d94ff);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🖊 AI 改整篇</button>' +
     '<button type="button" class="np-rv-undo" hidden style="border:1px solid var(--line);background:#fff;color:#666;border-radius:8px;font-size:12px;padding:6px 12px;cursor:pointer;">↩ 改回上一版</button>' +
     '<span id="npReviseMsg" style="font-size:11px;color:#9aa0ac;"></span>' +
-    '</div></div>';
+    '</div>' +
+    '<div style="font-size:10px;color:#8a929e;margin-top:6px;line-height:1.6;">直接对正文做出评价，AI 帮你重新整版改稿</div>' +
+    '</div>';
 }
 
 let _npReviseBusy = false;
@@ -8174,9 +9097,10 @@ function npJoinSents(arr) { return (arr || []).map(x => x.t || x.br || '').join(
 function npDraftBodyHtml(w) {
   const content = String((w && w.draft && w.draft.content) || '');
   const textMode = !!(w && w.revTextMode);
+  const lockSet = (npIsI(w) && !textMode) ? npIpLockSetOf(w) : null;   // 🎭 IP 线（五十二改）：骨架段只标给逐句视图，全文手改不受限
   const bar = '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">' +
     '<span style="font-size:11px;font-weight:700;color:#333;">📝 正文</span>' +
-    '<span style="font-size:10px;color:#8a929e;">' + (textMode ? '手改会当场回写档案' : '点某一句 → 只改那一句') + '</span>' +
+    '<span style="font-size:10px;color:#8a929e;">' + (textMode ? '手改会当场回写档案' : (lockSet ? '点哪句改那句；🔒 骨架段 AI 不碰' : '点哪句改那句')) + '</span>' +
     '<span style="flex:1;"></span>' +
     '<button type="button" class="np-draft-mode" style="border:none;background:none;color:#1f6feb;font-size:11px;font-weight:700;cursor:pointer;padding:0;">' +
     (textMode ? '🖱 回到逐句' : '✍️ 全文手改') + '</button></div>';
@@ -8190,6 +9114,10 @@ function npDraftBodyHtml(w) {
   return bar + '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;">' +
     sents.map((s, i) => {
       if (s.br) return '<div style="height:8px;background:#fafbfc;"></div>';
+      if (lockSet && lockSet.has(i)) {
+        // 骨架段：不带 .np-sent-row（点选委托认它就进改句面板了）——手改仍可（全文手改）
+        return '<div class="np-ip-lock" title="骨架段：AI 改稿不碰；手改可以" style="padding:8px 10px;font-size:12px;line-height:1.75;cursor:default;border-bottom:1px solid #f2f3f5;color:#8a6d3b;background:#fffbf0;">🔒 ' + esc(s.t) + '</div>';
+      }
       const on = (w.revSentIdx === i);
       return '<div class="np-sent-row" data-i="' + i + '" style="padding:8px 10px;font-size:12px;line-height:1.75;cursor:pointer;border-bottom:1px solid #f2f3f5;color:' +
         (on ? '#1d4ed8' : '#333') + ';background:' + (on ? '#f2f7ff' : '#fff') + ';">' + esc(s.t) + '</div>' +
@@ -8232,6 +9160,10 @@ function npDraftModeToggle(container) {
 async function npReviseSentence(container) {
   const w = _npWiz; if (!w || w.step !== 4 || _npReviseBusy) return;
   const idx = w.revSentIdx;
+  if (npIsI(w)) {   // 🎭 骨架段（五十二改）：AI 逐句改不碰它——手改走「✍️ 全文手改」
+    const lk = npIpLockSetOf(w);
+    if (lk && lk.has(idx)) { npSentMsg(container, '🔒 骨架段——AI 改稿不碰它；想改点右上「✍️ 全文手改」', '#d33'); return; }
+  }
   const content = String((w.draft && w.draft.content) || '');
   const sents = npSplitSents(content);
   const cur = (sents[idx] || {}).t || '';
@@ -8260,11 +9192,33 @@ async function npReviseSentence(container) {
   if (btn) { btn.disabled = false; btn.textContent = '🤖 改这句'; }
   if (errMsg) { npSentMsg(container, errMsg, '#d33'); return; }
   npSentPaint(container);
-  npSentMsg(container, '✅ 这句换好了——不满意点「↩ 改回上一版」，或换个说法再改一次', '#2e7d32');
+  npSentMsg(container, '✅ 这句换好了', '#2e7d32');
+  const undoBtn = container.querySelector('.np-rv-undo'); if (undoBtn) undoBtn.hidden = false;   // 逐句改的也能整篇退回
   npArchiveSave(w);   // 改后的那一句同步进档案
 }
 /** 改稿那一发的上下文：整篇改与逐句改共用一份（少一处字段，AI 就会把这一篇写成通用稿） */
 function npRevisePayload(w, extra) {
+  // 🎭 IP 线（五十二改）：改稿守的是「主题×方式」的调子与骨架段——通篇不卖、不带任何承接；
+  //   keepSents＝标了骨架的段原文，AI 改稿一个都不许动（逐句改那一发不带它，那时只改单句）
+  if (npIsI(w)) {
+    const lk = npIpLockTextsOf(w, npSplitSents(String((w.draft && w.draft.content) || '')));
+    return Object.assign({
+      platform: npPid(w),
+      topic: String(w.ipTheme || ''),
+      topicFact: '',
+      sellPoint: '',
+      people: (w.chosenPeople || []).map(p => ({ name: (p && p.name) || '' })),
+      tags: (_npNote.tags || []),
+      noteStyle: null,
+      talkKey: 'none',
+      ipTheme: String(w.ipTheme || ''),
+      ipPlay: String(w.ipPlay || ''),
+      ipHow: String(w.ipHow || ((NP_IP_BY_NAME[w.ipPlay] || {}).how) || ''),
+      keepSents: lk.map(x => x.t),
+      planItem: null,
+      hot: null,
+    }, extra || {});
+  }
   // 🔥 引流线：改稿守的是「料」与「转法」——不带 planItem（那是知识 / 栏目那套节拍，会把引流结构带跑偏），
   //   话题＝挑中那版的题、话术固定「不提产品」、转法那句当硬约束传给 AI
   if (npIsD(w)) {
@@ -8318,24 +9272,26 @@ async function npReviseGo(container, ask) {
   const btn = container.querySelector('.np-rv-go');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 改稿中…'; }
   const stopWait = npWaitInto(container, 'npReviseMsg', 'AI 正在按你的要求改这一版', 'noterevise', () => _npWiz === w && w.step === 4);
-  let okMsg = '', errMsg = '';
+  let done = false, errMsg = '';
   try {
     const r = await chrome.runtime.sendMessage({ action: 'reviseNote', data: npRevisePayload(w, { content, ask: a }) });
     if (!r || r.ok === false || !r.content) throw new Error((r && r.error) || 'AI 没返回改后的正文，换个说法再试');
     w.revisePrev = content;
-    if (ta) ta.value = r.content;
-    if (w.draft) w.draft.content = r.content;
+    let nextContent = String(r.content);
+    if (npIsI(w)) nextContent = npIpKeepGuard(content, nextContent);   // 🎭 骨架段一个都不许丢——AI 漏抄了原位补回（五十二改）
+    if (ta) ta.value = nextContent;
+    if (w.draft) w.draft.content = nextContent;
     if (Array.isArray(r.tags) && r.tags.length) { _npNote.tags = r.tags.slice(); renderNpTags(container); }
     if (Array.isArray(r.titles) && r.titles.length) { w.draft.titles = r.titles.slice(); npFillTitles(container); }
     npSentPaint(container);   // 逐句视图是按正文拆的，整篇换完要重新拆一遍
     const undo = container.querySelector('.np-rv-undo'); if (undo) undo.hidden = false;
-    okMsg = '✅ 改好了——不满意点「↩ 改回上一版」，或换个说法再改一次';
+    done = true;
   } catch (e) { errMsg = '改稿失败：' + ((e && e.message) || e); }
   stopWait();
   _npReviseBusy = false;
-  if (okMsg) npArchiveSave(w);   // 改后的正文/标题/标签同步进档案
-  if (btn) { btn.disabled = false; btn.textContent = '🤖 AI 改稿'; }
-  say(okMsg || errMsg, okMsg ? '#2e7d32' : '#d33');
+  if (done) npArchiveSave(w);   // 改后的正文/标题/标签同步进档案
+  if (btn) { btn.disabled = false; btn.textContent = '🖊 AI 改整篇'; }
+  say(errMsg, errMsg ? '#d33' : '#9aa0ac');
 }
 
 function npReviseUndo(container) {
@@ -8605,24 +9561,24 @@ const NP_SHOT_FORMS = ['对比', '故事场景', '事物评价', '清单要点',
 /* ═══════════ 🎨 这一套图的风格 · ①（五十五改）═══════════════
    老板 2026-10-02：「图片风格应该作为一个工作流节点单独设计，不只是字体颜色大小，而是成图风格、主题、博主特色」。
    所以风格不再是「挑每屏那句」那一发 AI 顺手编的一行字，人在这三类客观轴上定（跨品类都填得进来：获客号 / 房贷号 / 母婴号，字段一样、值不同）：
-     画面出身 · 主题 · 博主印记
+     画面形式 · 主题 · 博主印记
    层级三层（六十一改）：内置统一小红书打底（NP_LOOK_XHS）→ 账号默认（发笔记 · 任务配置 → 🎨 出图默认）→ 这一套图覆盖（**轴级**继承：没选的轴跟上一层走，选了的那几轴记在这一套上）。
    真源＝这一套图那份 look；shots.style 是它的派生物（一行令牌，提示词/发布文案读的还是这一行，别再另立真源）。 */
 const NP_LOOK_AXES = [
-  { k: 'born', t: '画面出身', d: '图本身怎么来的', opts: ['扁平矢量插画', '实拍照片', '3D 渲染', '手绘线稿', '纯排版大字', '拼贴杂志感'] },
+  { k: 'born', t: '画面形式', d: '这张画面是怎么来的——出图前必须说清是随拍、实拍还是画的，不然引擎自己挑广告片那一挂', opts: ['手机随拍', '实拍照片', '动漫插画', '扁平矢量插画', '3D 渲染', '手绘线稿', '纯排版大字', '拼贴杂志感'] },
   { k: 'theme', t: '主题', d: '底色 / 点缀色 / 材质光线', opts: ['浅底＋单色点缀', '深灰底＋荧光点缀', '白底黑字·极简', '纸感米白＋铅笔灰', '暗调实拍·单一暖光源', '高饱和大色块', '暗色玻璃拟态'] },
   { k: 'mark', t: '博主印记', d: '常驻形象 / 收口 / 小符号（可留空）', opts: ['左上角小图标', '统一左下署名', '常驻卡通形象', '每张一个编号圆点'] },
 ];
 /* 配文方式（六十二改，替掉旧的「字量档：少字 / 中字 / 整段上屏」）：这一段话，图要替你说多少。
    真表在 lib/visual-motif.js——界面画 chips 与要展开的格子读这里的 t / d / fields，🔁 那一发写哪种字读同一份的 capRule，两边不各写一套。 */
 const NP_CAPTION_MODES = VisualMotif.CAPTION_MODES || [];
-/* 六十二改（老板：「P 的测试风格是手绘的，我不喜欢，你换个实拍的」）：全账号最低一层＝实拍那一挂，内置打底。
+/* 七十一改（老板：「随拍的这个东西其实比实拍更好」）：全账号最低一层＝手机随拍那一挂，内置打底。
    三层盖法不变：这一份打底 → 账号默认（发笔记 → 任务配置 → 🎨 出图默认）→ 这一套图自己选的轴。
    它不写进存档：清空出图默认也还是这一挂，提示词不会再退成「什么风格都没写」；要不一样就在上面两层拨。
-   博主印记那一轴故意留空：实拍那挂不压水印不署名（实测里署名跟图上那套字撞了，一张页只留一个文字位）。 */
+   博主印记那一轴故意留空：随拍那挂不压水印不署名（实测里署名跟图上那套字撞了，一张页只留一个文字位）。 */
 const NP_LOOK_XHS = {
   motif: '真人工作场景',
-  born: '实拍照片',
+  born: '手机随拍',
   theme: '暗调实拍·单一暖光源',
   cap: 'say',
 };
@@ -8766,16 +9722,22 @@ async function npStagePlanSave(stagePlan) {
   return safe;
 }
 
-/* ══════════════════ 📚 素材库·集合数据层（demo v41 十五改：集合 + 片段 双表） ══════════════════
-   集合（一行一集）：{ id, name, desc, source, manual, link, at }
+/* ══════════════════ 📚 素材库·集合数据层（demo v41 十五改：集合 + 片段 双表；2026-10-15 两签改版加类型层） ══════════════════
+   集合（一行一集）：{ id, name, desc, source, manual, link, at, kind, use, why, mine }
      source = 'sell|卖点名' / 'kb|知识库标题' / '剪段入库|篇id' / '自己加的'（认不出＝空串，按「自己加的」显示）
+     kind  ＝ 18 类里的一个 id（lib/asset-kinds.js；空＝还没归类）——归在集合这一层，一条素材不另打标
+     use   ＝ 'on' 用 / 'off' 停用 / 'ask' 还没定（AI 按账号诊断配，人可改；老数据没这字段＝当在用，不改变原有行为）
+     why   ＝ AI 为什么这么配（一句人话）；mine＝这条人肉改过（AI 重算不覆盖，行上打「你改过」）
    片段（图墙一条）：{ id, col, imgOnly, src, a, b, dur, stage, kb, vo, tags, fo, thumb, w, h, ref, at }
      视频段：ref = 'mat:<篇id>:<素材id>'（源视频在 IndexedDB xhsCase），a / b ＝ 起止秒（数字）
      纯图：imgOnly=true，thumb ＝ ≤160px 缩略图（原图不入库）
-   外账 meta（np_collections_meta）：{ sig, genAt } —— AI 整理算过一次没（卖点/知识库没变就不重算） */
+   外账 meta（np_collections_meta）：{ sig, genAt } —— AI 整理算过一次没（卖点/知识库没变就不重算）
+   判类外账（np_asset_kinds）：{ sig, at, kinds: { 类id: { v: need|no|ask, why: 判据一句 } }, own: { 类id: v } }
+     —— AI 判「这类该不该有料」存这儿；own 是人翻案的，翻过的一次赢过 AI 的 */
 const NP_COLLECTIONS_KEY = 'np_collections';
 const NP_CLIPS_KEY = 'np_clips';
 const NP_AS_META_KEY = 'np_collections_meta';
+const NP_AS_KIND_KEY = 'np_asset_kinds';
 
 async function npCollectionsRead() {
   try {
@@ -8818,6 +9780,47 @@ async function npAsColMetaRead() {
 }
 async function npAsColMetaWrite(v) {
   try { await chrome.storage.local.set({ [NP_AS_META_KEY]: v }); } catch (_) {}
+}
+
+/* ── 18 类判类外账（np_asset_kinds）：AI 判「这类该不该有料」＋ 人翻案的覆盖 ── */
+async function npAsKindStateRead() {
+  try {
+    const d = await chrome.storage.local.get(NP_AS_KIND_KEY);
+    const v = d[NP_AS_KIND_KEY];
+    if (v && typeof v === 'object') {
+      return { sig: String(v.sig || ''), tried: String(v.tried || ''), at: v.at || 0, kinds: (v.kinds && typeof v.kinds === 'object') ? v.kinds : {}, own: (v.own && typeof v.own === 'object') ? v.own : {} };
+    }
+  } catch (_) {}
+  return { sig: '', tried: '', at: 0, kinds: {}, own: {} };
+}
+async function npAsKindStateWrite(v) {
+  try { await chrome.storage.local.set({ [NP_AS_KIND_KEY]: v }); } catch (_) {}
+}
+/** 这一类该不该有料：人翻案过 ＞ AI 判过 ＞ 灰档那三类默认「灰档」＞ 其余「待你定」 */
+function npAsKindV(st, k) {
+  if (!npAssetKindOf(k)) return '';
+  const o = st && st.own && st.own[k];
+  if (o === 'need' || o === 'no' || o === 'ask') return o;
+  const one = st && st.kinds && st.kinds[k];
+  if (one && (one.v === 'need' || one.v === 'no' || one.v === 'ask')) return one.v;
+  return npAsGrayKind(k) ? 'gray' : 'ask';
+}
+function npAsGrayKind(k) {
+  const x = npAssetKindOf(k);
+  return !!(x && x.gray);
+}
+/** 这一类 AI 给的判据那句话（人翻案了也留着原话，行上标「你改过」） */
+function npAsKindWhy(st, k) {
+  const one = st && st.kinds && st.kinds[k];
+  return String((one && one.why) || '').trim();
+}
+/** 这一集这次用不用：老数据没这字段＝当在用（缺口、挑料都照旧算） */
+function npAsUseOf(col) {
+  const u = String((col && col.use) || '');
+  return u === 'on' || u === 'off' || u === 'ask' ? u : 'on';
+}
+function npAsOnCount(colId) {
+  return (_npClipsCache || []).filter(c => c && c.col === colId).length;
 }
 
 /* ══════════════════════ A5：note_stats 抓主页快照 ══════════════════════
@@ -9170,15 +10173,225 @@ async function npAuditSentAlgo() {
   };
 }
 
-/** 三级 tab 切换：topics / sent */
+/** 三级 tab 切换：topics / sent / play */
 function npAuditGo(which) {
   document.querySelectorAll('.audit-tab').forEach(x => x.classList.toggle('active', x.getAttribute('data-atab') === which));
   const tp = document.getElementById('auditTopicsPane');
   const sp = document.getElementById('auditSentPane');
+  const pp = document.getElementById('auditPlayPane');
   if (tp) tp.style.display = (which === 'topics' ? '' : 'none');
   if (sp) sp.style.display = (which === 'sent' ? '' : 'none');
+  if (pp) pp.style.display = (which === 'play' ? '' : 'none');
   if (which === 'topics') npAuditTopicsPaint();
+  else if (which === 'play') npAuditPlayPaint();
   else npAuditSentPaint();
+}
+
+/* ═══ 🎭 玩法效果（五十二改·复盘分析第三签，镜像 demo）═══
+   玩法好不好用，就看评论区带不带得动：按已发篇的「玩法标」（发表时自动记 wip.ipPlay）归堆——
+   平均 💬 对账号平均比：≥1.5×「✅ 好用，主推」/ 0.7~1.5×「➖ 一般」/ <0.7×「⚠ 该换一个」/ 不到 3 条「⏳ 数据还少，再跑两周」。
+   数字就着「已发复盘」那份抓主页快照现算；动作（停掉 / 加频次 / 换玩法）只记在本机这一页——
+   IP 篇的排期方式还没定，先当备忘记着，不写指令去动发布队列。 */
+const NP_IP_ACTS_KEY = 'np_ip_play_acts';
+let _plOpen = null;                     // 正在展开「换个玩法」面板的那一招（会话级）
+async function npIpActsRead() {
+  try {
+    const d = await chrome.storage.local.get(NP_IP_ACTS_KEY);
+    const a = d[NP_IP_ACTS_KEY] || {};
+    return { stopped: Array.isArray(a.stopped) ? a.stopped : [], boosted: Array.isArray(a.boosted) ? a.boosted : [], swapTo: (a.swapTo && typeof a.swapTo === 'object') ? a.swapTo : {} };
+  } catch (_) { return { stopped: [], boosted: [], swapTo: {} }; }
+}
+async function npIpActsWrite(a) { try { await chrome.storage.local.set({ [NP_IP_ACTS_KEY]: a }); } catch (_) {} }
+
+/** 按玩法归堆算账：带玩法标的已发篇（统计口径与「已发复盘」同一份 note_stats 快照） */
+async function npAuditPlayAlgo() {
+  const all = await npNotesAll();
+  const statsAll = await npStatsReadAll();
+  const now = Date.now();
+  const sent = all.filter(n => n && n.status === '已发');
+  const withStat = (n) => {
+    const m = (n.url || '').match(/\/explore\/([^?#]+)/);
+    const st = m ? statsAll[m[1]] : null;
+    return (st && (st.likes || st.collects || st.comments)) ? st : null;
+  };
+  const sentTimes = sent.map(n => (n.statusAt && n.statusAt['已发']) || n.updatedAt || 0);
+  const alive = sent.map((n, i) => ({ n: n, st: withStat(n), at: sentTimes[i] })).filter(x => x.st);
+  const accC = alive.length ? alive.reduce((t, x) => t + (Number(x.st.comments) || 0), 0) / alive.length : null;
+  const accL = alive.length ? alive.reduce((t, x) => t + (Number(x.st.likes) || 0), 0) / alive.length : null;
+  const fetchedAt = alive.reduce((t, x) => Math.max(t, Number(x.st.fetchedAt) || 0), 0);
+  const byPlay = {};
+  alive.forEach(x => {
+    const play = String((x.n.wip && x.n.wip.ipPlay) || x.n.ipPlay || '').trim();
+    if (play) (byPlay[play] = byPlay[play] || []).push(x);
+  });
+  const rows = NP_IP_PLAYS.map(p => {
+    const arr = byPlay[p.name] || [];
+    if (!arr.length) return { name: p.name, grp: p.grp, n: 0 };
+    const avgC = arr.reduce((t, x) => t + (Number(x.st.comments) || 0), 0) / arr.length;
+    const avgL = arr.reduce((t, x) => t + (Number(x.st.likes) || 0), 0) / arr.length;
+    const days = Math.max(...arr.map(x => Math.max(1, Math.floor((now - x.at) / 86400e3))));
+    let tier;
+    if (arr.length < 3) tier = 'few';
+    else if (accC && avgC >= 1.5 * accC) tier = 'good';
+    else if (accC && avgC < 0.7 * accC) tier = 'bad';
+    else tier = 'mid';
+    return { name: p.name, grp: p.grp, n: arr.length, avgC: avgC, avgL: avgL, days: days, tier: tier, ratio: accC ? avgC / accC : null };
+  });
+  const ord = { bad: 0, few: 1, mid: 2, good: 3 };
+  rows.sort((a, b) => (a.n ? ord[a.tier] : 4) - (b.n ? ord[b.tier] : 4) || (b.n - a.n));
+  return { rows: rows, accC: accC, accL: accL, nAll: alive.length, fetchedAt: fetchedAt };
+}
+const PL_TIER = {
+  good: { lab: '✅ 好用，主推', fg: '#0a7b5a', bg: '#eaf7f0', bd: '#c9e9d8' },
+  mid: { lab: '➖ 一般', fg: '#6b7280', bg: '#f5f6f8', bd: '#e5e8ee' },
+  bad: { lab: '⚠ 该换一个', fg: '#c0392b', bg: '#fdf1ef', bd: '#f2d2cc' },
+  few: { lab: '⏳ 数据还少，再跑两周', fg: '#8a6d3b', bg: '#fff7e6', bd: '#f0dcb0' },
+};
+const plFmt = v => { const x = Math.round(Number(v) * 10) / 10; return Number.isInteger(x) ? String(x) : x.toFixed(1); };
+
+async function npAuditPlayPaint() {
+  const pane = document.getElementById('auditPlayPane');
+  if (!pane) return;
+  pane.innerHTML = '<div class="audit-loading">🎭 玩法效果在算——按招牌归堆，拿评论对账号平均…</div>';
+  let pl, acts;
+  try { pl = await npAuditPlayAlgo(); acts = await npIpActsRead(); }
+  catch (e) { pane.innerHTML = '❌ 出错了：' + esc(String((e && e.message) || e)); return; }
+  const usedRows = pl.rows.filter(r => r.n);
+  const stoppedSet = new Set(acts.stopped), boostedSet = new Set(acts.boosted);
+  const head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px;">' +
+    '<span class="note-xs">📕 就着「已发复盘」那份抓主页快照现算' + (pl.fetchedAt ? '（' + npArAgo(pl.fetchedAt) + '抓的）' : '') + ' · 主页上手发的没玩法标、不进账</span>' +
+    '<span style="flex:1;"></span></div>';
+  if (!pl.nAll) {
+    pane.innerHTML = '<div style="max-width:640px;"><div class="card card-pad"><div class="audit-hd">玩法效果 —— 哪招带评论、哪招该换</div>' +
+      '<div class="audit-empty">还没抓过主页的数——先去「📈 已发复盘」页抓一次（点赞 / 收藏 / 评论都是抓主页时顺带读的），这页才算得出账。</div>' +
+      npAuditPlayUnusedHtml(pl.rows, acts) + '</div></div>';
+    npAuditPlayWire(pane, pl, acts);
+    return;
+  }
+  const accLine = '账号平均：就着 <b>' + pl.nAll + '</b> 篇已发（玩法篇 + 平常篇一起算）· 平均 <b style="color:#1f2329;">💬' + plFmt(pl.accC) + ' 评</b> / 👍' + Math.round(pl.accL) + ' 赞——玩法好不好，就看它比这条线高多少';
+  const rowsHtml = usedRows.map(r => {
+    const t = PL_TIER[r.tier];
+    const stopped = stoppedSet.has(r.name);
+    const actsHtml = [];
+    if (r.tier === 'bad') {
+      actsHtml.push('<button type="button" class="np-pl-swapopen btn btn-sm btn-soft" data-n="' + npArAttr(r.name) + '">🔁 换个玩法</button>');
+      actsHtml.push('<button type="button" class="np-pl-stop btn btn-sm" data-n="' + npArAttr(r.name) + '">' + (stopped ? '▶ 重新开跑' : '⏸ 先停掉') + '</button>');
+    } else if (r.tier === 'good') {
+      actsHtml.push(boostedSet.has(r.name)
+        ? '<button type="button" class="btn btn-sm" disabled title="这轮已经加过了">📈 已加频次</button>'
+        : '<button type="button" class="np-pl-boost btn btn-sm btn-soft" data-n="' + npArAttr(r.name) + '">📈 加频次</button>');
+    }
+    const swapPanel = (_plOpen === r.name)
+      ? '<div style="margin-top:8px;border:1px solid #e0d9ff;background:#f7f5ff;border-radius:9px;padding:8px 10px;">' +
+          '<div style="font-size:11px;font-weight:700;color:#5b4bd6;">换个玩法接上——这条线的老账留着对账，新玩法从 0 起跑：</div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;">' +
+          NP_IP_PLAYS.filter(p => p.name !== r.name && !usedRows.some(x => x.name === p.name)).slice(0, 3).map(p =>
+            '<button type="button" class="np-pl-swap chip" data-old="' + npArAttr(r.name) + '" data-n="' + npArAttr(p.name) + '" style="cursor:pointer;border:1px solid #d6ccff;background:#fff;color:#5b4bd6;padding:3px 10px;font-family:inherit;font-size:11px;">🎭 ' + esc(p.name) + '<span style="color:#9aa0ac;font-weight:400;"> · ' + esc(p.how) + '</span></button>').join('') +
+          '<button type="button" class="np-pl-swapopen btn btn-sm btn-ghost" data-n="' + npArAttr(r.name) + '">收起</button>' +
+        '</div></div>'
+      : '';
+    return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 12px;margin-bottom:8px;' + (stopped ? 'opacity:.62;' : '') + '">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+        '<b style="font-size:12.5px;color:#1f2329;">🎭 ' + esc(r.name) + '</b>' +
+        '<span style="font-size:10px;color:' + t.fg + ';background:' + t.bg + ';border:1px solid ' + t.bd + ';border-radius:8px;padding:0 7px;font-weight:700;">' + t.lab + '</span>' +
+        (stopped ? '<span style="font-size:10px;color:#8a929e;background:#f5f6f8;border:1px solid #e5e8ee;border-radius:8px;padding:0 6px;">⏸ 已停</span>' : '') +
+        '<span style="flex:1;"></span><span style="display:flex;gap:6px;">' + actsHtml.join('') + '</span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#4b5563;margin-top:5px;line-height:1.8;">发了 <b>' + r.n + '</b> 条 · 跑了 <b>' + r.days + '</b> 天 · 平均 <b style="color:#1f2329;">💬' + plFmt(r.avgC) + ' 评</b> / 👍' + Math.round(r.avgL) + ' 赞' +
+        (r.ratio != null ? '　vs 账号平均 💬' + plFmt(pl.accC) + ' → <b style="color:' + t.fg + ';">' + r.ratio.toFixed(2) + '×</b>' : '') + '</div>' +
+      swapPanel +
+    '</div>';
+  }).join('');
+  const badP = usedRows.filter(r => r.tier === 'bad' && !stoppedSet.has(r.name))[0];
+  const goodP = usedRows.filter(r => r.tier === 'good')[0];
+  const fewP = usedRows.filter(r => r.tier === 'few');
+  const parts = [];
+  if (goodP) parts.push('最带得动评论的是「' + goodP.name + '」——平均 💬' + plFmt(goodP.avgC) + '，是账号平均的 ' + goodP.ratio.toFixed(2) + ' 倍，主推它、可以加频次；');
+  if (badP) parts.push('「' + badP.name + '」只有账号平均的 ' + badP.ratio.toFixed(2) + ' 倍——别再加更了，换一个试试；');
+  if (fewP.length) parts.push('「' + fewP.map(x => x.name).join('」「') + '」数据还少，再跑两周才有结论。');
+  let conclTxt = parts.join('');
+  if (conclTxt.slice(-1) === '；') conclTxt = conclTxt.slice(0, -1) + '。';
+  const concl = conclTxt ? '<div style="margin-top:10px;background:#eaf7f0;border:1px solid #c9e9d8;border-radius:8px;padding:8px 10px;font-size:12px;color:#0a7b5a;line-height:1.8;">💡 玩法结论：' + conclTxt + '</div>' : '';
+  pane.innerHTML = '<div style="max-width:720px;">' +
+    '<div class="card card-pad">' +
+      '<div class="audit-hd">玩法效果 —— 哪招带评论、哪招该换</div>' + head +
+      '<div style="border:1px solid var(--line);border-radius:9px;background:#fafbfc;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:#4b5563;line-height:1.8;">' + accLine + '</div>' +
+      (rowsHtml || '<div class="audit-empty">还没有带玩法标的已发篇——玩法篇发满 3 条，这页就有它的账。</div>') + concl +
+      npAuditPlayUnusedHtml(pl.rows, acts) +
+      '<div class="note-xs" style="margin-top:10px;">📌 玩法标是发表时自动记的（挑组合那一刻就记上了），不用手标；主指标看「💬 评论」——玩法戏都在评论区。动作只记在这页（IP 篇的排期方式还没定，先当备忘）——「🔁 换个玩法」＝停旧开新，点下面空玩法卡就从 0 起跑。</div>' +
+    '</div></div>';
+  npAuditPlayWire(pane, pl, acts);
+}
+
+/** 还没发过的玩法（挑一个开写）：从玩法效果页开新篇——按这招配个对味的主题，直接落到「AI 编故事」站 */
+function npAuditPlayUnusedHtml(rows, acts) {
+  const unused = rows.filter(r => !r.n);
+  if (!unused.length) return '';
+  return '<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">' +
+    '<div style="font-size:11px;font-weight:700;color:#333;">还没发过的玩法 <span class="note-xs" style="font-weight:400;">——挑一个开写；发满 3 条，这页就有它的账</span></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;">' +
+    unused.map(r => {
+      const from = Object.keys(acts.swapTo).filter(k => acts.swapTo[k] === r.name)[0];
+      return '<button type="button" class="np-pl-start" data-n="' + npArAttr(r.name) + '" style="cursor:pointer;border:1px solid #cfe8d4;background:#f7fdf9;color:#0a7b5a;padding:3px 10px;border-radius:8px;font-family:inherit;font-size:11px;font-weight:600;">🎭 ' + esc(r.name) + (from ? ' <span style="color:#8a6d3b;font-weight:400;">🔁 从「' + esc(from) + '」换过来</span>' : '') + '</button>';
+    }).join('') +
+    '</div></div>';
+}
+
+function npAuditPlayWire(pane, pl, acts) {
+  pane.querySelectorAll('.np-pl-stop').forEach(b => b.addEventListener('click', async () => {
+    const name = b.getAttribute('data-n') || '';
+    const a = await npIpActsRead();
+    const i = a.stopped.indexOf(name);
+    if (i >= 0) { a.stopped.splice(i, 1); if (typeof toast === 'function') toast('「' + name + '」重新开跑了——下一条照常排'); }
+    else { a.stopped.push(name); if (typeof toast === 'function') toast('「' + name + '」先停了——这页记上，挑组合时别挑它'); }
+    await npIpActsWrite(a); npAuditPlayPaint();
+  }));
+  pane.querySelectorAll('.np-pl-boost').forEach(b => b.addEventListener('click', async () => {
+    const name = b.getAttribute('data-n') || '';
+    const a = await npIpActsRead();
+    if (a.boosted.indexOf(name) < 0) a.boosted.push(name);
+    await npIpActsWrite(a); npAuditPlayPaint();
+    if (typeof toast === 'function') toast('给「' + name + '」加了频次——这页记上，写稿时这类多排一条');
+  }));
+  pane.querySelectorAll('.np-pl-swapopen').forEach(b => b.addEventListener('click', () => {
+    const name = b.getAttribute('data-n') || '';
+    _plOpen = (_plOpen === name) ? null : name;
+    npAuditPlayPaint();
+  }));
+  pane.querySelectorAll('.np-pl-swap').forEach(b => b.addEventListener('click', async () => {
+    const oldP = b.getAttribute('data-old') || '', newP = b.getAttribute('data-n') || '';
+    const a = await npIpActsRead();
+    a.swapTo[oldP] = newP;
+    if (a.stopped.indexOf(oldP) < 0) a.stopped.push(oldP);
+    await npIpActsWrite(a);
+    _plOpen = null; npAuditPlayPaint();
+    if (typeof toast === 'function') toast('「' + oldP + '」停了，接上「' + newP + '」——去「🎭 IP 玩法」发新的一条，它就从 0 起跑');
+  }));
+  pane.querySelectorAll('.np-pl-start').forEach(b => b.addEventListener('click', () => {
+    npIpStartNote(b.getAttribute('data-n') || '');
+  }));
+}
+
+/** 🎭 玩法效果页「挑一个开写」：建篇（草稿进档案）→ 按这招配个对味的主题 → 开着写稿流落到「AI 编故事」站（AI 当场编 3 段） */
+async function npIpStartNote(play) {
+  const p = NP_IP_BY_NAME[play] || null;
+  if (!p) return;
+  if (typeof toast === 'function') toast('开了新的一篇「' + play + '」——AI 这就按这招编 3 段故事，稍等');
+  const n = await npDirNewNote('i', '');
+  const th = npIpThemeForMethod(play);
+  n.wip = n.wip || {};
+  n.wip.ipPlay = play;
+  n.wip.ipTheme = th ? th.t.n : '';
+  n.wip.ipThemeFam = th ? th.fam : '';
+  n.wip.step = 1;
+  n.updatedAt = Date.now();
+  await npNotesSync(async () => {
+    const list = await npNotesAll();
+    const i = list.findIndex(x => x && x.id === n.id);
+    if (i >= 0) list[i] = n;
+    try { await chrome.storage.local.set({ [NP_NOTES_KEY]: list }); } catch (_) {}
+  });
+  npDirGo(n);
 }
 
 async function npAuditTopicsPaint() {
@@ -9598,7 +10811,7 @@ window._npPatchesCheck = async function () {
 
 /** 只留其它一切 ─ 页面外观。
  *  能进这一份的键＝出图风格认的全部：画面流派（自由串）/ 配文档 / 版式 / 印记三选（文字·传图）/ 笔记分类开关；
- *  旧轴（画面出身 born / 主题 theme）原样往返带着走——出图 ① 与提示词尾巴那一行还在读它们（截图到六十六改再收）。 */
+ *  旧轴（画面形式 born / 主题 theme）原样往返带着走——出图 ① 与提示词尾巴那一行还在读它们（截图到六十六改再收）。 */
 function npLookShape(raw) {
   const o = (raw && typeof raw === 'object') ? raw : {};
   const out = {};
@@ -9611,6 +10824,8 @@ function npLookShape(raw) {
   if (cap) out.cap = cap;
   const motif = String(o.motif || '').trim().slice(0, 16);   // 自由串：账号自加的流派名也要在存档往返里留得住
   if (motif) out.motif = motif;
+  const casting = String(o.casting || '').trim().slice(0, 120);   // 这一套图里的主角/随身东西（固定一句，逐张照抄；留空＝不说）
+  if (casting) out.casting = casting;
   const layout = String(o.layout || '').trim();
   if (NP_CAP_LAYOUTS.some(x => x.k === layout)) out.layout = layout;
   const mark = String(o.mark || '').trim();
@@ -9630,6 +10845,29 @@ function npLookToken(look) {
   const l = npLookShape(look);
   return NP_LOOK_AXES.filter(a => a.k !== 'mark').map(a => l[a.k]).filter(Boolean).join('；');
 }
+/** 画面形式是不是「手机随拍」那一挂（只认这一挂；老档的『实拍照片』不套随拍块，免得把老档提示词凭空撑长） */
+function npSnapOn(look) { return /随拍|随手拍/.test(String(npLookShape(look).born || '')); }
+/** 主角固定那一句（🎨 出图默认里填的格子）：六张换六个人是 AI 味第一大来源，逐张都得带 */
+function npCastingLine(look) {
+  const c = npLookShape(look).casting;
+  if (!c) return '';
+  return '【这一套每一张的主角，必须同一个人、同一身】\n- ' + c + '\n- 每一张都是上面这一个人：年龄、身形、穿着、手上那几样随身东西保持一致，不许一张换一张长相。';
+}
+/** 一次只出一张的护栏：拼图 / 四宫格 / 带字卡片是三种最常跑偏的出法 */
+const NP_ONE_SHOT_GUARD = '一次只出这一张完整画面：不要拼图、不要四宫格九宫格、不要做成带字的卡片海报；下面这些描述是给你对照画面用的，不是要排到图上的文字。';
+/* 手机随拍那挂的硬约束（老板 2026-10-18：「现在生成的效果都很差，没有那种手机随拍的感觉」）。
+   为什么不写在主题那一行：主题只说「暗调实拍·单一暖光源」，引擎读到「实拍」就往广告片上靠——
+   随拍的实感靠的是瑕疵：噪点、歪、过曝、切边、脏乱、不看镜头。这七条逐项钉死，缺一条就露 AI 味。 */
+const NP_SNAP_RULES = [
+  '【手机随拍必须照做，这一块比上面所有描述都硬】',
+  '- 拿一台旧安卓手机在当场随手拍的：整幅有噪点、边缘发虚、白平衡偏色，最亮那一块过曝成一团，暗部不是纯黑而是发灰发绿。',
+  '- 单手竖着举、手不稳：画面整体歪两三度，一侧的门框／桌角／人被切掉一半，对焦点不一定落在主体上，主体边缘偏软。',
+  '- 全图只有上面点名的那一处光源（那颗灯泡／那块屏幕／那扇窗），光只从它那一侧来；照不到的地方直接黑下去。不许第二处补光，不许轮廓光、逆光光斑、体积光、灯带。',
+  '- 不磨皮、不HDR、不加电影感滤镜、不加高级氛围调色；背景不许奶油虚化，该看得出乱就看得出乱。',
+  '- 场景是有人正在过日子的：桌面有水渍茶垢、墙上有灰点裂纹、线头乱丢、拖鞋歪着；再带上两三件上面没写但当场一定有的小东西（纸团、塑料袋、半杯水、遥控器）。不许样板间、不许杂志摆拍、不许一尘不染。',
+  '- 画面里的人一律不看镜头：只给侧脸、后脑、手、背影；皮肤粗糙、指甲缝有灰、衣服带汗渍和粉尘，不要用模特。',
+  '- 屏幕、纸张、包装、门牌上的字全部虚化成看不清的色块；只有上面点名要看清的那几样允许清晰。',
+].join('\n');
 /** 这一套图的默认配文档（某一张自己换过档只看那一张的 cap，不进这里） */
 function npCapOf(look) { const k = VisualMotif.captionOf(npLookShape(look).cap); return k || VisualMotif.captionOf(NP_LOOK_XHS.cap); }
 function npCapDef(k) { return VisualMotif.captionDef(k); }
@@ -9975,7 +11213,7 @@ function npBlankBlock(w, it) {
   L.push('【这一屏的字是后压的，你不许画进去】图上要放的那几句话由扩展本地压上去（共 ' +
     plan.rows.length + ' 行' + (plan.labels.length ? ' ＋ ' + plan.labels.length + ' 条短标注' : '') +
     (plan.note ? ' ＋ 角落一行小注' : '') + '），这一张里不许出现任何我们要压的字。');
-  L.push('字位＝' + zt + '：那一格留干净的底——压暗、不许放主体，也不许摆进上面元素清单点名的凭据；主体与凭据摆到对角那一半，整张画面要一眼看得懂在说什么。');
+  L.push('字位＝' + zt + '：那一格留干净的底——压暗、不许有亮边和细碎纹理（那是压白字的地方，花纹会把字吃掉），不许放主体，也不许摆进上面元素清单点名的凭据；主体与凭据摆到对角那一半，整张画面要一眼看得懂在说什么。');
   if (plan.labels.length) {
     L.push('那几条标注是压上去的引线＋短句，指着的就是画面里那几样东西，所以它们各自周围要留出能落一条线的空（别挤在字位那一格里）：\n' +
       plan.labels.map(x => '· ' + x.at).join('\n'));
@@ -10219,6 +11457,7 @@ function npShotPromptText(w, it, i, total) {
   const look = npLookOf(w);
   const token = npLookToken(look) || String((w.shots && w.shots.style) || '').trim();
   const lines = [vw.image + ' 第 ' + (i + 1) + ' 张（共 ' + total + ' 张，' + vw.size + '，跟这一套其他张必须是同一风格）'];
+  lines.push(NP_ONE_SHOT_GUARD);
   const scene = npSceneBlocks(it);
   if (scene.length) {
     lines.push(scene.join('\n'));
@@ -10226,6 +11465,8 @@ function npShotPromptText(w, it, i, total) {
   }
   lines.push(npBlankBlock(w, it));
   if (token) lines.push('每一张都带的固定元素：' + token);
+  lines.push(npCastingLine(look));
+  if (npSnapOn(look)) lines.push(NP_SNAP_RULES);
   lines.push(NP_FILM_BG);
   lines.push(NP_PROP_RULES);
   lines.push('不出现二维码 / 联系方式；不写夸大效果的词。');
@@ -10242,10 +11483,13 @@ function npCoverPromptCompose(w, body) {
   const zt = VisualMotif.zoneTitle((cv.cap && cv.cap.zone) || 'bc') || '下中';
   const md = npMarkDesc(look, w.dir);
   return [vw.cover + '／首图那一张（' + vw.size + '，跟这一套其他张同一风格）：这一篇的第一眼，要让人停下手指点进来',
+    NP_ONE_SHOT_GUARD,
     String(body || '').trim(),
-    '这一张的字（就是 ② 上面那一句文案）由扩展本地压上去，你不许画进去：字位＝' + zt + '，那一格留干净的底、压暗，主体摆到对角那一半。',
+    '这一张的字（就是 ② 上面那一句文案）由扩展本地压上去，你不许画进去：字位＝' + zt + '，那一格留干净的底、压暗、不许有亮边和细碎纹理，主体摆到对角那一半。',
     md ? '印记也由扩展本地盖上去，你不许画：' + md + '；盖它的那一角留干净的底。' : '',
     token ? '每一张都带的固定元素：' + token : '',
+    npCastingLine(look),
+    npSnapOn(look) ? NP_SNAP_RULES : '',
     NP_FILM_BG, NP_PROP_RULES, '不出现二维码 / 联系方式；不写夸大效果的词。'].filter(Boolean).join('\n');
 }
 
@@ -11723,15 +12967,24 @@ const NP_DEMO_THEME = {
 };
 
 
-/** ① 这一套图的风格（六十六改按 demo 收口：只留四行——引流提示 / 画面风格三颗＋跟账号默认 / 配文方式竖列 / 回默认行）。
- *  画面风格只出三颗短名单，账号自加与其余派的完整名单还在工作台「＋ 一套图（先挑流派）」那一排；
- *  三类轴与出图张数旋钮撤下：轴值仍随旧档与「任务配置 · 🎨 出图风格」往返，面板不再铺。 */
+/** ① 这一套图的风格（六十六改按 demo 收口：引流提示 / 画面风格三颗＋跟账号默认 / 配文方式竖列 / 回默认行；
+ *  七十一改补回「画面形式」那一排：老板「我出图文的时候，你就要把这个风格写清楚了：究竟是实拍还是随拍，还是动漫」——
+ *  这一轴以前藏在账号默认里、面板不摆，结果每一张提示词都没说清是随拍还是画的，引擎一律往广告片上靠。
+ *  出图张数旋钮仍撤下：轴值随旧档与「任务配置 · 🎨 出图风格」往返。画面风格只出三颗短名单，账号自加与其余派的完整名单在「＋ 一套图（先挑流派）」那一排。 */
 function npLookPanelHtml(w) {
   const eff = npLookOf(w);
   const cap = npCapOf(eff);
   const motif = String(eff.motif || '');
   const drain = String(w.dir || '') === 'd';
   const own = npLookOwn(w, 'motif');
+  const bornAxis = NP_LOOK_AXES.filter(a => a.k === 'born')[0];
+  const bornOwn = npLookOwn(w, 'born');
+  const bornChip = (v) => {
+    const on = bornOwn && String(eff.born || '') === v;
+    return '<button type="button" class="np-born" data-v="' + npArAttr(v) + '" style="border:1px solid ' +
+      (on ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:999px;background:' + (on ? 'var(--c-brand-soft)' : '#fff') + ';color:' +
+      (on ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">' + esc(v) + '</button>';
+  };
   const motifChip = (k) => {
     const on = own && motif === k;
     return '<button type="button" class="np-motif" data-k="' + npArAttr(k) + '" title="' + npArAttr(npMotifTip(npMotifOf(k))) + '" style="border:1px solid ' +
@@ -11751,6 +13004,12 @@ function npLookPanelHtml(w) {
   return '<div style="border:1px solid #e9e4fb;border-radius:9px;background:#fdfcff;padding:9px 11px;">' +
     (drain ? '<div style="background:#f5f0ff;border-radius:8px;padding:7px 10px;color:#6d28d9;font-size:11px;line-height:1.6;margin-bottom:8px;">\uD83D\uDEB0 这是引流笔记——<b>画面不限风格</b>，图跟着素材和热点走；下面想拨就拨，只管这一套。</div>' : '') +
     '<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-top:2px;">' +
+      '<span style="min-width:62px;font-size:11px;font-weight:700;color:#374151;">\uD83D\uDCF7 ' + esc(bornAxis.t) + '</span>' +
+      '<span style="font-size:10px;color:#9aa0ac;">' + esc(bornAxis.d) + '（选「手机随拍」时，每一张的提示词会自动钉死一套真实感要求）</span>' +
+      '<span style="display:flex;gap:4px;flex-wrap:wrap;">' + bornAxis.opts.map(bornChip).join('') +
+      '<button type="button" class="np-born" data-v="" title="' + npArAttr('这一套跟账号默认走（改默认在「任务配置 · 出图风格」那一页）') + '" style="border:1px dashed var(--line);border-radius:999px;background:' + (!bornOwn ? 'var(--c-brand-soft)' : '#fff') + ';color:' + (!bornOwn ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">跟账号默认</button>' +
+      '</span></div>' +
+    '<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-top:8px;">' +
       '<span style="min-width:62px;font-size:11px;font-weight:700;color:#374151;">\uD83C\uDFA8 画面风格</span>' +
       '<span style="font-size:10px;color:#9aa0ac;">往哪儿取材＋什么画法</span>' +
       '<span style="display:flex;gap:4px;flex-wrap:wrap;">' + NP_LOOK_MOTIFS.map(m => motifChip(m.k)).join('') + extra +
@@ -12581,7 +13840,9 @@ async function npAutoPlaceNote(noteId) {
     if (Object.keys(q).some(k => q[k].indexOf(id) >= 0)) return { placed: false, already: true };
     const kind = NP_DIR_KIND[n.dir] || '';
     if (!kind) {
-      toast('「' + (npNoteTitleOf(n) || '这篇') + '」还没定方向——先待在发布台「🆕 写好等排期」');
+      /* 五十改 ?v=71：IP 篇有方向、只是排法里没有 IP 类——别报「还没定方向」（排期方式还没定，不自动找位子） */
+      toast(n.dir === 'i' ? '「' + (npNoteTitleOf(n) || '这篇') + '」是 🎭 玩法篇——先在「🆕 写好等排期」里「📅 自己选位子」挑个位子排上'
+        : '「' + (npNoteTitleOf(n) || '这篇') + '」还没定方向——先待在发布台「🆕 写好等排期」');
       return { placed: false, why: 'nodir' };
     }
     const wp = await npWeekPlanRead();
@@ -12881,12 +14142,14 @@ async function npNoteQueueShapeMigrate() {
 function npArchiveHasWork(w) {
   if (!w) return false;
   if (w.draft && String(w.draft.content || '').trim()) return true;
+  if (String(w.ipPlay || '').trim()) return true;   // 🎭 IP 线挑过组合（还没编故事）也算半篇
   return !!((w.chosen || []).length || (w.chosenPeople || []).length || (w.topics || []).length || (w.voice || '').trim());
 }
 
-/** A1 三方向分流：从向导状态反推 dir（'k' 知识 / 'd' 引流 / 'c' 案例 / 'old' 老档） */
+/** A1 三方向分流：从向导状态反推 dir（'k' 知识 / 'd' 引流 / 'c' 案例 / 'i' IP 玩法 / 'old' 老档） */
 function dirFromWiz(w) {
   if (!w) return 'old';
+  if (String(w.dir || '') === 'i') return 'i';   // 🎭 IP 线最先判：出料后 dOut='img' 会被下一条误判成 'd'（五十二改）
   if (w.kOut) return 'k';
   if (w.dOut) return 'd';
   if ((w.outline || []).length) return 'c';
@@ -12976,6 +14239,9 @@ function npArchiveData(w) {
         cat: String(w.drainPick.cat || ''), title: String(w.drainPick.title || ''),
         line: String(w.drainPick.line || ''), turn: String(w.drainPick.turn || ''), body: String(w.drainPick.body || ''),
       } : null,
+      // 🎭 IP 线（五十二改）：挑中的主题×方式——接着写时 npIsI 要认它；故事候选不进档（重进 ② 自动重编一批）
+      ipPlay: String(w.ipPlay || ''), ipTheme: String(w.ipTheme || ''),
+      ipThemeFam: String(w.ipThemeFam || ''), ipCustom: !!w.ipCustom,
     },
     // 缩略图只存引用：记「哪条卖点」，显示时现去库里取配图（库里换了图，档案跟着变）
     thumb: (first && first.image) ? { kind: 'sell', ref: String(first.point || '') } : null,
@@ -13356,7 +14622,7 @@ function npArNext(n, film) {
       if (!film || !film.outAt) return { lab: '✏️ 编辑', tip: '几条都传回来了——进向导拼片配音（旁白念完的为准：镜头按旁白裁齐＋字幕＋配音），标成「代发」', dim: false, to: 'dv' };
       return { lab: '🎬 成片预览', tip: '片已出——点开能看片、也能「💾 再下一遍」', dim: false, to: 'preview' };
     }
-    if (!film || !((film.scenes || []).length)) return { lab: '✏️ 编辑', tip: '稿子定了——进字效：先调口播稿、提重点分幕，配好动效 ▶️ 出片', dim: false, to: 'film' };
+    if (!film || !((film.scenes || []).length)) return { lab: '✏️ 编辑', tip: '稿子定了——进字效：进站自动出口播稿＋提重点＋切幕，配好动效 ▶️ 出片', dim: false, to: 'film' };
     if (!film.outAt) return { lab: '✏️ 编辑', tip: '分幕有了——进字效 ▶️ 出片', dim: false, to: 'film' };
     return { lab: '🎬 成片预览', tip: '片已出——点开能看片、也能「💾 再下一遍」／回台子再改一版', dim: false, to: 'preview' };
   }
@@ -13450,17 +14716,32 @@ async function npArFilmDoc(id) {
 }
 function npArNoGo(msg) { if (typeof toast === 'function') toast(msg, 'error'); }
 
-/** 档案那行那颗「下一步」：带着这一篇进字效编辑器（口播稿有就带上、没有进站自动调；分幕草稿按那一行的 key 捡回来；缺料的话术走 npArCan） */
+/** 这一篇在工作流里的前几站（五十四改：递给字效编辑器顶上那条条——站名＋点了把工作流摆回哪一站）。
+ *  片台里那一站（🎬 分幕，七十一改并成一屏）由编辑器自己画（video.js 的 FILM_STATIONS），这里只递前头走来的那几站。 */
+function npFilmFlowOf(n) {
+  if (!n) return [];
+  if (String(n.kOut || '')) return [{ t: '挑知识', to: 'pick' }, { t: '改稿', to: 'rewrite' }];
+  if (String(n.dir || '') === 'i') return [{ t: '挑组合', to: 'pick' }, { t: '改稿', to: 'rewrite' }];
+  if (String(n.dOut || '')) return [{ t: '挑稿', to: 'pick' }, { t: '改稿', to: 'rewrite' }];
+  return [{ t: '改稿', to: 'rewrite' }];
+}
+
+/** 档案那行那颗「下一步」：带着这一篇进字效编辑器（口播稿调过才带、没调过进站自动调；分幕草稿按那一行的 key 捡回来；缺料的话术走 npArCan） */
 async function npArOpenFilm(n) {
   const rows = npFilmRowsOf(n);
   const main = rows[0] || null;
   const kind = (main && main.kind) || String(n.filmKind || '');
   const msg = npArCan(n, 'film');
   if (msg) { npArNoGo(msg); return; }
+  // 五十四改：出口落档那份 voice＝正文同文（那是「稿子定了」的记号，不是口播稿）——同文就别当稿递进去，
+  // 空着进站让台子按正文自动调一版（老板投诉的「一进去口播稿是空的／就是正文」正是这里）；调过的 voice 跟正文不一样，照原样续上。
+  const draft = String(n.draft || '').trim();
+  const voice = String(n.voice || '').trim();
   npGoFilm({
     noteId: n.id, title: n.title || ((n.titles || [])[0] || ''),
-    script: String(n.voice || ''), kind: kind, rowId: (main && main.id) || '',
+    script: (voice && voice !== draft) ? voice : '', kind: kind, rowId: (main && main.id) || '',
     shots: n.shots, rows: rows, pid: String(n.platform || 'xhs'),
+    flow: npFilmFlowOf(n),
     body: String(n.draft || ''), style: String(n.style || ''),
     sellPoint: (n.sellPoints || []).map(x => {
       const p = String((x && x.point) || '').trim();
@@ -13679,7 +14960,8 @@ function ensureNpArDelegation(container) {
       const n = (await npNotesAll()).find(x => x && x.id === id);
       const g = n ? await npAsGapsFor([n]) : {};
       _npAsFocus = ((g[id] || [])).map(x => x.id);   // 跳过去高亮这几个集合，别让用户自己找
-      _npAsColl = null;                              // 落点＝集合墙（红框那几个在下面）
+      _npAsColl = null;                              // 落点＝「🗂 集合配置」签（红框那几个在下面）
+      _npAsTab = 'cfg';
       switchMainTab('noteAssets');
       if (_npAsFocus.length && typeof toast === 'function') toast('还缺料的 ' + _npAsFocus.length + ' 个集合在下面（红框）——点进去传图就补上');
       return;
@@ -14350,7 +15632,7 @@ async function renderNoteQueue(container) {
     '<div style="margin-top:10px;border:1px solid #f0e3c8;background:#fffbf2;border-radius:10px;padding:8px 12px;">' +
       '<div style="font-size:12px;font-weight:700;color:#8a6d3b;">🆕 写好等排期 <span class="note-xs">这些篇标了「代发」还没进位子——🎯 自动排最早的空位；📅 自己挑位子（空位 / 已排的都能选、能叠，想去的那天没排法当场补一天）</span></div>' +
       pend.map(n => {
-        const kindLab = { k: '📚 知识', d: '🔥 引流', c: '🎬 案例' }[n.dir];
+        const kindLab = { k: '📚 知识', d: '🔥 引流', c: '🎬 案例', i: '🎭 IP玩法' }[n.dir];
         return '<div class="npq-pendrow" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f6ead1;">' +
           '<span style="flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(titleOf(n)) + '</span>' +
           '<span class="note-xs" style="flex:none;">' + (kindLab || '（还没定方向）') + '</span>' +
@@ -14878,9 +16160,9 @@ async function npPubStageFiles(id, files, isVideo) {
    方向（dir）与最终效果（form / kOut / dOut）在这一刻定死，之后跟着「下一步」走这条路的工作流；
    没有方向的老数据（dir='old'）不进这里，还是原 6 步向导。 */
 const NP_DIR_META = {
-  k: { chip: '📚 知识' }, d: { chip: '🔥 引流' }, c: { chip: '🎬 案例' },
+  k: { chip: '📚 知识' }, d: { chip: '🔥 引流' }, c: { chip: '🎬 案例' }, i: { chip: '🎭 IP玩法' },
 };
-const NP_DIR_SUB = { k: '立专业：拿知识库讲一条', d: '抓流量：AI 出 18 版挑一版', c: '加信度：散素材拼成片' };
+const NP_DIR_SUB = { k: '立专业：拿知识库讲一条', d: '抓流量：AI 出 18 版挑一版', c: '加信度：散素材拼成片', i: '立人设：挑一招招牌，AI 编故事你挑' };
 /** 方向 × 最终效果（白话口径：选了卡，这条工作流就定了——跟着「下一步」一步步走到发布） */
 const NP_DIR_EFFECTS = {
   k: [
@@ -14894,6 +16176,10 @@ const NP_DIR_EFFECTS = {
   ],
   c: [
     { f: '案例成片', ic: '🎬', t: '案例成片', d: '自己的散素材合并成一条，每段配讲解配音——加信度。', lv: '出一支成片' },
+  ],
+  /* 🎭 IP 玩法（五十二改）：一张卡进五站流——挑组合 → AI 编故事 → 改稿 → 出料（图文）→ 发布；只出图文 */
+  i: [
+    { f: '', ic: '🎭', t: 'IP 玩法', d: '先挑主题、再挑方式（或让 AI 直接配好一套）——AI 按这套编几段故事给你挑，挑完直接出稿，出料就出图文（AI 提炼重点、配文写进提示词，字连图一起出，图传回来就完）。', lv: '一条有梗、有人味的内容' },
   ],
 };
 /** 最终形式的口径（六卡页与档案列表共用）：ic / t＝叫法，level＝那一档交付什么 */
@@ -14947,10 +16233,10 @@ function npDirPageHtml() {
       NP_DIR_EFFECTS[dir].map(e => effCard(dir, e)).join('') +
     '</div>';
   const memo = (_npDirMemo && NP_DIR_META[_npDirMemo.dir])
-    ? '上次建的：' + NP_DIR_META[_npDirMemo.dir].chip + ' · ' + esc(npFormName(_npDirMemo.eff)) + '。'
+    ? '上次建的：' + NP_DIR_META[_npDirMemo.dir].chip + (_npDirMemo.eff ? ' · ' + esc(npFormName(_npDirMemo.eff)) : '') + '。'
     : '';
   return '<h3>这一篇按哪个组合做？——点一张卡直接开工</h3>' +
-    dirRow('k') + dirRow('d') + dirRow('c') +
+    dirRow('i') + dirRow('k') + dirRow('d') + dirRow('c') +
     '<div class="modal-footer" style="align-items:center;justify-content:space-between;gap:8px;">' +
       '<span style="flex:1;min-width:0;font-size:11px;color:var(--c-ink-3,#8b95a3);line-height:1.7;">' + memo +
         '定了组合，这条工作流就定了——跟着「下一步」一步一步走到发布。</span>' +
@@ -15021,10 +16307,18 @@ let _npAsDelegated = false;
 let _npAsNew = false;      // 「新建集合」弹窗开着没
 let _npAsNewDesc = '';     // 弹窗里写了一半的说明（重画不丢）
 let _npAsNewPicked = [];   // 弹窗里已选的图（先攒缩略图，保存时一起落盘）
-let _npAsColl = null;      // 当前打开的集合 id（null＝集合墙）
+let _npAsColl = null;      // 当前打开的集合 id（「🎞 素材内容」签里选中的那一集）
 let _npAsQ = '';           // 集合墙搜索词
 let _npAsContainer = null; // 渲染容器（播放器 HUD 重画时要用）
 let _npClipsCache = [];    // 最近一次渲染读到的片段表（播放器用同一份，渲染即刷新）
+/* 两签改版（2026-10-15）的页面态：签 A 管集合（归类 / 用不用），签 B 管选中集合里那一条条料 */
+let _npAsTab = 'cfg';      // 'cfg'＝🗂 集合配置 / 'con'＝🎞 素材内容
+let _npAsChk = false;      // 「🩺 这类该不该有料」那块展开没
+let _npAsNewKind = '';     // 新建集合弹窗里挑的类
+let _npAsNewUse = 'ask';   // 新建集合弹窗里挑的用/不用
+let _npAsEdit = '';        // 集合编辑弹窗在改哪个集合（''＝没开）
+let _npAsEditKindOnly = 0; // 1＝只让它改类（从类 chip 进来的），名目与说明灰着
+let _npAsEditDraft = null; // 弹窗里改了一半的 { name, desc, kind, use }（点「保存」才落盘）
 
 async function npAsAssetsRead() {
   try {
@@ -15069,7 +16363,9 @@ function npAsClassifySource(source, sellTitles, kbTitles) {
 
 function npAsColItems(colId) { return (_npClipsCache || []).filter(c => c && c.col === colId); }
 
-/** 档案那侧要的缺口：这一篇挂的卖点 / 知识库对上哪个集合来源、且集合还空着＝缺（空集合＝待补充） */
+/** 档案那侧要的缺口：这一篇挂的卖点 / 知识库对上哪个集合来源、且集合还空着＝缺（空集合＝待补充）
+ *  2026-10-16 老板定口径：只报明确「在用」的集合——停用和「还没定」的一律不催，
+ *  没拍板的事别拿去打扰他（要补料了自己到素材库里点开关） */
 async function npAsGapsFor(notes) {
   const gaps = {};
   if (!notes || !notes.length) return gaps;
@@ -15087,6 +16383,7 @@ async function npAsGapsFor(notes) {
   notes.forEach(n => {
     const hit = [];
     cols.forEach(col => {
+      if (npAsUseOf(col) !== 'on') return;
       const p = String(col.source || '').split('|');
       if (p[0] !== 'sell' && p[0] !== 'kb') return;
       if (!hitOne(p, n)) return;
@@ -15239,6 +16536,178 @@ async function npAsGen(container) {
   renderNoteAssets(container);
 }
 
+/* ── 🤖 按账号诊断配（两签改版 2026-10-15）：判 18 类该不该有料 → 集合归类 → 本地推「这一集这次用不用」 ──
+   判类吃诊断已有的格子（问卷 1/3/11 题 ＋ 账号类型 ＋ 知识库八分类 ＋ 产品），不新开问题；
+   答完诊断顺手配一次（问卷提交成功后自动跑），页上「🤖 重新配置」再点一轮；
+   人改过的不覆盖：类那一层的翻案记在 kindState.own，集合那一层记在 col.mine。 */
+async function npAsKindFingerprint() {
+  const base = await npAsFingerprint();
+  let extra = '';
+  try {
+    const c = await readConfigPlain();
+    const dz = (c && c.diagnosis) || {};
+    extra = [String(dz.accountType || '').trim(),
+      (Array.isArray(dz.answers) ? dz.answers : []).map(a => String((a && a.answer) || '').trim()).join('|')].join('#');
+  } catch (_) {}
+  return base + '@' + extra.slice(0, 1200);
+}
+
+async function npAsConfigKinds(container, opts) {
+  if (_npAsBusy) return;
+  const force = !!(opts && opts.force);
+  _npAsBusy = true;
+  renderNoteAssets(container);
+  try {
+    const cols = await npCollectionsRead();
+    const clips = await npClipsRead();
+    const cnt = {};
+    clips.forEach(c => { if (c && c.col) cnt[c.col] = (cnt[c.col] || 0) + 1; });
+    const st = await npAsKindStateRead();
+    const fp = await npAsKindFingerprint();
+    let usedAi = false;
+    if (force || !fp || st.tried !== fp) {
+      // 出手前先记账：这一版诊断哪怕没配上（AI 挂了、判空）也别在切页面时反复烧；要重来点「🤖 重新配置」
+      st.tried = fp;
+      try { await npAsKindStateWrite(st); } catch (_) {}
+      const r = await chrome.runtime.sendMessage({
+        action: 'configAssetKinds',
+        data: { cols: cols.map(c => ({ name: c.name, desc: c.desc, source: c.source, has: cnt[c.id] || 0 })) },
+      });
+      if (!r || r.ok === false || !r.kinds) throw new Error((r && r.error) || 'AI 没判出这 18 类');
+      st.sig = fp; st.at = Date.now(); st.kinds = r.kinds;
+      usedAi = true;
+      // 归类只填还没归过的集合（人手动归过的不动）
+      const byName = {};
+      (Array.isArray(r.cols) ? r.cols : []).forEach(x => { if (x && x.name && x.kind && !byName[x.name]) byName[x.name] = x.kind; });
+      cols.forEach(c => { if (!c.kind) { const k = byName[String(c.name || '').trim()]; if (k) c.kind = k; } });
+    }
+    const stageTxt = (typeof _ntStageName === 'function' ? _ntStageName() : '') || '本阶段';
+    let on = 0, off = 0, ask = 0, kept = 0;
+    cols.forEach(c => {
+      const cur = npAsUseOf(c);
+      if (c.mine) { kept++; cur === 'on' ? on++ : cur === 'off' ? off++ : ask++; return; }
+      const nv = AssetKinds.useVerdict({
+        v: c.kind ? npAsKindV(st, c.kind) : '',
+        why: npAsKindWhy(st, c.kind),
+        has: cnt[c.id] || 0, source: c.source, stageTxt: stageTxt,
+      });
+      c.use = nv.use; c.why = nv.why;
+      nv.use === 'on' ? on++ : nv.use === 'off' ? off++ : ask++;
+    });
+    // 该备但一个集合都没有的类：直接开空集合（墙上多一行「待补充」，传图就补上）
+    let opened = 0;
+    NP_ASSET_KINDS.forEach(x => {
+      if (npAsKindV(st, x.k) !== 'need') return;
+      if (cols.some(c => c && c.kind === x.k)) return;
+      cols.push({
+        id: npCollectionId(), name: x.n, desc: x.need, source: '自己加的', manual: true, link: null,
+        kind: x.k, use: 'ask', why: 'AI 判这一类该备，这一集是刚开的空集合——传图进去就补上', at: Date.now(),
+      });
+      opened++; ask++;
+    });
+    await npCollectionsWrite(cols);
+    await npAsKindStateWrite(st);
+    _npAsFocus = [];
+    if (typeof toast === 'function') {
+      toast('AI 配完：用 ' + on + ' · 停用 ' + off + ' · 还没定 ' + ask +
+        (kept ? '（你改过的 ' + kept + ' 条没动）' : '') +
+        (opened ? '；新开空集合 ' + opened + ' 个' : '') +
+        (usedAi ? '' : '（诊断与卖点没变，只重推了用不用）'));
+    }
+  } catch (e) {
+    if (typeof toast === 'function') toast('配置集合失败：' + String((e && e.message) || e), 'error');
+  }
+  _npAsBusy = false;
+  renderNoteAssets(container);
+}
+
+/** 人翻案某一类的判定（need / no / ask）；改回 AI 判的那一档就撤掉覆盖 */
+async function npAsSetKindV(k, v) {
+  const st = await npAsKindStateRead();
+  if (!npAssetKindOf(k)) return;
+  const ai = st.kinds && st.kinds[k] && st.kinds[k].v;
+  const back = (v === 'gray' && npAsGrayKind(k) && !ai) || v === ai;
+  if (back) delete st.own[k]; else st.own[k] = v;
+  await npAsKindStateWrite(st);
+}
+
+/** 人直接改这一集的用 / 停用 / 还没定：打上「你改过」，AI 重算不覆盖 */
+async function npAsSetColUse(container, id, u) {
+  const cols = await npCollectionsRead();
+  const col = cols.find(x => x && x.id === id);
+  if (!col) return;
+  col.use = (u === 'on' || u === 'off' || u === 'ask') ? u : 'ask';
+  col.mine = 1;
+  await npCollectionsWrite(cols);
+  renderNoteAssets(container);
+  if (typeof toast === 'function') toast('「' + esc(String(col.name || '')) + '」' +
+    (col.use === 'on' ? '启用了——参与挑料、报缺口' : col.use === 'off' ? '停用了——里面的料还在，不算缺' : '标成还没定'));
+}
+
+/** 类那一档点一下换下一档：灰档那三类从「不用备」起步（人翻案才进池），其余 该备 → 不用备 → 待你定 */
+async function npAsKindCycle(container, k) {
+  const st = await npAsKindStateRead();
+  const order = npAsGrayKind(k) ? ['gray', 'need', 'no', 'ask'] : ['need', 'no', 'ask'];
+  const next = order[((order.indexOf(npAsKindV(st, k)) + 1) % order.length + order.length) % order.length];
+  await npAsSetKindV(k, next);
+  renderNoteAssets(container);
+}
+
+/** 改集合弹窗：kindOnly＝从类 chip 进来的，只让改归类（名目与说明灰着）；点「保存」才落盘 */
+async function npAsColEditOpen(container, id, kindOnly) {
+  const cols = await npCollectionsRead();
+  const col = cols.find(x => x && x.id === id);
+  if (!col) return;
+  _npAsEdit = col.id;
+  _npAsEditKindOnly = kindOnly ? 1 : 0;
+  _npAsEditDraft = {
+    name: String(col.name || ''), desc: String(col.desc || ''),
+    kind: String(col.kind || ''), use: npAsUseOf(col),
+  };
+  renderNoteAssets(container);
+}
+async function npAsColEditSave(container) {
+  const id = _npAsEdit, d = _npAsEditDraft;
+  if (!id || !d) return;
+  const cols = await npCollectionsRead();
+  const col = cols.find(x => x && x.id === id);
+  if (!col) { npAsColEditClose(); renderNoteAssets(container); return; }
+  if (!_npAsEditKindOnly) {
+    const nm = String(d.name || '').trim().slice(0, 30);
+    if (nm) col.name = nm;
+    col.desc = String(d.desc || '').trim().slice(0, 300);
+  }
+  const kindChanged = String(col.kind || '') !== String(d.kind || '');
+  col.kind = String(d.kind || '');
+  if (String(d.use || '') !== npAsUseOf(col)) { col.use = d.use; col.mine = 1; }
+  if (kindChanged && !col.mine) {
+    // 归类改了、这集又是 AI 配的 → 用不用跟着这一类的判定重推一遍（人定过的不动）
+    const st = await npAsKindStateRead();
+    const nv = AssetKinds.useVerdict({
+      v: col.kind ? npAsKindV(st, col.kind) : '',
+      why: npAsKindWhy(st, col.kind),
+      has: npAsOnCount(col.id), source: col.source,
+      stageTxt: (typeof _ntStageName === 'function' ? _ntStageName() : '') || '本阶段',
+    });
+    col.use = nv.use; col.why = nv.why;
+  }
+  await npCollectionsWrite(cols);
+  npAsColEditClose();
+  renderNoteAssets(container);
+  if (typeof toast === 'function') toast('已保存「' + esc(String(col.name || '')) + '」');
+}
+function npAsColEditClose() { _npAsEdit = ''; _npAsEditKindOnly = 0; _npAsEditDraft = null; }
+
+/** 「➕ 开这个集合」＝带着这一类打开新建弹窗（说明先填这类要什么料，可改） */
+function npAsNewOpenFor(container, k) {
+  const x = npAssetKindOf(k);
+  _npAsNew = true;
+  _npAsNewKind = x ? x.k : '';
+  _npAsNewUse = 'ask';
+  _npAsNewDesc = x ? x.need : '';
+  renderNoteAssets(container);
+}
+
 /* ➕ 新建集合：说明（必填）+ 本机图（可选；先把缩略图攒在 _npAsNewPicked 里），保存时落盘并让 AI 关联知识库 / 卖点 */
 async function npAsNewPick(container, files) {
   const arr = Array.prototype.slice.call(files || []).filter(f => f && /^image\//.test(String(f.type || '')));
@@ -15263,6 +16732,7 @@ async function npAsNewSubmit(container) {
   if (_npAsBusy) return;
   const desc = String(_npAsNewDesc || '').trim();
   if (!desc) { if (typeof toast === 'function') toast('先写集合说明（这个集合装什么料）', 'error'); const el = _npEl(container, 'npasAddDesc'); if (el) el.focus(); return; }
+  if (!_npAsNewKind) { if (typeof toast === 'function') toast('给这一集挑个类（18 类里的一个）——报缺口才准', 'error'); return; }
   _npAsBusy = true;
   renderNoteAssets(container);
   const t0 = _npAsNewPicked[0];
@@ -15270,7 +16740,20 @@ async function npAsNewSubmit(container) {
   if (t0) link = await npAsAskAssoc(desc, t0.name);
   const colId = npCollectionId();
   const cols = await npCollectionsRead();
-  cols.unshift({ id: colId, name: npAsShortTitle(desc), desc: desc, source: '自己加的', manual: true, link: link || null, at: Date.now() });
+  const st0 = await npAsKindStateRead();
+  const picked = !!t0;
+  const lock = !!(_npAsNewUse && _npAsNewUse !== 'ask');
+  const derived = lock ? { use: _npAsNewUse, why: '你自己定的用/停用，AI 重算不覆盖' } : AssetKinds.useVerdict({
+    v: _npAsNewKind ? npAsKindV(st0, _npAsNewKind) : '',
+    why: npAsKindWhy(st0, _npAsNewKind),
+    has: picked ? 1 : 0, source: '自己加的',
+    stageTxt: (typeof _ntStageName === 'function' ? _ntStageName() : '') || '本阶段',
+  });
+  cols.unshift({
+    id: colId, name: npAsShortTitle(desc), desc: desc, source: '自己加的', manual: true, link: link || null,
+    kind: _npAsNewKind || '', use: derived.use, why: derived.why,
+    mine: lock ? 1 : 0, at: Date.now(),
+  });
   await npCollectionsWrite(cols);
   if (t0) {
     const clips = await npClipsRead();
@@ -15332,18 +16815,60 @@ async function npAsUpload(container, files) {
   renderNoteAssets(container);
 }
 
+async function npAsColById(id) {
+  const cols = await npCollectionsRead();
+  return cols.filter(c => c && c.id === id)[0] || null;
+}
+
 function ensureNpAsDelegation(container) {
   if (_npAsDelegated) return;
   _npAsDelegated = true;
-  container.addEventListener('click', function (ev) {
+  container.addEventListener('click', async function (ev) {
     const t = ev.target;
     if (!t || !t.closest) return;
     const cl = (sel) => t.closest(sel);
     if (t.classList && t.classList.contains('npas-modal')) {   // 点弹窗外面的灰底＝关掉
       _npAsNew = false; _npAsNewDesc = ''; _npAsNewPicked = []; renderNoteAssets(container); return;
     }
+    if (t.classList && t.classList.contains('npas-modal-edit')) { npAsColEditClose(); renderNoteAssets(container); return; }
+    const tab = cl('.nt-tab') || cl('.npas-tabback');
+    if (tab) { _npAsTab = tab.getAttribute('data-tab') === 'con' ? 'con' : 'cfg'; npAsStop(); renderNoteAssets(container); return; }
+    if (cl('.npas-cfg')) { npAsConfigKinds(container, { force: true }); return; }
+    if (cl('.npas-chk')) { _npAsChk = !_npAsChk; renderNoteAssets(container); return; }
+    const kv2 = cl('.npas-kv2');
+    if (kv2) { await npAsSetKindV(kv2.getAttribute('data-k') || '', kv2.getAttribute('data-v') || ''); renderNoteAssets(container); return; }
+    const kv = cl('.npas-kv');
+    if (kv) { await npAsKindCycle(container, kv.getAttribute('data-k') || ''); return; }
+    const sw = cl('.npas-sw');
+    if (sw) { const c0 = await npAsColById(sw.getAttribute('data-id') || ''); if (!c0) return;
+      const u = npAsUseOf(c0); await npAsSetColUse(container, c0.id, u === 'on' ? 'off' : u === 'off' ? 'ask' : 'on'); return; }
+    const ut = cl('.npas-usetoggle');
+    if (ut) { const c0 = await npAsColById(ut.getAttribute('data-id') || ''); if (!c0) return;
+      await npAsSetColUse(container, c0.id, npAsUseOf(c0) === 'on' ? 'off' : 'on'); return; }
+    const kd = cl('.npas-kd');
+    if (kd) { npAsColEditOpen(container, kd.getAttribute('data-id') || '', true); return; }
+    const ed = cl('.npas-ed');
+    if (ed) { npAsColEditOpen(container, ed.getAttribute('data-id') || '', false); return; }
+    const mk = cl('.npas-mk');
+    if (mk && _npAsEditDraft) { _npAsEditDraft.kind = mk.getAttribute('data-k') || ''; renderNoteAssets(container); return; }
+    const mu = cl('.npas-mu');
+    if (mu && _npAsEditDraft) { _npAsEditDraft.use = mu.getAttribute('data-v') || 'ask'; renderNoteAssets(container); return; }
+    if (cl('.npas-ed-save')) { npAsColEditSave(container); return; }
+    if (cl('.npas-ed-cancel')) { npAsColEditClose(); renderNoteAssets(container); return; }
+    const go = cl('.npas-go') || cl('.npas-col-open');
+    if (go) { npAsColOpen(container, go.getAttribute('data-id') || ''); return; }
+    const pk = cl('.npas-pk');
+    if (pk) { _npAsColl = pk.getAttribute('data-id') || ''; npAsStop(); renderNoteAssets(container); return; }
+    const mo = cl('.npas-miss-open');
+    if (mo) { npAsNewOpenFor(container, mo.getAttribute('data-k') || ''); return; }
+    const mn = cl('.npas-miss-no');
+    if (mn) { await npAsSetKindV(mn.getAttribute('data-k') || '', 'no'); renderNoteAssets(container); return; }
+    const nk = cl('.npas-nk');
+    if (nk) { _npAsNewKind = nk.getAttribute('data-k') || ''; renderNoteAssets(container); return; }
+    const nu = cl('.npas-nu');
+    if (nu) { _npAsNewUse = nu.getAttribute('data-v') || 'ask'; renderNoteAssets(container); return; }
     if (cl('.npas-gen')) { npAsGen(container); return; }
-    if (cl('.npas-new-open')) { _npAsNew = true; renderNoteAssets(container); return; }
+    if (cl('.npas-new-open')) { _npAsNew = true; _npAsNewDesc = ''; _npAsNewPicked = []; _npAsNewKind = ''; _npAsNewUse = 'ask'; renderNoteAssets(container); return; }
     if (cl('.npas-new-cancel')) { _npAsNew = false; _npAsNewDesc = ''; _npAsNewPicked = []; renderNoteAssets(container); return; }
     if (cl('.npas-new-save')) { npAsNewSubmit(container); return; }
     if (cl('.npas-new-pick')) { const fi = _npEl(container, 'npasNewFile'); if (fi) { fi.value = ''; fi.click(); } return; }
@@ -15352,8 +16877,6 @@ function ensureNpAsDelegation(container) {
     const up = cl('.npas-up');
     if (up) { _npAsUpCol = up.getAttribute('data-id') || ''; const fi = _npEl(container, 'npasFile'); if (fi) { fi.value = ''; fi.click(); } return; }
     if (cl('.npas-assoc')) { npAsReAssoc(container, cl('.npas-assoc').getAttribute('data-id') || ''); return; }
-    if (cl('.npas-col-open')) { npAsColOpen(container, cl('.npas-col-open').getAttribute('data-id') || ''); return; }
-    if (cl('.npas-back')) { npAsBack(container); return; }
     if (cl('.npas-col-del')) { npAsColDel(container, cl('.npas-col-del').getAttribute('data-id') || ''); return; }
     const idel = cl('.npas-item-del');                       // 删条要排在 jump 前头：× 在卡里侧
     if (idel) { npAsItemDel(container, idel.getAttribute('data-id') || ''); return; }
@@ -15373,23 +16896,34 @@ function ensureNpAsDelegation(container) {
     const t = ev.target;
     if (!t) return;
     if (t.id === 'npasAddDesc') _npAsNewDesc = String(t.value || '');
+    else if (t.id === 'npasEdName' && _npAsEditDraft) _npAsEditDraft.name = String(t.value || '');
+    else if (t.id === 'npasEdDesc' && _npAsEditDraft) _npAsEditDraft.desc = String(t.value || '');
     else if (t.id === 'npasQ') npAsSetQ(container, t.value);
   });
 }
 
-/** 📚 素材库＝集合（demo v41 十五改终态）：第一页集合墙一行一集；点进内页＝图墙＋连播本集（真 <video> 播源切片） */
+/** 📚 素材库＝页内两签（demo v2.1 镜像·2026-10-15 改版）：
+ *  🗂 集合配置＝这一页有哪些集合、各归 18 类里的哪一类、这一集这次用不用（AI 按账号诊断配，人能改，改过的它不覆盖）
+ *  🎞 素材内容＝挑一个集合，管它里面那一条条料（连播＋图墙＋单条改环节 / 知识 / 标签 / 讲解词） */
 async function renderNoteAssets(container) {
   if (!container) return;
   ensureNpAsDelegation(container);
   _npAsContainer = container;
   const cols = await npCollectionsRead();
   _npClipsCache = await npClipsRead();
-  const meta = await npAsColMetaRead();
+  const kindSt = await npAsKindStateRead();
   const clipsAll = _npClipsCache.filter(c => c && !c.imgOnly);
   const imgsAll = _npClipsCache.filter(c => c && c.imgOnly);
+  const kindVOf = (k) => npAsKindV(kindSt, k);
+  const hasOf = (id) => _npClipsCache.filter(c => c && c.col === id).length;
+  const ucount = { on: 0, off: 0, ask: 0, mine: 0 };
+  cols.forEach(c => { ucount[npAsUseOf(c)]++; if (c.mine) ucount.mine++; });
+  const kcount = { need: 0, no: 0, ask: 0, gray: 0 };
+  NP_ASSET_KINDS.forEach(x => { kcount[kindVOf(x.k)]++; });
+  const ownKind = (k) => !!(kindSt.own && kindSt.own[k]);
+  const colOf = (id) => cols.filter(c => c && c.id === id)[0] || null;
 
   const thumbImg = (src, size) => '<img src="' + npArAttr(src) + '" alt="" style="flex:none;width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:6px;border:1px solid #eee;">';
-  const itemsOf = (colId) => npAsColItems(colId);
   const srcChip = (col) => {
     const s = String(col.source || '');
     const p = s.split('|');
@@ -15397,6 +16931,23 @@ async function renderNoteAssets(container) {
     if (p[0] === 'kb') return '<span class="npas-c-chip" style="color:#2e7d32;background:#eaf6ec;">知识库「' + esc(p[1] || '') + '」</span>';
     if (s.indexOf('剪段入库') === 0) return '<span class="npas-c-chip" style="color:#6b7280;background:#f3f4f6;">剪段入库</span>';
     return '<span class="npas-c-chip" style="color:#6b7280;background:#f3f4f6;">自己加的</span>';
+  };
+  const kindChip = (col, editable) => {
+    const x = npAssetKindOf(col.kind);
+    if (!x) return editable
+      ? '<button type="button" class="npas-kd npas-kindchip gray" data-id="' + npArAttr(col.id) + '" title="还没归类——点一下归进 18 类里的一个">还没归类 ✎</button>'
+      : '';
+    const v = kindVOf(x.k);
+    return '<button type="button" class="npas-kd npas-kindchip ' + v + (editable ? '' : ' ro') + '"' +
+      (editable ? ' data-id="' + npArAttr(col.id) + '"' : '') +
+      ' title="' + npArAttr(x.i + '. ' + x.n + '｜这类要什么料：' + x.need + (editable ? '（点一下改归类）' : '')) + '">' +
+      x.i + '. ' + esc(x.n) + (editable ? ' ✎' : '') + '</button>';
+  };
+  const useSw = (col) => {
+    const u = npAsUseOf(col);
+    const txt = u === 'on' ? '✓ 用' : u === 'off' ? '✕ 停用' : '? 还没定';
+    return '<button type="button" class="npas-sw ' + u + '" data-id="' + npArAttr(col.id) + '" title="' +
+      npArAttr('这一集这次用不用——点一下换下一档（用 → 停用 → 还没定）' + (col.mine ? '；这条你改过，AI 重算不覆盖' : '；现在是 AI 按账号诊断配的')) + '">' + txt + '</button>';
   };
   // 图墙一条：有视频段的点图就放那段（.npas-jump）；纯图点一下说明还没剪（.npas-imgonly）；× 删记录（.npas-item-del）
   const gridCard = (c) => {
@@ -15425,13 +16976,201 @@ async function renderNoteAssets(container) {
       '</div>' +
     '</div>';
   };
-  const modal = !_npAsNew ? '' :
+
+  /* ── 签 A 的一行：开关 + 名目 + 来源 / 料数 / 归类 chip + AI 为什么这么配 ── */
+  const colRow = (col) => {
+    const u = npAsUseOf(col), has = hasOf(col.id);
+    const segs = _npClipsCache.filter(c => c && c.col === col.id && !c.imgOnly).length;
+    const focus = _npAsFocus.indexOf(col.id) >= 0;
+    return '<div class="npas-row' + (u === 'off' ? ' off' : '') + (col.mine ? ' mine' : '') + (focus ? ' npas-focus' : '') + '">' +
+      useSw(col) +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">' +
+          '<button type="button" class="npas-col-open" data-id="' + npArAttr(col.id) + '" style="border:none;background:none;padding:0;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer;text-align:left;" title="切到「🎞 素材内容」签，管这一集里面的料">' + esc(col.name) + '</button>' +
+          srcChip(col) + kindChip(col, true) +
+          (has ? '<span class="npas-c-chip" style="color:#374151;background:#f3f4f6;">' + segs + ' 段视频 · ' + (has - segs) + ' 张图</span>'
+               : '<span class="npas-c-chip" style="color:#b45309;background:#fff7e6;">🖼 待补充 · 还没料</span>') +
+          (col.mine ? '<span class="npas-own">你改过</span>' : '') +
+        '</div>' +
+        '<div class="npas-why"><b>AI：</b>' + esc(String(col.why || '') || '（还没配——点上面「🤖 重新配置」）') + '</div>' +
+        (col.desc ? '<div class="npas-desc">' + esc(col.desc) + '</div>' : '') +
+      '</div>' +
+      '<div style="flex:none;display:flex;gap:6px;align-items:center;">' +
+        '<button type="button" class="npas-ed btn btn-sm" data-id="' + npArAttr(col.id) + '" title="改名目 / 说明 / 归类 / 用不用">✎ 改</button>' +
+        '<button type="button" class="npas-go btn btn-sm" data-id="' + npArAttr(col.id) + '" title="切到「🎞 素材内容」签，管这一集里面的料">🎞 配里面的料 ›</button>' +
+      '</div>' +
+    '</div>';
+  };
+  const missRow = (x) => {
+    return '<div class="npas-miss"><span style="flex:1;min-width:0;">这一类该备，还没集合——' + esc(x.need) + '</span>' +
+      '<button type="button" class="npas-miss-open btn btn-sm" data-k="' + npArAttr(x.k) + '">➕ 开这个集合</button>' +
+      '<button type="button" class="npas-miss-no btn btn-sm" data-k="' + npArAttr(x.k) + '" title="这类你账号用不上，标成不用备">这类不用</button></div>';
+  };
+  const askRow = (x) => {
+    return '<div class="npas-miss ask"><span style="flex:1;min-width:0;">' +
+      esc(npAsKindWhy(kindSt, x.k) || ('这一类 AI 判不准（' + x.why + '）——你勾一下')) + '</span>' +
+      '<button type="button" class="npas-kv2 btn btn-sm" data-k="' + npArAttr(x.k) + '" data-v="need">该备</button>' +
+      '<button type="button" class="npas-kv2 btn btn-sm" data-k="' + npArAttr(x.k) + '" data-v="no">不用备</button></div>';
+  };
+  const kindBtn = (x, withV) => {
+    const v = kindVOf(x.k);
+    return '<button type="button" class="npas-kv ' + v + (ownKind(x.k) ? ' mine' : '') + '" data-k="' + npArAttr(x.k) + '" title="' +
+      npArAttr('这类该不该有料——点一下换下一档（该备 → 不用备 → 待你定）｜AI 判据：' + (npAsKindWhy(kindSt, x.k) || x.why)) + '">' +
+      (withV ? AssetKinds.NP_KIND_TEXT[v] : (x.i + '. ' + x.n)) + '</button>';
+  };
+  const grpHd = (x) => {
+    const v = kindVOf(x.k);
+    return '<div class="npas-grp">' + kindBtn(x, true) +
+      '<span class="nm">' + x.i + '. ' + esc(x.n) + '</span>' +
+      '<span class="sub">' + esc(x.need) + '</span>' +
+      (ownKind(x.k) ? '<span class="npas-own">你改过</span>' : '') +
+    '</div>';
+  };
+
+  /* ── 🩺 这类该不该有料（18 类判类表，展开看判据）── */
+  const chkPanel = () => {
+    if (!_npAsChk) return '';
+    const rows = NP_ASSET_KINDS.map(x => {
+      const v = kindVOf(x.k);
+      const n = cols.filter(c => c && c.kind === x.k).length;
+      return '<div class="npas-kindrow' + (v === 'gray' ? ' gray' : '') + '" data-k="' + npArAttr(x.k) + '">' +
+        '<span class="nm">' + x.i + '. ' + esc(x.n) + '</span>' +
+        kindBtn(x, true) +
+        '<span class="tx"><b>判据：</b>' + esc(npAsKindWhy(kindSt, x.k) || x.why) +
+          '<br><b>要什么料：</b>' + esc(x.need) +
+          '<br><b>出图那侧用到它的流派：</b>' + esc(npAssetKindMotifText(x.k)) +
+          (n ? '　<b>集合：</b>' + n + ' 个' : '') + '</span>' +
+      '</div>';
+    }).join('');
+    return '<details class="npas-det" open><summary>🩺 这 18 类该不该有料——AI 按你账号诊断判的（这一层管「要不要有」，集合那行的开关管「这次用不用」）</summary>' +
+      '<div class="card card-pad" style="margin-top:6px;">' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<span class="badge ok">该备 ' + kcount.need + '</span><span class="badge">不用备 ' + kcount.no + '</span>' +
+          '<span class="badge warn">待你定 ' + kcount.ask + '</span>' +
+          '<span class="note-xs">判据吃的是：问卷第 1/3/11 题的勾选项 ＋ 知识库八分类 ＋ 账号类型 ＋ 产品形态（不新开问题）</span>' +
+        '</div>' + rows +
+        '<div class="note-xs" style="margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);">💡 一张顾客返修前后的聊天截图，同时是「案例截图 ＋ 用户UGC ＋ 前后对比」——18 类是<b>扁的标签池</b>，不做层级；集合归一类只为报缺口准。</div>' +
+      '</div></details>';
+  };
+
+  /* ── 签 A：集合配置 ── */
+  const viewCfg = () => {
+    const qlc = _npAsQ.trim().toLowerCase();
+    const hit = (col) => !qlc || (String(col.name || '') + ' ' + String(col.desc || '') + ' ' + String(col.source || '') + ' ' + (npAssetKindOf(col.kind) ? npAssetKindOf(col.kind).n : '')).toLowerCase().indexOf(qlc) >= 0;
+    let h = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px;">' +
+      '<button type="button" class="npas-cfg"' + (_npAsBusy ? ' disabled' : '') + ' style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:' + (_npAsBusy ? 'default' : 'pointer') + ';">' + (_npAsBusy ? '⏳ AI 正在按诊断配…' : '🤖 重新配置（用/不用）') + '</button>' +
+      '<button type="button" class="npas-gen"' + (_npAsBusy ? ' disabled' : '') + ' style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333;font-size:12px;font-weight:600;cursor:pointer;" title="按卖点 × 知识库列出还要备料的集合（同名已有就跳过）">' + (_npAsBusy ? '⏳ 正在整理…' : '🧺 AI 整理素材') + '</button>' +
+      '<button type="button" class="npas-new-open" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333;font-size:12px;font-weight:600;cursor:pointer;">➕ 新建集合</button>' +
+      '<button type="button" class="npas-chk" style="padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;cursor:pointer;">' + (_npAsChk ? '▾' : '▸') + ' 🩺 这类该不该有料（备 ' + kcount.need + ' / 不用 ' + kcount.no + ' / 待你定 ' + kcount.ask + '）</button>' +
+      '<span class="note-xs" style="margin-left:auto;">用 ' + ucount.on + ' · 停用 ' + ucount.off + ' · 还没定 ' + ucount.ask + (ucount.mine ? ' · 你改过 ' + ucount.mine + '（AI 不覆盖）' : '') + '</span>' +
+    '</div>' +
+    '<div class="note-xs" style="margin:-2px 0 10px;">这一排用/停用是<b>答完账号诊断就配好的</b>；改过卖点、重答诊断后点「🤖 重新配置」再算一轮（你手动改过的那几条它不动）。' + (kindSt.at ? '上次配置：' + esc(npArAgo(kindSt.at)) : '') + '</div>' +
+    chkPanel();
+    if (!Object.keys(kindSt.kinds).length) {
+      h += '<div class="npas-nopick" style="margin:0 0 10px;">这一版还没配过——上面那 18 类的「该不该有料」是空的，集合也都还没归类。点「🤖 重新配置（用/不用）」按你的账号诊断判一轮。</div>';
+    }
+    const shown = [];
+    const usedCol = {};
+    const push = (x) => {
+      const cs = cols.filter(c => c && c.kind === x.k && hit(c));
+      cs.forEach(c => { usedCol[c.id] = 1; });
+      let g = grpHd(x) + (cs.map(colRow).join('') || '');
+      const v = kindVOf(x.k);
+      if (v === 'need' && !cols.some(c => c && c.kind === x.k)) g += missRow(x);
+      if (v === 'ask' && !cs.length) g += askRow(x);
+      shown.push({ k: x.k, v, html: g });
+    };
+    NP_ASSET_KINDS.forEach(push);
+    const vis = shown.filter(o => o.v === 'need' || o.v === 'ask' || cols.some(c => c && c.kind === o.k && hit(c)));
+    const ordered = vis.filter(o => o.v === 'ask').concat(vis.filter(o => o.v !== 'ask'));   // 判不准的那几类整组排最前等你勾
+    h += ordered.map(o => o.html).join('');
+    const orph = cols.filter(c => !usedCol[c.id] && hit(c));
+    if (orph.length) {
+      h += '<div class="npas-grp orphan"><span class="nm">还没归类的集合</span><span class="sub">删不删由你；点行上的「还没归类 ✎」归一类，归完用/停用会跟着这一类走</span></div>' + orph.map(colRow).join('');
+    }
+    if (!cols.length && !_npAsQ) h += '<div class="npas-nopick">还没有集合——点「➕ 新建集合」建一个，或「🧺 AI 整理素材」按卖点 / 知识库列出要备的，再「🤖 重新配置」按诊断判该备哪几类。</div>';
+    return h;
+  };
+
+  /* ── 签 B：素材内容（挑一个集合 → 连播＋图墙＋单条改）── */
+  const viewContent = () => {
+    const on = cols.filter(c => npAsUseOf(c) === 'on');
+    if (!_npAsColl || !colOf(_npAsColl)) _npAsColl = on.length ? on[0].id : (cols[0] && cols[0].id) || '';
+    const listed = cols.filter(c => npAsUseOf(c) === 'on' || c.id === _npAsColl);
+    let h = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">' +
+      '<span class="note-xs">先挑一个集合（只列' + (_npAsColl && npAsUseOf(colOf(_npAsColl)) !== 'on' ? '在用的 ＋ 你现在选的这一集' : '在用的集合') + '）：' + on.length + ' 个在用 · 停用 ' + ucount.off + ' 个</span>' +
+      '<button type="button" class="npas-tabback btn btn-sm" data-tab="cfg">‹ 回集合配置</button>' +
+    '</div>';
+    h += '<div class="npas-picker">' + (listed.length
+      ? listed.map(c => '<button type="button" class="npas-pk' + (c.id === _npAsColl ? ' active' : '') + '" data-id="' + npArAttr(c.id) + '">' + esc(c.name) +
+          '<span class="n">' + hasOf(c.id) + (npAsUseOf(c) === 'off' ? ' · 停用' : npAsUseOf(c) === 'ask' ? ' · 待定' : '') + '</span></button>').join('')
+      : '<span class="note-xs">一个在用的集合都没有——去「🗂 集合配置」建或让 AI 配。</span>') + '</div>';
+    const col = colOf(_npAsColl);
+    if (!col) return h + '<div class="card card-pad"><div class="note-xs">还没有集合可看。</div></div>';
+    const items = npAsColItems(col.id);
+    const segs = items.filter(c => c && !c.imgOnly);
+    const linked = col.manual && col.link && (((col.link.kb || []).length) + ((col.link.sell || []).length));
+    const durSum = segs.reduce((n, c) => n + (Number(c.dur) || 0), 0);
+    const u = npAsUseOf(col);
+    h += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0 8px;">' +
+        '<div style="font-weight:700;font-size:14px;color:var(--ink);">' + esc(col.name) + '</div>' +
+        srcChip(col) + kindChip(col, false) +
+        '<span class="badge ' + (u === 'on' ? 'ok' : u === 'ask' ? 'warn' : 'info') + '">' + (u === 'on' ? '✓ 在用' : u === 'ask' ? '? 还没定' : '✕ 已停用') + '</span>' +
+        '<span class="note-xs">' + segs.length + ' 段视频 · ' + (items.length - segs.length) + ' 张图 · 共 ' + npAsFmt(durSum) + '</span>' +
+        '<span style="flex:1;"></span>' +
+        (col.manual && !linked ? '<button type="button" class="npas-assoc" data-id="' + npArAttr(col.id) + '" style="border:1px solid var(--line);background:#fff;color:#555;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;" title="按集合说明让 AI 关联知识库 / 卖点">🔗 关联</button>' : '') +
+        '<button type="button" class="npas-usetoggle" data-id="' + npArAttr(col.id) + '" style="border:1px solid var(--line);background:#fff;color:#333;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;">' + (u === 'on' ? '✕ 停用这一集' : '✓ 启用这一集') + '</button>' +
+        '<button type="button" class="npas-up" data-id="' + npArAttr(col.id) + '" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333;font-size:12px;font-weight:600;cursor:pointer;" title="只存 ≤160px 缩略图 + 文件名，原图不入库">📁 传本机图</button>' +
+        '<button type="button" class="npas-col-del" data-id="' + npArAttr(col.id) + '" title="删掉这个集合（里面的素材记录也一起删，不影响你本机的文件）" style="border:1px solid var(--line);background:#fff;color:#c02;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;">✕ 删集合</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8a929e;line-height:1.6;margin-bottom:10px;">' + esc(col.desc || '') +
+        (col.why ? ' ｜ <b>AI 配它的理由：</b>' + esc(col.why) : '') +
+        (col.link && col.link.hint ? ' ｜ AI 关联依据：' + esc(col.link.hint) : '') + '</div>';
+    if (!items.length) {
+      h += '<div style="font-size:12px;color:#b45309;background:#fff7e6;border:1px dashed #e7c48a;border-radius:10px;padding:14px 16px;line-height:1.8;">🕐 这一集还没料——「📁 传本机图」把现场照片存进来；案例视频的段在生成台剪完会自动进对应的集合。<br>传进来的图只存 ≤160px 缩略图 + 文件名，原图在你电脑里不动。</div>';
+    } else {
+      h += (segs.length
+        ? '<div class="card card-pad" style="margin-bottom:10px;">' +
+            '<div style="font-weight:700;font-size:13px;color:var(--ink);margin-bottom:8px;">▶ 连播本集 · ' + segs.length + ' 段 · 共 ' + npAsFmt(npPlDur()) + '</div>' +
+            '<div id="npasStage" style="position:relative;background:#000;border-radius:10px;overflow:hidden;max-width:640px;margin:0 auto;">' +
+              '<div id="npasIdle" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 20px;background:rgba(0,0,0,.5);color:#fff;font-size:14px;font-weight:600;z-index:3;pointer-events:none;">▶ 连播——筛出来的片段连着看：盘家底、拼案例、放给客户看</div>' +
+              '<div id="npasBadge" style="display:none;position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700;z-index:2;pointer-events:none;"></div>' +
+              '<div id="npasVoice" style="display:none;position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;z-index:2;pointer-events:none;"></div>' +
+              '<div id="npasSubVo" style="display:none;position:absolute;left:0;right:0;bottom:44px;background:rgba(0,0,0,.55);color:#fff;font-size:13px;line-height:1.6;padding:8px 14px;text-align:center;z-index:2;pointer-events:none;"></div>' +
+              '<div class="npas-seek" title="点进度条，跳到整集的那个位置" style="position:absolute;left:0;right:0;bottom:0;height:6px;background:rgba(255,255,255,.25);cursor:pointer;z-index:4;">' +
+                '<div id="npasFill" style="position:absolute;left:0;top:0;bottom:0;background:#f97316;width:0%;pointer-events:none;"></div>' +
+                '<div id="npasKnob" style="position:absolute;top:-5px;left:0%;width:3px;height:16px;background:#fff;border-radius:2px;pointer-events:none;"></div>' +
+                '<div id="npasTicks" style="position:absolute;inset:0;pointer-events:none;"></div>' +
+              '</div>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">' +
+              '<button type="button" class="btn btn-primary btn-sm npas-toggle">▶ 连播</button>' +
+              '<span id="npasClock" class="note-xs" style="font-variant-numeric:tabular-nums;">0:00 / ' + npAsFmt(npPlDur()) + '</span>' +
+              '<span class="note-xs">字幕＝讲解词 · 声音＝晓晓（这里先试听浏览器嗓子）· 过渡段保留原声</span>' +
+            '</div>' +
+          '</div>'
+        : '') +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;">' + items.map(gridCard).join('') + '</div>';
+    }
+    return h;
+  };
+
+  /* ── 弹窗：新建集合（说明必填 + 归类必选 + 用不用）── */
+  const kindChips = (sel, cls) => NP_ASSET_KINDS.map(x =>
+    '<button type="button" class="' + cls + (x.k === sel ? ' on' : '') + '" data-k="' + npArAttr(x.k) + '" title="' + npArAttr(x.need) + '">' + x.i + '. ' + esc(x.n) + '</button>').join('');
+  const useChips = (sel, cls) => [['on', '✓ 用'], ['off', '✕ 停用'], ['ask', '? 还没定']].map(o =>
+    '<button type="button" class="' + cls + (sel === o[0] ? ' on' : '') + '" data-v="' + o[0] + '">' + o[1] + '</button>').join('');
+  const modalNew = !_npAsNew ? '' :
     '<div class="npas-modal" title="点空白处关掉" style="position:fixed;inset:0;background:rgba(15,20,30,.35);display:flex;align-items:center;justify-content:center;z-index:9998;">' +
-      '<div style="width:470px;max-width:92vw;background:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 14px 44px rgba(0,0,0,.22);">' +
+      '<div style="width:520px;max-width:92vw;max-height:88vh;overflow:auto;background:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 14px 44px rgba(0,0,0,.22);">' +
         '<div style="font-weight:700;font-size:14px;color:#333;">➕ 新建集合</div>' +
-        '<div style="font-size:11px;color:#8a929e;line-height:1.6;margin:6px 0 10px;">写清这个集合装什么料（比如：施工队合影，横版，用在案例封面）。可以现在就放一张图进去，也可以先建空的——空集合标「待补充」，往里传图就补上。图片只存一张 ≤160px 缩略图 + 文件名，原图你自己留好。</div>' +
+        '<div style="font-size:11px;color:#8a929e;line-height:1.6;margin:6px 0 10px;">写清这个集合装什么料（比如：施工队合影，横版，用在案例封面），再归进 18 类里的一个——报缺口才准。可以现在就放一张图进去，也可以先建空的：空集合标「待补充」，往里传图就补上。图片只存一张 ≤160px 缩略图 + 文件名，原图你自己留好。</div>' +
         '<textarea id="npasAddDesc" rows="3" maxlength="300" placeholder="集合说明（必填）：这个集合装什么 / 用在哪 / 对上哪条知识或卖点…" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;line-height:1.6;resize:vertical;">' + esc(_npAsNewDesc) + '</textarea>' +
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">' +
+        '<div style="font-size:11px;color:#6b7280;margin:10px 0 4px;font-weight:600;">这一集算哪一类（必选一个）</div>' +
+        '<div class="npas-chipbox">' + kindChips(_npAsNewKind, 'npas-nk') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;margin:10px 0 4px;font-weight:600;">这一集这次用不用</div>' +
+        '<div class="npas-chipbox">' + useChips(_npAsNewUse, 'npas-nu') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
           '<button type="button" class="npas-new-pick" style="border:1px solid var(--line);background:#fff;color:#555;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;">📁 放一张图进去（可选）</button>' +
           '<span style="font-size:11px;color:#9aa0ac;">' + (_npAsNewPicked.length ? '已选 ' + _npAsNewPicked.length + ' 张（只存缩略图）' : '不选图＝建个空集合（待补充）') + '</span>' +
         '</div>' +
@@ -15445,111 +17184,99 @@ async function renderNoteAssets(container) {
         '</div>' +
       '</div>' +
     '</div>';
-  let body;
-  if (!_npAsColl) {
-    /* ── 集合墙：一行一集（名字 + 来源 chip + 计数 / 「🖼 待补充 · 还没料」+ 说明两行） ── */
-    const qlc = _npAsQ.toLowerCase();
-    const colsShown = qlc ? cols.filter(col => {
-      const hay = (String(col.name || '') + ' ' + (col.desc || '') + ' ' + (col.source || '')).toLowerCase();
-      if (hay.indexOf(qlc) >= 0) return true;
-      return itemsOf(col.id).some(c => ((String(c.src || '') + ' ' + (c.stage || '') + ' ' + (c.kb || '') + ' ' + (c.vo || '')).toLowerCase().indexOf(qlc) >= 0));
-    }) : cols;
-    const colRow = (col) => {
-      const items = itemsOf(col.id);
-      const segs = items.filter(c => c && !c.imgOnly), imgs = items.filter(c => c && c.imgOnly);
-      const empty = !items.length;
-      const focus = _npAsFocus.indexOf(col.id) >= 0;
-      return '<div class="card npas-col-open' + (focus ? ' npas-focus' : '') + '" data-id="' + npArAttr(col.id) + '" style="display:flex;gap:11px;align-items:center;padding:10px 12px;cursor:pointer;margin:0 0 8px;" title="' + (empty ? '还没料——点进去传图 / 剪段补上' : '点进去看这个集合的料') + '">' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;">' +
-            '<span style="font-size:13px;font-weight:700;color:var(--ink);">' + esc(col.name) + '</span>' +
-            srcChip(col) +
-            (empty
-              ? '<span class="npas-c-chip" style="color:#b45309;background:#fff7e6;">🖼 待补充 · 还没料</span>'
-              : '<span class="npas-c-chip" style="color:#374151;background:#f3f4f6;">' + segs.length + ' 段视频 · ' + imgs.length + ' 张图</span>') +
-          '</div>' +
-          '<div style="margin-top:4px;font-size:11px;line-height:1.55;color:#7a828e;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + esc(col.desc || '') + '</div>' +
+  /* ── 弹窗：改集合（名目 / 说明 / 归类 / 用不用；点「保存」才生效）── */
+  const ec = _npAsEdit ? colOf(_npAsEdit) : null;
+  const modalEdit = (!ec || !_npAsEditDraft) ? '' :
+    '<div class="npas-modal-edit" title="点空白处关掉" style="position:fixed;inset:0;background:rgba(15,20,30,.35);display:flex;align-items:center;justify-content:center;z-index:9998;">' +
+      '<div style="width:520px;max-width:92vw;max-height:88vh;overflow:auto;background:#fff;border-radius:12px;padding:16px 18px;box-shadow:0 14px 44px rgba(0,0,0,.22);">' +
+        '<div style="font-weight:700;font-size:14px;color:#333;">' + (_npAsEditKindOnly ? '这一集算哪一类' : '✎ 改这个集合') + '</div>' +
+        '<div style="font-size:11px;color:#8a929e;line-height:1.6;margin:6px 0 10px;">归类改了，这一集的用/停用会跟着这一类的判定走（你手动定过的会锁住，AI 重算不覆盖）。</div>' +
+        '<input id="npasEdName" maxlength="30" value="' + npArAttr(_npAsEditDraft.name) + '"' + (_npAsEditKindOnly ? ' disabled' : '') + ' placeholder="集合名目" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;' + (_npAsEditKindOnly ? 'background:#f6f7f9;color:#9aa0ac;' : '') + '">' +
+        '<textarea id="npasEdDesc" rows="3" maxlength="300" placeholder="这个集合装什么料 / 用在哪…" style="margin-top:8px;width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;line-height:1.6;resize:vertical;' + (_npAsEditKindOnly ? 'background:#f6f7f9;color:#9aa0ac;' : '') + '"' + (_npAsEditKindOnly ? ' disabled' : '') + '>' + esc(_npAsEditDraft.desc) + '</textarea>' +
+        '<div style="font-size:11px;color:#6b7280;margin:10px 0 4px;font-weight:600;">归哪一类</div>' +
+        '<div class="npas-chipbox">' + kindChips(_npAsEditDraft.kind, 'npas-mk') + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;margin:10px 0 4px;font-weight:600;">这次用不用</div>' +
+        '<div class="npas-chipbox">' + useChips(_npAsEditDraft.use, 'npas-mu') + '</div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">' +
+          '<button type="button" class="npas-ed-cancel" style="border:1px solid var(--line);background:#fff;color:#555;border-radius:8px;font-size:12px;padding:6px 12px;cursor:pointer;">取消</button>' +
+          '<button type="button" class="npas-ed-save" style="border:none;border-radius:8px;background:var(--grad-brand);color:#fff;font-size:12px;font-weight:700;padding:6px 12px;cursor:pointer;">保存</button>' +
         '</div>' +
-        '<span style="flex:none;color:#c3c9d2;font-size:17px;font-weight:700;">›</span>' +
-      '</div>';
-    };
-    body =
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">' +
-        '<button type="button" class="npas-gen"' + (_npAsBusy ? ' disabled' : '') + ' style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">' + (_npAsBusy ? '⏳ 正在整理…' : '🤖 AI 整理素材') + '</button>' +
-        '<button type="button" class="npas-new-open" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333;font-size:12px;font-weight:600;cursor:pointer;">➕ 新建集合</button>' +
-        (meta.genAt ? '<span style="font-size:11px;color:#9aa0ac;">上次整理：' + esc(npArAgo(meta.genAt)) + '</span>' : '') +
-        (_npAsFocus.length ? '<span style="font-size:11px;color:#b45309;">还缺料的 ' + _npAsFocus.length + ' 个集合在下面（红框）</span>' : '') +
       '</div>' +
-      (colsShown.length
-        ? '<div>' + colsShown.map(colRow).join('') + '</div>'
-        : (qlc
-          ? '<div style="font-size:12px;color:#999;padding:12px 0;line-height:1.7;">搜「' + esc(_npAsQ) + '」没有对上的集合 / 素材——换个词试试。</div>'
-          : '<div style="font-size:12px;color:#999;padding:12px 0;line-height:1.7;">还没有集合——点「➕ 新建集合」建一个，或「🤖 AI 整理素材」按卖点 / 知识库列出要备的。</div>'));
-  } else {
-    /* ── 集合内页：头（返回 / 名字 / 来源 / 计数 / 关联 / 传图 / 删）+ 连播本集 + 图墙 ── */
-    const col = cols.filter(x => x && x.id === _npAsColl)[0];
-    if (!col) { _npAsColl = null; renderNoteAssets(container); return; }
-    const items = itemsOf(col.id);
-    const segs = items.filter(c => c && !c.imgOnly);
-    const linked = col.manual && col.link && (((col.link.kb || []).length) + ((col.link.sell || []).length));
-    const durSum = segs.reduce((n, c) => n + (Number(c.dur) || 0), 0);
-    body =
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' +
-        '<button type="button" class="btn btn-sm npas-back">← 返回素材库</button>' +
-        '<div style="font-weight:700;font-size:14px;color:var(--ink);">' + esc(col.name) + '</div>' +
-        srcChip(col) +
-        '<span class="note-xs">' + segs.length + ' 段视频 · ' + (items.length - segs.length) + ' 张图 · 共 ' + npAsFmt(durSum) + '</span>' +
-        '<span style="flex:1;"></span>' +
-        (col.manual && !linked ? '<button type="button" class="npas-assoc" data-id="' + npArAttr(col.id) + '" style="border:1px solid var(--line);background:#fff;color:#555;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;" title="按集合说明让 AI 关联知识库 / 卖点">🔗 关联</button>' : '') +
-        '<button type="button" class="npas-up" data-id="' + npArAttr(col.id) + '" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#333;font-size:12px;font-weight:600;cursor:pointer;" title="只存 ≤160px 缩略图 + 文件名，原图不入库">📁 传本机图</button>' +
-        '<button type="button" class="npas-col-del" data-id="' + npArAttr(col.id) + '" title="删掉这个集合（里面的素材记录也一起删，不影响你本机的文件）" style="border:1px solid var(--line);background:#fff;color:#c02;border-radius:8px;font-size:12px;padding:5px 10px;cursor:pointer;">✕ 删集合</button>' +
-      '</div>' +
-      '<div style="font-size:11px;color:#8a929e;line-height:1.6;margin-bottom:10px;">' + esc(col.desc || '') + (col.link && col.link.hint ? ' ｜ AI 关联依据：' + esc(col.link.hint) : '') + '</div>' +
-      (!items.length
-        ? '<div style="font-size:12px;color:#b45309;background:#fff7e6;border:1px dashed #e7c48a;border-radius:10px;padding:14px 16px;line-height:1.8;">🕐 这个集合还没料——「📁 传本机图」把现场照片存进来；案例视频的段在生成台剪完会自动进对应的集合。</div>'
-        : ((segs.length
-            ? '<div class="card card-pad" style="margin-bottom:10px;">' +
-                '<div style="font-weight:700;font-size:13px;color:var(--ink);margin-bottom:8px;">▶ 连播本集 · ' + segs.length + ' 段 · 共 ' + npAsFmt(npPlDur()) + '</div>' +
-                '<div id="npasStage" style="position:relative;background:#000;border-radius:10px;overflow:hidden;max-width:640px;margin:0 auto;">' +
-                  '<div id="npasIdle" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:0 20px;background:rgba(0,0,0,.5);color:#fff;font-size:14px;font-weight:600;z-index:3;pointer-events:none;">▶ 连播——筛出来的片段连着看：盘家底、拼案例、放给客户看</div>' +
-                  '<div id="npasBadge" style="display:none;position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;border-radius:8px;padding:3px 9px;font-size:12px;font-weight:700;z-index:2;pointer-events:none;"></div>' +
-                  '<div id="npasVoice" style="display:none;position:absolute;top:10px;right:10px;background:rgba(0,0,0,.5);border-radius:8px;padding:3px 9px;font-size:12px;font-weight:600;z-index:2;pointer-events:none;"></div>' +
-                  '<div id="npasSubVo" style="display:none;position:absolute;left:0;right:0;bottom:44px;background:rgba(0,0,0,.55);color:#fff;font-size:13px;line-height:1.6;padding:8px 14px;text-align:center;z-index:2;pointer-events:none;"></div>' +
-                  '<div class="npas-seek" title="点进度条，跳到整集的那个位置" style="position:absolute;left:0;right:0;bottom:0;height:6px;background:rgba(255,255,255,.25);cursor:pointer;z-index:4;">' +
-                    '<div id="npasFill" style="position:absolute;left:0;top:0;bottom:0;background:#f97316;width:0%;pointer-events:none;"></div>' +
-                    '<div id="npasKnob" style="position:absolute;top:-5px;left:0%;width:3px;height:16px;background:#fff;border-radius:2px;pointer-events:none;"></div>' +
-                    '<div id="npasTicks" style="position:absolute;inset:0;pointer-events:none;"></div>' +
-                  '</div>' +
-                '</div>' +
-                '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">' +
-                  '<button type="button" class="btn btn-primary btn-sm npas-toggle">▶ 连播</button>' +
-                  '<span id="npasClock" class="note-xs" style="font-variant-numeric:tabular-nums;">0:00 / ' + npAsFmt(npPlDur()) + '</span>' +
-                  '<span class="note-xs">字幕＝讲解词 · 声音＝晓晓（这里先试听浏览器嗓子）· 过渡段保留原声</span>' +
-                '</div>' +
-              '</div>'
-            : '') +
-            '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;">' + items.map(gridCard).join('') + '</div>'));
-  }
+    '</div>';
+
   container.innerHTML =
+    '<style>' +
+      '#noteAssetsContent .nt-tabs{display:flex;gap:2px;margin:0 0 2px;border-bottom:1px solid var(--line,#eceef0);}' +
+      '#noteAssetsContent .nt-tab{border:0;background:none;padding:6px 12px;margin-bottom:-1px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;}' +
+      '#noteAssetsContent .nt-tab:hover{color:#374151;}' +
+      '#noteAssetsContent .nt-tab.active{color:var(--c-brand-text,var(--xhs-red));border-bottom-color:var(--c-brand,var(--xhs-red));}' +
+      '#noteAssetsContent .npas-row{display:flex;gap:10px;align-items:flex-start;padding:9px 12px;margin:0 0 6px;border:1px solid var(--line);border-radius:10px;background:#fff;}' +
+      '#noteAssetsContent .npas-row.off{opacity:.62;background:#fafbfc;}' +
+      '#noteAssetsContent .npas-row.mine{border-color:var(--c-brand-line,#f3c8c8);}' +
+      '#noteAssetsContent .npas-why{margin-top:4px;font-size:11px;line-height:1.6;color:#6b7280;}' +
+      '#noteAssetsContent .npas-why b{color:#9aa0ac;font-weight:600;}' +
+      '#noteAssetsContent .npas-desc{margin-top:3px;font-size:11px;line-height:1.55;color:#8a929e;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}' +
+      '#noteAssetsContent .npas-own{font-size:10.5px;font-weight:700;color:var(--c-brand-text,#b4436c);background:var(--c-brand-soft,#fdf0f5);border-radius:999px;padding:1px 7px;}' +
+      '#noteAssetsContent .npas-sw{flex:none;width:70px;padding:5px 0;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:11.5px;font-weight:700;cursor:pointer;}' +
+      '#noteAssetsContent .npas-sw.on{color:#15803d;background:#eaf6ec;border-color:#bfe3c6;}' +
+      '#noteAssetsContent .npas-sw.off{color:#6b7280;background:#f3f4f6;}' +
+      '#noteAssetsContent .npas-sw.ask{color:#b45309;background:#fff7e6;border-color:#f5dfb8;}' +
+      '#noteAssetsContent .npas-kindchip{border:1px dashed var(--line);background:#fff;color:#4b5563;border-radius:999px;font-size:11px;padding:2px 9px;cursor:pointer;}' +
+      '#noteAssetsContent .npas-kindchip.ro{cursor:default;border-style:solid;background:#f6f7f9;}' +
+      '#noteAssetsContent .npas-kindchip.need{color:#15803d;border-color:#bfe3c6;background:#f2fbf4;}' +
+      '#noteAssetsContent .npas-kindchip.no,#noteAssetsContent .npas-kindchip.gray{color:#9aa0ac;background:#f6f7f9;}' +
+      '#noteAssetsContent .npas-kindchip.ask{color:#b45309;border-color:#f5dfb8;background:#fff7e6;}' +
+      '#noteAssetsContent .npas-grp{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px dashed var(--line);}' +
+      '#noteAssetsContent .npas-grp .nm{font-size:12.5px;font-weight:700;color:var(--ink);}' +
+      '#noteAssetsContent .npas-grp .sub{font-size:11px;color:#8a929e;}' +
+      '#noteAssetsContent .npas-grp.orphan{margin-top:18px;}' +
+      '#noteAssetsContent .npas-kv{width:76px;padding:3px 0;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:11px;font-weight:700;cursor:pointer;color:#444;}' +
+      '#noteAssetsContent .npas-kv.need{color:#15803d;background:#eaf6ec;border-color:#bfe3c6;}' +
+      '#noteAssetsContent .npas-kv.no{color:#9aa0ac;background:#f6f7f9;}' +
+      '#noteAssetsContent .npas-kv.ask{color:#b45309;background:#fff7e6;border-color:#f5dfb8;}' +
+      '#noteAssetsContent .npas-kv.gray{color:#9aa0ac;background:#f6f7f9;opacity:.8;}' +
+      '#noteAssetsContent .npas-kv.mine{outline:1px solid var(--c-brand-line,#f3c8c8);}' +
+      '#noteAssetsContent .npas-miss{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 10px;margin:0 0 6px;border:1px dashed var(--line);border-radius:9px;font-size:11.5px;color:#6b7280;background:#fcfcfd;}' +
+      '#noteAssetsContent .npas-miss.ask{color:#b45309;border-color:#f5dfb8;background:#fffdf7;}' +
+      '#noteAssetsContent .npas-picker{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}' +
+      '#noteAssetsContent .npas-pk{border:1px solid var(--line);background:#fff;color:#374151;border-radius:999px;font-size:12px;padding:4px 11px;cursor:pointer;}' +
+      '#noteAssetsContent .npas-pk.active{border-color:var(--c-brand,var(--xhs-red));color:var(--c-brand-text,var(--xhs-red));background:var(--c-brand-soft,#fdf0f5);font-weight:700;}' +
+      '#noteAssetsContent .npas-pk .n{color:#9aa0ac;font-size:11px;margin-left:4px;}' +
+      '#noteAssetsContent .npas-det{margin:0 0 10px;}' +
+      '#noteAssetsContent .npas-det summary{cursor:pointer;font-size:12px;font-weight:600;color:#4b5563;}' +
+      '#noteAssetsContent .npas-kindrow{display:flex;gap:9px;padding:7px 2px;border-top:1px dashed var(--line);}' +
+      '#noteAssetsContent .npas-kindrow .nm{flex:none;width:126px;font-size:12px;font-weight:700;color:#374151;}' +
+      '#noteAssetsContent .npas-kindrow.gray .nm{opacity:.6;}' +
+      '#noteAssetsContent .npas-kindrow .tx{flex:1;min-width:0;font-size:11px;color:#6b7280;line-height:1.75;}' +
+      '#noteAssetsContent .npas-kindrow .tx b{color:#4b5563;font-weight:600;}' +
+      '#noteAssetsContent .npas-chipbox{display:flex;gap:5px;flex-wrap:wrap;}' +
+      '#noteAssetsContent .npas-chipbox button{border:1px solid var(--line);background:#fff;color:#4b5563;border-radius:999px;font-size:11px;padding:3px 10px;cursor:pointer;}' +
+      '#noteAssetsContent .npas-chipbox button.on{border-color:var(--c-brand,var(--xhs-red));color:var(--c-brand-text,var(--xhs-red));background:var(--c-brand-soft,#fdf0f5);font-weight:700;}' +
+      '#noteAssetsContent .npas-nopick{font-size:12px;color:#999;line-height:1.7;}' +
+    '</style>' +
     '<div style="padding:6px 2px;">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px;">' +
-        '<div style="font-weight:600;color:var(--ink);font-size:13px;">📚 素材库<span class="qhelp" tabindex="0" data-tip="做视频要的料，按「集合」分类存放：案例视频剪的段、现场图都归进各自集合（卫生间防水、屋面工程……）；还没料的集合标「待补充」——AI 按卖点 × 知识库列出来的要备料就长这样，传上图就补上。点开集合：图墙＋连播本集，点带 ▶ 的图就放那段。片段只记账：源文件＋起止＋讲解词，不拷视频文件。">?</span></div>' +
-        (!_npAsColl ? '<span style="font-size:11px;color:#8a929e;">' + cols.length + ' 个集合 · ' + clipsAll.length + ' 段视频 · ' + imgsAll.length + ' 张图 · 共 ' + npAsFmt(clipsAll.reduce((n, c) => n + (Number(c.dur) || 0), 0)) + '</span>' : '') +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+        '<div style="font-weight:600;color:var(--ink);font-size:13px;">📚 素材库<span class="qhelp" tabindex="0" data-tip="' + npArAttr('两签各管一件事：\n🗂 集合配置＝有哪些集合、各归 18 类里的哪一类、这一集这次用不用（用不用由 AI 按你的账号诊断配，你能改，改过的它不再覆盖）。\n🎞 素材内容＝挑一个集合，管它里面那一条条料：传图、看连播、改环节 / 标签 / 讲解词。\n停用的集合不报缺口、不参与挑料，里面的料还在库里，点一下就回来。片段只记账：源文件 + 起止 + 讲解词，不拷视频文件；图只存 ≤160px 缩略图。') + '">?</span></div>' +
+        (_npAsTab === 'cfg' ? '<span style="font-size:11px;color:#8a929e;">' + cols.length + ' 个集合 · ' + clipsAll.length + ' 段视频 · ' + imgsAll.length + ' 张图 · 共 ' + npAsFmt(clipsAll.reduce((n, c) => n + (Number(c.dur) || 0), 0)) + '</span>' : '') +
       '</div>' +
-      (!_npAsColl
-        ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">' +
-            '<input id="npasQ" value="' + npArAttr(_npAsQ) + '" placeholder="🔍 搜集合和素材（集合名 / 说明 / 源视频 / 环节 / 讲解词…）" style="flex:1;min-width:220px;max-width:380px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;">' +
-          '</div>'
-        : '') +
-      body +
+      '<div class="nt-tabs">' +
+        '<button type="button" class="nt-tab' + (_npAsTab === 'cfg' ? ' active' : '') + '" data-tab="cfg">🗂 集合配置<span class="note-xs" style="margin-left:5px;">(' + cols.length + ')</span></button>' +
+        '<button type="button" class="nt-tab' + (_npAsTab === 'con' ? ' active' : '') + '" data-tab="con">🎞 素材内容<span class="note-xs" style="margin-left:5px;">(' + ucount.on + ' 个在用)</span></button>' +
+      '</div>' +
+      (_npAsTab === 'cfg'
+        ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 8px;">' +
+            '<input id="npasQ" value="' + npArAttr(_npAsQ) + '" placeholder="🔍 搜集合名 / 说明 / 来源 / 类名" style="flex:1;min-width:220px;max-width:380px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;font-family:inherit;">' +
+            (_npAsFocus.length ? '<span style="font-size:11px;color:#b45309;">还缺料的 ' + _npAsFocus.length + ' 个集合在下面（红框）</span>' : '') +
+          '</div>' + viewCfg()
+        : '<div style="margin-top:10px;">' + viewContent() + '</div>') +
       '<input id="npasFile" type="file" accept="image/*" multiple hidden>' +
       '<input id="npasNewFile" type="file" accept="image/*" multiple hidden>' +
-    '</div>' + modal;
+    '</div>' + modalNew + modalEdit;
   npAsDrawThumbs(container);
   const stageBox = container.querySelector('#npasStage');
   if (stageBox) stageBox.insertBefore(npPlEnsureV(), stageBox.firstChild);   // 单例 video 搬回来，不重建
   npAsRenderHud();
-  if (!_npAsColl && _npAsFocus.length) { const el = container.querySelector('.npas-focus'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); }
+  if (_npAsTab === 'cfg' && _npAsFocus.length) { const el = container.querySelector('.npas-focus'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'center' }); }
 }
 
 /* ── 连播本集播放器（真 <video> 播源切片：ref='mat:篇id:素材id' 取 IndexedDB 的 blob；讲解词用浏览器嗓子试听，出片统一晓晓）── */
@@ -15843,8 +17570,8 @@ function npAsDrawThumbs(container) {
 }
 
 /* ── 集合墙 / 内页的动作 ── */
-function npAsColOpen(container, id) { npAsStop(); _npAsColl = id; _npAsQ = ''; renderNoteAssets(container); }
-function npAsBack(container) { npAsStop(); _npAsColl = null; renderNoteAssets(container); }
+function npAsColOpen(container, id) { npAsStop(); _npAsColl = id; _npAsTab = 'con'; _npAsQ = ''; renderNoteAssets(container); }
+function npAsBack(container) { npAsStop(); _npAsColl = null; _npAsTab = 'cfg'; renderNoteAssets(container); }
 async function npAsItemDel(container, id) {
   npAsStop();
   const list = (await npClipsRead()).filter(c => c && c.id !== id);
@@ -18109,12 +19836,13 @@ function getPlPerson(id) {
   return _plData.list.find(p => p.id === id) || null;
 }
 
-/* ─── 版本 / 授权控制 ─── */
+/* ─── 版本 / 授权控制（按表锁格那段在 lib/edition-source.js，三份界面共用同一份） ─── */
 let _editionCache = null;
 
-/** 获取版本状态（带缓存），失败时返回 null */
-async function getEditionStatus() {
-  if (_editionCache) return _editionCache;
+/** 获取版本状态（带缓存）：领到过服务器那张表就以它为准，没领到走包里的进门默认 */
+async function getEditionStatus(force) {
+  if (typeof XhsEdition !== 'undefined') { _editionCache = await XhsEdition.status(force === true); return _editionCache; }
+  if (_editionCache && force !== true) return _editionCache;
   try {
     const resp = await chrome.runtime.sendMessage({ action: 'getEdition' });
     if (resp && resp.edition) { _editionCache = resp; return resp; }
@@ -18126,40 +19854,11 @@ async function getEditionStatus() {
 
 /** 判断某功能在当前版本是否可用（默认放行，避免消息失败误锁） */
 function editionFeatureOn(name) {
+  if (typeof XhsEdition !== 'undefined') return XhsEdition.has(name);
   if (!_editionCache || !_editionCache.edition || !_editionCache.edition.features) return true;
   return !!_editionCache.edition.features[name];
 }
 
-/** 显示到期锁定全屏遮罩，锁死所有操作 */
-function showExpiredMask(edition) {
-  if (document.getElementById('editionExpiredMask')) return;
-  const licensee = (edition && edition.licensee) ? ('（授权：' + esc(edition.licensee) + '）') : '';
-  const mask = document.createElement('div');
-  mask.id = 'editionExpiredMask';
-  mask.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(30,30,30,0.94);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;';
-  mask.innerHTML = `
-    <div style="font-size:44px;margin-bottom:12px;">⛔</div>
-    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">授权已到期</div>
-    <div style="font-size:13px;color:#ddd;line-height:1.7;max-width:280px;">
-      当前版本使用期限已结束${licensee}，功能已锁定。<br>如需继续使用，请联系服务商续期或获取新版本。
-    </div>`;
-  document.body.appendChild(mask);
-}
-
-/** 显示无网络锁定遮罩（无法获取网络时间，安全策略锁定） */
-function showNoNetworkMask() {
-  if (document.getElementById('editionExpiredMask')) return;
-  const mask = document.createElement('div');
-  mask.id = 'editionExpiredMask';
-  mask.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(30,30,30,0.94);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;';
-  mask.innerHTML = `
-    <div style="font-size:44px;margin-bottom:12px;">🌐</div>
-    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">无法连接网络</div>
-    <div style="font-size:13px;color:#ddd;line-height:1.7;max-width:280px;">
-      本插件需要联网运行以验证授权状态。<br>请检查网络连接后重试。
-    </div>`;
-  document.body.appendChild(mask);
-}
 
 /** 🛡 账号安全小标（顶栏，只读）：只显示当前挡位；悬停看今日总账 / 单休 / 静默期 */
 async function renderGuardBadge() {
@@ -18188,21 +19887,8 @@ try {
   });
 } catch (_) {}
 
-/** 在顶栏状态徽标上展示版本与剩余天数 */
-function renderEditionBadge(status) {
-  const ed = status && status.edition; if (!ed) return;
-  const badge = document.getElementById('statusBadge');
-  if (!badge) return;
-  let txt = ed.label || '';
-  if (!ed.neverExpires) {
-    const d = status.remainingDays;
-    if (typeof d === 'number') txt += d <= 0 ? '｜今天到期' : `｜剩${d}天`;
-  }
-  badge.textContent = txt || '就绪';
-  const bound = ed.boundAccount || {};
-  const bindTxt = bound.xhsId ? (bound.name ? `｜绑定：${bound.xhsId}（${bound.name}）` : `｜绑定：${bound.xhsId}`) : '';
-  badge.title = (ed.licensee ? ('授权：' + ed.licensee) : '') + bindTxt;
-}
+
+
 
 /** 账号绑定校验与展示（绑定版）：顶栏提示绑定号；校验不过则全屏锁定 */
 async function applyAccountBindToPopup() {
@@ -18304,71 +19990,8 @@ async function verifyAccountNow() {
 
 /** 应用版本限制：到期锁定 + 按功能开关灰显并标注受限功能（不隐藏，让用户知道升级可解锁） */
 async function applyEditionToPopup() {
-  const status = await getEditionStatus();
-  if (!status || !status.edition) return; // 拿不到就放行（dev 或消息异常）
-  const ed = status.edition;
-  // 1) 无网络锁定
-  if (status.noNetwork) { showNoNetworkMask(); return; }
-  // 2) 到期锁定
-  if (status.expired) { showExpiredMask(ed); return; }
-  // 3) 顶栏展示版本
-  renderEditionBadge(status);
-  // 3.5) 账号绑定（绑定版）：校验当前登录账号
-  applyAccountBindToPopup();
-  // 4) 批量发送（自动评论）——未开通时灰显锁定 ▾ 下拉入口
-  if (!ed.features || !ed.features.batchSend) {
-    const btn = document.getElementById('commentCaret');
-    if (btn) {
-      btn.disabled = true;
-      btn.dataset.locked = '1';
-      btn.style.opacity = '0.45';
-      btn.style.cursor = 'not-allowed';
-      btn.style.filter = 'grayscale(1)';
-      btn.title = '当前版本（' + (ed.label || '') + '）不含整页批量发送，仅支持逐条一键发送；升级更高版本解锁';
-    }
-  }
-  // 4) 租户切换器：三档全开（tenant 恒为 true），不再做灰显锁定
-  // 5) 一键灌水笔记列表（左侧面板依赖灌水功能）——未开通时直接隐藏整个笔记列表，右侧评论助手占满窗口自适应
-  if (!ed.features || !ed.features.autoWater) {
-    const panelLeft = document.getElementById('panelLeft');
-    const divider = document.getElementById('divider');
-    if (panelLeft) panelLeft.style.display = 'none';
-    if (divider) divider.style.display = 'none';
-    // ① 基础版没有获客：门改挂「工作台」（评论分析/商机/回复照旧在），获客的二级页全收掉、二级栏不上屏
-    // （任务配置/队列/笔记池/获客设置都随获客走；设置那页＝拟人化与频率，没开获客的档回设置页那条兜底侧栏改）
-    ['tabQueue', 'tabPool', 'tabTaskCfg', 'tabHuokeCfg', 'huokeCfgContent', 'tabCommentAssistant'].forEach(id => document.getElementById(id)?.remove());
-    const _st = document.getElementById('subTabs');
-    if (_st) _st.style.display = 'none';
-    const _th = document.getElementById('tabHuoke');
-    if (_th) {
-      const _tx = _th.querySelector('.rail-tx'); if (_tx) _tx.textContent = '工作台';
-      const _ic = _th.querySelector('use'); if (_ic) _ic.setAttribute('href', '#i-chat');
-      _th.title = '工作台：当前笔记的评论分析 / 商机挖掘 / 一键回复';
-    }
-    const _banner = document.querySelector('.right-toolbar .toolbar-title');
-    if (_banner) _banner.innerHTML = '<span class="toolbar-title-bar"></span>评论助手';
-  } else {
-    // 有获客的版本（② 起）：拟人化与频率的入口在 获客 → ⚙️ 设置，设置页那条二级 tab 撤掉（免得两处入口）
-    document.querySelector('#setTabs [data-stab="delays"]')?.remove();
-  }
-  // 6) 线索——非开通版本隐藏一级 tab
-  if (!ed.features || !ed.features.prospectList) {
-    document.getElementById('tabProspect')?.remove();
-    // 线索的「设置」（Bot 间隔）与「任务配置」（渠道基调 / 成交引导）跟着线索一起收
-    document.getElementById('tabLeadCfg')?.remove();
-    document.getElementById('leadCfgContent')?.remove();
-    document.getElementById('tabLeadTaskCfg')?.remove();
-    document.getElementById('leadTaskCfgContent')?.remove();
-  }
-  // 7) 发笔记——未开通版本隐藏 tab 按钮（二级 写稿/档案 跟着一起收）
-  if (!ed.features || !ed.features.notePublish) {
-    document.getElementById('tabNotePublish')?.remove();
-    document.getElementById('noteTabs')?.remove();
-  }
-  // 7.5) 字效编辑器（随发笔记一起给，三档销售版都开）：没开就把内嵌页一起摘掉（只有自定义包会走到这儿；左栏已无它的 tab——它现在是档案衍生的站内页）
-  if (!ed.features || !ed.features.videoFilm) {
-    document.getElementById('filmContent')?.remove();
-  }
+  if (typeof XhsEdition === 'undefined') return; // 共用文件没载上时一律放行（与拿不到版本状态同口径）
+  await XhsEdition.applyToPopup({ bind: applyAccountBindToPopup });
 }
 
 /* ─── 租户切换器（顶部下拉框）─── */
@@ -22364,6 +23987,8 @@ async function diagQuizSync() {
     if (!r || !r.ok) throw new Error((r && r.error) || '同步未完成');
     if (r.complete) {
       _diagState.syncMessage = '问卷已保存，人设、产品卖点、知识库、内容规划都已同步。去左侧栏逐项看一眼即可。';
+      // 答完诊断顺手配素材（两签改版 2026-10-15）：判这 18 类该不该有料 → 集合归类 → 用/停用；不拦在这儿等它，配完弹一条
+      npAsConfigKinds(null, {}).catch(function () {});
     } else {
       const failed = [['persona', '人设'], ['product', '产品卖点'], ['knowledge', '知识库'], ['plan', '内容规划']].filter(function (it) {
         const res = r.diagnosis && r.diagnosis.results && r.diagnosis.results[it[0]];
@@ -24336,8 +25961,30 @@ function cfgMotifSpecimen(motif, th) {
   return '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;opacity:.3;">🎨</div>';
 }
 /* 🎨 出图风格 · 账号默认（设计源＝demo _diagLookDefaultHtml，二十二改）：
-   画面风格小样＋印记三选（不印记 / 文字 / 传图）＋🗂 笔记分类开关＋配文版式 15 种；
+   画面风格小样＋📷 画面形式＋🧍 主角一句＋印记三选（不印记 / 文字 / 传图）＋🗂 笔记分类开关＋配文版式 15 种；
    面板上改了都先进内存（dirty），按「💾 保存出图风格」才落 config.imgLook。 */
+/* 📷 画面形式 ＋ 🧍 主角（七十一改，老板：「出图文的时候要把风格写清楚：究竟实拍还是随拍还是动漫」）
+   这一轴以前只随尾巴出现、面板不摆，引擎读到「实拍」就往广告片靠。在这儿钉两格：
+   形式＝随拍那一挂时每张自动带 NP_SNAP_RULES；主角＝一句话逐张照抄，一套几张不会换六个人。 */
+function _diagBornCastingHtml() {
+  const look = _diagState.imgLook || {};
+  const axis = NP_LOOK_AXES.filter(function (a) { return a.k === 'born'; })[0];
+  const cur = String(look.born || NP_LOOK_XHS.born);
+  const chips = axis.opts.map(function (v) {
+    const on = v === cur;
+    return '<button type="button" class="npar-filter ntBornPick' + (on ? ' on' : '') + '" data-v="' + escAttr(v) + '">' + (on ? '\u2713 ' : '') + esc(v) + '</button>';
+  }).join('');
+  return '<div style="margin-top:8px;border:1px solid var(--c-brand-line);border-radius:10px;padding:10px 12px;background:#fff;">' +
+    '<div style="font-size:12.5px;font-weight:700;color:var(--ink);">\uD83D\uDCF7 画面形式 <span class="note-xs">' + esc(axis.d) + '</span></div>' +
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:8px;">' + chips + '</div>' +
+    '<div style="font-size:10px;color:#98a1ad;margin-top:6px;">选「手机随拍」＝每一张的提示词自动钉死一套真实感要求（噪点、手抖、只有一处光源、不磨皮、有人过日子的乱、不看镜头）；插画那一挂不带这套。</div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">' +
+      '<span style="font-size:12.5px;font-weight:700;color:var(--ink);">\uD83E\uDDCD 这一套图里的主角</span>' +
+      '<input class="input ntCasting" value="' + escAttr(look.casting || '') + '" placeholder="一句话说清同一个人，比如：40 岁男瓦工，短寸头，深蓝工装外套袖口磨白，腰间一把铲刀" style="flex:1;min-width:220px;max-width:430px;">' +
+    '</div>' +
+    '<div style="font-size:10px;color:#98a1ad;margin-top:4px;">填了才带进每一张提示词，一套几张不会换人；留空＝不说。</div>' +
+  '</div>';
+}
 function _diagLookDefaultHtml() {
   const st = _ntCfgSt();
   const look = _diagState.imgLook || {};
@@ -24368,6 +26015,7 @@ function _diagLookDefaultHtml() {
       '<span style="font-size:11px;color:#98a1ad;">打底＝统一小红书那一挂（' + NP_LOOK_XHS.motif + '）</span>' +
       '<span class="qhelp" tabindex="0" data-tip="' + escAttr('出图的账号默认：画面风格（三颗小样——管知识笔记的图，引流笔记不限风格）、印记（不盖 / 文字 / 传图）、笔记分类开关（图上自动盖「知识 / 案例」小标）、配文版式 15 种（每种自带装饰）。右边预览跟着所有选项实时变。改完按「💾 保存出图风格」才算数。') + '">?</span></div>' +
     _diagMotifRowHtml() +
+    _diagBornCastingHtml() +
     '<div style="margin-top:12px;border:1px solid var(--c-brand-line);border-radius:10px;padding:10px 12px;background:var(--c-brand-soft);">' +
       '<div style="font-size:12.5px;font-weight:700;color:var(--ink);">🏷 印记 <span class="note-xs">三选一——盖到每张卡上，认脸靠它</span></div>' +
       '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:8px;">' + markChips + markInline + '</div>' +
@@ -24555,6 +26203,19 @@ function _ntLayoutPick(k) {
   _ntCfgSt().dirty = true;
   diagRenderStyle();
 }
+function _ntBornPick(v) {
+  const next = Object.assign({}, _diagState.imgLook);
+  const s = String(v || '').trim();
+  if (s) next.born = s; else delete next.born;
+  _diagState.imgLook = next;
+  _ntCfgSt().dirty = true;
+  diagRenderStyle();
+}
+function _ntCasting(v) {
+  _diagState.imgLook = Object.assign({}, _diagState.imgLook, { casting: String(v || '') });
+  _ntCfgSt().dirty = true;
+  _ntCfgBadge();
+}
 async function _ntLookSave() {
   const st = _ntCfgSt();
   const msg = document.getElementById('ntLookMsg');
@@ -24634,6 +26295,11 @@ function _ntCfgBind(box) {
   box.querySelectorAll('.ntLayoutTile').forEach(function (b) {
     b.addEventListener('click', function () { _ntLayoutPick(b.getAttribute('data-k') || 'big'); });
   });
+  box.querySelectorAll('.ntBornPick').forEach(function (b) {
+    b.addEventListener('click', function () { _ntBornPick(b.getAttribute('data-v') || ''); });
+  });
+  const castIn = box.querySelector('.ntCasting');
+  if (castIn) castIn.addEventListener('input', function () { _ntCasting(castIn.value); });
   const lSave = box.querySelector('.ntLookSave');
   if (lSave) lSave.addEventListener('click', _ntLookSave);
   const lClear = box.querySelector('.ntLookClear');

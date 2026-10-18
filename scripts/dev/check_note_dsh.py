@@ -19,6 +19,7 @@ import tempfile
 import zlib
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 sys.stdout.reconfigure(encoding='utf-8')  # GBK 控制台打 PASS 行里的 emoji 会炸
 
@@ -136,7 +137,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dsh-') as profile, sync_playwr
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.on('dialog', lambda d: d.accept())
         page.set_default_timeout(20000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof _npWiz !== "undefined"')
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
@@ -201,7 +202,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dsh-') as profile, sync_playwr
         assert page.evaluate('typeof _npWiz.shots.cvTxt') == 'undefined', 'cvTxt 老字段该没了'
         assert page.evaluate('_npWiz.shots.items[0].text') == '', '图上字没配过＝空——第 1 条兼封面跟标题走'
         gv = page.evaluate('_npWiz.shots.groupPrompt')
-        for t in ('一组 4 张小红书图文配图（实拍照片；暗调实拍·单一暖光源，真人工作场景）',
+        for t in ('一组 4 张小红书图文配图（手机随拍；暗调实拍·单一暖光源，真人工作场景）',
                   '第 1 张（画面主角：一排散热垫）：',
                   '图上直接把字排好：「散热垫换了七个」（大字一句＋承接两三行，连起来读是一句完整的话；这是封面，字再做大一点、留白足）。',
                   '第 2 张（画面主角：一段特别长的配图主题要截）：',

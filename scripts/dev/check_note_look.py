@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-"""造图片「① 这一套图的风格」那一档自检（六十六改按 demo 收口：只剩四行——引流提示 / 🎨 画面风格 / ✍️ 配文方式 / ↺ 全回账号默认；轴 chips・张数・大样・说明块・画廊都撤下）。
+"""造图片「① 这一套图的风格」那一档自检（六十六改按 demo 收口：只剩四行（七十一改补回画面形式那一排＝五行）——引流提示 / 📷 画面形式 / 🎨 画面风格 / ✍️ 配文方式 / ↺ 全回账号默认；轴 chips・张数・大样・说明块・画廊都撤下）。
 
 老板口径：风格要当工作流里单独一格来设计——不只字体颜色大小，而是成图风格 / 主题 / 博主特色；
-「怎么画」那两类轴（画面出身 · 主题）在账号级定一次，某一套要不一样就在那一套上改，只记那一套。
+「怎么画」那两类轴（画面形式 · 主题）在账号级定一次，某一套要不一样就在那一套上改，只记那一套。
 （二十二改收口：旧「博主印记」轴退市——印记三选 / 笔记分类小标 / 配文版式都搬去 发笔记 · 任务配置 → 🎨 出图风格 那一签，这一档不再画它们）
 配文方式（说一次 / 辅助标注 / 整段上屏 / 只一句大字）也是这一格的事（六十二改，替掉旧的字量档），提示词里不再写死「不超过 14 字」。
 六十三改对齐：造图片做成五档横置 tab（① 风格 → ② 封面 → ③ 断句 → ④ 分镜 → ⑤ 预览），这一档就是第一档——
   🔁 那颗跟着它管的事挪到 ④ 的表头（这一档不摆）；两轴＋配文方式只进本地拼的提示词尾巴（改一次都不烧 AI），流派名才进 AI 那一发。
 六十一改（老板：「风格都改成统一的小红书风格」）：这一档从「关卡」变「旋钮」——
-  层级三份：内置统一小红书打底（NP_LOOK_XHS：真人工作场景 ＋ 实拍照片 ＋ 暗调实拍·单一暖光源，配文说一次）
+  层级三份：内置统一小红书打底（NP_LOOK_XHS：真人工作场景 ＋ 手机随拍 ＋ 暗调实拍·单一暖光源，配文说一次）
   → 账号默认（任务配置 · 🎨 出图风格）→ 这一套自己改的那几轴；没挑流派不会再落在 ①，直接落到该干活的那一档。
 六十五改（2026-10-04 字后压）：④ 的提示词里不再出现要压的那几句话——只说「字位＝X 那一格留干净的底」（npBlankBlock），
   图上那套字由 ⑤ 合成视图与 ⬇ 导出在本地压；所以本支 ④ 那一格的断言读「字位」「后压」那两块，不读大字／承接。
@@ -38,6 +38,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -54,6 +55,8 @@ BODY = '开场钩子。\n\n第一段干货。\n\n结尾引导。'
 SENTS = ['开场钩子。', '第一段干货。', '结尾引导。']
 # 账号默认只设了两轴（旧博主印记轴已退市）：配文落回打底那一档（说一次），令牌＝这两轴按顺序拼出来
 TOKEN = '扁平矢量插画；浅底＋单色点缀'
+# 七十一改那一格：这一套图里的主角（填了才逐张带进提示词，留空＝不说）
+CASTING = '40 岁男瓦工，短寸头，深蓝工装外套袖口磨白'
 
 SEED = r'''async (payload) => {
     await Storage.initializeDefaults(DEFAULT_PROMPTS);
@@ -113,7 +116,7 @@ with sync_playwright() as p:
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append(str(e)[:200]))
         page.set_viewport_size({'width': 1180, 'height': 900})
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof npLookPanelHtml === "function"')
         page.set_default_timeout(25000)
 
@@ -217,6 +220,12 @@ with sync_playwright() as p:
         assert page.locator('#npLookBox').count() == 1, '切到 ① 才摊开风格面板'
         panel = page.locator('#npLookBox').inner_text()
         assert '🎨 画面风格' in panel and '✍️ 配文方式' in panel, '① 摊开就这两行主旋钮：%s' % panel[:200]
+        assert '画面形式' in panel, '七十一改补回那一排：出图先把形式说清（随拍／实拍／画的）：%s' % panel[:200]
+        bk = page.locator('#npLookBox .np-born').evaluate_all('els => els.map(x => x.getAttribute("data-v"))')
+        assert bk[0] == '手机随拍' and bk[1] == '实拍照片' and bk[2] == '动漫插画' and bk[-1] == '', \
+            '画面形式＝名单（打底那颗排第一）＋「跟账号默认」：%s' % bk
+        assert page.evaluate('() => !npLookOwn(npS(), "born")'), '这一套没定过形式＝跟账号默认那颗亮着'
+        assert page.evaluate('() => npLookOf(npS()).born') == '扁平矢量插画', '生效形式读账号默认那一层（打底被它盖住）'
         assert '↺ 全回账号默认' in panel, panel[:200]
         ks = page.locator('#npLookBox .np-motif').evaluate_all('els => els.map(x => x.getAttribute("data-k"))')
         assert ks == ['真人工作场景', '方案页', '手写笔记·纸感', ''], '画面风格＝三颗短名单＋「跟账号默认」：%s' % ks
@@ -262,6 +271,19 @@ with sync_playwright() as p:
         page.wait_for_function('() => !npS().shots.look.motif')
         motif_chip('手写笔记·纸感').click()
         page.wait_for_function('() => npS().shots.look.motif === "手写笔记·纸感"')
+        # 七十一改：形式这一排点得动（换档只改令牌与尾巴那七条，一次 AI 都不烧）
+        page.locator('#npLookBox .np-born[data-v="手机随拍"]').click()
+        page.wait_for_function('() => npS().shots.look.born === "手机随拍"')
+        assert '手机随拍' in page.evaluate('() => npLookToken(npLookOf(npS()))'), '换形式＝尾巴那行令牌跟着换'
+        goto_tab('desc')
+        assert '【手机随拍必须照做' in pout(0), '随拍那一挂：这一张的提示词当场带上那七条硬约束：%s' % pout(0)[-400:]
+        goto_tab('look')
+        page.locator('#npLookBox .np-born[data-v="手机随拍"]').click()      # 再点同一颗＝退回账号默认那一挂
+        page.wait_for_function('() => !npS().shots.look.born')
+        goto_tab('desc')
+        assert '【手机随拍必须照做' not in pout(0), '退回账号默认（插画那一挂）＝那七条整块撤掉：%s' % pout(0)[-400:]
+        goto_tab('look')
+        assert calls() == 0, '形式这一排全是本地重排：%s' % calls()
         assert page.locator('#npLookBox .np-look-back').count() == 1, '↺ 那一颗一直在这一档'
         page.locator('#npLookBox .np-look-back').click()
         page.wait_for_function('() => !npS().shots.look.motif && npLookOf(npS()).motif === "真人工作场景"')
@@ -414,13 +436,19 @@ with sync_playwright() as p:
         page.locator('.ntLayoutTile[data-k="only"]').click()
         page.wait_for_function('() => (_diagState.imgLook || {}).layout === "only" && (_diagState.imgLook || {}).cap === "only"')
         assert '版式定了配文引擎（只一句大字）' in page.locator('#diagStyleResult').inner_text(), '版式定了配文引擎：只留一句那一版＝配文只一句大字'
+        # 七十一改补的两格：画面形式（随拍／实拍／画的）＋这一套图里的主角
+        page.locator('.ntBornPick[data-v="动漫插画"]').click()
+        page.wait_for_function('() => (_diagState.imgLook || {}).born === "动漫插画"')
+        page.locator('.ntCasting').fill(CASTING)
+        page.wait_for_function('() => (_diagState.imgLook || {}).casting === "' + CASTING + '"')
         page.locator('.ntLookSave').click()
         page.wait_for_function('''async () => {
             const d = await chrome.storage.local.get('config');
             const c = d.config || {};
             return !!(c.imgLook && c.imgLook.motif === '手写笔记·纸感' && c.imgLook.mark === 'text'
                 && c.imgLook.markText === '张师傅 · 防水 10 年' && c.imgLook.classify === true
-                && c.imgLook.layout === 'only' && c.imgLook.cap === 'only');
+                && c.imgLook.layout === 'only' && c.imgLook.cap === 'only'
+                && c.imgLook.born === '动漫插画' && c.imgLook.casting === '40 岁男瓦工，短寸头，深蓝工装外套袖口磨白');
         }''')
         assert '已保存' in page.locator('#ntLookMsg').inner_text()
         # 切走再回来：这一页按库里的值回显（不是按刚才点过的内存态）
@@ -434,7 +462,9 @@ with sync_playwright() as p:
         assert page.locator('.ntClassifyPick.on[data-v="1"]').count() == 1, '笔记分类开关也要回显'
         assert '✓' in page.locator('.ntLayoutTile[data-k="only"]').inner_text(), '配文版式也要回显'
         assert '版式定了配文引擎（只一句大字）' in page.locator('#diagStyleResult').inner_text()
-        print('PASS: 发笔记 · 任务配置 → 🎨 出图风格：画面风格 ＋ 印记三选 ＋ 笔记分类 ＋ 配文版式 → 保存落进 config.imgLook，切走再回来还在', flush=True)
+        assert page.locator('.ntBornPick.on[data-v="动漫插画"]').count() == 1, '画面形式保存回来要亮着那一颗'
+        assert page.locator('.ntCasting').input_value() == CASTING, '主角那一句也要回显'
+        print('PASS: 发笔记 · 任务配置 → 🎨 出图风格：画面风格 ＋ 画面形式 ＋ 主角一句 ＋ 印记三选 ＋ 笔记分类 ＋ 配文版式 → 保存落进 config.imgLook，切走再回来还在', flush=True)
 
         assert calls() == before, '① 这一整条路（含任务配置保存）一次 AI 都没烧：%s' % calls()
         assert not ERRORS, '有 pageerror：%s' % ERRORS[:2]

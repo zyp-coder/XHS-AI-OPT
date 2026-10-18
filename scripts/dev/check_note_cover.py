@@ -29,6 +29,7 @@ import time
 import zlib
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -48,7 +49,7 @@ SEG2 = ''.join(LINES[2:4])
 SEG3 = LINES[4]
 
 MOTIF_A = '方案页'              # ① 那一档挑的那一派：只进 AI 那一发，不许漏进提示词尾巴
-XHS_TOKEN = '实拍照片；暗调实拍·单一暖光源'   # 二十二改后令牌只剩画面出身＋主题两轴（layout 轴退市、印记不进令牌）
+XHS_TOKEN = '手机随拍；暗调实拍·单一暖光源'   # 七十一改：令牌两轴＝画面形式＋主题（打底换成手机随拍；layout 轴退市、印记不进令牌）
 COPY_1 = '省下的时间够跑三个客户'
 COPY_2 = '跑了两周，腰围先骗了我一次'
 COVER_BODY_1 = '这一张一眼要留住人：左手把一叠打印纸按在桌上，纸角写着日期；桌角只留最上面那张，台灯单光源把字压暗角一侧'
@@ -184,7 +185,7 @@ def run(ctx):
     page = ctx.new_page()
     page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
     page.set_viewport_size({'width': 1280, 'height': 1100})
-    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
     page.wait_for_function('typeof switchMainTab === "function" && typeof npCoverPaneHtml === "function"')
     page.set_default_timeout(25000)
 
@@ -368,7 +369,7 @@ def run(ctx):
     assert copy_inp().input_value() == COPY_1, '那一栏里摆的就是它（可以直接改）'
     assert c['prompt'].startswith('封面／首图那一张（竖版 3:4'), c['prompt'][:80]
     assert COVER_BODY_1 in c['prompt'], 'AI 那份画面原样在栏里：%s' % c['prompt'][:200]
-    assert '每一张都带的固定元素：' + XHS_TOKEN in c['prompt'], '尾巴补令牌那行固定元素（二十二改后＝出身＋主题两轴）'
+    assert '每一张都带的固定元素：' + XHS_TOKEN in c['prompt'], '尾巴补令牌那行固定元素（七十一改后＝画面形式＋主题两轴）'
     assert '【底图，这一套每张共用，必须照做】' in c['prompt'] and '【通则】' in c['prompt'], '底图与通则共用同一份常量'
     assert '不出现二维码 / 联系方式' in c['prompt'], '合规尾巴'
     assert c['prompt'].count('【底图，这一套每张共用，必须照做】') == 1, '尾巴只补一次（不是每次重拼都加一层）'
@@ -384,7 +385,7 @@ def run(ctx):
 
     # ── 4b) 印记那层（#23 补的）：look 带了印记／分类，提示词尾要把「本地盖什么、你不许画」说清 ──
     md = page.evaluate('''() => {
-        const mk = (over) => Object.assign({born: '实拍照片', theme: '暗调实拍·单一暖光源'}, over);
+        const mk = (over) => Object.assign({born: '手机随拍', theme: '暗调实拍·单一暖光源'}, over);
         return {
             text_k: npMarkDesc(mk({mark: 'text', markText: '试验印记'}), 'k'),
             text_d: npMarkDesc(mk({mark: 'text', markText: '试验印记'}), 'd'),
@@ -413,7 +414,7 @@ def run(ctx):
         '封面提示词尾要把本地盖什么、不许画什么说清（#23）：mark=%s／md=%r／头=%s' % (comp['mark'], comp['md'], comp['comp'][:300])
     assert comp['comp'].count('印记也由扩展本地盖上去') == 1 and comp['comp'].count('试验印记') == 1, '这半句只出现一次'
     tok = page.evaluate('''() => {
-        const base = {born: '实拍照片', theme: '暗调实拍·单一暖光源'};
+        const base = {born: '手机随拍', theme: '暗调实拍·单一暖光源'};
         return { clean: npLookToken(base), noneM: npLookToken(Object.assign({}, base, {mark: 'none'})),
                  textM: npLookToken(Object.assign({}, base, {mark: 'text', markText: '试验印记'})) };
     }''')

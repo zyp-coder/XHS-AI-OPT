@@ -21,6 +21,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -143,7 +144,7 @@ with sync_playwright() as p:
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append(str(e)[:200]))
         page.set_viewport_size({'width': 1280, 'height': 980})
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof npNoteMotifs === "function"')
         page.set_default_timeout(25000)
 
@@ -179,7 +180,8 @@ with sync_playwright() as p:
         assert MOTIF_A not in user_a and MOTIF_B not in user_a, '画面流派名不再进来源池'
         assert '画面流派' not in user_a and '画面流派' not in sys_a and '清单卡片式' not in user_a + sys_a, \
             '旧那层概念不再当来源摆'
-        cards = [page.locator('#noteAssetsContent .npas-col-open').nth(i).inner_text() for i in range(2)]
+        # 六十六改后那一行是「名目按钮＋来源 chip＋料数 chip」并排：整行文本才含来源与「待补充」
+        cards = page.evaluate('() => [...document.querySelectorAll("#noteAssetsContent .npas-col-open")].map(b => b.closest(".npas-row").innerText)')
         sell_card = [c for c in cards if NEED_SELL in c][0]
         assert '卖点「%s」' % SELL in sell_card and '🖼 待补充 · 还没料' in sell_card, sell_card.replace('\n', ' ')
         plain_card = [c for c in cards if NEED_PLAIN in c][0]

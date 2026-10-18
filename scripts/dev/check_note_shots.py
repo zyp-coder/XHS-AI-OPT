@@ -20,7 +20,7 @@
      某一张要换就在 ④ 那一行的配文栏换；定了档才展开要填的那几格（承接／标注／小注／重点那几个字／字位），换档不留残字；人写过就挂 🔒 字，🔁 只换画面不顶它；
      字后压（六十五改）：提示词里没有那几句字本身——只有「这一屏的字是后压的，你不许画进去」＋『字位』那一格留干净的底（九宫格枚举：
      说一次＝左下、辅助标注＝上中、整段上屏／只一句大字＝正中），字由扩展本地压上屏；
-     提示词就在 ④ 每一行里（编号／分镜三块、并标明「这几行是定画面的说明、别写上屏」／字后压留白（字位）／两轴令牌（画面出身＋主题）／底图＋通则／合规尾巴），改上面当场重排，一次 AI 都不烧；
+     提示词就在 ④ 每一行里（编号／分镜三块、并标明「这几行是定画面的说明、别写上屏」／字后压留白（字位）／两轴令牌（画面形式＋主题）／底图＋通则／合规尾巴），改上面当场重排，一次 AI 都不烧；
      两条通道分开走：流派只进 AI 那一发，不进提示词尾巴；两轴有内置统一小红书打底（实拍那一挂）兜着，尾巴永不为空；
   5) ② 那一档六十四改收轻：只剩两栏（那一句文案＋那一张的提示词）＋一颗 ✨，归 check_note_cover.py 验；
      本文件只把它当关卡关掉（「不出封面」零 AI），所以一次复制全部那一份也不带封面；表头那颗 🔁 从不占它一发；
@@ -41,6 +41,7 @@ import time
 import zlib
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -63,9 +64,9 @@ SENTS = [
 BODY = '\n\n'.join(SENTS)
 
 MOTIF = '方案页'
-# 内置统一小红书打底那一派 + 那两轴（账号默认没设时提示词尾巴带的就是它；印记载体那一轴也并进出身那根轴了）
+# 内置统一小红书打底那一派 + 那两轴（账号默认没设时尾巴带的就是它；七十一改：打底换成手机随拍那一挂）
 XHS_MOTIF = '真人工作场景'
-XHS_TOKEN = '实拍照片；暗调实拍·单一暖光源'
+XHS_TOKEN = '手机随拍；暗调实拍·单一暖光源'
 
 # 桩「照这一派重出」那一份：六十二改的三块（这一张要证明／画面里必须出现的元素／背景，外加一行先说清楚），
 # 画面名词多、不是这段字里那几个词，零 AI 的抄文案判法不该亮
@@ -88,7 +89,7 @@ SEED = r'''async (payload) => {
     cfg.product.name = '分镜表测试产品';
     cfg.product.sellPoints = [{title: '省时间', content: '把重复步骤压掉'}];
     cfg.ai.apiKey = 'test-local-only';
-    // 账号默认什么都不设：两轴与配文方式整层落回内置统一小红书打底（实拍那一挂），尾巴照样带固定元素
+    // 账号默认什么都不设：两轴与配文方式整层落回内置统一小红书打底（手机随拍那一挂），尾巴照样带固定元素
     cfg.imgLook = {};
     cfg.imgMotifs = [];
     await Storage.setConfig(cfg);
@@ -172,7 +173,7 @@ def run(ctx):
     page = ctx.new_page()
     page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
     page.set_viewport_size({'width': 1280, 'height': 980})
-    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
     page.wait_for_function('typeof switchMainTab === "function" && typeof npShotsTableHtml === "function"')
     page.evaluate('''() => {
         window.__clip = '';
@@ -330,6 +331,35 @@ def run(ctx):
     assert '【通则】' in p0 and '不出现二维码 / 联系方式' in p0, p0[-200:]
     assert '14 字' not in p0
     print('PASS: 每一行那份提示词全在本地拼（编号 + 字后压留白 + 两轴 + 底图与通则 + 合规尾巴），要压的字一个都不进提示词', flush=True)
+
+    # ── 3c) 七十一改：手机随拍那七条硬约束 / 一次只出一张的护栏 / 主角那一句 ──
+    assert '一次只出这一张完整画面：不要拼图' in p0, '编号行下面第一句就是护栏（别拼四宫格、别做成带字的卡片）：%s' % p0[:260]
+    assert '【手机随拍必须照做' in p0, '打底＝手机随拍：每一张都带那七条真实感硬约束：%s' % p0[-700:]
+    assert '全图只有上面点名的那一处光源' in p0 and '画面里的人一律不看镜头' in p0, '随拍那七条要点名到「只有一处光源」「不看镜头」'
+    assert '【这一套每一张的主角' not in p0, '主角那一格空着＝不凭空多一句'
+    two = st(r"""(() => {
+        const cp = JSON.parse(JSON.stringify(npS()));                 // 纸上推演：不弄脏台上那份
+        const it = cp.shots.items.filter(x => !x.off)[0];
+        const look = (born, casting) => {
+            cp.shots.look = Object.assign({}, npLookShape((npS().shots || {}).look),
+                casting ? {casting: casting} : {}, born ? {born: born} : {});
+            return npShotPromptText(cp, it, 0, 1);
+        };
+        return {
+            cast: look('', '40 岁男瓦工，短寸头，深蓝工装外套袖口磨白，腰间一把铲刀'),
+            il: look('扁平矢量插画', ''),
+            old: look('实拍照片', ''),
+        };
+    })()""")
+    assert '【这一套每一张的主角，必须同一个人、同一身】' in two['cast'] and '腰间一把铲刀' in two['cast'], \
+        '填了主角＝逐张带上那一句（六张换六个人是 AI 味第一大来源）：%s' % two['cast'][-500:]
+    assert '【这一套每一张的主角' not in two['il'], '没填就不出现，也不留一个空标题'
+    assert '【手机随拍必须照做' not in two['il'], '换到插画那一挂＝随拍那七条整块撤掉（不然引擎被要求拍出噪点）：%s' % two['il'][-500:]
+    assert '【手机随拍必须照做' not in two['old'], '老档那一挂（实拍照片）不套随拍块，提示词不凭空撑长'
+    assert two['il'].count('一次只出这一张完整画面') == 1 and two['cast'].count('一次只出这一张完整画面') == 1, '护栏一句一张，不重复堆'
+    assert '不许有亮边和细碎纹理' in p0, '字位那一格补一句：花纹会把白字吃掉'
+    assert (ai('cut'), ai('desc')) == (0, 0), '这一节全是本地读／本地拼：零 AI'
+    print('PASS: 七十一改（手机随拍七条硬约束＋一次只出一张护栏＋主角一句；换插画／老档实拍那一挂不带；字位补「不许有亮边」）', flush=True)
 
     # ── 3b) 配文那几格就在这一行：填与不填都本地重拼，一次 AI 都不烧，人写过就挂 🔒 字 ──
     assert page.locator('.np-cap').count() == 12, '要出图的每一行摆四档 chips：%s' % page.locator('.np-cap').count()
