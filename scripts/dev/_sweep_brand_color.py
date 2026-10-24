@@ -64,7 +64,7 @@ HEX = {
 }
 
 FILES = ['extension/popup.html', 'extension/popup.js', 'extension/settings.css', 'extension/settings.js',
-         'extension/ui.css', 'extension/lib/video/video.css']
+         'extension/ui.css', 'extension/lib/video/film.css']
 
 total = 0
 for f in FILES:

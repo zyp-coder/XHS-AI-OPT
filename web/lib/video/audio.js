@@ -99,6 +99,142 @@
     return out;
   }
 
+  /* ══ 混剪那一路的另外两条轨：背景音乐 + 跟字弹出来那一下响的音效 ══
+     三条轨各自拼成「整片长」的 PCM，再按权重相加夹平——录制路和编码路拿的是同一份混好的 pcm，
+     不用各修一遍混音。音量和案例那一路同尺度：配音 1 ／ 音乐 0.13。 */
+
+  function offCtx(sr, secs) {
+    const Ctor = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Ctor) return null;
+    return new Ctor(1, Math.max(1, Math.round(sr * secs)), sr);
+  }
+  async function renderOff(octx) {
+    return await new Promise((res, rej) => {
+      const p = octx.startRendering();
+      if (p && p.then) p.then(res, rej);
+      else octx.oncomplete = e => res(e.renderedBuffer);
+    });
+  }
+  function tone(octx, dest, freq, t0, dur, type, gain) {
+    if (!(dur > 0.06)) return;
+    const o = octx.createOscillator();
+    o.type = type || 'triangle';
+    o.frequency.value = freq;
+    const g = octx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gain || 0.15, t0 + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  function kick(octx, dest, t0, dur) {
+    if (!(dur > 0.06)) return;
+    const o = octx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(130, t0);
+    o.frequency.exponentialRampToValueAtTime(48, t0 + Math.min(0.12, dur));
+    const g = octx.createGain();
+    g.gain.setValueAtTime(0.5, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0 + dur + 0.05);
+  }
+  /* 音乐循环种子 16 秒：1＝安静钢琴 C-Am-F-G 琶音；2＝轻快节奏 底鼓＋八分拨弦（跟案例那一路同一套） */
+  const BGM_SEED = 16;
+  async function bgm(kind, dur, sampleRate) {
+    const sr = sampleRate || picked || SR;
+    if (!kind || kind === 'off' || !(dur > 0.5)) return null;
+    const octx = offCtx(sr, BGM_SEED);
+    if (!octx) return null;
+    const dest = octx.destination;
+    if (kind === 'piano') {
+      const CH = [[130.81, 261.63, 329.63, 392], [110, 220, 261.63, 329.63],
+                  [174.61, 349.23, 440, 523.25], [196, 392, 493.88, 587.33]];
+      for (let c = 0; c < 4; c++) {
+        CH[c].forEach((f, n) => {
+          const ts = c * 4 + n * 0.55;
+          tone(octx, dest, f, ts, Math.min(2.2, BGM_SEED - ts - 0.05), 'triangle', 0.16);
+        });
+      }
+    } else if (kind === 'beat') {
+      const MEL = [329.63, 392, 440, 493.88, 440, 392, 329.63, 392];
+      for (let b = 0; b * 0.5 < BGM_SEED - 0.1; b++) {
+        const t0 = b * 0.5;
+        kick(octx, dest, t0, Math.min(0.32, BGM_SEED - t0 - 0.02));
+        tone(octx, dest, MEL[b % MEL.length], t0, Math.min(0.45, BGM_SEED - t0 - 0.02), 'triangle', 0.12);
+      }
+    } else return null;
+    const seed = (await renderOff(octx)).getChannelData(0);
+    const out = new Float32Array(Math.round(dur * sr));
+    for (let at = 0; at < out.length; at += seed.length) {
+      out.set(seed.subarray(0, Math.min(seed.length, out.length - at)), at);
+    }
+    const fade = Math.min(out.length, Math.round(sr * 0.9));   // 收尾淡出，别硬切
+    for (let i = 0; i < fade; i++) out[out.length - 1 - i] *= i / fade;
+    return out;
+  }
+  /* 混剪那一路的音效＝跟字弹出来那一下响，不跟换屏响（老板 10-23）：
+     这一句讲坑 → 闷一记「咚」；讲好处 → 轻亮一声「啵」；平常一句 → 极轻带一下。
+     响的时刻＝styles.js 里重点词刷出来那一刻（sc.start + .42）。 */
+  const EM_AT = 0.42;
+  function thump(octx, dest, t0) {
+    const o = octx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(105, t0);
+    o.frequency.exponentialRampToValueAtTime(44, t0 + 0.16);
+    const g = octx.createGain();
+    g.gain.setValueAtTime(0.42, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0 + 0.26);
+  }
+  function blip(octx, dest, t0) {                        // 「啵」：两下上行的亮音，短
+    tone(octx, dest, 784, t0, 0.1, 'triangle', 0.2);
+    tone(octx, dest, 1175, t0 + 0.06, 0.14, 'triangle', 0.15);
+  }
+  function tick(octx, dest, t0) {                        // 平常一句：极轻带一下，别吵配音
+    tone(octx, dest, 1568, t0, 0.07, 'sine', 0.07);
+  }
+  const SFX_BY_TONE = { low: thump, high: blip, flat: tick };
+  /** level: 'off' 不要 ／ 其余（'word'，含旧档里的 'cut'／'cutland'）＝跟字响 */
+  async function sfx(level, tl, sampleRate) {
+    if (!level || level === 'off' || !tl || !tl.scenes || !tl.scenes.length) return null;
+    const sr = sampleRate || picked || SR;
+    const dur = Number(tl.dur) || 0;
+    if (!(dur > 0.5)) return null;
+    const marks = [];
+    tl.scenes.forEach(sc => {
+      const t = sc.start + EM_AT;
+      if (!(t > 0) || t > dur - 0.3) return;
+      marks.push({ t, kind: SFX_BY_TONE[sc.tone] ? sc.tone : 'flat' });
+    });
+    if (!marks.length) return null;
+    const octx = offCtx(sr, dur);
+    if (!octx) return null;
+    const dest = octx.destination;
+    marks.forEach(m => SFX_BY_TONE[m.kind](octx, dest, m.t));
+    return (await renderOff(octx)).getChannelData(0);
+  }
+  /** 多条轨混成一条：tracks = [{ pcm, gain }]，短的用原样长度、总长取最长的一条 */
+  function mix(tracks) {
+    const list = (tracks || []).filter(t => t && t.pcm && t.pcm.length);
+    if (!list.length) return new Float32Array(0);
+    let n = 0;
+    list.forEach(t => { n = Math.max(n, t.pcm.length); });
+    if (list.length === 1 && (list[0].gain === undefined || list[0].gain === 1)) return list[0].pcm;
+    const out = new Float32Array(n);
+    for (const t of list) {
+      const g = t.gain === undefined ? 1 : (Number(t.gain) || 0);
+      const a = t.pcm;
+      for (let i = 0; i < a.length; i++) out[i] += a[i] * g;
+    }
+    for (let i = 0; i < out.length; i++) {
+      const v = out[i];
+      out[i] = v > 0.98 ? 0.98 : (v < -0.98 ? -0.98 : v);
+    }
+    return out;
+  }
+
   /* 把整条 PCM 编成 AAC 交给 muxer。分段 flush 的道理跟视频那边一样：别轮询队列。 */
   async function feed(enc, pcmData, sampleRate) {
     const sr = sampleRate || SR;
@@ -134,5 +270,5 @@
     await sleep(0);
   }
 
-  g.Voice = { SR, RATES, GAP, HEAD, TAIL, speak, timeline, pcm, pickRate, encodeTo };
+  g.Voice = { SR, RATES, GAP, HEAD, TAIL, speak, timeline, pcm, pickRate, encodeTo, mix, bgm, sfx };
 })(window);

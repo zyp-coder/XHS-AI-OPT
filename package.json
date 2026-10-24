@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "crx3": "^2.0.0"
+  },
+  "devDependencies": {
+    "acorn": "^8.19.0"
   }
 }

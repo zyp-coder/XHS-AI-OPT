@@ -1,8 +1,14 @@
 /**
- * edition.js — 版本定义与功能开关（发行版核心）
+ * edition.js — 版本定义与功能开关（这张表现在只是「进门默认」）
  *
  * ⚠️ 本文件内容在正式打包时会被 build.js 自动覆盖写死。
  *    默认这里是「开发版 dev」：所有功能全开、永不过期，方便本地开发调试。
+ *
+ * 2026-10-16 档位归服务器控制之后：
+ *   - 真正决定「这位客户能点哪几格」的是公网那台上的档位表（server/tier.mjs），
+ *     客户机挂上线后每 15 秒对账时领回来，落在 chrome.storage.local['ed.grant']；
+ *   - 本文件里这张表降级为「进门默认」：只在从没领到过表时（断网 / 还没配配对号）起作用；
+ *   - 领到过就以服务器那张为准（含到期判定），别再拿本文件当权限真源引用。
  *
  * 版本类型（与 build.js PRESETS 对应；三档边界 2026-10-09 老板定：一个模块一条线、累进开通）：
  *   dev            开发版（全开、不过期，仅本地用）
@@ -59,13 +65,44 @@ const EDITION = {
   },
 };
 
-/** 是否某功能可用 */
-function editionHasFeature(name) {
-  return !!(EDITION.features && EDITION.features[name]);
+/** 服务器下发的八格里有的格名（缺格按「关」算，宁少不多） */
+const EDITION_CELLS = ['batchSend', 'tenant', 'knowledge', 'notePublish', 'autoWater', 'dailyBrowse', 'prospectList', 'videoFilm'];
+
+/** 领回来的那张表（null = 从没领到过，走包里的进门默认） */
+let _edGrant = null;
+
+/** 执行器挂线/对账时把服务器回包里的八格塞进来；传 null 表示收回到进门默认 */
+function editionSetGrant(g) {
+  const feats = (g && g.features && typeof g.features === 'object') ? g.features : null;
+  _edGrant = feats ? {
+    at: Number(g.at) || Date.now(),
+    tier: String(g.tier || ''),
+    label: String(g.label || ''),
+    draftOnly: !!g.draftOnly,
+    onTrial: !!g.onTrial,
+    features: feats,
+  } : null;
+  return _edGrant;
 }
 
-/** 是否永不过期 */
+function editionGrant() { return _edGrant; }
+
+/** 当前生效的八格：领到过就整张按服务器的（缺格算关），没领到就按包里这张 */
+function editionActiveFeatures() {
+  if (!_edGrant) return { ...EDITION.features };
+  const out = {};
+  for (const k of EDITION_CELLS) out[k] = !!_edGrant.features[k];
+  return out;
+}
+
+/** 是否某功能可用 */
+function editionHasFeature(name) {
+  return !!editionActiveFeatures()[name];
+}
+
+/** 是否永不过期（领到了服务器的表就不再按包里的日期锁——到期与否由服务器判、落回免费档） */
 function editionNeverExpires() {
+  if (_edGrant) return true;
   return !EDITION.expireAt || EDITION.expireAt <= 0;
 }
 
@@ -127,7 +164,7 @@ function editionRemainingDays(nowMs) {
 function editionSummary(nowMs) {
   return {
     type: EDITION.type,
-    label: EDITION.label,
+    label: (_edGrant && _edGrant.label) || EDITION.label,
     licensee: EDITION.licensee || '',
     builtAt: EDITION.builtAt || 0,
     expireAt: EDITION.expireAt || 0,
@@ -142,15 +179,41 @@ function editionSummary(nowMs) {
       xhsId: editionBoundXhsId(),
       name: (EDITION.boundAccount && EDITION.boundAccount.name) ? String(EDITION.boundAccount.name) : '',
     },
-    features: { ...EDITION.features },
+    features: editionActiveFeatures(),
+    fromServer: !!_edGrant,
+    tier: _edGrant ? _edGrant.tier : '',
+    draftOnly: !!(_edGrant && _edGrant.draftOnly),
+    onTrial: !!(_edGrant && _edGrant.onTrial),
+    grantAt: _edGrant ? _edGrant.at : 0,
     expired: nowMs !== undefined ? editionIsExpired(nowMs) : false,
     remainingDays: nowMs !== undefined ? editionRemainingDays(nowMs) : null,
   };
 }
 
+/* ── 开机把上次领到的表捞回来（没配对号 / 没这份存储时静默跳过，照旧走进门默认） ── */
+function editionLoadGrant() {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;
+    chrome.storage.local.get('ed.grant', (res) => {
+      const g = res && res['ed.grant'];
+      if (g && g.features) editionSetGrant(g);
+    });
+    if (chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((ch, area) => {
+        if (area !== 'local' || !ch || !ch['ed.grant']) return;
+        editionSetGrant(ch['ed.grant'].newValue || null);
+      });
+    }
+  } catch (_) {}
+}
+editionLoadGrant();
+
 const Edition = {
   EDITION,
   hasFeature: editionHasFeature,
+  activeFeatures: editionActiveFeatures,
+  setGrant: editionSetGrant,
+  grant: editionGrant,
   neverExpires: editionNeverExpires,
   hasBinding: editionHasBinding,
   boundXhsId: editionBoundXhsId,

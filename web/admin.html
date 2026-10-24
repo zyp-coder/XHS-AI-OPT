@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>发放管理 · 小红书助手</title>
+<!-- ============================================================
+  发放管理页（/admin）——运营面（2026-10-16 起三签）
+  ------------------------------------------------------------
+  干什么：老板自己看＋改——①「账号名单」签：谁领了号、什么时候来的、用了
+          多少免费次数、样例还在不在（老样子）；②「执行器发放」签：一行一个号，
+          档位 / 配对号 / 包发了没 / 挂没挂上 / 试用到期 / 小灶，右边三个动作
+          （开档位 / 换码 / 停这一趟）＋两个入口（改试用、开小灶）；③「档位表」签：
+          四档 × 八格的唯一真源，点格子就改，改完落在这一档的客户机 ≤15 秒自己跟上。
+  怎么开：本机 http://127.0.0.1:8799/admin 直接看（不用口令）；
+          开公网在 server/.env 配 DEMO_ADMIN_PASS，页面会让你输口令。
+  打的口：/api/admin/accounts（看名单＋发放列＋档位表）、/api/admin/set-tier（开档位，开那一刻发码）、
+          /api/admin/new-code（换码：旧码废＋踢机器）、/api/admin/pack-sent（包发了没·手工打勾）、
+          /api/admin/trial（试用天数与期内按哪档）、/api/admin/perk（只动这一位：额外开/额外撤/跟档）、
+          /api/admin/tier-table（读与改档位表）、/api/exec/order-all（执行器栏）、/api/exec/admin-stop（停这一趟）。
+  ============================================================ -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #c77700;
+    --brand: #1f2329; --brand-soft: #f0f1f3;
+  }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+  .top-right .btn { font-size: 13px; }
+  .sub { color: var(--ink2); font-size: 13px; margin-bottom: 14px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .hidden { display: none !important; }
+
+  .btn { border: 1px solid var(--line); background: #fff; color: var(--ink2); border-radius: 9px; padding: 7px 14px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: #f0f1f3; }
+  .btn.primary { background: #1f2329; border-color: #1f2329; color: #fff; font-weight: 600; }
+  input[type=password], input[type=text] { border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; font: inherit; font-size: 13px; outline: none; background: #fcfcfd; }
+  input:focus { border-color: #b9c0cc; background: #fff; }
+
+  .notice { border-radius: 12px; padding: 11px 15px; font-size: 13px; margin-bottom: 14px; line-height: 1.7; }
+  .notice.info { background: #eef6f1; border: 1px solid #cfe7db; color: #14532d; }
+  .notice.warn { background: #fdf6e7; border: 1px solid #f0e0b8; color: #7a5a00; }
+  .notice.err  { background: #fdeeee; border: 1px solid #f2cccc; color: var(--err); }
+
+  /* 页内三签 */
+  .adm-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .adm-tabs button { border: 1px solid var(--line); background: #fff; color: var(--ink2); border-radius: 9px; padding: 8px 16px; font: 600 13px/1.3 inherit; font-family: inherit; cursor: pointer; }
+  .adm-tabs button:hover { background: #f0f1f3; }
+  .adm-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+
+  .summary { display: flex; gap: 22px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); }
+  .summary b { color: var(--ink); font-size: 18px; margin-right: 3px; }
+  .tpl { font-size: 12.5px; color: var(--ink3); margin-top: 8px; }
+
+  .tblwrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 760px; }
+  table.grant-tbl { min-width: 1040px; }
+  table.grant-tbl th:last-child, table.grant-tbl td:last-child { width: 320px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+  th { color: var(--ink2); font-weight: 600; font-size: 12px; background: #fafbfc; }
+  tr:hover td { background: #fafbfc; }
+  td.dim { color: var(--ink3); font-size: 12.5px; }
+  .pill { display: inline-block; font-size: 11.5px; border-radius: 999px; padding: 1px 9px; }
+  .pill.ok { background: #e7f5ee; color: var(--ok); }
+  .pill.off { background: #f0f1f3; color: var(--ink3); }
+  .pill.full { background: #fdeeee; color: var(--err); }
+  .empty { color: var(--ink3); font-size: 13.5px; padding: 18px 0 8px; text-align: center; }
+  .pass-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+
+  /* 发放签：配对号 / 三个行内动作 / 表尾说明 */
+  .pcode { font-family: ui-monospace, Consolas, monospace; font-weight: 700; letter-spacing: 1px; }
+  .bind-id { font-family: ui-monospace, Consolas, monospace; font-weight: 600; margin-right: 3px; }
+  .act-row { display: flex; gap: 5px; flex-wrap: wrap; max-width: 320px; }
+  /* 档位表 / 小灶：这轮新加的两处 */
+  .pill.trial { background: #fff6e5; color: #a06a00; }
+  .pill.perk { background: #eaf1fb; color: #29527a; }
+  .tier-tbl td.c, .tier-tbl th.c { text-align: center; }
+  .tier-tbl .cbtn { border: 1px solid var(--line); background: #fff; border-radius: 7px; padding: 3px 10px; font: 600 12px/1.3 inherit; font-family: inherit; cursor: pointer; min-width: 58px; }
+  .tier-tbl .cbtn.on { background: #e7f5ee; border-color: #bfe4d1; color: var(--ok); }
+  .tier-tbl .cbtn.off { background: #f0f1f3; border-color: var(--line); color: var(--ink3); }
+  .tier-tbl .cbtn.part { background: #fff6e5; border-color: #f0dcae; color: #a06a00; }
+  .tier-tbl .quiet { color: var(--ink3); font-weight: 400; font-size: 12px; }
+  .mask { position: fixed; inset: 0; background: rgba(31,35,41,.34); display: flex; align-items: center; justify-content: center; z-index: 60; }
+  .mask.hidden { display: none; }
+  .modal { background: #fff; border-radius: 12px; padding: 16px 18px; width: min(520px, 92vw); max-height: 86vh; overflow: auto; box-shadow: 0 12px 34px rgba(0,0,0,.18); }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; }
+  .perk-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 7px 0; }
+  .perk-row b { flex: 1; font-weight: 600; font-size: 13px; }
+  .perk-row .seg { display: flex; gap: 5px; }
+  .perk-row .seg button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 3px 9px; font: 600 11.5px/1.3 inherit; font-family: inherit; cursor: pointer; color: var(--ink3); }
+  .perk-row .seg button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .act { border: 1px solid var(--line); background: #fff; color: var(--ink2); border-radius: 7px; padding: 4px 9px; font: 600 12px/1.3 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .act:hover { background: #f0f1f3; }
+  .act.danger:hover { background: #fdeeee; border-color: #f2cccc; color: var(--err); }
+  .act:disabled { opacity: .5; cursor: default; }
+  .act.strong { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .act.strong:hover { background: #000; border-color: #000; }
+  .pill[data-do] { cursor: pointer; }
+  .pill.blue { background: #eaf1fb; color: #29527a; }
+  .pill.bad { background: #fdf0ee; color: #a33b2b; }
+
+  /* 交付看板顶栏：状态筛选 + 客户网址 + 通用安装包 */
+  .grant-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .gchips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .gchip { border: 1px solid var(--line); background: #fff; color: var(--ink2); border-radius: 999px; padding: 5px 12px; font: 600 12.5px/1.3 inherit; font-family: inherit; cursor: pointer; }
+  .gchip:hover { background: #f0f1f3; }
+  .gchip b { color: var(--ink); margin-left: 3px; }
+  .gchip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .gchip.on b { color: #fff; }
+  .grant-base { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink3); }
+  .grant-base input { width: 200px; font-size: 12px; padding: 5px 8px; }
+  @media (max-width: 760px) { .grant-base { margin-left: 0; } }
+  details.row-more summary { cursor: pointer; font-size: 12px; color: var(--ink2); white-space: nowrap; }
+  details.row-more[open] summary { color: var(--ink); font-weight: 600; }
+  details.row-more .more-body { display: flex; flex-direction: column; gap: 6px; padding-top: 7px; min-width: 210px; }
+  details.row-more .more-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .tbl-foot { font-size: 12px; color: var(--ink3); margin-top: 10px; line-height: 1.8; }
+  .tbl-foot b { color: var(--ink2); }
+
+  /* 小气泡提示（动手之后的回话） */
+  .toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: var(--brand); color: #fff; padding: 9px 16px; border-radius: 10px; font-size: 13px; box-shadow: 0 8px 30px rgba(0,0,0,.25); opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 60; max-width: 82vw; }
+  .toast.on { opacity: 1; }
+  .toast.err { background: var(--err); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>发放管理</h1><span class="ver">小红书助手 · 服务器版</span>
+    <div class="top-right">
+      <button class="btn" id="refreshBtn">刷新</button>
+      <a class="btn" style="text-decoration:none;" href="lip-admin.html" title="口播工单台：客户交上来的稿子排在这儿——接单、下载料、把剪好的片传回去">🎙 工单台</a>
+      <a class="btn" style="text-decoration:none;" href="start.html">起始页 →</a>
+    </div>
+  </div>
+  <div class="sub">谁领了号、给他开了什么档、执行器包发出去没有、他挂上没有——都在这页。看和改都在这。</div>
+
+  <div id="notice" class="notice info hidden"></div>
+
+  <div class="adm-tabs hidden" id="tabsRow">
+    <button class="on" data-atab="list">账号名单</button>
+    <button data-atab="grant">执行器发放</button>
+    <button data-atab="table">档位表（唯一真源）</button>
+  </div>
+
+  <section class="card hidden" id="passCard">
+    <div class="pass-row">
+      <span style="font-size:13px;">服务器要口令（server/.env 里的 DEMO_ADMIN_PASS）：</span>
+      <input type="password" id="passInput" style="width:200px;" placeholder="输口令">
+      <button class="btn primary" id="passGo">看名单</button>
+    </div>
+  </section>
+
+  <div id="tabList">
+  <section class="card hidden" id="sumCard">
+    <div class="summary">
+      <span><b id="cntAll">0</b>个号</span>
+      <span><b id="cntFresh">0</b>个还没跑过生成（样例还在）</span>
+      <span><b id="cntFull">0</b>个本月文本额度用完</span>
+      <span><b id="cntExec">0</b>只执行器在线</span>
+      <span><b id="cntDemo">0</b>个演示号</span>
+      <span>已出图 <b id="cntImg">0</b> 张 · 成本 ¥<span id="cntImgCost">0</span></span>
+      <span>今日出图 <b id="cntImgDay">0 / 0</b> 张</span>
+      <span>今日全站 <b id="cntBudget">0 / 0</b> 次</span>
+    </div>
+    <div class="tpl" id="tplLine"></div>
+  </section>
+
+  <section class="card hidden" id="listCard">
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>称呼</th><th>手机号</th><th>领号时间</th><th>最近活动</th><th>AI 文本</th><th>AI 出图</th><th>数字人</th><th>执行器</th><th>样例</th><th>最近 IP</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty hidden" id="emptyLine">还没有人领号——起始页还没有人来过。</div>
+    </div>
+  </section>
+
+  <!-- 演示号（2026-10-18）：随便逛逛的 7 个公用号，和真实客户分开看 -->
+  <section class="card hidden" id="demoCard">
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">演示号（随便逛逛）</h2>
+    <div class="sub" style="margin-bottom:10px;">固定 7 个公用号，访客怎么改都保留；底子只读、不限本人 AI 次数（全站每日总闸照旧）。</div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>演示号</th><th>行业</th><th>档位</th><th>出图（试用）</th><th>最近进号</th><th>最近 IP</th></tr></thead>
+        <tbody id="demoRows"></tbody>
+      </table>
+      <div class="empty hidden" id="demoEmpty">还没有演示号——服务器下次启动会自动铺好。</div>
+    </div>
+  </section>
+
+  <!-- 执行器（D 期）：谁挂了、在不在线、最近的单与流水——老板一眼看谁在干活 -->
+  <section class="card hidden" id="execCard">
+    <h2 style="font-size:15px;font-weight:700;margin-bottom:4px;">执行器</h2>
+    <div class="sub" style="margin-bottom:10px;">客户电脑上那只"手"——在线＝正在听着服务器派活；熔断中大家全停。</div>
+    <div id="execKill" class="notice warn hidden" style="margin-bottom:10px;"></div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>账号</th><th>状态</th><th>档位</th><th>机器标签</th><th>最近心跳</th></tr></thead>
+        <tbody id="execRows"></tbody>
+      </table>
+      <div class="empty hidden" id="execEmpty">还没有人挂执行器。</div>
+    </div>
+    <details style="margin-top:12px;">
+      <summary style="cursor:pointer;font-size:13.5px;font-weight:600;">最近的单（最新 40 条）</summary>
+      <div class="tblwrap" style="margin-top:8px;">
+        <table>
+          <thead><tr><th>时间</th><th>账号</th><th>活</th><th>谁下的</th><th>状态</th><th>结果</th></tr></thead>
+          <tbody id="execCmds"></tbody>
+        </table>
+      </div>
+    </details>
+    <details style="margin-top:10px;">
+      <summary style="cursor:pointer;font-size:13.5px;font-weight:600;">流水（最新 120 条）</summary>
+      <div id="execLog" style="font-size:12.5px;line-height:1.7;margin-top:8px;max-height:320px;overflow:auto;font-family:ui-monospace,Consolas,monospace;white-space:pre-wrap;"></div>
+    </details>
+  </section>
+  </div>
+
+  <!-- 「执行器发放」签：一行一个号——配对号 / 包发了没 / 挂没挂上，右边三个动作 -->
+  <section class="card hidden" id="tabGrant">
+    <div class="grant-bar">
+      <div class="gchips" id="grantChips"></div>
+      <span class="grant-base">客户用的网址 <input type="text" id="grantBase" placeholder="http://8.222.157.6" title="装机消息里用的是这个网址。公网那台直接填它；本机打开后台时记得改成公网网址，改一次记住。"></span>
+      <a class="btn" style="text-decoration:none;" href="download/executor.zip" download="小红书助手-执行器.zip">⬇ 下载执行器包（通用）</a>
+    </div>
+    <div class="tblwrap">
+      <table class="grant-tbl">
+        <thead><tr>
+          <th>称呼</th><th>交付状态</th><th>档位</th><th>配对号</th><th>小红书号</th><th>抖音号</th><th>包发了没</th><th>最近心跳</th><th>更多</th><th>操作</th>
+        </tr></thead>
+        <tbody id="grantRows"></tbody>
+      </table>
+      <div class="empty hidden" id="grantEmpty">还没有人领号——起始页还没有人来过。</div>
+    </div>
+    <div class="tbl-foot">「交付状态」按下一步该谁动手排：<b>未开档</b>（我们开）→ <b>待发装机消息</b>（我们发）→ <b>已发待装机</b>（等他装）→ <b>已装离线</b>（要跟进）→ <b>在线</b>。点某一行右边的「复制装机消息」＝把网址、配对号、三步装法一起抄进剪贴板，并发给客户；复制的当场记成「已发」。<br>「档位」列点「开档位」＝免费→基础→升级→全功能 逐级往上；「试用到期」和「小灶」两列也在这页改。「算力包」列：<b>＋</b>＝加一份 30 元算力包（+150 次文本 / +30 张图 / +2 条数字人，购买起 30 天有效，同一自然月最多 2 份），<b>－</b>＝撤掉最新一份还没过期的（已经用掉的不往回补）。档位、小灶、试用、算力包都只在这页改，改完存到公网那台，客户机下一次对账（≤15 秒）自己跟上——<b>不用重打包、不用他重开页面</b>。「包发了没」＝你把执行器包给出去没有（点标记手工改）；「最近心跳」＝他电脑上那只手最后一次报到；试用、小灶、算力包收在「更多」里。<b>换码会把已挂的机器踢下线</b>，对方用新码重挂。「小红书号」「抖音号」各一列：点哪一列的「换绑」就只作废哪个平台、只踢这台机器，另一个平台一点不动；同一个号不能绑到两个网页账号，撞了会被拒绝。只做小红书的客户，抖音那格「没绑」不影响交付。</div>
+  </section>
+
+  <!-- 「档位表」签：全系统唯一真源——每一档开哪几格；改一处，落在该档的客户机全体跟着变 -->
+  <section class="card tblwrap hidden" id="tabTable">
+    <table class="tier-tbl">
+      <thead><tr>
+        <th>功能格</th><th class="c">免费</th><th class="c">基础 ①</th><th class="c">升级 ②</th><th class="c">全功能 ③</th>
+      </tr></thead>
+      <tbody id="tierRows"></tbody>
+    </table>
+    <div class="tbl-foot">点格子就改：<b>开 ↔ 关</b>（只有「发笔记」那格多一档「只写稿」＝稿能写能存、不让真发出去）。改一下，所有落在这一档的客户机跟着变（给他单独开过「小灶」的按小灶加减）。初始值＝原来打包预设里那张矩阵逐字搬过来，<b>三档边界没动</b>；「多产品切换」「整页发送」「知识库」三格是谁都有。</div>
+  </section>
+
+</div>
+<div class="mask hidden" id="modal"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const PASS_KEY = 'demo_admin_pass';
+
+  const fmtTime = (ts) => {
+    if (!ts) return '';
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  };
+  const fmtAgo = (ts) => {
+    if (!ts) return '';
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return '刚刚';
+    if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+    if (s < 86400) return Math.floor(s / 3600) + ' 小时前';
+    const d = Math.floor(s / 86400);
+    return d < 30 ? d + ' 天前' : fmtTime(ts).slice(0, 10);
+  };
+
+  function showNotice(kind, html) { const n = $('notice'); n.className = 'notice ' + kind; n.innerHTML = html; n.classList.remove('hidden'); }
+
+  /* 动手之后的小气泡回话（跟 demo 里那个同款） */
+  let toastTimer = null;
+  function toast(text, isErr) {
+    const t = $('toast');
+    t.textContent = text;
+    t.classList.toggle('err', !!isErr);
+    t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('on'), 2600);
+  }
+
+  /* 带口令打后台口（发放签的三个动作 + 包发了没 都走这） */
+  async function admPost(path, body) {
+    const pass = localStorage.getItem(PASS_KEY) || '';
+    const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pass': pass }, body: JSON.stringify(body || {}) });
+    return r.json();
+  }
+
+  /* ── 交付看板：下一步该谁动手，一眼排出来 ── */
+  const BASE_KEY = 'xhs_admin_base';
+  const DELIVERY = [
+    { key: 'all', label: '全部' },
+    { key: 'tier', label: '未开档' },
+    { key: 'send', label: '待发装机消息' },
+    { key: 'install', label: '已发待装机' },
+    { key: 'offline', label: '已装离线' },
+    { key: 'online', label: '在线' },
+  ];
+  const DELIVERY_RANK = { tier: 0, send: 1, install: 2, offline: 3, online: 4 };
+  let grantFilter = 'all';
+
+  function adminBaseUrl() {
+    return String(localStorage.getItem(BASE_KEY) || location.origin || '').trim().replace(/\/+$/, '');
+  }
+
+  function deliveryOf(a) {
+    if (a.tier === '免费') return { key: 'tier', label: '未开档', cls: 'off' };
+    if (!a.pairCode) return { key: 'tier', label: '缺配对号', cls: 'off' };
+    if (!a.packSentAt) return { key: 'send', label: '待发装机消息', cls: 'trial' };
+    if (!a.hasExec) return { key: 'install', label: '已发待装机', cls: 'blue' };
+    if (!a.exec || !a.exec.online) return { key: 'offline', label: '已装离线', cls: 'bad' };
+    return { key: 'online', label: '在线', cls: 'ok' };
+  }
+
+  function renderGrantChips(accounts) {
+    const counts = { all: accounts.length, tier: 0, send: 0, install: 0, offline: 0, online: 0 };
+    accounts.forEach((a) => { counts[deliveryOf(a).key] += 1; });
+    $('grantChips').innerHTML = DELIVERY.map((d) =>
+      '<button class="gchip' + (grantFilter === d.key ? ' on' : '') + '" data-f="' + d.key + '">'
+      + d.label + ' <b>' + counts[d.key] + '</b></button>').join('');
+  }
+  $('grantChips').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-f]');
+    if (!b) return;
+    grantFilter = b.dataset.f;
+    renderGrant(lastAccounts);
+  });
+
+  function buildInstallMsg(a) {
+    const url = adminBaseUrl() + '/setup';
+    return [
+      '【小红书助手 · 装执行器】',
+      '',
+      '1. 打开这一页：' + url,
+      '   用你领号时的手机号登录——页面上有你自己这页。',
+      '2. 配对号：' + a.pairCode,
+      '   点页面上的「下载执行器」，解压到一个固定文件夹（以后别挪）。',
+      '3. 浏览器地址栏输 edge://extensions/（Chrome 用 chrome://extensions/）',
+      '   打开「开发者模式」→「加载解压缩的扩展」→ 选中刚解压的文件夹。',
+      '4. 点工具栏上的执行器图标，配对号填进去，点「挂上」。',
+      '   变成「在线待命」就成了；装执行器的这个浏览器别关。',
+      '',
+      '卡住了，把报错原话发我。',
+    ].join('\n');
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) { return false; }
+  }
+
+  async function markPackSent(acc) {
+    try {
+      const j = await admPost('api/admin/pack-sent', { accountId: acc.id, sent: true });
+      if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+      acc.packSentAt = j.packSentAt || Date.now();
+      renderGrant(lastAccounts);
+      return true;
+    } catch (err) {
+      toast('「已发」没记上：' + err.message, true);
+      return false;
+    }
+  }
+
+  function showMsgModal(msg, acc) {
+    $('modal').innerHTML = '<div class="modal">'
+      + '<h3>复制这段发给「' + esc(acc.name) + '」</h3>'
+      + '<div class="dim" style="font-size:12.5px;margin-bottom:8px;">浏览器不让自动复制——在下面框里全选，Ctrl+C。</div>'
+      + '<textarea id="msgBox" readonly style="width:100%;height:260px;border:1px solid var(--line);border-radius:9px;padding:10px;font:12.5px/1.7 ui-monospace,Consolas,monospace;background:#fafbfc;"></textarea>'
+      + '<div style="margin-top:10px;text-align:right;"><button class="act" data-mode="close">关掉</button></div>'
+      + '</div>';
+    $('modal').classList.remove('hidden');
+    const box = $('msgBox');
+    box.value = msg;
+    box.focus(); box.select();
+  }
+
+  /* ── 发放签：一行一个号——配对号 / 包发了没 / 挂没挂上，右边几个动作 ── */
+  let lastAccounts = [];
+  function renderGrant(accounts) {
+    lastAccounts = accounts;
+    renderGrantChips(accounts);
+    const list = accounts.filter((a) => grantFilter === 'all' || deliveryOf(a).key === grantFilter);
+    list.sort((a, b) => DELIVERY_RANK[deliveryOf(a).key] - DELIVERY_RANK[deliveryOf(b).key]);
+    $('grantEmpty').classList.toggle('hidden', list.length > 0);
+    $('grantEmpty').textContent = accounts.length ? '这个状态下没有号。' : '还没有人领号——起始页还没有人来过。';
+    const tierPill = (t) => (t === '免费' ? '<span class="pill off">免费</span>' : '<span class="pill full">' + esc(t) + '</span>');
+    $('grantRows').innerHTML = list.map((a) => {
+      const codeCell = a.pairCode ? '<span class="pcode">' + esc(a.pairCode) + '</span>'
+        : (a.tier === '免费' ? '<span class="dim">免费档不发码</span>' : '<span class="dim">还没码——点「换码」发一个</span>');
+      const d = deliveryOf(a);
+      const sent = a.packSentAt
+        ? '<span class="pill ok" data-do="sent" title="点一下改成「未发」">已发</span>'
+        : '<span class="pill off" data-do="sent" title="点一下记成「已发」">未发</span>';
+      const beat = (a.exec && a.exec.lastSeen) ? fmtAgo(a.exec.lastSeen) : '—';
+      const ed = a.edition || {};
+      const trial = ed.trialUntil
+        ? (ed.onTrial
+          ? '<span class="pill trial">剩 ' + Math.ceil((ed.trialUntil - Date.now()) / 86400000) + ' 天</span>'
+          : '<span class="pill off">已过期</span>')
+        : '<span class="dim">不开试用</span>';
+      const perkOn = (ed.perk && ed.perk.on) || [], perkOff = (ed.perk && ed.perk.off) || [];
+      const perk = (perkOn.length || perkOff.length)
+        ? '<button class="act" data-do="perk" title="＋额外开 / −额外撤">＋' + perkOn.length + ' / −' + perkOff.length + '</button>'
+        : '<button class="act" data-do="perk">没开</button>';
+      const pk = (a.ai && a.ai.pack) || {};
+      const packCell = (pk.count
+        ? '<span class="pill trial" title="文本剩 ' + pk.left.text + ' 次 · 图剩 ' + pk.left.image + ' 张 · 数字人剩 ' + pk.left.dh + ' 条；最近 ' + pk.daysLeft + ' 天到期">' + pk.count + ' 份 · ' + pk.daysLeft + ' 天</span>'
+        : '<span class="dim">没买</span>')
+        + ' <button class="act" data-do="packadd" title="加一份 30 元算力包：+150 次文本 / +30 张图 / +2 条数字人，30 天有效（本月最多 2 份）">＋</button>'
+        + ' <button class="act" data-do="packrm" title="撤掉最新一份还没过期的（已经用掉的不往回补）">－</button>';
+      /* 一格号：绑了什么 / 最近认号有没有对不上；只给这一格「换绑」 */
+      const bindCell = (p) => {
+        const b = (a.bindings || {})[p];
+        const st = (a.bindState || {})[p];
+        const label = p === 'xhs' ? '小红书' : '抖音';
+        if (!b || (!b.displayId && !b.uid)) return '<span class="dim">没绑</span>';
+        let warn = '';
+        if (st && st.status === 'mismatch') {
+          const saw = (st.saw && (st.saw.displayId || st.saw.uid)) || '另一个号';
+          warn = ' <span class="pill bad" title="最近一次认号：这台登的是 ' + esc(saw) + '">对不上</span>';
+        } else if (st && st.status === 'loggedout') warn = ' <span class="pill off">没登录</span>';
+        return '<span class="bind-id">' + esc(b.displayId || b.uid) + '</span>'
+          + (b.name ? '<span class="dim">' + esc(b.name) + '</span> ' : '')
+          + warn
+          + ' <button class="act" data-do="rebind" data-platform="' + p + '" title="只换' + label + '号：另一个平台不动">换绑</button>';
+      };
+      const moreCell = '<details class="row-more"><summary>更多</summary>'        + '<div class="more-body">'
+        + '<div class="more-line">' + trial + ' <button class="act" data-do="trial" title="改试用到期">改试用</button></div>'
+        + '<div class="more-line">' + perk + '</div>'
+        + '<div class="more-line">' + packCell + '</div>'
+        + '</div></details>';
+      return '<tr data-id="' + esc(a.id) + '">'
+        + '<td><b>' + esc(a.name) + '</b> <span class="dim">尾号 ' + esc(a.phoneTail) + '</span></td>'
+        + '<td><span class="pill ' + d.cls + '">' + d.label + '</span></td>'
+        + '<td>' + tierPill(a.tier) + '</td>'
+        + '<td>' + codeCell + '</td>'
+        + '<td>' + bindCell('xhs') + '</td>'
+        + '<td>' + bindCell('douyin') + '</td>'
+        + '<td>' + sent + '</td>'
+        + '<td class="dim">' + beat + '</td>'
+        + '<td>' + moreCell + '</td>'
+        + '<td><div class="act-row">'
+        + '<button class="act strong" data-do="msg"' + (a.pairCode ? '' : ' disabled title="先开档位或换码发一个配对号"') + '>复制装机消息</button>'
+        + '<button class="act" data-do="tier">开档位</button>'
+        + '<button class="act" data-do="code">换码</button>'
+        + '<button class="act danger" data-do="stop">停这一趟</button>'
+        + '</div></td>'
+        + '</tr>';
+    }).join('');
+  }
+
+  /* 客户用的网址：本机打开后台时改成公网网址，改一次记住 */
+  const grantBaseEl = $('grantBase');
+  grantBaseEl.value = adminBaseUrl();
+  grantBaseEl.addEventListener('change', () => {
+    const v = grantBaseEl.value.trim().replace(/\/+$/, '');
+    grantBaseEl.value = v;
+    if (v) localStorage.setItem(BASE_KEY, v);
+    else localStorage.removeItem(BASE_KEY);
+  });
+
+  /* 开档位：免费→基础→升级→全功能（到头为止）；开的那一刻服务器发配对号 */
+  const TIER_NEXT = { '免费': '基础', '基础': '升级', '升级': '全功能' };
+  $('grantRows').addEventListener('click', async (e) => {
+    const el = e.target.closest('[data-do]'); if (!el) return;
+    const tr = el.closest('tr');
+    const acc = lastAccounts.find((x) => x.id === tr.dataset.id); if (!acc) return;
+    const kind = el.dataset.do;
+    if (kind === 'msg') {
+      if (!acc.pairCode) { toast('先开档位或换码，给他一个配对号'); return; }
+      const base = adminBaseUrl();
+      if (!base || /127\.0\.0\.1|localhost/i.test(base)) {
+        toast('先把上面「客户用的网址」改成公网网址——本机地址客户打不开', true);
+        grantBaseEl.focus();
+        return;
+      }
+      const msg = buildInstallMsg(acc);
+      const copied = await copyText(msg);
+      if (copied) toast('装机消息已复制，记成「已发」——粘给「' + acc.name + '」就行');
+      else showMsgModal(msg, acc);
+      await markPackSent(acc);
+      return;
+    }
+    if (kind === 'tier') {
+      const next = TIER_NEXT[acc.tier];
+      if (!next) { toast('「' + acc.name + '」已经是最高档（全功能）'); return; }
+      el.disabled = true;
+      try {
+        const j = await admPost('api/admin/set-tier', { accountId: acc.id, tier: next });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast('「' + acc.name + '」→ ' + next + (j.pairCode ? '（配对号 ' + j.pairCode + '，让他到网页账号那行看）' : ''));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'code') {
+      el.disabled = true;
+      try {
+        const j = await admPost('api/admin/new-code', { accountId: acc.id });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast(j.old
+          ? ('换了码：' + j.old + ' → ' + j.pairCode + '（旧码当场作废、已挂的机器踢下线）')
+          : ('发了码：' + j.pairCode + '（让他到网页账号那行看）'));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'rebind') {
+      const plat = el.dataset.platform === 'douyin' ? 'douyin' : 'xhs';
+      const label = plat === 'xhs' ? '小红书' : '抖音';
+      const b = (acc.bindings || {})[plat];
+      if (!b) { toast('「' + acc.name + '」还没绑' + label + '号'); return; }
+      const what = plat === 'xhs' ? '获客和 AI客服 这一头当场停' : '抖音这一头当场作废、正在发的单会停';
+      const ok = window.confirm('给「' + acc.name + '」换绑' + label + '号？\n\n'
+        + '现在绑的是 ' + (b.displayId || b.uid) + (b.name ? '（' + b.name + '）' : '') + '。\n\n'
+        + '只换' + label + '：另一个平台不受影响。\n'
+        + what + '；这台机器会被踢下线，客户下次挂线重新认' + label + '号。');
+      if (!ok) return;
+      el.disabled = true;
+      try {
+        const j = await admPost('api/admin/rebind', { accountId: acc.id, platform: plat });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast('已换绑' + label + '：只影响' + label + '，机器已踢下线');
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'stop') {
+      el.disabled = true;
+      try {
+        const j = await admPost('api/exec/admin-stop', { accountId: acc.id });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast(j.delivered
+          ? ('已让「' + acc.name + '」那只手停这一趟（当场送达）')
+          : ('已记下——「' + acc.name + '」那只手下次一上线就停'));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'sent') {
+      try {
+        const j = await admPost('api/admin/pack-sent', { accountId: acc.id });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast(j.packSentAt ? ('「' + acc.name + '」的执行器包：记成「已发」') : ('「' + acc.name + '」的执行器包：改回「未发」'));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); }
+      return;
+    }
+    if (kind === 'packadd' || kind === 'packrm') {
+      el.disabled = true;
+      try {
+        const j = await admPost('api/admin/pack', { accountId: acc.id, op: kind === 'packrm' ? 'remove' : 'add' });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        const pk = j.pack || {};
+        toast(kind === 'packrm'
+          ? ('「' + acc.name + '」撤掉一份算力包（还剩 ' + (pk.count || 0) + ' 份）')
+          : ('「' + acc.name + '」加了一份算力包：30 天有效，文本 +150 / 图 +30 / 数字人 +2（本月第 ' + (pk.monthCount || 0) + ' 份）'));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'trial') {
+      const cur = (acc.edition && acc.edition.trialUntil) || 0;
+      const days = prompt('试用给几天？（填 0 ＝ 不开试用，直接按他现在的档「' + acc.tier + '」开）',
+        cur > Date.now() ? String(Math.ceil((cur - Date.now()) / 86400000)) : '30');
+      if (days === null) return;
+      const n = Math.max(0, Math.min(365, Number(days) || 0));
+      let trialTier = (acc.edition && acc.edition.trialTier) || '全功能';
+      if (n > 0) {
+        const t = prompt('试用期内按哪一档开？（免费 / 基础 / 升级 / 全功能）', trialTier);
+        if (t === null) return;
+        trialTier = String(t).trim() || trialTier;
+      }
+      el.disabled = true;
+      try {
+        const j = await admPost('api/admin/trial', { accountId: acc.id, days: n, trialTier: trialTier });
+        if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+        toast(n > 0 ? ('「' + acc.name + '」试用 ' + n + ' 天，期内按「' + (j.trialTier || trialTier) + '」开')
+          : ('「' + acc.name + '」不过试用，直接按「' + acc.tier + '」开'));
+        await load();
+      } catch (err) { toast('没成：' + err.message, true); el.disabled = false; }
+      return;
+    }
+    if (kind === 'perk') { openPerk(acc); return; }
+  });
+
+  /* ── 小灶：不动档位表，只动他这一台（加＝额外开，撤＝别人有他没有） ── */
+  const CELLS = [
+    { k: 'batchSend', n: '整页发送' }, { k: 'tenant', n: '多产品切换' }, { k: 'knowledge', n: '知识库' },
+    { k: 'notePublish', n: '发笔记' }, { k: 'videoFilm', n: '字效编辑器' }, { k: 'autoWater', n: '获客' },
+    { k: 'dailyBrowse', n: '日常浏览', quiet: '不对外列' }, { k: 'prospectList', n: '线索' },
+  ];
+  let perkAcc = null;
+  function openPerk(a) {
+    perkAcc = a;
+    paintPerk();
+    $('modal').classList.remove('hidden');
+  }
+  function paintPerk() {
+    const a = perkAcc; if (!a) return;
+    const ed = a.edition || {};
+    const on = (ed.perk && ed.perk.on) || [], off = (ed.perk && ed.perk.off) || [];
+    $('modal').innerHTML = '<div class="modal">'
+      + '<h3>给「' + esc(a.name) + '」开小灶</h3>'
+      + '<div class="dim" style="font-size:12.5px;margin-bottom:6px;">不动档位表，只动他这一台。加＝额外开，撤＝别人有他没有。现在是「' + esc(ed.label || a.tier) + '」档' + (ed.onTrial ? '（试用期内按「' + esc(ed.trialTier) + '」开）' : '') + '。</div>'
+      + CELLS.map((c) => {
+        const st = on.includes(c.k) ? 'on' : (off.includes(c.k) ? 'off' : 'base');
+        return '<div class="perk-row" data-k="' + esc(c.k) + '"><b>' + esc(c.n) + (c.quiet ? ' <span class="dim">（' + esc(c.quiet) + '）</span>' : '') + '</b>'
+          + '<div class="seg">'
+          + '<button data-mode="base" class="' + (st === 'base' ? 'on' : '') + '">跟档</button>'
+          + '<button data-mode="on" class="' + (st === 'on' ? 'on' : '') + '">额外开</button>'
+          + '<button data-mode="off" class="' + (st === 'off' ? 'on' : '') + '">额外撤</button>'
+          + '</div></div>';
+      }).join('')
+      + '<div style="margin-top:10px;text-align:right;"><button class="act" data-mode="close">关掉</button></div>'
+      + '</div>';
+  }
+  $('modal').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-mode]');
+    if (!b) { if (e.target === $('modal')) { $('modal').classList.add('hidden'); perkAcc = null; } return; }
+    if (b.dataset.mode === 'close') { $('modal').classList.add('hidden'); perkAcc = null; return; }
+    if (!perkAcc) return;
+    const row = b.closest('.perk-row');
+    const cell = CELLS.find((c) => row && row.dataset.k === c.k);
+    if (!cell) return;
+    b.disabled = true;
+    try {
+      const j = await admPost('api/admin/perk', { accountId: perkAcc.id, key: cell.k, mode: b.dataset.mode });
+      if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+      const acc = lastAccounts.find((x) => x.id === perkAcc.id);
+      if (acc) acc.edition = j.edition;
+      toast('「' + perkAcc.name + '」的「' + cell.n + '」→ ' + (b.dataset.mode === 'on' ? '额外开' : b.dataset.mode === 'off' ? '额外撤' : '跟档'));
+      paintPerk();
+      renderGrant(lastAccounts);
+    } catch (err) { toast('没成：' + err.message, true); b.disabled = false; }
+  });
+
+  /* ── 档位表：全系统唯一真源，点格子就改 ── */
+  let lastTable = null;
+  const TIER_COLS = ['免费', '基础', '升级', '全功能'];
+  function renderTierTable() {
+    if (!lastTable) { $('tierRows').innerHTML = ''; return; }
+    $('tierRows').innerHTML = CELLS.map((c) => {
+      const btns = TIER_COLS.map((t) => {
+        const v = (lastTable[t] || {})[c.k];
+        const cls = v === 'part' ? 'part' : (v ? 'on' : 'off');
+        return '<td class="c"><button class="cbtn ' + cls + '" data-k="' + esc(c.k) + '" data-t="' + esc(t) + '">'
+          + (v === 'part' ? '只写稿' : v ? '开' : '关') + '</button></td>';
+      }).join('');
+      return '<tr><td>' + esc(c.n) + (c.quiet ? ' <span class="quiet">（' + esc(c.quiet) + '）</span>' : '') + (c.shared ? ' <span class="quiet">（谁都有）</span>' : '') + '</td>' + btns + '</tr>';
+    }).join('');
+  }
+  $('tierRows').addEventListener('click', async (e) => {
+    const b = e.target.closest('.cbtn'); if (!b) return;
+    const tier = b.dataset.t, key = b.dataset.k;
+    const cur = (lastTable[tier] || {})[key];
+    let next;
+    if (key === 'notePublish') next = cur === true ? 'part' : (cur === 'part' ? false : true);
+    else next = cur ? false : true;
+    b.disabled = true;
+    try {
+      const j = await admPost('api/admin/tier-table', { table: { [tier]: { [key]: next } } });
+      if (!j || !j.ok) throw new Error((j && j.error) || '没成');
+      lastTable = j.table;
+      if (j.errors && j.errors.length) toast('有几项没认：' + j.errors.join('；'), true);
+      else toast('档位表「' + tier + '·' + keyOfCell(key) + '」→ ' + (next === 'part' ? '只写稿' : next ? '开' : '关') + '（落在这一档的客户机 ≤15 秒跟上）');
+      renderTierTable();
+      await load();
+    } catch (err) { toast('没成：' + err.message, true); b.disabled = false; }
+  });
+  const keyOfCell = (k) => (CELLS.find((c) => c.k === k) || {}).n || k;
+
+  /* 页内三签：账号名单（老样子）/ 执行器发放 / 档位表 */
+  document.querySelectorAll('.adm-tabs button').forEach((b) => {
+    b.addEventListener('click', () => {
+      const t = b.dataset.atab;
+      document.querySelectorAll('.adm-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+      $('tabList').classList.toggle('hidden', t !== 'list');
+      $('tabGrant').classList.toggle('hidden', t !== 'grant');
+      $('tabTable').classList.toggle('hidden', t !== 'table');
+    });
+  });
+
+  async function load() {
+    const pass = localStorage.getItem(PASS_KEY) || '';
+    let j;
+    try {
+      const r = await fetch('api/admin/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-pass': pass },
+        body: '{}',
+      });
+      j = await r.json();
+      if (!j || !j.ok) {
+        if (r.status === 403) {
+          $('passCard').classList.remove('hidden');
+          $('tabsRow').classList.add('hidden'); $('tabList').classList.add('hidden'); $('tabGrant').classList.add('hidden');
+          $('tabTable').classList.add('hidden');
+          $('sumCard').classList.add('hidden'); $('listCard').classList.add('hidden'); $('demoCard').classList.add('hidden');
+          if (pass) { showNotice('warn', '口令不对——再试一次。'); if (!$('passInput').value) $('passInput').value = pass; }
+          else $('notice').classList.add('hidden');
+          return;
+        }
+        showNotice('err', '没看成：' + esc((j && j.error) || ('HTTP ' + r.status)));
+        return;
+      }
+    } catch (e) {
+      showNotice('err', '连不上服务器（' + esc(e.message) + '）——看下服务器小黑窗还在不在。');
+      return;
+    }
+    $('passCard').classList.add('hidden');
+    $('notice').classList.add('hidden');
+    $('tabsRow').classList.remove('hidden');
+
+    const accounts = j.accounts || [];
+    const demoAccounts = j.demoAccounts || [];
+    const fresh = accounts.filter((a) => a.hasSample).length;
+    const full = accounts.filter((a) => a.max && a.used >= a.max).length;
+    $('cntAll').textContent = accounts.length;
+    $('cntFresh').textContent = fresh;
+    $('cntFull').textContent = full;
+    $('cntExec').textContent = accounts.filter((a) => a.exec && a.exec.online).length;
+    $('cntDemo').textContent = demoAccounts.length;
+    const b = j.budget || {};
+    $('cntBudget').textContent = (b.used || 0) + ' / ' + (b.cap || 0);
+    const im = j.image || {};
+    $('cntImg').textContent = im.used || 0;
+    $('cntImgCost').textContent = Number(im.cost || 0).toFixed(2);
+    $('cntImgDay').textContent = (im.dayUsed || 0) + ' / ' + (im.dayCap || 0);
+    const tpl = j.template || {};
+    $('tplLine').textContent = '新号的出厂底子（模板）：' + (tpl.keys || 0) + ' 个数据键 · '
+      + (tpl.hasSample ? '含建材店样例' : '样例不在（被清过）') + ' · '
+      + (tpl.hasTenant ? '租户在' : '租户不在')
+      + '　·　出图 Key：' + (im.keyReady ? '已配（' + (im.model || '') + '）' : '还没配');
+    $('sumCard').classList.remove('hidden');
+    $('listCard').classList.remove('hidden');
+    $('demoCard').classList.remove('hidden');
+    lastTable = j.tier_table || null;
+    renderTierTable();
+    renderGrant(accounts);
+
+    $('demoEmpty').classList.toggle('hidden', demoAccounts.length > 0);
+    $('demoRows').innerHTML = demoAccounts.map((a) => '<tr>'
+      + '<td><b>' + esc(a.name) + '</b> <span class="pill ok">演示号</span></td>'
+      + '<td>' + esc(a.industry || '—') + '</td>'
+      + '<td>' + esc(a.tier || '—') + '</td>'
+      + '<td class="dim">' + (a.img && a.img.unlimited ? '不限张数' : (a.img && a.img.used ? (a.img.used + ' / ' + a.img.max) : '0 / ' + ((a.img && a.img.max) || 10))) + '</td>'
+      + '<td class="dim">' + fmtTime(a.lastAt) + '（' + fmtAgo(a.lastAt) + '）</td>'
+      + '<td class="dim">' + esc(a.lastIp || '—') + '</td>'
+      + '</tr>').join('');
+
+    $('tplLine').textContent += accounts.length ? '　·　名单 15 秒自动刷一次' : '';
+    if (!accounts.length) {
+      $('rows').innerHTML = '';
+      $('emptyLine').classList.remove('hidden');
+      return;
+    }
+    $('emptyLine').classList.add('hidden');
+    $('rows').innerHTML = accounts.map((a) => {
+      const ai = a.ai || {};
+      const tx = ai.text || {};
+      const dh = ai.dh || {};
+      const pk = ai.pack || {};
+      const full = tx.max && tx.used >= tx.max;
+      const quota = '<span class="' + (full ? 'pill full' : '') + '">' + (tx.used || 0) + ' / ' + (tx.max || 0) + (full ? '（用完）' : '') + '</span>'
+        + (pk.count ? ' <span class="pill trial" title="算力包：本月买了 ' + pk.monthCount + ' 份，文本还剩 ' + pk.left.text + ' 次，最近 ' + pk.daysLeft + ' 天到期">＋包</span>' : '');
+      const sample = a.hasSample ? '<span class="pill ok">样例在</span>' : '<span class="pill off">跑过生成</span>';
+      const im = a.img || {};
+      const imgPill = im.mode === 'paid'
+        ? '<span class="' + (im.left ? '' : 'pill full') + '">' + (im.used || 0) + ' / ' + (im.max || 0) + '</span>'
+        : '<span class="pill trial">试用 ' + (im.used || 0) + ' / ' + (im.max || 0) + '</span>';
+      const imgCell = imgPill + ' <span class="dim">¥' + Number(im.cost || 0).toFixed(2) + '</span>'
+        + (im.packLeft ? ' <span class="pill trial">包 ' + im.packLeft + '</span>' : '');
+      const dhCell = '<span class="' + ((dh.max && dh.used >= dh.max && !dh.packLeft) ? 'pill full' : '') + '">' + (dh.used || 0) + ' / ' + (dh.max || 0) + '</span>'
+        + (dh.inflight ? ' <span class="dim">在飞 ' + dh.inflight + '</span>' : '')
+        + (dh.packLeft ? ' <span class="pill trial">包 ' + dh.packLeft + '</span>' : '');
+      const exPill = !a.hasExec ? '<span class="pill off">没挂</span>'
+        : ((a.exec && a.exec.online) ? '<span class="pill ok">在线</span>' : '<span class="pill off">离线</span>');
+      return '<tr>'
+        + '<td><b>' + esc(a.name) + '</b></td>'
+        + '<td>' + esc(a.phoneTail ? ('尾号 ' + a.phoneTail) : a.phone || '') + '</td>'
+        + '<td class="dim">' + fmtTime(a.createdAt) + '</td>'
+        + '<td class="dim">' + fmtTime(a.lastAt) + '（' + fmtAgo(a.lastAt) + '）</td>'
+        + '<td>' + quota + '</td>'
+        + '<td>' + imgCell + '</td>'
+        + '<td>' + dhCell + '</td>'
+        + '<td>' + exPill + '</td>'
+        + '<td>' + sample + '</td>'
+        + '<td class="dim">' + esc(a.lastIp || '—') + '</td>'
+        + '</tr>';
+    }).join('');
+
+    /* 执行器栏（D 期）：同一套口令走 /api/exec/order-all——谁在线、最近的单、流水 */
+    try {
+      const r2 = await fetch('api/exec/order-all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pass': pass }, body: '{}',
+      });
+      const ex = await r2.json();
+      renderExec(ex);
+    } catch (_) { $('execCard').classList.add('hidden'); }
+  }
+
+  /* 执行器栏渲染：手上的活与流水（老板侧一眼看谁在干活） */
+  function renderExec(ex) {
+    const card = $('execCard');
+    if (!ex || !ex.ok) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    const kill = $('execKill');
+    if (ex.killed) { kill.textContent = '🔴 服务器正在熔断中：所有执行器全停（右上角解锁后恢复）。'; kill.classList.remove('hidden'); }
+    else kill.classList.add('hidden');
+
+    const hands = ex.hands || [];
+    $('execEmpty').classList.toggle('hidden', hands.length > 0);
+    const ago = (ts) => ts ? (fmtAgo(ts) + '（' + fmtTime(ts) + '）') : '—';
+    $('execRows').innerHTML = hands.map((h) => '<tr>'
+      + '<td><b>' + esc(h.name || '—') + '</b>' + (h.phoneTail ? ' <span class="dim">尾号 ' + esc(h.phoneTail) + '</span>' : '') + '</td>'
+      + '<td>' + (h.online ? '<span class="pill ok">在线</span>' : '<span class="pill off">离线</span>') + '</td>'
+      + '<td>' + esc(h.tier || '—') + '</td>'
+      + '<td class="dim">' + esc(h.label || '—') + '</td>'
+      + '<td class="dim">' + ago(h.lastSeen) + '</td>'
+      + '</tr>').join('');
+
+    const cmds = ex.cmds || [];
+    $('execCmds').innerHTML = cmds.map((c) => {
+      const st = c.state === 'done' ? '<span class="pill ok">跑完</span>'
+        : c.state === 'failed' ? '<span class="pill full">没成</span>'
+          : '<span class="pill off">' + esc(c.state) + '</span>';
+      return '<tr>'
+        + '<td class="dim">' + fmtTime(c.createdAt) + '</td>'
+        + '<td>' + esc(c.accountName || '—') + '</td>'
+        + '<td>' + esc(c.kindLabel || c.kind) + '</td>'
+        + '<td class="dim">' + (c.by === 'sched' ? '排期自动' : '网页点') + '</td>'
+        + '<td>' + st + '</td>'
+        + '<td class="dim">' + esc(String(c.note || '').slice(0, 40)) + '</td>'
+        + '</tr>';
+    }).join('');
+
+    const log = ex.log || [];
+    $('execLog').textContent = log.map((r) => (r.t || '') + '  ' + (r.kind || '') + '  ' + (r.text || '')).join('\n');
+  }
+
+  $('refreshBtn').addEventListener('click', load);
+  $('passGo').addEventListener('click', () => {
+    localStorage.setItem(PASS_KEY, $('passInput').value.trim());
+    load();
+  });
+  $('passInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
+
+  load();
+  setInterval(() => { if (!$('passCard').classList.contains('hidden')) return; if (document.hidden) return; load(); }, 15000);
+})();
+</script>
+</body>
+</html>

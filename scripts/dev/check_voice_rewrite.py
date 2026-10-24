@@ -26,6 +26,8 @@ import time
 
 from playwright.sync_api import expect, sync_playwright
 
+from _guide_gate import goto_big
+
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
@@ -214,8 +216,8 @@ with sync_playwright() as p:
     pg.set_default_timeout(20000)
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto(f'chrome-extension://{eid}/popup.html?mode=big')
-    pg.wait_for_function('typeof _npWiz !== "undefined" && typeof switchMainTab === "function"')
+    goto_big(pg, eid)
+    pg.wait_for_function('() => typeof _npWiz !== "undefined"')
     if pg.locator('#fsClose').is_visible():
         pg.locator('#fsClose').click()
 
@@ -444,8 +446,7 @@ with sync_playwright() as p:
     pg.locator('.npar-next[data-id="%s"]' % ar_id).click()
     pg.wait_for_function('() => document.querySelectorAll("#filmGate .np-kind-pick").length === 6')
     pg.locator('#filmGate .np-kind-pick[data-k="PPT字体动效"]').click()
-    pg.wait_for_function('''(a) => { const f = document.getElementById('filmFrame');
-        const F = f && f.contentWindow && f.contentWindow.Film;
+    pg.wait_for_function('''(a) => { const F = window.Film;
         return !!(F && F.noteId === a[0] && F.scenes.length && String(F.script) === a[1])
             && getComputedStyle(document.getElementById('filmGate')).display === 'none'; }''',
         arg=[ar_id, VOICE_EDIT], timeout=30000)
@@ -454,21 +455,20 @@ with sync_playwright() as p:
         const rows = n.filmDocs || [];
         return rows.length === 1 && rows[0].kind === 'PPT字体动效' && rows[0].key === a.id; })''',
         {'id': ar_id}, timeout=15000)
-    vf = [f for f in pg.frames if 'video.html' in f.url][0]
-    # 递稿是异步的（filmHandScript → Film.loadNote 里先 await docsGet）：台子「在跑」≠稿子已经放进去，
+    # 递稿是异步的（npFilmHand → Film.loadNote 里先 await docsGet）：台子「在跑」≠稿子已经放进去，
     # 得等那一格真填上了再判（等不到就让下面那句断言把实际值报出来）
     try:
-        vf.wait_for_function('(t) => { const el = document.querySelector("#script"); return !!el && el.value === t; }',
+        pg.wait_for_function('(t) => { const el = document.querySelector("#filmPane #script"); return !!el && el.value === t; }',
                              arg=VOICE_EDIT, timeout=15000)
     except Exception:
         pass
-    assert vf.locator('#script').input_value() == VOICE_EDIT, vf.locator('#script').input_value()[:80]
+    assert pg.locator('#filmPane #script').input_value() == VOICE_EDIT, pg.locator('#filmPane #script').input_value()[:80]
     # 片台念的是这一篇正文；幕按「🖼 出图」那张画面表排（一行＝一段底图，同一段按字数再切）——2 屏＝2 幕，别拿整篇自己乱切
-    assert vf.evaluate('() => Film.scenes.length') == len(st7['items']), \
-        '片台该按这一篇的画面表排幕（%d 屏）：%s' % (len(st7['items']), vf.evaluate('() => Film.scenes.length'))
+    assert pg.evaluate('() => window.Film.scenes.length') == len(st7['items']), \
+        '片台该按这一篇的画面表排幕（%d 屏）：%s' % (len(st7['items']), pg.evaluate('() => window.Film.scenes.length'))
     assert [COUNT.get('cuts', 0), COUNT.get('descs', 0)] == [b_cut + 1, b_desc + 1], '进台子／挑形式都不该再补打 AI'
     print('PASS: 档案那行「下一步」→ 进字效编辑器挑形式（「PPT字体动效」落 filmDocs），念的就是这一篇的正文、幕按这一篇画面表排（%d 屏＝%d 幕）'
-          % (len(st7['items']), vf.evaluate('() => Film.scenes.length')), flush=True)
+          % (len(st7['items']), pg.evaluate('() => window.Film.scenes.length')), flush=True)
 
     assert not errs, errs
     print('PASS: 无 pageerror', flush=True)

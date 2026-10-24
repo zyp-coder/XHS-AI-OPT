@@ -4,7 +4,7 @@
  * 独立于现有代码，仅通过操作界面按钮实现自动化：
  *   1. 自动点击"开始搜索" → 等待搜索结果
  *   2. 自动点击每个笔记的"打开"按钮 → 等待评论加载
- *   3. 自动点击每个潜在客户的"一键发送"按钮
+ *   3. 自动点击每个潜在顾客的"一键发送"按钮
  *   4. 重复直到所有笔记处理完毕
  *
  * 所有等待均通过 MutationObserver 实现，零固定延时，纯串行执行。
@@ -294,7 +294,7 @@
       this.autoMode = !!(opts && opts.auto);
       this._autoStopN = 0;
       this.scope = scope === 'growing' ? 'growing' : 'all';
-      this.pace = pace === 'interval' ? 'interval' : 'once';
+      this.pace = (pace === 'once' || pace === 'interval') ? pace : 'interval';
       // ★ 双引擎：启动即绑定水 tab（只在它上面驱动页面，客服走客服 tab，二者互不抢页）
       try { await this._ensureWaterTab(); } catch (_) {}
       // ★ 手动/自动互斥：运行期间禁用列表里的单篇「🔗 打开」，避免人工点开与执行器抢同一个页面
@@ -388,7 +388,7 @@
 
     /** 读「💧 灌水频率与去重」里的额度控制/节奏配置（NoteTrend 侧默认值兜底） */
     _trendConfig: async function () {
-      var config = { scanIntervalMin: 2, maxPerRound: 3 };
+      var config = { scanIntervalMin: 10, maxPerRound: 3 };
       try {
         if (window.NoteTrend) {
           var c = await window.NoteTrend.getConfig();
@@ -1539,7 +1539,7 @@
         return { count: ncCount, reason: ncCount > 0 ? 'sent' : 'watered' };
       }
       if (sendWait !== 'sendbtn') {
-        botLog('  → 无潜在客户（' + (sendWait === 'empty' ? 'AI 判定无商机/评论不足' : '180s 超时') + '），返回列表', 'info');
+        botLog('  → 无潜在顾客（' + (sendWait === 'empty' ? 'AI 判定无商机/评论不足' : '180s 超时') + '），返回列表', 'info');
         return { count: ncCount, reason: ncCount > 0 ? 'sent' : (sendWait === 'empty' ? 'empty' : 'timeout') };
       }
 
@@ -1555,7 +1555,7 @@
           + (pbNone ? '只埋伏不评论' : '只收进获客清单，不逐条回复') + '）', 'success');
         return await self._collectProspects(noteTitle, sendBtns, ncCount);
       }
-      botLog('  💬 发现 ' + sendBtns.length + ' 个潜在客户', 'success');
+      botLog('  💬 发现 ' + sendBtns.length + ' 个潜在顾客', 'success');
 
       var sentCount = 0;
       var toProfile = []; // ★ 收集本篇新入清单的商机，结尾批量跑 AI 画像（获客逻辑）
@@ -1730,7 +1730,7 @@
     /* ─── 一项跑完 → 可中断等待下一项（定时轮：把一天的额度摊开跑） ─── */
     _waitNextRound: async function (config, round) {
       var self = this;
-      var mins = (config && config.scanIntervalMin) || 2;
+      var mins = (config && config.scanIntervalMin) || 10;
       var nextAt = new Date(Date.now() + mins * 60000);
       var hh = String(nextAt.getHours()).padStart(2, '0');
       var mm = String(nextAt.getMinutes()).padStart(2, '0');

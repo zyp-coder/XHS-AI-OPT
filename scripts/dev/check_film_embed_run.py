@@ -15,6 +15,8 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
+from _guide_gate import goto_big
+
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
@@ -50,13 +52,13 @@ def boot(p):
 with sync_playwright() as p:
     ctx = boot(p)
     errs = []
+    eid = ctx.service_workers[0].url.split('/')[2]
     page = ctx.new_page()
     page.set_viewport_size({'width': 1160, 'height': 900})
     page.set_default_timeout(30000)
     page.on('pageerror', lambda e: errs.append(str(e)))
-    eid = ctx.service_workers[0].url.split('/')[2]
-    page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
-    page.wait_for_function('typeof switchMainTab === "function"')
+    goto_big(page, eid)
+
     if page.locator('#fsClose').is_visible():
         page.locator('#fsClose').click()
     # 出片台第一步先定「这一档要做成什么片」（不选就盖着进不去）——按档案那一行进来的口径进来
@@ -66,29 +68,34 @@ with sync_playwright() as p:
     page.wait_for_function('''() => { const f = document.getElementById('filmFrame');
         return !!(f && f.contentWindow && f.contentWindow.Film); }''')
     vf = [f for f in page.frames if 'video.html' in f.url][0]
-    assert 'embed=1' in vf.url and vf.evaluate('document.documentElement.className') == 'embed', \
+    assert 'embed=1' in vf.url and vf.evaluate('() => document.documentElement.className') == 'embed', \
         '内嵌版该走紧凑样式（html.embed）'
-    assert vf.evaluate('document.documentElement.scrollHeight <= innerHeight + 1'), \
+    assert vf.evaluate('() => document.documentElement.scrollHeight <= innerHeight + 1'), \
         '内嵌版自己不该冒出滚动条（顶栏高度没算准时会多出几像素）'
-    # 右侧两栏是横置 tab（① 口播稿 / ② 分幕；③ 音色 / ④ 风格 收进「⚙ 音色与风格」弹层）：
-    # 一行放得下、不横向溢出（预览得按窗口高度缩，别把右边那栏挤出去）
+    # 顶上那条工作流＝🎬 分幕 / 发布（七十一改：口播稿与分幕并成一屏、两站并成一站；
+    # ③ 音色 / ④ 风格 仍收在「⚙ 音色与风格」弹层）：一行放得下、不横向溢出（预览按窗口高度缩，别把两栏挤出去）
     lay = vf.evaluate('''() => {
         const de = document.documentElement;
-        const tabs = [...document.querySelectorAll('#filmTabs .ftab')];
-        const clipped = tabs.filter(t => t.scrollWidth > t.clientWidth + 1).map(t => t.textContent.trim());
-        return { n: tabs.length, labels: tabs.map(t => String((t.firstChild && t.firstChild.textContent) || '').trim()),
-                 rows: [...new Set(tabs.map(t => Math.round(t.getBoundingClientRect().top)))].length,
-                 overX: de.scrollWidth - innerWidth, on: document.querySelectorAll('.right .fsec.on').length, clipped };
+        const bs = [...document.querySelectorAll('#flowBar button')];
+        const clipped = bs.filter(b => b.scrollWidth > b.clientWidth + 1).map(b => b.textContent.trim());
+        const vis = (sel) => { const el = document.querySelector(sel); return !!el && el.getBoundingClientRect().width > 40; };
+        return { n: bs.length, labels: bs.map(b => String(b.firstChild.textContent).trim()),
+                 rows: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))].length,
+                 overX: de.scrollWidth - innerWidth, clipped,
+                 script: vis('#secScript'), scenesCol: vis('.col.scenes'), scenes: vis('#scenes'),
+                 stepBtns: ['prevStep', 'nextStep'].filter(id => !!document.getElementById(id)) };
     }''')
-    assert lay['n'] == 2 and lay['labels'] == ['① 口播稿', '② 分幕'], \
-        '右侧该是两条横置 tab（口播稿/分幕；音色·风格收进「⚙ 音色与风格」弹层），实际 %s' % lay['labels']
-    assert lay['rows'] == 1, '两条 tab 该横在一行，实际排了 %d 行' % lay['rows']
-    assert lay['overX'] <= 1, '内嵌版横向溢出了 %dpx（右栏被挤出弹窗）' % lay['overX']
-    assert lay['on'] == 1, '一次只该开一栏，实际 %d' % lay['on']
-    assert not lay['clipped'], 'tab 上的字被挤没：%s' % lay['clipped']
-    print('PASS: 内嵌版两条横置 tab（① 口播稿 / ② 分幕）一行放下（无横向溢出），一次只开一栏', flush=True)
+    assert lay['n'] == 2 and lay['labels'] == ['🎬 分幕', '发布'], \
+        '顶上该是这两站（分幕 / 发布；这一趟没带前头的工作流所以只有这两颗），实际 %s' % lay['labels']
+    assert lay['rows'] == 1, '这几站该横在一行，实际排了 %d 行' % lay['rows']
+    assert lay['overX'] <= 1, '内嵌版横向溢出了 %dpx（栏被挤出弹窗）' % lay['overX']
+    assert lay['script'] and lay['scenesCol'] and lay['scenes'], '一屏一站：稿栏与幕栏该同时摆着 %s' % lay
+    assert not lay['stepBtns'], '底栏不该再有步进按钮（七十一改）：%s' % lay['stepBtns']
+    assert not lay['clipped'], '站名被挤没：%s' % lay['clipped']
+    print('PASS: 内嵌版一屏一站（稿栏＋幕栏同屏、无步进），顶上工作流条＝%s（一行放下、无横向溢出）'
+          % ' / '.join(lay['labels']), flush=True)
 
-    # ① 口播稿框跟着预览的高度撑（过去固定 270px，稿子长就得在小框里滚）
+    # 口播稿框跟着预览的高度撑（过去固定 270px，稿子长就得在小框里滚）
     sz = vf.evaluate('''() => {
         const s = document.getElementById('script').getBoundingClientRect();
         const c = document.getElementById('cv').getBoundingClientRect();
@@ -121,7 +128,7 @@ with sync_playwright() as p:
 
     # ① 出片刚起步就切走左栏：iframe 被 display:none 藏起来，编码该照跑
     page.wait_for_timeout(400)
-    page.evaluate('switchMainTab("noteWrite")')
+    page.evaluate('() => switchMainTab("noteWrite")')
     hidden = page.evaluate('''() => {
         const c = document.getElementById('filmContent');
         return !!c && getComputedStyle(c).display === 'none';
@@ -150,7 +157,7 @@ with sync_playwright() as p:
           % (f_out, got, dls[0].suggested_filename), flush=True)
 
     # ③ 回片台看一眼：状态收干净了（不在出片中、按钮回到能点）
-    page.evaluate('switchMainTab("noteFilm")')
+    page.evaluate('() => switchMainTab("noteFilm")')
     assert vf.evaluate('() => Film.busy') is False, '出完该把 busy 收掉'
     assert vf.evaluate('() => !document.getElementById("go").disabled'), '出完「开始」该能再点'
     print('PASS: 出完状态收干净（busy=false、「开始」可再点）', flush=True)
@@ -161,8 +168,7 @@ with sync_playwright() as p:
 
     # ④ 逃生口：单开一页（手上这份稿子要带过去，别让新页拿到旧的；单开那页是完整版布局）
     TYPED = '单开一页要带过去的稿子。'
-    vf.locator('#filmTabs .ftab[data-sec="script"]').click()   # 分完幕停在②，要改稿先回①（两栏是横置 tab）
-    vf.locator('#script').fill(TYPED)
+    vf.locator('#script').fill(TYPED)   # 七十一改：一屏一站，稿子就在左边那框里改，不用回上一站
     with ctx.expect_page(timeout=20000) as pinfo:
         vf.locator('#popout').click()
     vp = pinfo.value

@@ -65,13 +65,21 @@
     frame: 'text', bg: 'dark', accent: '#F97316', font: 'sans', weight: 'bold', size: 'm', leading: 'normal',
     em: 'tint', texture: 'none', glow: 'on', label: 'bar', pace: 'normal', foot: 'on',
     brand: 'AI杨小过',
+    // 下面两旋钮只管混剪那一路的声音（画面＝混剪实拍时才摆出来），照旧跟配置行走、按篇存
+    bgm: 'piano', sfx: 'word',
     // 音色不参与画面渲染，但跟着同一条配置行走：出片时按它配音、并把分幕时间轴按这条音色重算
     voice: 'zh-CN-XiaoxiaoNeural',
   };
 
   const FIELDS = [
-    // 画面形式：大字＝现成那套整屏文字动效；卡片轮播＝一幕一张卡（带底图）地翻，配同一条口播
-    { k: 'frame', t: '画面', type: 'seg', opts: [{ v: 'text', l: '大字' }, { v: 'card', l: '卡片轮播' }] },
+    // 画面形式：大字＝现成那套整屏文字动效；卡片轮播＝一幕一张卡（带底图）地翻，配同一条口播；
+    // 混剪实拍＝一幕垫一段自己的实拍／一张照片当底，上面还是大字动效（底不够就留深色纯字）
+    { k: 'frame', t: '画面', type: 'seg', opts: [{ v: 'text', l: '大字' }, { v: 'card', l: '卡片轮播' }, { v: 'mix', l: '混剪实拍' }] },
+    // 这两排只在「垫了底」时摆出来（mixOnly）：纯大字那一路只有配音，加了实拍／卡才有背景音乐与音效
+    { k: 'bgm', t: '背景音乐', type: 'seg', mixOnly: true,
+      opts: [{ v: 'off', l: '不要' }, { v: 'piano', l: '安静钢琴' }, { v: 'beat', l: '轻快节奏' }] },
+    { k: 'sfx', t: '音效', type: 'seg', mixOnly: true,
+      opts: [{ v: 'off', l: '不要' }, { v: 'word', l: '跟字响（坑→咚／好处→啵／平常→轻一下）' }] },
     { k: 'bg', t: '底色', type: 'chip', shape: 'box',
       opts: Object.keys(BGS).map(k => ({ v: k, l: BGS[k].l, c: BGS[k].c })) },
     { k: 'accent', t: '主色', type: 'chip', shape: 'dot',
@@ -99,11 +107,12 @@
   /* ---------------- 配置 → 风格对象 ---------------- */
   function buildStyle(c) {
     c = Object.assign({}, DEFAULT_CFG, c || {});
-    const B = BGS[c.bg] || BGS.dark;
+    const mix = c.frame === 'mix';                       // 混剪实拍：底交给素材，画面本身不发光不铺纹、字一律白
+    const B = mix ? BGS.dark : (BGS[c.bg] || BGS.dark);
     const F = FONTS[c.font] || FONTS.sans;
     const deep = B.deep;
     const A = /^#[0-9a-f]{3,8}$/i.test(c.accent || '') ? c.accent : DEFAULT_CFG.accent;
-    const glows = c.glow === 'off' ? [] : (deep
+    const glows = (mix || c.glow === 'off') ? [] : (deep
       ? [{ c: hexA(A, .15), r: 760, x: .82, y: .14, ax: .06, ay: .04, p: 13 },
          { c: hexA(A, .07), r: 620, x: .16, y: .88, ax: .05, ay: .05, p: 17 }]
       : [{ c: hexA(A, .16), r: 900, x: .5, y: .5, ax: .08, ay: .05, p: 21 }]);
@@ -112,9 +121,10 @@
       name: '自定义',
       bg: B.c, glows, deep,
       card: c.frame === 'card',
+      mix: mix,
       safe: c.frame === 'card' ? CARD.safe : SAFE,      // 卡片模式：文案排在卡里，安全宽跟着卡走
-      texture: c.texture === 'none' ? null : c.texture,
-      text: B.text, sub: B.sub,
+      texture: (mix || c.texture === 'none') ? null : c.texture,
+      text: mix ? '#FFFFFF' : B.text, sub: mix ? 'rgba(255,255,255,.8)' : B.sub,
       accent: A,
       emMode: c.em === 'swipe' ? 'swipe' : 'tint',
       swipe: hexA(A, deep ? .24 : .17),
@@ -146,7 +156,9 @@
       const i = p.indexOf('=');
       if (i > 0) o[p.slice(0, i).trim()] = p.slice(i + 1).trim();
     });
-    return Object.assign({}, DEFAULT_CFG, o);
+    const c = Object.assign({}, DEFAULT_CFG, o);
+    if (c.sfx !== 'off') c.sfx = 'word';          // 旧档里的换屏响统一成跟字响
+    return c;
   };
 
   /* ---------------- 纹理（一次性预渲染成离屏画布，按深浅各存一张） ---------------- */
@@ -458,8 +470,32 @@
     return out;
   }
 
+  /* ---------------- 混剪实拍：一屏可以拼几节料（不够长让最后一节从头再播） ----------------
+     跟卡片轮播共用同一套文案数据，区别在底：底铺满整屏（不框卡），字压在暗罩上。
+     这一屏播到哪一节、这一节的起止，由 video.js 算好挂在 sc.matRun 上（淡入和推近按节各算，一节一开头）。
+     没料的屏留深色纯字。 */
+  function drawMatBackdrop(ctx, t, sc, S, tl) {
+    const img = sc.matImg;
+    if (!img) return;                                   // 这一屏没料：buildStyle 那层深色底顶着，纯大字
+    const run = sc.matRun || { start: sc.start, end: sc.end };
+    const enter = eoc(seg(t, run.start, .34));
+    const kb = 1 + .04 * clamp01((t - run.start) / Math.max(.001, run.end - run.start));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    ctx.globalAlpha = Math.max(.05, enter);
+    drawCover(ctx, img, 0, 0, W, H, kb);
+    ctx.restore();
+    const g = ctx.createLinearGradient(0, 0, 0, H);      // 上压品牌行、中压大字、底留一点素材亮度
+    g.addColorStop(0, 'rgba(6,8,12,.66)');
+    g.addColorStop(.34, 'rgba(6,8,12,.40)');
+    g.addColorStop(.62, 'rgba(6,8,12,.52)');
+    g.addColorStop(1, 'rgba(6,8,12,.70)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
   function drawCover(ctx, img, x, y, w, h, zoom) {
-    const iw = img.width || img.naturalWidth || 1, ih = img.height || img.naturalHeight || 1;
+    const iw = img.videoWidth || img.width || img.naturalWidth || 1, ih = img.videoHeight || img.height || img.naturalHeight || 1;
     const k = Math.max(w / iw, h / ih) * (zoom || 1);   // 铺满卡片，溢出的裁掉（不拉变形）
     const dw = iw * k, dh = ih * k;
     ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
@@ -682,6 +718,7 @@
       if (fade <= 0) continue;
 
       if (S.card) { drawCardScene(ctx, t, sc, S, tl); continue; }
+      if (S.mix) drawMatBackdrop(ctx, t, sc, S, tl);     // 混剪：先铺这一屏的料当底，字照大字那套路数画在暗罩上
 
       drawLabel(ctx, t, sc, S, fade);
 

@@ -12,6 +12,10 @@ window.AutoWaterApp = (function () {
   var noteOpened = false;
   // ★ 执行器运行中：锁住单篇「🔗 打开」（人工与自动会抢同一个页面，必须显式互斥）
   var botLocked = false;
+  // 搜索链（2026-10-23）：一轮一类，服务器约 10 分钟派下一类。
+  // 网页不自己跑链，只把 window.__xhsChain 画出来：这一轮结果、后面还有哪几类、停手原因。
+  var _chainResultSig = '';   // 已经画到列表上的那一轮（轮次 + 篇数 + 笔记）
+  var _chainLoggedSig = '';   // 已经写进日志的那一次推进（状态 + 轮次 + 篇数）
 
   function $(sel) { return document.querySelector(sel); }
 
@@ -164,7 +168,7 @@ window.AutoWaterApp = (function () {
   var KW_TYPES = [
     { id: 'latest', icon: '🆕', svg: 'spark', name: '最新', tip: '关键词按「最新」搜，盯新帖抢前排' },
     { id: 'top', icon: '🔥', svg: 'pulse', name: 'TOP', tip: '关键词按点赞/评论/收藏最多搜，走活水维护' },
-    { id: 'local', icon: '📍', svg: 'building', name: '本地', tip: '关键词+属地搜，本地刚需直接评（属地跟「诊断&配置 → 基础配置」）' },
+    { id: 'local', icon: '📍', svg: 'building', name: '本地', tip: '关键词+属地搜，本地刚需直接评（属地跟「账号规划 → 基础配置」）' },
     { id: 'pain', icon: '🎯', svg: 'target', name: '求助', tip: '关键词+求助词搜（求推荐/听劝）' },
     { id: 'rival', icon: '🕵️', svg: 'eye', name: '竞对', tip: '词填竞品名：只进笔记蹲人拉清单，一个字都不评论' }
   ];
@@ -330,7 +334,7 @@ window.AutoWaterApp = (function () {
       var q = document.createElement('span');
       q.className = 'qhelp';
       q.tabIndex = 0;
-      q.setAttribute('data-tip', '按顺序逐个搜：第一个词跑完才轮到第二个。点词＝立刻只搜这一类（不用等间隔到点）；×＝停用（词池里还留着）；「搜索」＝按节奏跑当前词到点的几类；哪些词跑哪几类在「获客 → 任务配置」。');
+      q.setAttribute('data-tip', '按顺序逐个词跑：点一次「搜索」只跑当前词的「最新」一类；后面的 TOP / 本地 / 求助由服务器约 10 分钟一类接着派。点词＝立刻只搜这一类（不用等间隔到点）；×＝停用（词池里还留着）；哪些词跑哪几类在「获客 → 任务配置」。');
       q.textContent = '?';
       hint.appendChild(q);
       /* 可见的只有跟着状态走的部分：当前搜哪一类 / 启用了几个词 */
@@ -362,6 +366,7 @@ window.AutoWaterApp = (function () {
       if (!r.ok) { showError(r.error || '搜索启动失败'); return { ok: false, error: r.error || '搜索启动失败' }; }
       await loadKwList();
       showPanel('searching');
+      if (r.ordered) refreshStatus();
       return { ok: true, keyword: r.keyword || list[idx], kwIdx: (typeof r.kwIdx === 'number' ? r.kwIdx : idx) };
     } catch (e) {
       showError('搜索请求失败: ' + e.message);
@@ -379,6 +384,7 @@ window.AutoWaterApp = (function () {
       var r = await sendMsg('searchNotes', { profile: String(url || ''), label: nm, scenario: only, force: true });
       if (!r.ok) { showError(r.error || '主页扫描启动失败'); return { ok: false, error: r.error || '主页扫描启动失败' }; }
       showPanel('searching');
+      if (r.ordered) refreshStatus();
       return { ok: true, keyword: r.keyword || nm };
     } catch (e) {
       showError('主页扫描请求失败: ' + e.message);
@@ -417,15 +423,17 @@ window.AutoWaterApp = (function () {
   }
   window._openKwCandidates = openKwCandidates;
 
-  /* ─── 搜索（按关键词列表：逐个顺序搜索，第一个完成才开始第二个） ─── */
+  /* ─── 搜索：点一次只跑当前词的「最新」一类；后面几类由服务器约 10 分钟一类接着派 ─── */
   async function doSearch() {
     var max = await ensureKwMax();
     var input = document.getElementById('awKeywordPopup');
     var typed = input ? String(input.value || '').trim() : '';
     var list = await loadKwList();
+    var typedWord = '';
     // 输入框里还有没加进列表的词 → 自动先加入再搜（同样支持一次输入多个，按空格/逗号/顿号拆分）
     if (typed) {
       var extra = typed.split(/[,，、\s\n]+/).filter(Boolean);
+      typedWord = extra[0] || '';
       var dirty = false;
       for (var ei = 0; ei < extra.length; ei++) {
         if (list.indexOf(extra[ei]) === -1) {
@@ -437,16 +445,28 @@ window.AutoWaterApp = (function () {
       if (dirty) { list = await saveKwList(list); if (input) input.value = ''; await loadKwList(); }
     }
     if (list.length === 0) { showError('请先在左上方输入框添加一个搜索关键词（回车或点＋），再点搜索'); if (input) input.focus(); return; }
+    // ★ 只认词标签上的这一个词：随单带上，后台不顺延到别的词
+    var at = typedWord ? list.indexOf(typedWord) : -1;
+    if (at < 0) at = Math.min(Math.max(_kwIdx, 0), list.length - 1);
+    _kwIdx = at;
+    try {
+      var raw = await chrome.storage.local.get('auto_water_config');
+      var cfg = raw['auto_water_config'] || {};
+      cfg.schedule = cfg.schedule || {};
+      cfg.schedule.kwIdx = at;
+      await chrome.storage.local.set({ auto_water_config: cfg });
+    } catch (_) {}
     foundNotes = [];
     resultsRendered = false;
     noteOpened = false;
+    _chainResultSig = '';
+    _chainLoggedSig = '';
     try {
-      // 「搜索」= 按节奏跑当前词的这一轮（哪几类到点就搜哪几类）；
-      // 想立刻只搜某一类，点上面那排类型按钮 + 词标签
-      var resp = await sendMsg('searchNotes');
+      var resp = await sendMsg('searchNotes', { kw: list[at] });
       if (!resp.ok) { showError(resp.error || '搜索启动失败'); return; }
-      await loadKwList();   // 后台可能顺延到下一个到点的词，同步标签
+      await loadKwList();   // 同步标签（不再换词）
       showPanel('searching');
+      if (resp.ordered) refreshStatus();
     } catch (e) {
       showError('搜索请求失败: ' + e.message);
     }
@@ -774,10 +794,192 @@ window.AutoWaterApp = (function () {
     }).join('');
   }
 
+  /* ─── 一轮的顶行（2026-10-23）───
+     这一轮：X · 收 N 篇 · 今天共 M 篇
+     后面还有：TOP · 本地 · 求助（约 10 分钟一类）   ← 只剩最后一类/全跑完不写 */
+  /* 这一行用短名（最新/TOP/本地/求助），不搬类型页那颗「最新笔记」全名——一行里要塞下轮次与篇数 */
+  function scenarioNameOf(id) {
+    var m = { latest: '最新', top: 'TOP', local: '本地', pain: '求助', rival: '竞对', highv: '高V', daily: '日常' };
+    var key = String(id || '');
+    if (m[key]) return m[key];
+    try {
+      if (typeof window.drainScenarioDef === 'function') {
+        var d = window.drainScenarioDef(key);
+        if (d && d.scenario && m[d.scenario]) return m[d.scenario];
+      }
+    } catch (_) {}
+    return key;
+  }
+
+  function notesSig(round, found, notes) {
+    var ids = (notes || []).map(function (n) { return String((n && n.noteId) || ''); }).join(',');
+    return String(round || '') + '|' + (Number(found) || 0) + '|' + ids;
+  }
+
+  function paintRoundLine(round, found, dayTotal, chain) {
+    var line = document.getElementById('roundLine');
+    var sub = document.getElementById('roundSub');
+    if (!line || !sub) return;
+    var name = scenarioNameOf(round);
+    if (!name) { line.style.display = 'none'; sub.style.display = 'none'; return; }
+    line.style.display = 'block';
+    line.textContent = '这一轮：' + name + ' · 收 ' + (Number(found) || 0) + ' 篇 · 今天共 ' + (Number(dayTotal) || 0) + ' 篇';
+    var rem = [];
+    if (chain) {
+      if (Array.isArray(chain.remain) && chain.remain.length) rem = chain.remain.map(scenarioNameOf);
+      else if (Array.isArray(chain.remainNames)) rem = chain.remainNames;
+    }
+    var txt = '', stopped = false;
+    if (rem.length) {
+      if (chain.status === 'waiting') txt = '后面还有：' + rem.join(' · ') + '（约 10 分钟一类）';
+      else if (chain.status === 'stopped') { txt = '后面还有：' + rem.join(' · ') + '（已停手，回来重新点「搜索」）'; stopped = true; }
+    }
+    if (txt) {
+      sub.style.display = 'block';
+      sub.textContent = txt;
+      sub.style.color = stopped ? '#b45309' : '#9ca3af';
+    } else {
+      sub.style.display = 'none';
+    }
+  }
+
   async function refreshStatus() {
     try {
       var s = await sendMsg('getAutoWaterStatus');
       var ss = s.searchState;
+
+      /* 公网版：搜索这活是派给执行器的（服务器/网页这头不碰平台）。
+         派单后先显示「已派给执行器」；单跑完把执行器回执里的结果（前 10 篇）摊到列表里。 */
+      var ord = window.__xhsOrderedSearch;
+      if (ord && !ord.done) {
+        showPanel('searching');
+        document.getElementById('searchText').textContent = '已派给执行器：正在搜「' + (ord.keyword || '') + '」';
+        document.getElementById('searchDetail').textContent = '执行器在它那台浏览器里跑；想停就点下面「取消搜索」。跑完的结果会落到这里';
+        var ordPlan = document.getElementById('searchPlan');
+        if (ordPlan) ordPlan.innerHTML = '';
+        document.getElementById('searchBar').style.width = '100%';
+        document.getElementById('searchBarLabel').textContent = '已派单 · 等执行器回话';
+        var ordCs = document.getElementById('btnCancelSearch');
+        if (ordCs) ordCs.style.display = '';
+        return;
+      }
+      if (ord && ord.done) {
+        window.__xhsOrderedSearch = null;
+        var ordCs2 = document.getElementById('btnCancelSearch');
+        if (ordCs2) ordCs2.style.display = 'none';
+        if (!ord.ok) { showError('搜索没跑成：' + (ord.note || '执行器没回原因')); return; }
+        var dl = {};
+        try { dl = JSON.parse(ord.detail || '{}'); } catch (_) { dl = {}; }
+        var ordNotes = (dl.notes || []).map(function (n) {
+          var id = String((n && n.noteId) || '');
+          return {
+            noteId: id, title: (n && n.title) || '（无标题）', author: '', likes: '',
+            url: id ? ('https://www.xiaohongshu.com/explore/' + id) : '',
+          };
+        });
+        var dlRound = dl.round || dl.roundName || '';
+        var dlRemain = Array.isArray(dl.remain) && dl.remain.length
+          ? dl.remain.map(scenarioNameOf)
+          : (Array.isArray(dl.remainNames) ? dl.remainNames : []);
+        if (ordNotes.length) {
+          foundNotes = ordNotes; resultsRendered = false;
+          renderResults(ordNotes); resultsRendered = true;
+        } else {
+          // 收 0 篇不算失败：这一轮的顶行照写，后面几类照常接
+          foundNotes = []; resultsRendered = true;
+          document.getElementById('resultsCount').textContent = '这一轮没搜到笔记（不算失败，后面照常接）';
+          var emptyList = document.getElementById('noteList');
+          if (emptyList) emptyList.innerHTML = '';
+        }
+        showPanel('results');
+        var ordBack = document.getElementById('btnBackToList');
+        if (ordBack) ordBack.style.display = '';
+        paintRoundLine(dlRound, dl.found, dl.dayTotal, dlRemain.length
+          ? { status: 'waiting', remain: dl.remain || [], remainNames: dlRemain } : null);
+        _chainResultSig = notesSig(dlRound, dl.found, dl.notes);
+        _chainLoggedSig = (dlRemain.length ? 'waiting' : 'done') + '|' + (dl.round || '') + '|' + (Number(dl.found) || 0);
+        if (dl.latestNotDue && dlRound && dlRound !== 'latest' && typeof addLog === 'function') {
+          addLog('「最新」这一轮没到点：先跑「' + scenarioNameOf(dlRound) + '」', 'warn');
+        }
+        if (dlRound && typeof addLog === 'function') {
+          addLog('「' + scenarioNameOf(dlRound) + '」跑完：收 ' + (Number(dl.found) || 0) + ' 篇 · 今天共 ' + (Number(dl.dayTotal) || 0) + ' 篇' +
+            (dlRemain.length ? '；后面还有 ' + dlRemain.join(' · ') + '（约 10 分钟一类）' : '；这一串全跑完了'), 'success');
+        }
+        await applyWateredState();
+        applyFilter();
+        return;
+      }
+
+      /* 搜索链：首轮跑完后，服务器约 10 分钟一类接着派。这里只画链上的状态——
+         正在跑下一类 → 搜索中；跑完/waiting → 这一轮结果 + 后面还有哪几类；停手 → 灰字/橙字说明。
+         手动停这一趟时服务器会直接撤链，这里不会读到 stopped（不弹横幅）。 */
+      var chain = window.__xhsChain || null;
+      if (chain && (chain.status === 'running' || chain.status === 'waiting' || chain.status === 'done' || chain.status === 'stopped')) {
+        var chainName = scenarioNameOf(chain.round) || chain.roundName || '';
+        var chainRem = (Array.isArray(chain.remain) && chain.remain.length)
+          ? chain.remain.map(scenarioNameOf)
+          : (Array.isArray(chain.remainNames) ? chain.remainNames : []);
+        var chainKw = chain.kw || '';
+        var chainLogSig = chain.status + '|' + (chain.round || '') + '|' + (Number(chain.roundFound) || 0);
+        if (chainLogSig !== _chainLoggedSig) {
+          _chainLoggedSig = chainLogSig;
+          if (typeof addLog === 'function') {
+            if (chain.status === 'running') {
+              addLog('到点：自动接上「' + chainName + '」这一轮（用同一扇干活窗，不用人再点）', 'info');
+            } else if (chain.status === 'waiting') {
+              addLog('「' + chainName + '」跑完：收 ' + (Number(chain.roundFound) || 0) + ' 篇 · 今天共 ' + (Number(chain.dayTotal) || 0) + ' 篇；后面还有 ' +
+                chainRem.join(' · ') + '，约 10 分钟后跑「' + (chainRem[0] || '') + '」', 'success');
+            } else if (chain.status === 'done') {
+              addLog('最后一类「' + chainName + '」跑完：收 ' + (Number(chain.roundFound) || 0) + ' 篇 · 今天共 ' + (Number(chain.dayTotal) || 0) + ' 篇；窗停在最后一页，不关', 'success');
+            } else if (chain.status === 'stopped') {
+              addLog('⏹ 停手：' + (chain.stopReason || '原因没回传') + '（后面几类不跑了）', 'warn');
+            }
+          }
+        }
+        if (chain.status === 'running') {
+          showPanel('searching');
+          document.getElementById('searchText').textContent = '正在搜「' + chainKw + '」· 这一轮只跑「' + chainName + '」';
+          document.getElementById('searchDetail').textContent = '这一轮跑完把结果交回工作台' +
+            (chainRem.length ? '；约 10 分钟后再跑「' + chainRem[0] + '」' : '') +
+            '。想停就点下面「取消」';
+          renderSearchPlan([], 0, []);
+          document.getElementById('searchBar').style.width = '100%';
+          document.getElementById('searchBarLabel').textContent = '已派给执行器 · 等这一轮跑完';
+          var chainCsRun = document.getElementById('btnCancelSearch');
+          if (chainCsRun) chainCsRun.style.display = '';
+          return;
+        }
+        // waiting / done / stopped：把这一轮的结果摊出来
+        var chainNotes = (chain.lastNotes || []).map(function (n) {
+          var id = String((n && n.noteId) || '');
+          return {
+            noteId: id, title: (n && n.title) || '（无标题）', author: '', likes: '',
+            url: id ? ('https://www.xiaohongshu.com/explore/' + id) : '',
+          };
+        });
+        var chainSig = notesSig(chain.round, chain.roundFound, chain.lastNotes);
+        if (chainSig !== _chainResultSig) {
+          _chainResultSig = chainSig;
+          if (chainNotes.length) {
+            foundNotes = chainNotes; resultsRendered = false;
+            renderResults(chainNotes); resultsRendered = true;
+          } else {
+            foundNotes = []; resultsRendered = true;
+            document.getElementById('resultsCount').textContent = '这一轮没搜到笔记（不算失败，后面照常接）';
+            var chainEmpty = document.getElementById('noteList');
+            if (chainEmpty) chainEmpty.innerHTML = '';
+          }
+          applyFilter();
+        }
+        showPanel('results');
+        var chainBack = document.getElementById('btnBackToList');
+        if (chainBack) chainBack.style.display = '';
+        paintRoundLine(chain.round, chain.roundFound, chain.dayTotal, chain);
+        await applyWateredState();
+        var chainCs = document.getElementById('btnCancelSearch');
+        if (chainCs) chainCs.style.display = (chain.status === 'waiting') ? '' : 'none';
+        return;
+      }
 
       // 搜索中
       if (ss && ss.searching) {

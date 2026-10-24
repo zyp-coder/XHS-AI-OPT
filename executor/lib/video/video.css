@@ -1,0 +1,357 @@
+/* 字效编辑器样式（七十二改起这一台直接落在「发笔记」那一页里，不再隔一层网页）：
+   所有选择器都挂在 #filmPane 底下——这套样式只认台子里那些零件，不会漏到外面那页，
+   外面那页的按钮／输入框样式也就盖不进台子里。
+   两种宿主：
+   · #filmPane.inline＝落在「发笔记」页里（顶栏／工作流条／底栏由外层那页画，这三件在这里只当状态存身）；
+   · 不带 inline＝「↗ 在新标签页打开」那一页（video.html，body.film-page），自己画一整套。
+   再叠一档 #filmPane.narrow＝窄屏（弹窗那 640 宽）：稿／幕收成顶上两签切换，一次只看一栏。
+   风格跟 popup / 设置页一套（共用 ui.css 的变量：浅底、白卡片、主题色只落在主按钮与选中态上）。
+   这里只管骨架与排版——颜色 / 圆角 / 字号一律走变量，别再自带一套深色主题。
+   注：lib/video/styles.js 是「成片画面」的风格，跟这个界面样式是两码事，别动它。 */
+
+/* ── 宿主：单开一页时这一台就是整页 ── */
+body.film-page { margin: 0; height: 100vh; overflow: hidden; background: var(--c-bg);
+  color: var(--c-ink); font: var(--fs-md)/1.65 var(--font-ui); display: flex; flex-direction: column; }
+
+#filmPane { --cvh: 720px;                 /* 预览高度：右边那栏照它对齐，窄了自己收 */
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+
+/* ── 顶栏（单开一页才画；inline 时交回外层那页） ── */
+#filmPane header { display: flex; align-items: center; gap: var(--sp-2); padding: 8px 14px;
+  border-bottom: 1px solid var(--c-line); background: var(--c-surface); flex: none; }
+#filmPane header .mark { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: var(--r-sm); background: var(--c-brand); color: var(--c-brand-on); font-size: 14px; flex: none; }
+#filmPane header b { font-size: var(--fs-lg); font-weight: 700; color: var(--c-ink); white-space: nowrap; }
+#filmPane header .tip, #filmPane .tiny { font-size: var(--fs-xs); color: var(--c-ink-3); }
+#filmPane #noteTitle { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#filmPane #outFlag { flex: none; font-size: var(--fs-xs); font-weight: 700; color: var(--c-ok); white-space: nowrap; }
+/* 右上一组工具：⚙ 音色与风格 ＋（内嵌时的）单开一页出口 */
+#filmPane .hgroup { margin-left: auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#filmPane .hgroup button { padding: 4px 10px; font-size: var(--fs-sm); font-weight: 600; }
+
+/* ── 主体：口播稿 / 分幕 / 竖屏预览，窄了自己换行；这一格自己滚，顶栏与底栏不动 ── */
+#filmPane main { flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; gap: var(--sp-4); padding: var(--sp-4);
+  padding-bottom: 78px;   /* 给右下那颗底栏让位（底栏是钉窗口右下的，不占流） */
+  align-items: flex-start; overflow: auto; }
+#filmPane .col { flex: 1 1 320px; min-width: 300px; height: 100%; max-height: var(--cvh); display: flex; flex-direction: column; }
+#filmPane .col .fsec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+#filmPane .col.script #secScript { gap: 8px; }
+#filmPane .colh { font-size: var(--fs-sm); font-weight: 700; color: var(--c-ink); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+#filmPane .colh .tiny { font-weight: 400; }
+#filmPane .left { position: sticky; top: var(--sp-4); }
+
+/* ── 顶上那条工作流位置（单开一页才画；inline 时外层那条由「发笔记」那页画） ── */
+#filmPane .fsteps { flex: none; padding: 9px 14px; border-bottom: 1px solid var(--c-line); background: var(--c-bg-2); }
+#filmPane .fsteps[hidden] { display: none; }
+#filmPane .fsteps .wdots { display: flex; align-items: flex-start; }
+#filmPane .fsteps .wst { display: flex; flex-direction: column; align-items: center; flex: none; }
+#filmPane .fsteps .wdot { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); font-weight: 800; line-height: 1; flex: none; border: none; padding: 0;
+  background: #eef0f4; color: #9aa0ac; cursor: default; }
+#filmPane .fsteps .wdot.lit { background: var(--grad-brand); color: var(--c-brand-on); cursor: pointer; }
+#filmPane .fsteps .wdot.lit:hover { color: var(--c-brand-on); border-color: transparent; }
+#filmPane .fsteps .wdot.cur { box-shadow: 0 0 0 3px var(--c-brand-soft2); cursor: default; }
+#filmPane .fsteps .wlbl { margin-top: 4px; text-align: center; font-size: var(--fs-xs); line-height: 1.2;
+  font-weight: 600; color: #9aa0ac; white-space: nowrap; }
+#filmPane .fsteps .wlbl.past { color: #333; }
+#filmPane .fsteps .wlbl.cur { color: var(--c-brand-text); font-weight: 800; }
+#filmPane .fsteps .wlbl i { display: block; font-style: normal; font-size: 10px; font-weight: 500; color: #c6cad2; }
+#filmPane .fsteps .wlbl.past i { color: var(--c-brand-text); }
+#filmPane .fsteps .wlink { flex: 1; height: 2px; border-radius: 2px; background: #e5e6eb; margin: 10px 4px 0; min-width: 14px; }
+#filmPane .fsteps .wlink.lit { background: var(--grad-brand); }
+/* 主色块上的问号别顶着白底（跟全站「主色块上的字用 --c-brand-on」那条一致） */
+#filmPane .fsteps .wlbl .qhelp:hover, #filmPane .fsteps .wlbl .qhelp:focus { border-color: var(--c-brand-on); color: var(--c-brand-on); }
+
+/* ── 窄屏那两签（📝 口播稿 / 🎬 分幕）：宽了不出现，两栏本来并排着 ── */
+#filmPane .ftabs { display: none; flex: none; align-items: center; gap: 6px; padding: 10px 14px 0; }
+#filmPane .ftabs button { padding: 5px 12px; font-size: var(--fs-sm); font-weight: 600; }
+#filmPane .ftabs button.on { border-color: var(--c-brand-line); background: var(--c-brand-soft); color: var(--c-brand-ink); }
+
+/* ── 竖屏预览：黑底留着（画的是 1080×1920 的成片），外圈按白卡片那一档收边 ── */
+#filmPane #cv { display: block; width: calc(var(--cvh) * 0.5625); height: var(--cvh); background: #0f1115;
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); box-shadow: var(--sh-1); }
+/* 底栏：主钮与步进钉窗口右下（跟 popup 的 .np-pinbar 同款）；进度 / 状态 / 说明跟随其旁 */
+#filmPane .np-pinbar { position: fixed; right: 18px; bottom: 18px; z-index: 60;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end;
+  max-width: calc(100vw - 36px);
+  background: rgba(255,255,255,.97); border: 1px solid var(--c-line);
+  border-radius: 12px; box-shadow: var(--sh-2); padding: 8px 10px; }
+#filmPane .np-pinbar .prog { flex: none; width: 110px; height: 4px; background: var(--c-line); border-radius: 3px; overflow: hidden; }
+#filmPane #bar { width: 0; height: 100%; background: var(--c-brand); transition: width .2s; }
+#filmPane .st { font-size: var(--fs-sm); color: var(--c-ink-3); }
+/* 底栏里那句「分幕 N 幕 · 配晓晓念口播稿」，窄了就把自己收掉 */
+#filmPane .np-pinbar #footHint { flex: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#filmPane .hint { width: calc(var(--cvh) * 0.5625); margin-top: var(--sp-2); padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--fs-sm);
+  background: var(--c-warn-soft); color: var(--c-warn); border: 1px solid var(--c-warn-line); }
+
+/* 成片预览那层：出完片盖在预览画布上，当场回放（收起后接着编） */
+#filmPane #done { position: absolute; top: 0; left: 0; width: calc(var(--cvh) * 0.5625); height: var(--cvh);
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); overflow: hidden; background: #0f1115;
+  box-shadow: var(--sh-1); z-index: 5; display: flex; flex-direction: column; }
+#filmPane #done[hidden] { display: none; }
+#filmPane #done video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+#filmPane .donebar { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 8px 10px; background: #0f1115; }
+#filmPane .donebar .tiny { flex: 1; color: #c6ccd6; }
+
+/* ── 按钮：跟 ui.css 的 .btn 一档（台子里用裸 button + primary / ghost，没挂 .btn 类） ── */
+#filmPane button { font: 600 var(--fs-md)/1.4 var(--font-ui); color: var(--c-ink-2); background: var(--c-surface);
+  border: 1px solid var(--c-line-2); border-radius: var(--r-md); padding: 6px 13px; cursor: pointer;
+  white-space: nowrap; transition: all .14s ease; }
+#filmPane button:hover:not(:disabled) { border-color: var(--c-ink-4); color: var(--c-ink); }
+#filmPane button:disabled { opacity: .45; cursor: not-allowed; }
+#filmPane button.primary { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-brand-on); }
+#filmPane button.primary:hover:not(:disabled) { background: var(--c-brand-ink); border-color: var(--c-brand-ink); color: #fff; }
+#filmPane button.ghost { background: transparent; border-color: transparent; color: var(--c-ink-2); }
+#filmPane button.ghost:hover:not(:disabled) { background: var(--c-bg-2); border-color: transparent; color: var(--c-ink); }
+#filmPane .np-pinbar button { padding: 5px 11px; font-size: var(--fs-sm); }
+
+/* ── 卡片与栏内小块 ── */
+#filmPane .fsec { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-1); padding: var(--sp-3) var(--sp-4); }
+/* 栏底那一行说明：比正文小一档，别抢戏 */
+#filmPane .fhint { margin: 10px 0 0; font-size: var(--fs-xs); color: var(--c-ink-3); line-height: 1.7; }
+#filmPane .fsec .fhint:first-child { margin: 0 0 10px; }
+
+#filmPane .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+#filmPane .lab { font-size: var(--fs-sm); color: var(--c-ink-3); }
+
+#filmPane textarea { width: 100%; background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-md); padding: 7px 10px; font: 400 var(--fs-md)/1.6 var(--font-ui); resize: vertical; }
+#filmPane textarea:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+#filmPane textarea::placeholder { color: var(--c-ink-4); }
+/* 口播稿框：这一栏撑满本列剩下的高度（列最高＝预览那么高），稿子长也不用在个小框里滚 */
+#filmPane #script { flex: 1 1 auto; min-height: 140px; }
+#filmPane #secScript > * + * { margin-top: 8px; }
+
+/* ① 口播稿那一站的块：调稿卡 / 按钮行 / 小标 / 看原稿 / 重点卡 */
+#filmPane .fvcard { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px dashed var(--c-brand-line); border-radius: var(--r-md); background: var(--c-brand-soft); padding: 12px 14px; }
+#filmPane .fvcard b { font-size: var(--fs-sm); color: var(--c-brand-text); }
+#filmPane .fvcard.soft { display: block; border-color: var(--c-line); background: var(--c-bg-2);
+  color: var(--c-ink-3); font-size: var(--fs-xs); padding: 10px 12px; }
+#filmPane .fvrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#filmPane .fvtip { font-size: var(--fs-xs); color: var(--c-ink-3); }
+#filmPane .fvtip.ok { color: var(--c-brand-text); }
+#filmPane .fvtip.warn { color: var(--c-warn); }
+#filmPane .fvpeek { white-space: pre-wrap; border: 1px dashed var(--c-line); border-radius: var(--r-sm);
+  padding: 8px 10px; background: var(--c-bg-2); font-size: var(--fs-xs); color: var(--c-ink-3);
+  max-height: 160px; overflow: auto; }
+#filmPane .fvnote { font-size: var(--fs-xs); color: var(--c-warn); background: var(--c-warn-soft);
+  border: 1px solid var(--c-warn-line); border-radius: var(--r-sm); padding: 6px 10px; }
+#filmPane .ok { font-size: var(--fs-xs); color: var(--c-ok); }
+
+/* 重点（只读留档）：AI 自动提完排在稿子上方，想换个切法点「↻ 重新出一版」 */
+#filmPane .pkrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  border: 1px solid var(--c-brand-line); border-radius: var(--r-md);
+  background: var(--c-brand-soft); padding: 7px 10px; }
+#filmPane .pkrow .pkh { font-size: var(--fs-xs); font-weight: 700; color: var(--c-brand-text); }
+#filmPane .pkchip { padding: 2px 9px; border-radius: var(--r-full); border: 1px solid var(--c-brand-line);
+  background: var(--c-surface); color: var(--c-brand-ink); font-size: var(--fs-xs); font-weight: 600; }
+
+#filmPane .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#filmPane .chip { padding: 4px 10px; border-radius: var(--r-full); border: 1px solid var(--c-line-2); background: var(--c-surface);
+  font-size: var(--fs-sm); color: var(--c-ink-2); cursor: pointer; }
+#filmPane .chip:hover { border-color: var(--c-ink-4); }
+#filmPane .chip.on { border-color: var(--c-brand-line); background: var(--c-brand-soft); color: var(--c-brand-ink); font-weight: 600; }
+
+/* 音色表：一行一个音色（音色 / 听感 / 适合），点一行换音色——比一排标签看得出区别 */
+#filmPane .vtab { width: 100%; border-collapse: collapse; }
+#filmPane .vtab th { padding: 0 10px 5px 0; border-bottom: 1px solid var(--c-line); text-align: left;
+  font: 600 var(--fs-xs)/1.6 var(--font-ui); color: var(--c-ink-3); }
+#filmPane .vtab td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--c-line); vertical-align: top;
+  font-size: var(--fs-sm); color: var(--c-ink-3); line-height: 1.6; }
+#filmPane .vtab tr.vrow { cursor: pointer; }
+#filmPane .vtab tr.vrow:hover td { background: var(--c-bg-2); color: var(--c-ink-2); }
+#filmPane .vtab tr.vrow.on td { background: var(--c-brand-soft); color: var(--c-brand-ink); }
+#filmPane .vtab td.vname { white-space: nowrap; }
+#filmPane .vtab td.vname b { font-size: var(--fs-md); font-weight: 700; color: var(--c-ink); }
+#filmPane .vtab tr.vrow.on td.vname b { color: var(--c-brand-ink); }
+#filmPane .vtab td.vname .vrec { margin-left: 5px; padding: 1px 6px; border-radius: var(--r-full);
+  background: var(--c-brand-soft); color: var(--c-brand-ink); font-size: 10px; font-weight: 700; }
+#filmPane .vtab tr.vrow.on td.vname .vrec { background: var(--c-surface); }
+#filmPane .vtab tr:last-child td { border-bottom: none; }
+
+#filmPane .scenes { display: flex; flex-direction: column; gap: var(--sp-2); }
+#filmPane .scene { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: 8px 10px; background: var(--c-surface-2); }
+#filmPane .scene .head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 6px; }
+#filmPane .scene .no { font: 600 var(--fs-xs)/1.6 var(--font-num); color: var(--c-brand-ink); letter-spacing: .5px; }
+#filmPane .scene .lay { display: flex; gap: 4px; }
+#filmPane .scene .lay .chip { padding: 2px 8px; font-size: var(--fs-xs); }
+#filmPane .scene input { width: 100%; background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-sm); padding: 4px 8px; font: 400 var(--fs-md)/1.5 var(--font-ui); margin-top: 4px; }
+#filmPane .scene input:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+#filmPane .scene .emrow { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+#filmPane .scene .emrow .tiny { flex: none; white-space: nowrap; }
+#filmPane .scene .emrow input { margin: 0; }
+
+/* ══ 分幕那栏顶上两签：分幕＝只改字；画面＝加不加底、垫满屏还是垫进卡 ══ */
+#filmPane .sctabs { display: flex; gap: 4px; margin-left: auto; }
+#filmPane .sctabs button { padding: 2px 10px; font-size: var(--fs-xs); font-weight: 600; border-radius: var(--r-full); }
+#filmPane .sctabs button.on { background: var(--c-brand-soft); color: var(--c-brand-ink); border-color: var(--c-brand-line); }
+#filmPane .sctabs .dot { display: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c-brand); margin-left: 4px; vertical-align: 1px; }
+#filmPane .sctabs .dot.on { display: inline-block; }
+#filmPane .scbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+#filmPane .scbody[hidden] { display: none; }
+#filmPane .pichead { flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+#filmPane .swbox { display: inline-flex; border: 1px solid var(--c-line-2); border-radius: var(--r-full); overflow: hidden; }
+#filmPane .swbox button { border: none; background: none; padding: 3px 12px; font: 600 var(--fs-xs)/1.5 var(--font-ui);
+  color: var(--c-ink-3); cursor: pointer; }
+#filmPane .swbox button.on { background: var(--c-brand); color: var(--c-brand-on); }
+#filmPane .pichead .chips { display: inline-flex; gap: 6px; }
+#filmPane .pichead .chips[hidden] { display: none; }
+#filmPane .pichead .chip { padding: 3px 10px; font-size: var(--fs-xs); cursor: pointer; }
+#filmPane .pichead .chip.on { background: var(--c-brand-soft); border-color: var(--c-brand-line); color: var(--c-brand-ink); font-weight: 700; }
+#filmPane .cardBar { flex: none; margin: 0 0 10px; padding: 8px 10px; border: 1px dashed var(--c-line-2);
+  border-radius: var(--r-md); background: var(--c-surface-2); }
+#filmPane .cardBar[hidden] { display: none; }
+/* 画面这一签的逐屏一单：一行一屏（编号＋这句开头），底下挂这一屏的料／底图 */
+#filmPane .matlist { flex: none; display: flex; flex-direction: column; gap: 6px; }
+#filmPane .matlist[hidden] { display: none; }
+#filmPane .matline { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: 6px 9px;
+  background: var(--c-surface-2); cursor: pointer; }
+#filmPane .matline.on { border-color: var(--c-brand); box-shadow: 0 0 0 1px var(--c-brand-line) inset; }
+#filmPane .matline .mh { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#filmPane .matline .no { flex: none; font: 600 var(--fs-xs)/1.6 var(--font-num); color: var(--c-brand-ink); letter-spacing: .5px; }
+#filmPane .matline .mtxt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-xs); color: var(--c-ink-2); }
+
+/* ══ 混剪那一栏：画面＝混剪实拍时才露出来（分幕那栏顶上一排＋每一屏一条料） ══ */
+#filmPane .mixbar { flex: none; margin: 0 0 10px; padding: 8px 10px; border: 1px dashed var(--c-brand-line);
+  border-radius: var(--r-md); background: var(--c-brand-soft); }
+#filmPane .mixbar[hidden] { display: none; }
+#filmPane .mixbar .row { margin-top: 4px; }
+#filmPane .mixbar .row:first-child { margin-top: 0; }
+#filmPane .mixbar button { padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }
+#filmPane .matrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+#filmPane .matrow .tiny { flex: none; white-space: nowrap; }
+#filmPane .matrow button { flex: none; padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }
+#filmPane .scene .matname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-xs); color: var(--c-ink-2); }
+#filmPane .scene .matname.none { color: #c6cad2; }
+/* 一屏拼几节：每节一颗，中间一个箭头；末节要回环就多一枚 ↻ */
+#filmPane .segs { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+#filmPane .mseg { display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px 2px 7px;
+  border: 1px solid var(--c-brand-line); border-radius: var(--r-full); background: var(--c-surface);
+  font-size: var(--fs-xs); color: var(--c-ink-2); max-width: 100%; }
+#filmPane .mseg b { font: 600 10px/1.4 var(--font-num); color: var(--c-brand-ink); }
+#filmPane .mseg .loop { font: 600 10px/1.4 var(--font-num); color: var(--c-warn); }
+#filmPane .mseg .gen { font-style: normal; font: 600 10px/1.4 var(--font-num); color: var(--c-warn); }
+#filmPane .matrow .miss, #filmPane .mixbar .miss { color: var(--c-danger, #b42318); font-weight: 700; }
+#filmPane .mixbar button.on { color: var(--c-danger, #b42318); border-color: currentColor; }
+#filmPane .mseg .x { border: none; background: none; padding: 0 2px; color: var(--c-ink-3);
+  font-size: 11px; line-height: 1.2; cursor: pointer; }
+#filmPane .mseg .x:hover { color: var(--c-danger, #b42318); }
+#filmPane .arrow { flex: none; color: var(--c-ink-3); font-size: 10px; }
+#filmPane .matrow .fit { color: var(--c-brand-ink); }
+#filmPane .matrow .fit.warn { color: var(--c-warn); font-weight: 700; }
+#filmPane .matrow .tone { padding: 2px 8px; }
+/* 已经在这屏里的段：挑画面那格标出来，免得同一节拼两遍 */
+#filmPane .matcell.on { border-color: var(--c-brand); box-shadow: 0 0 0 1px var(--c-brand-line) inset; }
+
+/* 挑画面那一层：文件夹＋搜索在上，段／照片一格一格排；窄栏自己换行 */
+#filmPane #matMask { position: fixed; inset: 0; z-index: 82; background: rgba(15,20,30,.38);
+  display: flex; align-items: center; justify-content: center; padding: 16px; }
+#filmPane #matMask[hidden] { display: none; }
+#filmPane #matBox { width: min(720px, 100%); max-height: 88vh; display: flex; flex-direction: column;
+  background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg); padding: 14px 16px; }
+#filmPane #matBox h3 { margin: 0 0 8px; font-size: var(--fs-lg); color: var(--c-ink); }
+#filmPane .mattools { flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+#filmPane .matsel { padding: 4px 8px; border: 1px solid var(--c-line-2); border-radius: var(--r-sm);
+  background: var(--c-surface); color: var(--c-ink); font: 600 var(--fs-xs)/1.4 var(--font-ui); }
+#filmPane .matq { flex: 1 1 160px; min-width: 120px; padding: 5px 8px; border: 1px solid var(--c-line-2);
+  border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-ink); font: 400 var(--fs-xs)/1.4 var(--font-ui); }
+#filmPane .matgrid { flex: 1 1 auto; min-height: 120px; overflow: auto; display: grid; gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); align-content: start; }
+#filmPane .matcell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px;
+  border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface-2); cursor: pointer; text-align: left; }
+#filmPane .matcell:hover { border-color: var(--c-brand); }
+#filmPane .matcell b { font-size: var(--fs-xs); color: var(--c-ink); font-weight: 700; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+#filmPane .matth { display: flex; align-items: center; justify-content: center; width: 100%; height: 74px;
+  border-radius: var(--r-sm); background: #0f1115; color: #c6ccd6; font-size: 20px; overflow: hidden; }
+#filmPane .matth img { width: 100%; height: 100%; object-fit: cover; }
+#filmPane .empty { color: var(--c-ink-3); font-size: var(--fs-sm); padding: 6px 2px; }
+
+#filmPane .knobs { display: grid; grid-template-columns: 62px 1fr; gap: 6px 10px; align-items: center; margin-top: 10px; }
+#filmPane .knobs .k { font-size: var(--fs-sm); color: var(--c-ink-3); }
+#filmPane .knobs input[type=text] { background: var(--c-surface); color: var(--c-ink); border: 1px solid var(--c-line-2);
+  border-radius: var(--r-sm); padding: 4px 8px; font: 400 var(--fs-md)/1.5 var(--font-ui); width: 180px; }
+#filmPane .knobs input[type=text]:focus { outline: none; border-color: var(--c-brand); box-shadow: var(--focus-ring); }
+/* 「字体来源」那颗开关底下的一行实话（正在下几兆／已下好／没下成），整行跨两栏 */
+#filmPane .knobs .fptip { grid-column: 1 / -1; margin: -2px 0 4px; font-size: var(--fs-xs); color: var(--c-ink-3); line-height: 1.6; }
+/* 色块：跟 ui.css 里的开关 .sw 撞名，靠这里带 #filmPane 的前缀压过它（14px 小方块） */
+#filmPane .sw { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 5px;
+  vertical-align: -2px; border: 1px solid var(--c-line-2); }
+#filmPane .sw.dot { border-radius: 50%; }
+
+/* ⚙ 音色与风格：原 ③ 音色 / ④ 风格 两签收进这一层（改完直接按新的出片） */
+#filmPane #cfgMask { position: fixed; inset: 0; z-index: 80; background: rgba(15,20,30,.38);
+  display: flex; align-items: flex-start; justify-content: center; padding: 5vh 16px 16px; }
+#filmPane #cfgMask[hidden] { display: none; }
+#filmPane #cfgBox { width: min(560px, 100%); max-height: 88vh; overflow: auto;
+  background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-2); padding: 14px 16px; }
+#filmPane #cfgBox h3 { margin: 0 0 6px; font-size: var(--fs-lg); color: var(--c-ink); }
+#filmPane .cfgh { margin: 12px 0 6px; font-size: var(--fs-sm); font-weight: 700; color: var(--c-ink); }
+#filmPane hr.cfgsep { border: 0; border-top: 1px solid var(--c-line); margin: 14px 0 4px; }
+#filmPane .cfgfoot { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+/* 出片中那一层（老板 10-18：光在底栏弹一行字，客户以为卡死了）：整页封住、只留「⏹ 停」，
+   左边那块小画面＝正在录／正在编的东西的现场镜像，右边是流程节点（走完打勾）。 */
+#filmPane #filmRun { position: fixed; inset: 0; z-index: 84; background: rgba(15, 20, 30, .66);
+  display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px 16px; }
+#filmPane #filmRun[hidden] { display: none; }
+#filmPane #filmRunBox { width: min(640px, 100%); background: var(--c-surface); border: 1px solid var(--c-line);
+  border-radius: var(--r-lg); box-shadow: var(--sh-2); padding: 14px 16px 12px; }
+#filmPane #filmRunBox h3 { margin: 0 0 10px; font-size: var(--fs-lg); color: var(--c-ink);
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+#filmPane #filmRunBox h3 .tiny { color: var(--c-ink-3); font-family: var(--font-num); }
+#filmPane .frbody { display: flex; gap: 14px; align-items: flex-start; }
+#filmPane .frviewwrap { flex: 0 0 auto; width: 150px; }
+#filmPane #frView { display: block; width: 100%; height: auto; border-radius: var(--r-md);
+  border: 1px solid var(--c-brand-line); background: #000; box-shadow: var(--sh-1); }
+#filmPane .frviewcap { margin-top: 5px; text-align: center; font-size: var(--fs-xs); color: var(--c-ink-3); }
+/* 出片中：底栏那颗「🎬 出片／⏹ 停」和它那条进度先压暗（蒙层里全有了，两处一起报反而像没封住）。
+   记号打在 body 上（只有出片这几秒挂着）：单开一页它在 #filmPane 里，落在发笔记那页时它是外层那一条。 */
+body.film-running .np-pinbar { opacity: .28; pointer-events: none; }
+#filmPane .frnodes { list-style: none; margin: 0; padding: 0; flex: 1 1 auto; min-width: 0; }
+#filmPane .frnodes li { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0;
+  font-size: var(--fs-sm); color: var(--c-ink-3); }
+#filmPane .frnodes .fdot { flex: 0 0 auto; width: 18px; height: 18px; border-radius: var(--r-full);
+  border: 1px solid var(--c-line-2); display: flex; align-items: center; justify-content: center;
+  font-size: var(--fs-xs); color: var(--c-ink-4); }
+#filmPane .frnodes li.cur { color: var(--c-ink); font-weight: 700; }
+#filmPane .frnodes li.cur .fdot { border-color: var(--c-brand); background: var(--c-brand); color: var(--c-brand-on); }
+#filmPane .frnodes li.done { color: var(--c-ink-2); }
+#filmPane .frnodes li.done .fdot { border-color: var(--c-ok); background: var(--c-ok); color: var(--c-brand-on); }
+#filmPane .frline { margin-top: 12px; font-size: var(--fs-sm); color: var(--c-ink); }
+#filmPane .frfoot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+#filmPane .frfoot .tiny { color: var(--c-ink-3); font-family: var(--font-num); }
+#filmPane .frhint { margin: 10px 0 0; font-size: var(--fs-xs); color: var(--c-ink-3); line-height: 1.6; }
+@media (max-width: 620px) { #filmPane .frviewwrap { width: 112px; } }
+
+/* 一闪而过的小提示（口播稿调好了 / 按本机规则分的幕…） */
+#filmPane #toast { position: fixed; left: 50%; bottom: 88px; transform: translate(-50%, 8px); z-index: 90;
+  background: rgba(17,24,39,.92); color: #fff; font-size: var(--fs-sm); border-radius: var(--r-md);
+  padding: 8px 14px; max-width: min(560px, 86vw); opacity: 0; transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none; }
+#filmPane #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+/* ══ inline＝落在「发笔记」页里那一档：顶栏／工作流条／底栏三件交回外层那页画（跟挑知识／改稿同一套外壳），
+   这里那三件只当状态存身（video.js 还在往里写字，外层读的是递上去的那份小抄）。
+   ⚙ 那层、成片预览、小提示这些「内容上的东西」照旧留在这里。 ══ */
+#filmPane.inline { --cvh: max(300px, min(520px, calc(100vh - 210px))); }
+#filmPane.inline header, #filmPane.inline .fsteps, #filmPane.inline .np-pinbar { display: none !important; }
+#filmPane.inline main { gap: 12px; padding: 12px; padding-bottom: 64px; }
+#filmPane.inline .col { flex: 1 1 280px; min-width: 260px; }
+#filmPane.inline .left { top: 12px; width: calc(var(--cvh) * 0.5625); }
+#filmPane.inline .hint { width: 100%; }
+
+/* ══ narrow＝窄屏那一档（弹窗 640 宽）：稿／幕收成顶上两签切换，一次看一栏，预览跟在同一行后面。
+   宽了（单开一页／大窗）这档整个不生效，两栏并排照旧。 ══ */
+#filmPane.narrow { --cvh: max(240px, min(400px, calc(100vh - 210px))); }
+#filmPane.narrow .ftabs { display: flex; }
+#filmPane.narrow .col { display: none; flex: 1 1 240px; min-width: 0; }
+#filmPane.narrow:not(.tab-scenes) .col.script,
+#filmPane.narrow.tab-scenes .col.scenes { display: flex; }
+#filmPane.narrow .left { width: calc(var(--cvh) * 0.5625); }

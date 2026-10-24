@@ -14,6 +14,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from playwright.sync_api import sync_playwright, expect
 
+from _guide_gate import goto_big
+
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 STATE = {'requests': [], 'fail_knowledge': False}
@@ -184,7 +186,7 @@ class Provider(BaseHTTPRequestHandler):
                         'near': ('撞过：《' + hists[0] + '》') if (hists and c == '🔥 热点' and j == 0) else '',
                     })
             content = json.dumps({'variants': variants}, ensure_ascii=False)
-        elif '按重点个数定段数' in system:
+        elif '分镜几个你自己定' in system:
             # 🎬 引流线拆段出词（三十一改）：照契约回 3 段（1 重点 → 3 段；段原文连续；提示词带硬约束收尾）
             content = json.dumps({
                 '重点': [
@@ -894,14 +896,15 @@ def run():
             }''', f'http://127.0.0.1:{server.server_port}/v1')
             page = context.new_page()
             page.on('pageerror', lambda error: errors.append(str(error)))
-            page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+            goto_big(page, eid)
             page.wait_for_load_state('domcontentloaded')
             if page.locator('#fsClose').is_visible():
                 page.locator('#fsClose').click()
             page.locator('#tabDiagnose').click()
             expect(page.locator('#diagSubTabs')).to_be_visible(timeout=10000)   # 点完等它真展开再量几何（左栏刚起来就点，事件可能被还没撤掉的遮罩吃掉）
-            # 诊断的 6 个节点是左栏「诊断&配置」正下方的二级 tab（不是页内导航圈）；「诊断&配置」本身排在最前
-            # 它下面紧跟一级「发笔记」：中间再插别的东西，就会被读成诊断的下一个节点。
+            # 诊断的 6 个节点是左栏「账号规划」正下方的二级 tab（不是页内导航圈）；
+            # 2026-10-24 副本按主本重排：一级＝发笔记 / 获客 / AI客服 / 账号规划 / 设置，
+            # 账号规划这组下面紧跟分隔线＋「设置」（设置钉在最底下）。
             sub_tabs = page.evaluate('''() => {
                 const main = document.getElementById('mainTabs');
                 const sub = document.getElementById('diagSubTabs');
@@ -911,15 +914,18 @@ def run():
                     tops: [...main.querySelectorAll(':scope > .main-tab .rail-tx')].map(e => e.textContent).join('|'),
                     diagBottom: Math.round(document.getElementById('tabDiagnose').getBoundingClientRect().bottom),
                     subTop: Math.round(sub.getBoundingClientRect().top),
-                    nextIsNote: !!(sep && sep.id === 'tabNotePublish'),
+                    nextIsSep: !!(sep && sep.classList.contains('rail-sep')),
+                    afterSepIsSet: !!(sep && sep.nextElementSibling && sep.nextElementSibling.id === 'tabSettings'),
                     setLast: setTabs.nextElementSibling === null,
                     labels: [...sub.querySelectorAll('.sub-tab .rail-tx')].map(e => e.textContent).join('|'),
-                    icons: sub.querySelectorAll('.ic').length,
+                    icons: sub.querySelectorAll('.ic, .rail-emo').length,
                 };
             }''')
             # 配色只认三种既定色：未选中=灰(--c-ink-3) / 已走完=绿(.done 的 #0a7b5a) / 当前节点=红(--c-brand-ink)，
             # 谁都不许再有自己的专用色。
             # 颜色可能正落在上一种状态的颜色过渡里（刚点进诊断那一下），连读两次一致才算稳
+            # 鼠标停在哪个节点上会把它染成 hover 色（--c-ink）——先把指针挪开再量
+            page.mouse.move(2, 2)
             def sub_colors():
                 return page.evaluate('''() => [...document.querySelectorAll('#diagSubTabs .sub-tab .rail-tx')]
                     .map(e => getComputedStyle(e).color)''')
@@ -936,27 +942,27 @@ def run():
                 p.style.position = 'absolute';
                 document.body.appendChild(p);
                 const read = (v) => { p.style.color = 'var(' + v + ')'; return getComputedStyle(p).color; };
-                const out = { ink3: read('--c-ink-3'), brandInk: read('--c-brand-ink') };
+                const out = { ink3: read('--c-ink-3'), brandInk: read('--c-brand-ink'), brandOn: read('--c-brand-on') };
                 p.remove();
                 return out;
             }''')
-            assert sub_tabs['tops'] == '诊断&配置|发笔记|获客|线索|设置', sub_tabs
-            assert sub_tabs['subTop'] >= sub_tabs['diagBottom'] - 2, ('二级栏必须紧贴「诊断&配置」下方', sub_tabs)
-            assert sub_tabs['nextIsNote'], ('诊断二级栏下面必须直接是一级「发笔记」，否则会被读成诊断的下一个节点', sub_tabs)
+            assert sub_tabs['tops'] == '发笔记|获客|AI客服|账号规划|设置', sub_tabs
+            assert sub_tabs['subTop'] >= sub_tabs['diagBottom'] - 2, ('二级栏必须紧贴「账号规划」下方', sub_tabs)
+            assert sub_tabs['nextIsSep'] and sub_tabs['afterSepIsSet'], ('账号规划二级栏下面必须是分隔线＋「设置」，否则会被读成账号规划的下一个节点', sub_tabs)
             assert sub_tabs['setLast'], ('「设置」这组得钉在左栏最底下', sub_tabs)
             assert sub_tabs['labels'] == '基础配置|问卷|人设|产品卖点|知识库|规划', sub_tabs
             assert sub_tabs['icons'] == 6, sub_tabs                      # 6 个节点各有图标，窄栏也要认得出
             assert not re.search(r'[①②③④⑤⑥⑦⑧⑨]', sub_tabs['labels']), \
                 ('节点号在界面上整批废掉（说话风格并入「人设」、客服话术去「线索 → 任务配置」、内容基调去「发笔记 → 任务配置」），左栏只留名字', sub_tabs)
             assert '✓' not in sub_tabs['labels'], ('完成状态只走 .done 变绿，标签里别再塞「✓」跟图标叠成两个', sub_tabs)
-            assert set(sub_tabs['colors']) <= {sub_tabs['palette']['ink3'], sub_tabs['palette']['brandInk'], 'rgb(10, 123, 90)'}, \
-                ('6 个节点只许「未选中灰 / 已走完绿 / 当前节点红」三种既定色，谁都不许有自己的专用色', sub_tabs)
+            assert set(sub_tabs['colors']) <= {sub_tabs['palette']['ink3'], sub_tabs['palette']['brandInk'], sub_tabs['palette']['brandOn'], 'rgb(10, 123, 90)'}, \
+                ('6 个节点只许「未选中灰 / 已走完绿 / 当前节点红（窄栏实心红底上是白字）」这几种既定色，谁都不许有自己的专用色', sub_tabs)
             page.locator('#tabHuoke').click()
             expect(page.locator('#diagSubTabs')).to_be_hidden()          # 切到别的一级项，这组就收起来
             expect(page.locator('#subTabs')).to_be_visible()
             page.locator('#tabDiagnose').click()
             expect(page.locator('#diagSubTabs')).to_be_visible()
-            check(page, '诊断&配置排左栏最前、6 节点是它正下方的二级 tab：紧贴其下、随一级项显隐')
+            check(page, '账号规划（诊断那 6 节点）排左栏「设置」之前、6 节点是它正下方的二级 tab：紧贴其下、随一级项显隐')
             # 嵌在诊断页里的老宿主整批撤：杂项并进「基础配置」、客服话术去「线索 → 任务配置」、内容基调去「发笔记 → 任务配置」
             for gone in ('#diagMiscContent', '#diagMiscFrame', '#diagAicsContent', '#diagAicsFrame'):
                 expect(page.locator(gone)).to_have_count(0)
@@ -1204,7 +1210,9 @@ def run():
             expect(page.locator('#diagQuizNext')).to_be_enabled(timeout=30000)
             cfg = worker.evaluate('() => Storage.getConfig()')
             assert all(v['status'] == 'done' for v in cfg['diagnosis']['results'].values()), cfg['diagnosis']['results']
-            assert len(STATE['requests']) == 4, len(STATE['requests'])
+            assert len(STATE['requests']) == 5, len(STATE['requests'])
+            assert '素材备料的判定助手' in STATE['requests'][-1]['messages'][0]['content'], \
+                '答完问卷顺手配素材那一发没打上（第 5 发该是「这 18 类该备哪几类」）'
             assert cfg['product']['name'] == '体验工具'
             assert cfg['product']['coverHook'] == '耐心的工具分享者'
             assert len(cfg['product']['sellPoints']) == 1
@@ -1220,7 +1228,7 @@ def run():
             check(page, '提交问卷一次同步四项并保存产品与封面短语；导航即时打勾（⑨ 等报告）')
             page.locator('#diagQuizNext').click()
             expect(page.locator('#diagQuizNext')).to_be_enabled()
-            assert len(STATE['requests']) == 4
+            assert len(STATE['requests']) == 5, '重复提交问卷：诊断 4 发与素材 1 发都该被指纹拦住'
             check(page, '相同问卷重复提交不重复调用AI')
             # 问卷是唯一生成口：卖点/知识库各留一行同步状态文字，都不再挂「去 基础配置」跳转按钮；
             # 人设页的同步按钮与同步状态行整块撤（提交问卷就自动带出人设），规划页的同步说明段也已撤
@@ -1249,7 +1257,7 @@ def run():
             expect(page.locator('#diagSellDialog')).to_be_hidden()
             expect(page.locator('#diagSellTitle')).to_be_hidden()
             expect(page.locator('#diagSellContent')).to_be_hidden()
-            assert len(STATE['requests']) == 4
+            assert len(STATE['requests']) == 5
             # 「从问卷同步」收在「新增卖点」弹窗里（页面不再单挂按钮）：选方式 → 开始同步 → 收弹窗回到表格
             assert page.locator('#diagSellSync').count() == 0
             page.locator('#diagSellAdd').click()
@@ -1260,11 +1268,11 @@ def run():
             expect(page.locator('#diagSellDialogTitle')).to_have_text('从问卷同步')
             expect(page.locator('#diagSellQuizRun')).to_be_focused()
             page.screenshot(path=str(out / 'product-quiz-sync.png'), full_page=True)
-            assert len(STATE['requests']) == 4
+            assert len(STATE['requests']) == 5
             page.locator('#diagSellQuizRun').click()
             expect(page.locator('#diagSellMsg')).to_contain_text('已按问卷同步', timeout=30000)
             expect(page.locator('#diagSellMsg')).to_contain_text('新增 0 条、更新 1 条')
-            assert len(STATE['requests']) == 5, len(STATE['requests'])
+            assert len(STATE['requests']) == 6, len(STATE['requests'])
             assert '产品卖点提炼师' in STATE['requests'][-1]['messages'][0]['content']
             expect(page.locator('#diagSellDialog')).to_be_hidden()
             expect(page.locator('#diagSellSyncLine')).to_contain_text('已从问卷重新提炼')
@@ -1285,7 +1293,7 @@ def run():
             assert worker.evaluate('async () => (await Storage.getConfig()).persona.card.proof') == '做这行 5 年', '手改正文不该抹掉人设卡'
             check(page, '🧩 人设卡：身份/凭据/立场/口头禅/雷区/称呼结构化落盘；手改正文保留卡')
             page.locator(go('sell')).click()
-            assert len(STATE['requests']) == 5, '同步只重生成这一项，另三项资料不得回炉'
+            assert len(STATE['requests']) == 6, '同步只重生成这一项，另三项资料不得回炉'
             page.locator(go('base')).click()      # 站到「基础配置」看完成圈：当前节点不画 .done，被断言的那三页都不是它
             for t in ('persona', 'sell', 'kb'):
                 assert is_done(page, t), '%s 该打勾' % t
@@ -2137,7 +2145,9 @@ def run():
             before = len(STATE['requests'])
             page.locator('#diagQuizNext').click()
             expect(page.locator('#diagQuizNext')).to_be_enabled(timeout=30000)
-            assert len(STATE['requests']) - before == 2
+            assert len(STATE['requests']) - before == 3, len(STATE['requests']) - before
+            assert '素材备料的判定助手' in STATE['requests'][-1]['messages'][0]['content'], \
+                '问卷全部同步后顺手配素材那一发该排在最后'
             assert all(v['status'] == 'done' for v in worker.evaluate('async () => (await Storage.getConfig()).diagnosis.results').values())
             expect(page.locator('#diagQuizMsg')).to_contain_text('都已同步')
             check(page, '刷新恢复问卷；局部失败在顶部消息里点名、成功项不进失败清单，重试只补知识和规划')
@@ -2181,7 +2191,7 @@ def run():
             check(page, '「人设 → 说话风格」＝3 问大白话问卷：「识别我的口吻」一发 AI 出档案；保存不烧 AI、答不满 2 题不烧 AI')
             before = len(STATE['requests'])
             # 基础配置＝产品名称（可多行：主名+别名）+ 账号类型 + 昵称 + 同城挡位（杂项配置整页并进来的）；
-            # 推广目标 & 评论区承接 2026-09-25 搬去「获客 → 任务配置 → 🎯 推广目标」，这里不该再有；
+            # 推广目标 & 评论区承接 2026-09-25 搬去「获客 → 队列 → ⚙️ 配置 → 🎯 推广目标」，这里不该再有；
             # 说话风格那一组也不该再出现（它在「人设」页的第二个 tab）
             page.locator(go('base')).click()
             expect(page.locator('#diagProdName')).to_have_value('体验工具')
@@ -2189,7 +2199,7 @@ def run():
                 expect(page.locator(sel)).to_have_count(0)
             expect(page.locator('#diagPurp')).to_have_count(0)      # 评论目的一直在卖点页，基础配置里从来没有它
             for sel in ('#diagPromoGoal', '#diagProdGuide'):
-                expect(page.locator(sel)).to_have_count(0)          # 推广目标/评论区承接已搬去获客·任务配置
+                expect(page.locator(sel)).to_have_count(0)          # 推广目标/评论区承接已搬去获客·队列 → ⚙️ 配置
             for sel in ('#diagAccountNames', '#diagSameCity', '#diagCityInp'):
                 expect(page.locator(sel)).to_have_count(1)          # 并进来的那几张卡都在
             # 账号类型没手选过 → 把 AI 判断出来的那个填进自填框
@@ -2213,7 +2223,7 @@ def run():
             assert saved['diagnosis']['accountType'] == '自定义教程类型'
             # 类型换了 → ⑨ 的规划作废，完成圈当场掉（当前在 ①，⑨ 不是当前节点）
             assert not is_done(page, 'plan'), '账号类型换了，⑨ 不该还打勾'
-            check(page, '说话风格独立成 ⑥（3 问问卷 + 识别口吻 + 字数）写回 scriptStyle；① 收着产品名称+账号类型+昵称/同城（整页一个保存，推广目标/评论区承接已搬去获客·任务配置），账号类型手选落盘并作废旧规划，两页保存都不调用 AI')
+            check(page, '说话风格独立成 ⑥（3 问问卷 + 识别口吻 + 字数）写回 scriptStyle；① 收着产品名称+账号类型+昵称/同城（整页一个保存，推广目标/评论区承接已搬去获客·队列 → ⚙️ 配置），账号类型手选落盘并作废旧规划，两页保存都不调用 AI')
             page.locator(go('sell')).click()
             # 进入 ④ 只读取并渲染，不得自动调用 AI；后续 AI 只由显式点击触发（由 check_sell_points 自行记账）。
             assert len(STATE['requests']) == before, '进入 ④ 不得调用 AI'
@@ -2260,7 +2270,7 @@ def run():
             expect(page.locator('#saveProductBtn')).to_have_count(0)
             check(page, '设置页「杂项配置」整页已撤（并进「诊断&配置 → ① 基础配置」），评论目的也不在设置页')
             # 入口搬到「获客助手」（找商机）顶部：改完立即落 product.commentPurpose，并清掉旧字段
-            page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+            goto_big(page, f'chrome-extension://{eid}/popup.html?mode=big')
             page.wait_for_load_state('domcontentloaded')
             if page.locator('#fsClose').is_visible():
                 page.locator('#fsClose').click()
@@ -2272,10 +2282,10 @@ def run():
             purpose_saved = worker.evaluate('() => Storage.getConfig()')
             assert purpose_saved['product']['commentPurpose'] == 'trend'
             assert 'scriptPurpose' not in (purpose_saved.get('scriptStyle') or {})
-            # 切到同属获客分组的「任务配置 / 队列 / 笔记池」时，这条只服务找商机的控制条要收起来
-            page.locator('#tabTaskCfg').click()
-            expect(page.locator('#purposeBar')).to_be_hidden()
+            # 切到同属获客分组的「队列（配置也在这一页里）/ 笔记池」时，这条只服务找商机的控制条要收起来
             page.locator('#tabQueue').click()
+            expect(page.locator('#purposeBar')).to_be_hidden()
+            page.locator('#tabPool').click()
             expect(page.locator('#purposeBar')).to_be_hidden()
             page.locator('#tabPool').click()
             expect(page.locator('#purposeBar')).to_be_hidden()
@@ -2284,24 +2294,26 @@ def run():
             # 「诊断&配置 → ① 基础配置 → 评论区承接」（product.guideText），没填才回落默认站内承接。
             # 注：四类+高V 改版后，只有「竞对笔记」的私信会用到承接（{guide}），其余场景是露脸评论、不带引导
             page.locator('#tabHuoke').click()
-            page.locator('#tabTaskCfg').click()
-            expect(page.locator('#tabTaskCfg')).to_have_class(re.compile(r'\bactive\b'))
+            # 任务配置已并进「队列 → ⚙️ 配置」（2026-10-24）：页内三张卡，一次只展开一张；
+            # 词表与盯的账号同在「🔎 跑什么」卡里，「⋯ 更多设置」整节早已撤（属地跟诊断①、求助词内置、TOP 三排序固定）
+            page.locator('#tabQueue').click()
+            page.locator('#queueTabs .q-tab[data-qtab="config"]').click()
+            expect(page.locator('#queueTabs .q-tab[data-qtab="config"]')).to_have_class(re.compile(r'\bactive\b'))
             cfg = page.locator('#drainCfgContent')
-            # 页内四节 tab（2026-09-27 起加「🌿 日常浏览」）：默认落「关键词池」（词 × 类型表；加词入口就在「找词/话题」旁边），
-            # 「⋯ 更多设置」整节已撤——东西都内置了：属地跟诊断①、求助词内置、TOP 三排序固定；
-            # 推广目标/评论区承接（product.promoGoal / guideText）同日搬来当第三节；日常浏览＝队列里的一种流程项
-            expect(cfg.locator('#sxCfgTabs .sx-cfgtab')).to_have_count(4)
-            expect(cfg.locator('#sxCfgTabs [data-sec="more"]')).to_have_count(0)
-            expect(cfg.locator('#sxCfgTabs [data-sec="kw"]')).to_have_class(re.compile(r'\bactive\b'))
+
+            def open_card(sec):
+                card = cfg.locator('details.cfgcard[data-cfgsec="%s"]' % sec)
+                if not card.evaluate('e => e.open'):
+                    card.locator('summary').click()
+
+            expect(cfg.locator('details.cfgcard')).to_have_count(3)
+            expect(cfg.locator('details.cfgcard[data-cfgsec="run"]')).to_have_attribute('open', '')
             expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=20000)
-            expect(cfg.locator('#sxAcctAdd')).to_have_count(0)
-            cfg.locator('#sxCfgTabs [data-sec="acct"]').click()
             expect(cfg.locator('#sxAcctAdd')).to_be_visible(timeout=10000)
-            expect(cfg.locator('#sxKwAdd')).to_have_count(0)
             expect(cfg.locator('#sxCity')).to_have_count(0)
-            check(page, '「任务配置」是获客的第一个二级 tab，页内三节（关键词池 / 盯的账号 / 🎯 推广目标），同一时间只渲染一节')
+            check(page, '「队列 → ⚙️ 配置」三张卡（跑什么 / 日常浏览 / 推广目标）同一时间只展开一张，词池与盯的账号同卡')
             # 🎯 推广目标（2026-10-01 简：目标固定＝引流到个人主页，页上只剩两句引导文案）
-            cfg.locator('#sxCfgTabs [data-sec="goal"]').click()
+            cfg.locator('details.cfgcard[data-cfgsec="goal"] > summary').click()
             expect(cfg.locator('#sxGoalGuide')).to_be_visible(timeout=10000)
             assert cfg.locator('#sxGoalSel').count() == 0, '下拉已删——目标不再可选，固定引流到个人主页'
             assert cfg.locator('#sxGoalGuideRow').count() == 0, '「品牌不引流就藏承接」那套随下拉一起撤了'
@@ -2314,10 +2326,12 @@ def run():
             goal_saved = worker.evaluate('() => Storage.getConfig().then(c => c.product)')
             assert goal_saved['promoGoal'] == 'profile' and goal_saved['guideText'] == '私信我，先给你做个免费测评' \
                 and goal_saved['guidePhrase'] == '更多干货我平时发在主页', goal_saved
-            # 切走再回来：读回刚存的（真源＝config.product，不是页面内存）
-            cfg.locator('#sxCfgTabs [data-sec="kw"]').click()
-            expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=10000)
-            cfg.locator('#sxCfgTabs [data-sec="goal"]').click()
+            # 切走（离开队列页）再回来：配置重画，读回刚存的（真源＝config.product，不是页面内存）
+            page.locator('#tabPool').click()
+            page.wait_for_timeout(500)
+            page.locator('#tabQueue').click()
+            expect(page.locator('#queueTabs .q-tab[data-qtab="config"]')).to_have_class(re.compile(r'\bactive\b'))
+            open_card('goal')
             expect(cfg.locator('#sxGoalGuide')).to_have_value('私信我，先给你做个免费测评')
             expect(cfg.locator('#sxGoalPhrase')).to_have_value('更多干货我平时发在主页')
             # 承接清空也落得下去（评论里就不带承接），再填回来给后面的用例用
@@ -2329,7 +2343,7 @@ def run():
             cfg.locator('#sxGoalSave').click()
             expect(cfg.locator('#sxGoalMsg')).to_contain_text('已保存', timeout=10000)
             check(page, '🎯 推广目标（获客·任务配置第三 tab）＝固定目标「引流到个人主页」+ 两句引导（承接 30 字 / 话术 40 字）：读写 product.promoGoal / guideText / guidePhrase，切走回来原样读回、清空也落得下去')
-            cfg.locator('#sxCfgTabs [data-sec="kw"]').click()
+            open_card('run')
             expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=10000)
             cfg_txt = cfg.inner_text()
             for gone in ('更多设置', '搜索口径', '搜索默认', '额外来源'):
@@ -2365,21 +2379,24 @@ def run():
                 {'title': '点选素材测试条', 'content': '上架前的三段式盘点清单，先讲人群再讲场景', 'tags': ['点选']},
                 {'title': '未点选素材测试条', 'content': '客服话术口径与退款说明，只在内训里用', 'tags': ['未选']},
             ]})
-            page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+            goto_big(page, f'chrome-extension://{eid}/popup.html?mode=big')
             page.wait_for_load_state('domcontentloaded')
             if page.locator('#fsClose').is_visible():
                 page.locator('#fsClose').click()
             page.locator('#tabNotePublish').click()
             expect(page.locator('.npar-new')).to_be_visible()         # 一级项落在「笔记档案」（这一块的主页），新建笔记是它页顶那颗
-            # ✍️ 新建笔记＝六卡一页（2026-10-08 档案核心）：三方向（📚 知识/🔥 引流/🎬 案例）× 各自最终效果＝6 张卡，点哪张当场建篇
+            # ✍️ 新建笔记＝六卡一页（2026-10-08 档案核心；2026-10-16 加了 🎭 IP玩法 一行成四方向）
+            #   副本现状：四方向（🎭 IP/📚 知识/🔥 引流/🎬 案例）× 各自最终效果＝1+4+2+1＝8 张卡，点哪张当场建篇
+            #   ⚠️ 公网已把 🎭 玩法并进 🔥 引流、又加了一行 🪟 门面（共 9 张卡）；那一步依赖副本还没有的
+            #      玩法池 / 门面 / 引流长文三块，副本先按四方向断言，等整块搬过来再对齐（2026-10-24）
             page.locator('.npar-new').click()
             expect(page.locator('#dirModal.open')).to_be_visible()
             expect(page.locator('#dirBox')).to_contain_text('这一篇按哪个组合做？——点一张卡直接开工')
-            assert page.locator('#dirBox [data-direff]').count() == 6, '六卡一页：三方向 × 各自最终效果'
-            for card_txt in ('📚 知识', '🔥 引流', '🎬 案例', '思维导图图文', '字体动效视频', '真人口播', '文案直出视频', '图文笔记', '案例成片'):
+            assert page.locator('#dirBox [data-direff]').count() == 8, '副本六卡一页：四方向 × 各自最终效果共 8 张卡'
+            for card_txt in ('🎭 IP玩法', '📚 知识', '🔥 引流', '🎬 案例', '思维导图图文', '字体动效视频', '真人口播', '长文笔记', '文案直出视频', '图文笔记', '案例成片'):
                 expect(page.locator('#dirBox')).to_contain_text(card_txt)
             expect(page.locator('#dirBox')).to_contain_text('✕ 先不建，回档案')
-            check(page, '「✍️ 新建笔记」＝六卡一页：三方向 × 最终效果共 6 张卡，点一张直接开工（卡面与 demo 一致）')
+            check(page, '「✍️ 新建笔记」＝副本六卡一页：四方向 × 最终效果共 8 张卡（含 🎭 IP玩法），点一张直接开工（卡面与 demo 一致）')
             page.locator('#dirBox [data-direff="k|图文"]').click()
             expect(page.locator('#npWizBody')).to_be_visible()
             dir_note = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
@@ -2453,7 +2470,7 @@ def run():
             assert page.evaluate('() => _npWiz.chosenKb.map(e => e.title)') == ['点选素材测试条']
             expect(page.locator('.np-wiz-next')).to_be_enabled()   # 挑了知识，「下一步」要放行
             page.locator('.np-wiz-next').click()
-            expect(page.locator('#npWizBody')).to_contain_text('⑤ 改稿', timeout=25000)   # 撤站后：挑了知识直接出稿
+            expect(page.locator('#npWizBody')).to_contain_text('改稿', timeout=25000)   # 撤站后：挑了知识直接出稿（站名已不带 ①~⑨）
             assert page.evaluate('() => _npWiz.step') == 4, '挑完知识 → 直接到 ⑤ 改稿（「定话题」站已撤）'
             page.wait_for_function('() => _npWiz && _npWiz.draft && _npWiz.draft.content', timeout=25000)   # 等成稿落地（按钮复位才点得动「上一步」）
             # ③ K 线撤了挑卖点（老板 2026-10-10 拍板）：出稿请求把全部候选交给 AI 自己挑 1~2 个轻带——
@@ -2510,12 +2527,12 @@ def run():
                 ('tm1', '矩阵·知识图文没导图', '✏️ 编辑', '导图工作区', {'dir': 'k', 'form': '图文', 'kOut': 'mind', 'voice': '样例稿子'}),
                 ('tm2', '矩阵·知识图文导图结构已有图未出', '✏️ 编辑', '导图工作区', {'dir': 'k', 'form': '图文', 'voice': '样例稿子', 'mind': {'md': '# 中心\n## 主干'}}),
                 ('tm2c', '矩阵·知识图文导图长图已出', '👀 预览', '导图长图已出', {'dir': 'k', 'form': '图文', 'voice': '样例稿子', 'imgDocs': [{'id': 'tm2c-mind', 'kind': 'mind', 'img': 'data:image/png;base64,AA'}]}),
-                ('tm3', '矩阵·图文还没进过出图', '✏️ 编辑', '接着出这一套', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子'}),
+                ('tm3', '矩阵·图文还没进过出图', '✏️ 编辑', '接着出这套', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子'}),
                 ('tm4', '矩阵·图文还缺三张', '✏️ 编辑', '还缺 3 张', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子', 'imgDocs': [{'id': 'td1', 'shots': {'total': 3}}]}),
                 ('tm5', '矩阵·视频没进字效', '✏️ 编辑', '进字效', {'dir': 'k', 'form': '视频', 'voice': '样例稿子'}),
                 ('tm6', '矩阵·视频有分幕没出片', '✏️ 编辑', '▶️ 出片', {'dir': 'k', 'form': '视频', 'voice': '样例稿子'}),
                 ('tm7', '矩阵·视频片已出', '🎬 成片预览', '片已出', {'dir': 'k', 'form': '视频', 'voice': '样例稿子'}),
-                ('tm8', '矩阵·引流视频没拆段', '✏️ 编辑', '拆成几段', {'dir': 'd', 'form': '视频', 'voice': '样例稿子'}),
+                ('tm8', '矩阵·引流视频没拆段', '✏️ 编辑', '照讲到哪儿切到哪儿排成分镜', {'dir': 'd', 'form': '视频', 'voice': '样例稿子'}),
                 ('tm9', '矩阵·引流视频待拼片', '✏️ 编辑', '拼片配音', {'dir': 'd', 'form': '视频', 'voice': '样例稿子', 'dgen': {'segs': [{'text': '一句', 'done': True}]}}),
                 ('tm10', '矩阵·引流视频已拼好', '🎬 成片预览', '片已出', {'dir': 'd', 'form': '视频', 'voice': '样例稿子', 'dgen': {'segs': [{'text': '一句', 'done': True}]}}),
                 ('tm11', '矩阵·口播稿', '👀 预览', '口播稿已出', {'dir': 'k', 'form': '口播稿', 'voice': '样例口播稿'}),
@@ -2557,7 +2574,7 @@ def run():
                     expect(btn).to_have_text(lab)
                     tip = btn.get_attribute('title') or ''
                     assert tipkw in tip, '%s：title 该含「%s」，实际「%s」' % (mtitle, tipkw, tip)
-            check(page, '▶️ 下一步＝状态机十七档逐一走对（中间态一律「✏️ 编辑」：导图工作区 / 接着出这一套·还缺 3 张 / 进字效·▶️ 出片 / 拆成几段·拼片配音 / 丢素材·接着剪；走完的预览分两档：「🎬 成片预览」（片已出 / 成片已存，点开能看片再下一遍）与「👀 预览」（导图长图已出 / 口播稿已出 / 发完了）；已归档＝dim「— 已归档」）')
+            check(page, '▶️ 下一步＝状态机十七档逐一走对（中间态一律「✏️ 编辑」：导图工作区 / 接着出这套·还缺 3 张 / 进字效·▶️ 出片 / 讲到哪儿切到哪儿排分镜·拼片配音 / 丢素材·接着剪；走完的预览分两档：「🎬 成片预览」（片已出 / 成片已存，点开能看片再下一遍）与「👀 预览」（导图长图已出 / 口播稿已出 / 发完了）；已归档＝dim「— 已归档」）')
             # 清场：矩阵篇撤掉，回到「只有六卡那一篇」，接着走「下一步 → 写稿」
             worker.evaluate('''async (ids) => {
                 const d = await chrome.storage.local.get("np_notes");
@@ -2579,7 +2596,7 @@ def run():
                     kb_pick_click(page, pick_k)   # 收在类堆里：先点类头摊开再勾
                 assert page.evaluate('() => _npWiz.chosenKb.length') >= 1, what
                 page.locator('.np-wiz-next').click()   # 撤站后：挑完知识直接出稿，没有「定话题」这一脚
-                expect(page.locator('#npWizBody')).to_contain_text('⑤ 改稿', timeout=20000)
+                expect(page.locator('#npWizBody')).to_contain_text('改稿', timeout=20000)
                 page.wait_for_function('() => _npWiz && _npWiz.draft && _npWiz.draft.content', timeout=25000)
                 assert '闭水试验那 48 小时' in page.evaluate('() => _npWiz.draft.content'), what
             # 卡1·🧠 图文：重开这一篇（✏️ 编辑 → 知识线两站），走通到出导图长图
@@ -2601,7 +2618,7 @@ def run():
             expect(page.locator('#npWizBody')).to_contain_text('📚 这篇讲哪条知识', timeout=10000)
             assert page.evaluate('() => _npWiz.step') == 0
             page.locator('.np-wiz-next').click()
-            expect(page.locator('#npWizBody')).to_contain_text('⑤ 改稿', timeout=10000)
+            expect(page.locator('#npWizBody')).to_contain_text('改稿', timeout=10000)
             assert page.evaluate('() => _npWiz.step') == 4
             assert len(STATE['requests']) == req_prev, '成稿还在，回 ① 再过来不许重烧'
             # ✏️ 换个写法重写（#22）：题与站都不动，这条线的写法轮下一格，就地在 ⑤ 重烧一版
@@ -2700,7 +2717,7 @@ def run():
                 and str((n1.get('mind') or {}).get('sig') or ''), '导图落档要带 版号/src/正文指纹：%s' % n1.get('mind')
             assert '闭水试验那 48 小时' in str(n1.get('voice') or '')
             check(page, '知识线·🧠 图文卡走通：① 挑知识（按类收堆·摊开再勾）→ 直出稿 → ⑤ 改稿（上一步 4→0 不落空站）→ 导图工作区（进门自动烧＝第 2 版、📄 正文卡摊着正文、AI 再出＝第 3 版、AI 改＝第 4 版）→ 竖式长图 1080 宽、高随内容（5 主干量高 >1440）：档案标「代发」+ imgDocs 认导图 + mind 留档（md/ver/src/sig）（下一步＝👀 预览）')
-            # 卡2·✨ 视频：新建这一篇（kOut=film），走通到进字效（片台让开＝#filmGate 收起、#filmBar 亮出）
+            # 卡2·✨ 视频：新建这一篇（kOut=film），走通到进字效（片台让开＝#filmGate 收起、外壳 #filmHead 亮出）
             page.locator('#tabNotePublish').click()
             page.locator('.npar-new').click()
             expect(page.locator('#dirModal.open')).to_be_visible()
@@ -2708,22 +2725,22 @@ def run():
             expect(page.locator('#npWizBody')).to_be_visible(timeout=15000)
             note2 = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
             assert note2 and note2['dir'] == 'k' and note2['kOut'] == 'film' and note2['form'] == '视频' and note2['title'] == '（还没定稿）', note2
-            expect(page.locator('#npSteps')).to_contain_text('✨ 出片', timeout=15000)
+            expect(page.locator('#npSteps')).to_contain_text('🎬 分幕', timeout=15000)
             steps_k2 = page.locator('#npSteps').inner_text()
-            for lab in ('挑知识', '改稿', '✨ 出片', '发布'):
+            for lab in ('挑知识', '改稿', '🎬 分幕', '发布'):
                 assert lab in steps_k2, f'知识线（视频）步骤条缺「{lab}」：{steps_k2}'
-            for lab in ('定话题', '人群', '挑稿', '自己拍发布', '🧠 出导图'):
+            for lab in ('定话题', '人群', '挑稿', '自己拍发布', '🧠 出导图', '🎬 分幕'):
                 assert lab not in steps_k2, f'知识线（视频）不该有「{lab}」：{steps_k2}'
             drive_ktalk('卡2 视频')
             page.locator('.np-k-fin-film').click()
-            expect(page.locator('#filmBar')).to_be_visible(timeout=15000)
+            expect(page.locator('#filmHead')).to_be_visible(timeout=15000)
             expect(page.locator('#filmGate')).to_be_hidden()
             assert page.evaluate('() => _npFilmNote && _npFilmNote.kind') == 'PPT字体动效'
             n2 = worker.evaluate('async (id) => (((await chrome.storage.local.get("np_notes")).np_notes) || []).find(x => x && x.id === id) || null', note2['id'])
             assert n2 and n2['status'] == '代发' and n2['form'] == '视频' and n2['kOut'] == 'film' and n2['filmKind'] == 'PPT字体动效', n2
             assert n2['filmDocs'] and n2['filmDocs'][0]['kind'] == 'PPT字体动效', n2.get('filmDocs')
             assert '闭水试验那 48 小时' in str(n2.get('voice') or '')
-            check(page, '知识线·✨ 视频卡走通：挑知识 → 直出稿 → 改稿 → 「进字效出片」：片台盖板收、#filmBar 亮出（本机出片档 PPT字体动效），档案标「代发」+ filmDocs 排片')
+            check(page, '知识线·✨ 视频卡走通：挑知识 → 直出稿 → 改稿 → 「进字效出片」：片台盖板收、外壳顶栏亮出（本机出片档 PPT字体动效），档案标「代发」+ filmDocs 排片')
             # 卡3·🎙 口播稿：新建这一篇（kOut=voice），走通到收稿回档案
             page.locator('#tabNotePublish').click()
             page.locator('.npar-new').click()
@@ -3627,7 +3644,7 @@ def run():
             expect(page.locator('#noteAssetsContent')).to_contain_text('📚 素材库')
             expect(page.locator('#noteAssetsContent')).to_contain_text(
                 f"{seed9['nCols']} 个集合 · {seed9['nSegs']} 段视频 · {seed9['nImgs']} 张图")
-            expect(page.locator('#noteAssetsContent .npas-gen')).to_have_text('🤖 AI 整理素材')
+            expect(page.locator('#noteAssetsContent .npas-gen')).to_have_text('🧺 AI 整理素材')
             expect(page.locator('#noteAssetsContent .npas-new-open')).to_have_text('➕ 新建集合')
             rowA = page.locator('#noteAssetsContent .npas-col-open', has_text='缺口卖点X')
             rowB = page.locator('#noteAssetsContent .npas-col-open', has_text='缺口知识X')
@@ -3657,17 +3674,17 @@ def run():
             expect(page.locator('#noteAssetsContent')).to_contain_text('还缺料的 1 个集合在下面（红框）')
             assert page.locator('#noteAssetsContent .npas-col-open.npas-focus', has_text='缺口卖点X').count() == 0, '有 1 张图的集合不算缺口，不该被红框'
             page.screenshot(path=str(out / 'notepublish-assets-wall.png'), full_page=True)
-            check(page, '📚 素材库集合墙：一行一集（名字＋来源 chip＋「N 段视频 · N 张图」/「🖼 待补充 · 还没料」＋说明）；搜集合名/说明/素材词一起搜；档案「⚠ 还缺 N 项」点击＝跳素材库红框高亮缺料集合')
-            # 内页：空集合＝amber 空态；非手工集合不出「🔗 关联」，也没连播卡
+            check(page, '📚 素材库「🗂 集合配置」签：一行一集（用/停用开关＋名字＋来源 chip＋归类 chip＋「N 段视频 · N 张图」/「🖼 待补充 · 还没料」＋AI 理由）；搜集合名/说明/来源/类名一起搜；档案「⚠ 还缺 N 项」点击＝跳这一签红框高亮缺料集合')
+            # 签 B（素材内容）：空集合＝amber 空态；非手工集合不出「🔗 关联」，也没连播卡
             expect(rowB).to_be_visible(timeout=10000)
             rowB.click()
-            expect(page.locator('#noteAssetsContent .npas-back')).to_have_text('← 返回素材库', timeout=10000)
-            expect(page.locator('#noteAssetsContent')).to_contain_text('🕐 这个集合还没料')
+            expect(page.locator('#noteAssetsContent .npas-tabback')).to_have_text('‹ 回集合配置', timeout=10000)
+            expect(page.locator('#noteAssetsContent')).to_contain_text('🕐 这一集还没料')
             expect(page.locator('#noteAssetsContent .npas-up')).to_have_text('📁 传本机图')
             expect(page.locator('#noteAssetsContent .npas-col-del')).to_have_text('✕ 删集合')
             assert page.locator('#noteAssetsContent .npas-assoc').count() == 0, '非手工集合不出「🔗 关联」'
             assert page.locator('#noteAssetsContent #npasStage').count() == 0, '没视频段不出连播卡'
-            page.locator('#noteAssetsContent .npas-back').click()
+            page.locator('#noteAssetsContent .npas-tabback').click()
             expect(rowA).to_be_visible(timeout=10000)
             # 有图的集合：图墙出「🖼 只有图 · 还没剪」＋缩略图；× 删条＝回到空态
             rowA.click()
@@ -3678,9 +3695,9 @@ def run():
             page.screenshot(path=str(out / 'notepublish-assets-inner.png'), full_page=True)
             page.locator('#noteAssetsContent .npas-item-del').click()
             expect(page.locator('#popToastBox')).to_contain_text('删掉了这条素材记录')
-            expect(page.locator('#noteAssetsContent')).to_contain_text('🕐 这个集合还没料', timeout=10000)
+            expect(page.locator('#noteAssetsContent')).to_contain_text('🕐 这一集还没料', timeout=10000)
             assert page.locator('#noteAssetsContent .npas-item-del').count() == 0, '删掉的条不再出现'
-            page.locator('#noteAssetsContent .npas-back').click()
+            page.locator('#noteAssetsContent .npas-tabback').click()
             expect(rowB).to_be_visible(timeout=10000)
             # ✕ 删集合＝原生 confirm；删完回墙，这个集合没了
             rowB.click()
@@ -3695,8 +3712,15 @@ def run():
             finally:
                 page.remove_listener('dialog', on_dlg9)
             expect(page.locator('#popToastBox')).to_contain_text('集合删掉了')
+            page.locator('#noteAssetsContent .npas-tabback').click()
             expect(page.locator('#noteAssetsContent .npas-col-open', has_text='缺口知识X')).to_have_count(0, timeout=10000)
-            check(page, '📚 集合内页：← 返回 / 📁 传本机图 / ✕ 删集合（原生 confirm）；空集合＝「🕐 这个集合还没料」；纯图条＝「🖼 只有图 · 还没剪」＋ × 删条；非手工集合不出「🔗 关联」')
+            gone9 = page.evaluate("""async () => {
+                const cols = await npCollectionsRead();
+                const clips = await npClipsRead();
+                return { col: cols.some(c => c && c.id === 'col9-kb'), clip: clips.some(c => c && c.col === 'col9-kb') };
+            }""")
+            assert not gone9['col'] and not gone9['clip'], '删集合要把这一集和里面的素材记录一起摘掉：%s' % gone9
+            check(page, '📚 素材内容签：‹ 回集合配置 / 📁 传本机图 / ✕ 删集合（原生 confirm，连里面的素材记录一起删）；空集合＝「🕐 这一集还没料」；纯图条＝「🖼 只有图 · 还没剪」＋ × 删条；非手工集合不出「🔗 关联」')
             # 清场：种的两个集合与那篇撤掉
             cleaned = page.evaluate('''async () => {
                 const p = window.__np9prev || null;

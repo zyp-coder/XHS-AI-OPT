@@ -2,7 +2,7 @@
  * theme.js — 界面主题（全站一套变量：预设 + 自定义色）
  *
  * 怎么工作：
- *   ① ui.css 里的 --c-brand 一组是默认值（石墨黑）；这里按「当前主题」把同一批变量写到 <html> 的内联样式上。
+ *   ① ui.css 里的 --c-brand 一组只是「theme.js 没来得及上色时的兜底」；这里按「当前主题」把同一批变量写到 <html> 的内联样式上。
  *      内联样式优先级最高 ⇒ 任何页面都不用改样式表就能换色，样式表里也不该再出现写死的品牌 hex。
  *   ② 主题值存在 chrome.storage.local 的 ui_theme（在 lib/tenant.js 的 TENANT_SCOPED_KEYS 里：
  *      跟着产品/租户切换，也进加密备份——将来抖音那条线切一套预设就是换个租户）。
@@ -17,11 +17,11 @@
 
   var KEY = 'ui_theme';          // chrome.storage.local 里的键
   var CACHE = 'ui_theme_cache';  // localStorage 镜像（只为首帧不闪）
-  var DEFAULT = 'graphite';
+  var DEFAULT = 'teal';         // 默认走 demo 那套绿（松石青）
 
   // 预设：只写基色，其余档全由基色混出来（各主题的浅底 / 淡边 / hover 深一档观感一致，不用逐个调）
   var PRESETS = [
-    { id: 'graphite', name: '石墨黑', brand: '#1f2329', desc: '默认；工具感最强，跟两个平台都不撞色' },
+    { id: 'graphite', name: '石墨黑', brand: '#1f2329', desc: '工具感最强，跟两个平台都不撞色' },
     { id: 'indigo', name: '靛蓝', brand: '#4f46e5', desc: '中性 SaaS 风，最不像某个平台' },
     { id: 'blue', name: '品牌蓝', brand: '#2563eb', desc: '跟状态色（成功/警告）最不打架' },
     { id: 'violet', name: '电光紫', brand: '#7c3aed', desc: '个性强，深浅都好认' },
@@ -32,7 +32,7 @@
     { id: 'amber', name: '琥珀', brand: '#f59e0b', desc: '暖、亮，主按钮上走黑字' },
     { id: 'lime', name: '青柠', brand: '#84cc16', desc: '最亮的一档，字必须压黑' },
     { id: 'emerald', name: '翡翠绿', brand: '#10b981', desc: '清爽，像效率工具' },
-    { id: 'teal', name: '松石青', brand: '#0d9488', desc: '绿里偏蓝，比翡翠稳' },
+    { id: 'teal', name: '松石青', brand: '#0d9488', desc: '默认；绿里偏蓝，比翡翠稳（跟 demo 一套）' },
     { id: 'cyan', name: '抖音青', brand: '#0ea5e9', desc: '给抖音那条线留的调子' },
   ];
 
@@ -50,6 +50,10 @@
   /** 往白（w=1）或黑（w=0）混：w＝白占的比例 */
   function mix(c, w) {
     return { r: c.r + (255 - c.r) * w, g: c.g + (255 - c.g) * w, b: c.b + (255 - c.b) * w };
+  }
+  /** 整体压暗（k＝留下的比例）：主色的「深一档」走这条，别拿 mix 往白混 */
+  function shade(c, k) {
+    return { r: c.r * k, g: c.g * k, b: c.b * k };
   }
   /** 相对亮度（sRGB 线性），用来定「主色块上的字是黑还是白」 */
   function luma(c) {
@@ -84,7 +88,7 @@
     var c = parseHex(hex) || parseHex(presetOf(DEFAULT).brand);
     return {
       '--c-brand': toHex(c),
-      '--c-brand-ink': toHex(mix(c, 0.25)),       // 深一档：黑占 25%
+      '--c-brand-ink': toHex(shade(c, 0.75)),      // 深一档：整支压暗 25%（石墨黑算出来就是 #171a1f，跟样式表兜底一致）
       '--c-brand-hi': toHex(mix(c, 0.78)),        // 浅一档：白占 78%（渐变起点）
       '--c-brand-soft': toHex(mix(c, 0.92)),      // 极浅底：白占 92%
       '--c-brand-soft2': toHex(mix(c, 0.85)),
@@ -119,7 +123,9 @@
       if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return resolve(readCache() || { preset: DEFAULT, custom: '' });
       chrome.storage.local.get(KEY, function (d) {
         var v = d && d[KEY];
-        resolve((v && typeof v === 'object') ? v : (readCache() || { preset: DEFAULT, custom: '' }));
+        // 没手动选过色就直接用默认档：别拿旧缓存顶——那份缓存只是上一次默认档的镜像，
+        // 默认档一改（石墨黑→松石青），拿它顶就会看着「换了没生效」
+        resolve((v && typeof v === 'object') ? v : { preset: DEFAULT, custom: '' });
       });
     });
   }

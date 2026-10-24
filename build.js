@@ -1,19 +1,22 @@
 /**
- * build.js — 发行版打包脚本
+ * build.js — 执行器发行包打包脚本
  *
- * 作用：按版本类型生成写死的 lib/edition.js，复制整个 extension 目录到 dist，
- *       再打成可直接「加载已解压的扩展 / 上传」的 zip 包。
+ * 作用：按允许清单把 executor/（执行器）铺到 dist，再打成「加载解压缩的扩展」zip。
+ *       客户包里不带提示词/写稿/排产/本地档位；真内容与档位都在服务器侧。
+ *
+ * ★ 2026-10-16 形态收口：发货包＝执行器（只有手、没有开始按钮）。
+ *   客户拿到的就是这一份；干活从网页上下单，档位在服务器侧判定。
  *
  * 用法（在项目根目录执行）：
- *   node build.js full --licensee "张三公司"      # 全功能版（¥539/月；② + 线索）
- *   node build.js comment --licensee "李四"       # 基础版（¥239/月；共有 + 发笔记）
- *   node build.js comment-multi --licensee "王五" # 升级版（¥399/月；① + 获客）
+ *   node build.js full --licensee "张三公司"      # 包进门默认＝全功能（真表在服务器侧）
+ *   node build.js comment --licensee "李四"       # 包进门默认＝基础
+ *   node build.js comment-multi --licensee "王五" # 包进门默认＝升级
  *   node build.js pro                            # 自用版（全功能、零等待，自用）
  *
  * 可选参数：
  *   --licensee "客户名"   写入授权对象（建议填）
- *   --days N             覆盖默认有效天数（如 --days 30；0 = 不过期）
- *   --xhs-id "小红心书号"   绑定到指定「小红书号」：插件只在当前登录为该书号时才可用
+ *   --days N             覆盖包里默认有效天数（如 --days 30；0 = 不过期）
+ *   --xhs-id "小红书号"     旧档兼容：包级绑定（新形态一般不用，走服务器配对号认号）
  *   --xhs-name "昵称"      绑定对象的主页昵称（仅用于展示）
  *   --out 目录           输出目录（默认 dist）
  *
@@ -26,9 +29,14 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const ROOT = __dirname;
-const SRC = path.join(ROOT, 'extension');
+const SRC = path.join(ROOT, 'executor');
+const handGate = require('./scripts/hand-package-gate.js');
 
 // ── 版本预设 ───────────────────────────────────────────────
+// ★ 2026-10-16 档位归公网那台：下面这张 features 只是包里的「进门默认」——
+//   客户机挂上线后每 15 秒从服务器领那张真表（server/tier.mjs），领到过就以服务器为准。
+//   这里照旧按档打，为的是「从没领到过表」（断网 / 还没配对号）时界面上不该点的别露出来；
+//   要跟三档边界保持一致，改档请到公网那台的「发放管理 → 档位表」改（改完全体跟着变，不用重打包）。
 // 三档边界（2026-10-09 老板定：一个模块一条线，累进开通，共有部分不动）
 //   ① 基础版 = 共有 + 发笔记    ② 升级版 = ① + 获客    ③ 全功能版 = ② + 线索
 //   共有（三档都有）：账号诊断&配置 / 产品库·知识库 / 多产品切换 / 整页发送
@@ -91,199 +99,6 @@ function usageAndExit(msg) {
   if (msg) console.error('\n❌ ' + msg);
   console.error('\n用法: node build.js <full|comment|comment-multi|pro> [--licensee "客户名"] [--days N] [--xhs-id "小红书号"] [--xhs-name "昵称"] [--out 目录]\n');
   process.exit(1);
-}
-
-// ── 混淆编码 / 校验（发行版防护：隐藏绑定号、有效期，并自检防篡改） ──
-function fnv1a(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0).toString(16);
-}
-function b64(str) { return Buffer.from(str, 'utf8').toString('base64'); }
-
-// 对「敏感载荷」做不可读化编码：base64 → 反转 → 再 base64（运行时需反转+两次解码）
-function obfuscatePayload(payloadObj) {
-  const json = JSON.stringify(payloadObj);
-  const inner = b64(json);
-  const rev = inner.split('').reverse().join('');
-  return { encoded: b64(rev), json };
-}
-
-// ── 生成 edition.js 文件内容（发行版） ─────────────────────
-// 说明：敏感项（boundAccount / builtAt / expireAt / validDays）以混淆载荷形式嵌入，
-//       不直接明文裸露绑定号；并写入 integrity 校验，运行时校验失败即视为被篡改。
-function genEditionJs(cfg) {
-  const featuresStr = `{\n    batchSend: ${cfg.features.batchSend},\n    tenant: ${cfg.features.tenant},\n    knowledge: ${cfg.features.knowledge},\n    autoWater: ${cfg.features.autoWater},\n    prospectList: ${cfg.features.prospectList},\n    notePublish: ${cfg.features.notePublish},\n    dailyBrowse: ${cfg.features.dailyBrowse},\n    videoFilm: ${cfg.features.videoFilm},\n  }`;
-  const bound = cfg.boundAccount || { xhsId: '', name: '' };
-
-  // 敏感载荷（重要值不落明文）
-  const { encoded, json } = obfuscatePayload({
-    boundAccount: { xhsId: bound.xhsId || '', name: bound.name || '' },
-    builtAt: cfg.builtAt,
-    expireAt: cfg.expireAt,
-    validDays: cfg.validDays,
-    keywordMax: cfg.keywordMax,
-    price: cfg.price,
-  });
-  const salt = 'xk' + Date.now().toString(16) + (Math.random() * 0xffffffff | 0).toString(16);
-  const sig = fnv1a(salt + '::' + json);
-
-  return `/**
- * edition.js — 版本定义与功能开关（发行版·自动生成，请勿手改）
- * 由 build.js 自动生成。敏感授权信息已混淆并带防篡改校验。
- */
-
-const EDITION = {
-  type: ${JSON.stringify(cfg.type)},
-  label: ${JSON.stringify(cfg.label)},
-  licensee: ${JSON.stringify(cfg.licensee || '')},
-  noDelay: ${!!cfg.noDelay},
-  features: ${featuresStr},
-  // ⚠️ 以下为混淆载荷：绑定号 / 有效期等重要取值在此，勿直接修改其含义。
-  _payload: ${JSON.stringify(encoded)},
-  _salt: ${JSON.stringify(salt)},
-  _sig: ${JSON.stringify(sig)},
-};
-
-// ── 载荷解码（运行时） ──
-function _edB64(s) {
-  if (typeof atob !== 'undefined') {
-    const bin = atob(s);
-    try { return decodeURIComponent(escape(bin)); } catch (_) { return bin; }
-  }
-  if (typeof Buffer !== 'undefined') return Buffer.from(s, 'base64').toString('utf8');
-  throw new Error('no b64');
-}
-function _edDecode() {
-  const reversed = _edB64(EDITION._payload);
-  const inner = reversed.split('').reverse().join('');
-  return _edB64(inner);
-}
-function _edFnv(str) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0).toString(16);
-}
-
-// 解出敏感数据（若缺失/损坏则空对象）
-let _edData = {};
-try {
-  const raw = _edDecode();
-  _edData = JSON.parse(raw);
-  _edData._raw = raw;
-} catch (_) { _edData = {}; }
-
-// 读取唯一真实来源（优先混淆载荷；未解出则回退默认）
-EDITION.boundAccount = (_edData && _edData.boundAccount && Object.assign({ xhsId: '', name: '' }, _edData.boundAccount)) || { xhsId: '', name: '' };
-EDITION.builtAt = (_edData && _edData.builtAt) || 0;
-EDITION.expireAt = (_edData && _edData.expireAt) || 0;
-EDITION.validDays = (_edData && _edData.validDays) || 0;
-EDITION.keywordMax = (function () {
-  const v = parseInt(_edData && _edData.keywordMax, 10);
-  return (isFinite(v) && v >= 0) ? v : 0; // 0 = 不限
-})();
-EDITION.price = (_edData && _edData.price) || 0;
-
-function editionHasFeature(name) {
-  return !!(EDITION.features && EDITION.features[name]);
-}
-
-function editionNeverExpires() {
-  return !EDITION.expireAt || EDITION.expireAt <= 0;
-}
-
-/** 是否绑定了指定小红书号（无绑定 = 不限制账号） */
-function editionHasBinding() {
-  return !!String((EDITION.boundAccount && EDITION.boundAccount.xhsId) || '').trim();
-}
-
-/** 当前绑定的小红书号（未绑定返回空串） */
-function editionBoundXhsId() {
-  return editionHasBinding() ? String(EDITION.boundAccount.xhsId).trim() : '';
-}
-
-/** 一键灌水允许的最大关键词数量（0＝不限；非法值按不限处理） */
-function editionKeywordMax() {
-  const v = parseInt(EDITION.keywordMax, 10);
-  return (isFinite(v) && v >= 0) ? v : 0;
-}
-
-/** 授权文件完整性校验：载荷被改动（含绑定号/有效期）则判定为被篡改 */
-function editionIntegrityOk() {
-  if (!EDITION._payload || !EDITION._salt || !EDITION._sig) return false;
-  try {
-    const raw = _edDecode();
-    if (!raw) return false;
-    return _edFnv(EDITION._salt + '::' + raw) === EDITION._sig;
-  } catch (_) { return false; }
-}
-
-function editionIsExpired(nowMs) {
-  if (editionNeverExpires()) return false;
-  const t = Number(nowMs) || 0;
-  return t > EDITION.expireAt;
-}
-
-function editionRemainingDays(nowMs) {
-  if (editionNeverExpires()) return Infinity;
-  const t = Number(nowMs) || 0;
-  if (t > EDITION.expireAt) return 0;
-  const dayStart = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
-  return Math.round((dayStart(EDITION.expireAt) - dayStart(t)) / 86400000);
-}
-
-function editionSummary(nowMs) {
-  return {
-    type: EDITION.type,
-    label: EDITION.label,
-    licensee: EDITION.licensee || '',
-    builtAt: EDITION.builtAt || 0,
-    expireAt: EDITION.expireAt || 0,
-    validDays: EDITION.validDays || 0,
-    neverExpires: editionNeverExpires(),
-    hasBinding: editionHasBinding(),
-    tampered: !editionIntegrityOk(),
-    keywordMax: editionKeywordMax(),
-    price: parseInt(EDITION.price, 10) || 0,
-    noDelay: !!EDITION.noDelay,
-    boundAccount: {
-      xhsId: editionBoundXhsId(),
-      name: (EDITION.boundAccount && EDITION.boundAccount.name) ? String(EDITION.boundAccount.name) : '',
-    },
-    features: { ...EDITION.features },
-    expired: nowMs !== undefined ? editionIsExpired(nowMs) : false,
-    remainingDays: nowMs !== undefined ? editionRemainingDays(nowMs) : null,
-  };
-}
-
-const Edition = {
-  EDITION,
-  hasFeature: editionHasFeature,
-  neverExpires: editionNeverExpires,
-  hasBinding: editionHasBinding,
-  boundXhsId: editionBoundXhsId,
-  keywordMax: editionKeywordMax,
-  integrityOk: editionIntegrityOk,
-  isExpired: editionIsExpired,
-  remainingDays: editionRemainingDays,
-  summary: editionSummary,
-};
-
-if (typeof self !== 'undefined') { self.Edition = Edition; }
-if (typeof module !== 'undefined') { module.exports = Edition; }
-`;
-}
-
-// ── 更新 manifest 名称（追加版本标识，便于区分/共存） ──────
-function patchManifest(destDir, cfg) {
-  const mp = path.join(destDir, 'manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(mp, 'utf8'));
-  // 源 manifest 名称带「· 开发版」后缀（开发环境自用），打包时压回产品名再拼当前档位，避免出现两个档位名
-  const baseName = String(manifest.name || '').split('·')[0].trim() || '小红书评论助手';
-  const suffix = cfg.licensee ? `${cfg.label}·${cfg.licensee}` : cfg.label;
-  manifest.name = `${baseName} · ${suffix}`;
-  fs.writeFileSync(mp, JSON.stringify(manifest, null, 2), 'utf8');
-  return manifest;
 }
 
 function escHtml(s) {
@@ -350,7 +165,9 @@ function buildRecordHtml(list) {
 </div></body></html>`;
 }
 
-// ── 极简三步使用说明（生成 txt + html 双份） ───────────────
+// ── 执行器装机说明（生成 txt + html 双份） ─────────────────
+// 2026-10-16 收口：发货包＝执行器——三步＝解压 → 浏览器加载 → 填配对号挂线；
+// 不再提 DeepSeek Key / 首次设置向导（那些在网页上，干活由服务器派单）。
 // 本版本功能清单：按 preset 开关生成（对外用词避开禁用词表；表述从简，一行一项）
 // 三档边界（2026-10-09 老板定）：① 基础版＝共有+发笔记 ② 升级版＝①+获客 ③ 全功能版＝②+线索
 function featureLines(cfg) {
@@ -371,55 +188,53 @@ function featureLines(cfg) {
 }
 
 function writeStepsManual(stageDir, cfg) {
-  const bound = cfg.boundAccount || {};
-  const validStr = cfg.validDays > 0 ? (cfg.validDays + ' 天') : '永久';
   const lc = cfg.licensee || '通用';
-  const boundLine = bound.xhsId ? ('绑定小红书号：' + bound.xhsId + (bound.name ? '（' + bound.name + '）' : '')) : '';
   const feats = featureLines(cfg);
   const featsTxt = feats.map((x, i) => '  ' + (i + 1) + ') ' + x).join('\n');
   const featsHtml = feats.map((x) => '<li>' + escHtml(x) + '</li>').join('');
-  // 带出片的档位：整份说明都指到 Edge（配音走微软给 Edge 的免费通道，别的浏览器念不出声）
+  // 带出片的档位：配音走微软给 Edge 的免费通道——整份说明都指到 Edge（Chrome 一样能装，只是配音不出声）
   const useEdge = !!(cfg.features && cfg.features.videoFilm);
   const brName = useEdge ? 'Edge' : 'Chrome';
   const brUrl = useEdge ? 'edge://extensions' : 'chrome://extensions';
   const edgeTip = useEdge
-    ? '  ※ 请务必用 Edge：里面的配音走的是微软给 Edge 的免费通道，换 Chrome 念不出声（苹果电脑下载 Edge 即可）。\n'
+    ? '  ※ 建议用 Edge：里面的配音走微软给 Edge 的免费通道，换别的浏览器念不出声（Chrome 一样能装）。\n'
     : '';
   const edgeTipHtml = useEdge
-    ? '<li style="color:#888">※ 请务必用 Edge：里面的配音走的是微软给 Edge 的免费通道，换 Chrome 念不出声（苹果电脑下载 Edge 即可）。</li>'
+    ? '<li style="color:#888">※ 建议用 Edge：里面的配音走微软给 Edge 的免费通道，换别的浏览器念不出声（Chrome 一样能装）。</li>'
     : '';
 
   const txt = `================================================
-   小红书评论助手 · ${cfg.label}  使用说明
+   小红书助手 · 执行器  使用说明
 ================================================
-版本：${cfg.label}　｜　授权：${lc}　｜　有效期：${validStr}
-${boundLine ? boundLine + '\n' : ''}────────────────────────────────────────
-已开通功能：
+授权：${lc}
+它是一只装在你浏览器里的「手」：网页上点的活，在你这台电脑上真跑。
+※ 干活都在网页上点——它自己不带开始按钮。
+※ 功能与有效期以网页上你账号的显示为准。
+
+────────────────────────────────────────
+按你买的档位，能用这些：
 ${featsTxt}
 
-本工具只要 3 步就会用：
+装它只要 3 步：
 
-【第①步】拿 DeepSeek 的 API Key
-  1) 打开 https://platform.deepseek.com 注册并登录
-  2) 左侧「API Keys」→ 点「创建新密钥」
-  3) 复制那串 sk-xxx（只显示一次，请先拷贝保存）
-  ※ API 按用量计费，用之前可根据需求充值一点
+【第①步】解压到一个固定文件夹
+  1) 把「小红书助手-执行器.zip」解压到比如 D:\\小红书助手-执行器\\
+  2) 解压完应能看到 manifest.json、panel.html、「装机-看这里.txt」
+  ※ 以后别挪这个文件夹——挪了浏览器就找不到，要重新加载一次
 
-【第②步】加载浏览器扩展
+【第②步】在浏览器里加载（一次性）
   1) 打开 ${brName}，地址栏输入 ${brUrl} 回车
   2) 打开右上角「开发者模式」
-  3) 点「加载已解压的扩展程序」→ 选本压缩包解压后的这个文件夹
-  4) 右上角出现插件图标即可（建议点 📌 固定）
+  3) 点「加载解压缩的扩展」→ 选中第①步那个文件夹
+  4) 工具栏出现「小红书助手 · 执行器」图标即可（建议点 📌 固定）
 ${edgeTip}
-【第③步】激活使用
-  1) 打开小红书网页 → 点插件图标 → 进入「首次设置」向导
-  2) 向导第①步：选 DeepSeek，粘贴刚复制的 API Key
-  3) 向导第②步：填产品名称 / 简介
-  4) 向导第③步：选推广目标
-  5) 向导第④步：绑定账号验证 → 通过即解锁可用
-     ※ 验证前：先在浏览器里打开「你这个小红书号」自己的「我的」主页，
-        并保持这个页面是打开的，再回来点「验证」
-  以后要改配置，回插件窗口「⚙️ 设置」里改。
+【第③步】填配对号，挂上
+  1) 点插件图标 → 服务器地址已经填好，不用动
+  2) 填你的配对号（在网页右上角、你账号那一行，点一下能复制，XHD- 开头）
+  3) 点「🔗 挂上」→ 变成 🟢 在线待命＝挂上了
+  4) 之后在网页上点「发 / 开始」，这只手就去干活；网页右下角能看到它的状态
+  不用填任何 AI Key：写稿、出图、出片都在网页上，这边只是手。
+  别关浏览器——关了不干活（服务器上的单会排队，回来接着干）。
 
 （提示：请按真人节奏使用，因操作过猛导致的账号风险需自行承担）
 ================================================
@@ -427,7 +242,7 @@ ${edgeTip}
 `;
 
   const h = `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>${escHtml(cfg.label)} · 使用说明</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>小红书助手 · 执行器 · 使用说明</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font:14px/1.9 "Microsoft YaHei","PingFang SC",sans-serif;background:#f5f6f8;padding:20px;color:#222}
@@ -443,46 +258,45 @@ ${edgeTip}
   .tip{background:#fff4e8;border:1px solid #ffd9b3;border-radius:8px;padding:9px 12px;font-size:12.5px;color:#7a4a1f;margin-top:18px}
   .foot{text-align:center;color:#999;font-size:12px;margin-top:20px;border-top:1px dashed #ddd;padding-top:12px}
 </style></head><body><div class="page">
-  <h1>小红书评论助手 · ${escHtml(cfg.label)}</h1>
+  <h1>小红书助手 · 执行器</h1>
   <div class="sub">使用说明 · 只要 3 步就会用</div>
-  <div class="auth">版本：${escHtml(cfg.label)}　｜　授权：${escHtml(lc)}　｜　有效期：${escHtml(validStr)}${bound.xhsId ? '　｜　绑定：' + escHtml(bound.xhsId) : ''}</div>
+  <div class="auth">授权：${escHtml(lc)}　｜　干活都在网页上点，它自己不带开始按钮</div>
 
   <div class="step">
-    <h2>已开通功能</h2>
+    <h2>按你买的档位，能用这些</h2>
     <ol>${featsHtml}</ol>
+    <div style="color:#888;font-size:12.5px;margin-top:6px">※ 功能与有效期以网页上你账号的显示为准。</div>
   </div>
 
   <div class="step">
-    <h2>① 拿 DeepSeek 的 API Key</h2>
+    <h2>① 解压到一个固定文件夹</h2>
     <ol>
-      <li>打开 <b>https://platform.deepseek.com</b> 注册登录。</li>
-      <li>左侧「API Keys」→ 点「创建新密钥」。</li>
-      <li>复制那串 <code>sk-xxx</code>（只显示一次，先拷贝保存）。</li>
-      <li style="color:#888">※ API 按用量计费，用前可根据需求充值一点。</li>
+      <li>把「小红书助手-执行器.zip」解压到比如 <code>D:\\小红书助手-执行器\\</code>。</li>
+      <li>解压完应能看到 <code>manifest.json</code>、<code>panel.html</code>、「装机-看这里.txt」。</li>
+      <li style="color:#888">※ 以后别挪这个文件夹——挪了浏览器就找不到，要重新加载一次。</li>
     </ol>
   </div>
 
   <div class="step">
-    <h2>② 加载浏览器扩展</h2>
+    <h2>② 在浏览器里加载（一次性）</h2>
     <ol>
       <li>打开 ${brName}，地址栏输入 <code>${brUrl}</code> 回车。</li>
       <li>打开右上角「开发者模式」。</li>
-      <li>点「加载已解压的扩展程序」→ 选本压缩包解压后的这个文件夹。</li>
-      <li>右上角出现插件图标即可（建议点 📌 固定）。</li>
+      <li>点「加载解压缩的扩展」→ 选中第①步那个文件夹（Chrome 叫「加载已解压的扩展程序」）。</li>
+      <li>工具栏出现「小红书助手 · 执行器」图标即可（建议点 📌 固定）。</li>
       ${edgeTipHtml}
     </ol>
   </div>
 
   <div class="step">
-    <h2>③ 激活使用</h2>
+    <h2>③ 填配对号，挂上</h2>
     <ol>
-      <li>打开小红书网页 → 点插件图标 → 进入「首次设置」向导。</li>
-      <li>向导①：选 DeepSeek，粘贴刚复制的 API Key。</li>
-      <li>向导②：填产品名称 / 简介。</li>
-      <li>向导③：选推广目标。</li>
-      <li>向导④：绑定账号验证，通过即解锁可用。</li>
-      <li style="color:#888">※ 验证前：先在浏览器打开「你这个小红书号」自己的「我的」主页，并保持这个页面打开，再回来点「验证」。</li>
-      <li>以后要改配置，回插件窗口「⚙️ 设置」里改。</li>
+      <li>点插件图标 → 服务器地址已经填好，不用动。</li>
+      <li>填你的配对号（在网页右上角、你账号那一行，点一下能复制，XHD- 开头）。</li>
+      <li>点「🔗 挂上」→ 变成 🟢 在线待命＝挂上了。</li>
+      <li>之后在网页上点「发 / 开始」，这只手就去干活；网页右下角能看到它的状态。</li>
+      <li style="color:#888">※ 不用填任何 AI Key：写稿、出图、出片都在网页上，这边只是手。</li>
+      <li style="color:#888">※ 别关浏览器——关了不干活（服务器上的单会排队，回来接着干）。</li>
     </ol>
   </div>
 
@@ -504,13 +318,61 @@ function zipDir(srcDir, zipPath) {
   execSync(cmd, { stdio: 'inherit' });
 }
 
+/* 包里的 .bat 必须 GBK+CRLF（cmd 的解析要求）——转的是暂存副本，源文件保持 UTF-8。
+   PS5.1 里 [char]13+[char]10 是加法（不是字符串拼接）——必须先 [string] 转型。 */
+function fixBatsToGbk(dir) {
+  const ps = '$d=$env:BUILD_BAT_DIR; Get-ChildItem -Path $d -Filter *.bat | ForEach-Object { '
+    + '$c=[IO.File]::ReadAllText($_.FullName,[Text.Encoding]::UTF8); '
+    + '$c=$c.Replace([string][char]13+[string][char]10,[string][char]10).Replace([string][char]10,[string][char]13+[string][char]10); '
+    + '[IO.File]::WriteAllText($_.FullName,$c,[Text.Encoding]::GetEncoding(936)) }';
+  execSync(`powershell -NoProfile -Command "${ps}"`, { env: Object.assign({}, process.env, { BUILD_BAT_DIR: dir }), stdio: 'inherit' });
+}
+
 // ── 主流程 ─────────────────────────────────────────────────
+/* 共用文件核对：这几份是三处界面/后台逐字节共用的，谁漂了就中止打包
+   （漂了会出现「网页上锁了、执行器没锁」这类对不上的怪事，比打包失败更难查） */
+function assertSharedFiles() {
+  const crypto = require('crypto');
+  const md5 = (p) => (fs.existsSync(p) ? crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex') : '(不在)');
+  const groups = [
+    ['lib/edition-source.js（按表锁格那半）', 'lib/edition-source.js', ['extension', 'web']],
+    ['lib/edition.js（档位表进门默认）', 'lib/edition.js', ['extension', 'web', 'server/bg']],
+  ];
+  const bad = [];
+  for (const [title, file, dirs] of groups) {
+    const seen = {};
+    dirs.forEach((d) => { const h = md5(path.join(ROOT, d, file)); (seen[h] = seen[h] || []).push(d); });
+    const hs = Object.keys(seen);
+    if (hs.includes('(不在)')) bad.push(title + '：这几处缺文件 → ' + seen['(不在)'].join('、'));
+    else if (hs.length > 1) bad.push(title + '：' + hs.map((h) => seen[h].join('/') + '＝' + h.slice(0, 8)).join('、'));
+  }
+  if (bad.length) {
+    console.error('\n❌ 共用文件对不上，先对齐再打包（不然三处界面读的是不同版本）：');
+    bad.forEach((b) => console.error('   · ' + b));
+    console.error('   对齐办法：拿 extension 那份盖过去，例如 cp extension/lib/edition.js web/lib/（executor 是空壳，不参与）\n');
+    process.exit(1);
+  }
+}
+
+/* 发货包底线（换手第 6 条）：允许清单 + 脏文件 + 提示词特征，三关一起过。
+   闸门本体在 scripts/hand-package-gate.js，pack.js 走同一份，避免两边口径漂。 */
+function assertHandGate(stageDir) {
+  const gate = require('./scripts/hand-package-gate.js');
+  const r = gate.check(stageDir);
+  gate.printReport(r, stageDir);
+  if (!r.ok) {
+    console.error('\n❌ 发货包没过闸门，已中止。先在 executor/ 里把多出来的件清掉：node sync-executor.js\n');
+    process.exit(1);
+  }
+}
+
 function main() {
   const { type, opts } = parseArgs(process.argv);
   if (!type || !PRESETS[type]) {
     usageAndExit(type ? `未知版本类型: ${type}` : '缺少版本类型');
   }
   if (!fs.existsSync(SRC)) usageAndExit(`找不到源目录: ${SRC}`);
+  assertSharedFiles();
 
   const preset = PRESETS[type];
   const validDays = opts.days != null ? opts.days : preset.validDays;
@@ -538,66 +400,61 @@ function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   const safeLicensee = (opts.licensee || '').replace(/[\\/:*?"<>|\s]+/g, '_');
-  const stageName = safeLicensee ? `${type}-${safeLicensee}` : type;
+  // 发货包＝执行器：名字随包走、不带档位（档位在服务器侧，写进名字会过期误导）
+  const pkgName = safeLicensee ? `小红书助手-执行器·${safeLicensee}` : '小红书助手-执行器';
 
-  // ★ 按「打包日期_用户名_小红书号」分目录：dist/日期_用户名_号/ 里放 zip、扩展文件夹、使用说明
+  // ★ 按「打包日期_发放对象」分目录：dist/日期_发放_张三/ 里放 zip、执行器文件夹、使用说明
   const pad2 = (n) => String(n).padStart(2, '0');
   const _d = new Date();
   const dateStr = `${_d.getFullYear()}-${pad2(_d.getMonth() + 1)}-${pad2(_d.getDate())}`;
-  let dirUser = '未知名';
-  if (cfg.boundAccount.xhsId) dirUser = cfg.boundAccount.name || opts.licensee || dirUser;
+  const dirUser = cfg.boundAccount.name || opts.licensee || '未知名';
   const safeUser = dirUser.replace(/[\\/:*?"<>|\s]+/g, '_');
   const dirToken = cfg.boundAccount.xhsId
     ? `${dateStr}_${safeUser}_${cfg.boundAccount.xhsId}`
-    : `${dateStr}_无绑定`;
+    : (opts.licensee ? `${dateStr}_发放_${safeUser}` : `${dateStr}_无绑定`);
   const pkgDir = path.join(outDir, dirToken);
   fs.mkdirSync(pkgDir, { recursive: true });
-  const stageDir = path.join(pkgDir, `小红书评论助手-${stageName}`);
+  const stageDir = path.join(pkgDir, pkgName);
   if (fs.existsSync(stageDir)) fs.rmSync(stageDir, { recursive: true, force: true });
 
-  // 1) 复制整个 extension 目录（排除 Chrome 保留的 _ 开头的文件/目录，如 _capture；_locales 属 Chrome 官方保留特殊目录，本扩展未使用）
-  fs.cpSync(SRC, stageDir, {
-    recursive: true,
-    filter: (src) => {
-      if (src === SRC) return true;
-      if (src.includes('node_modules')) return false;
-      const name = path.basename(src);
-      if (name.endsWith('.backup') || name.includes('.bak')) return false;   // .bak / .backup 备份文件不进包
-      return !name.startsWith('_');
-    },
-  });
+  // 1) 按允许清单铺包（产品页 / 字体 / 备份件 / 开发件从源头就不进暂存区）
+  const staged = handGate.copyAllowed(SRC, stageDir);
+  if (staged.skipped.length) console.log('  闸门外没进包：' + staged.skipped.join('、'));
+  fixBatsToGbk(stageDir);
 
-  // 2) 写死 edition.js
-  fs.writeFileSync(path.join(stageDir, 'lib', 'edition.js'), genEditionJs(cfg), 'utf8');
+  // 2) 档位不再写进包：executor/lib/edition.js 是空壳，真表在服务器派单时拦
 
-  // 3) 更新 manifest 名称
-  const manifest = patchManifest(stageDir, cfg);
+  // 3) 读 manifest（名字随包走，不改——档位在服务器侧，写进名字会过期误导）
+  const manifest = JSON.parse(fs.readFileSync(path.join(stageDir, 'manifest.json'), 'utf8'));
 
-  // 3.5) 写入极简三步使用说明（txt + html 双份）
+  // 3.5) 写入执行器装机说明（txt + html 双份）
   writeStepsManual(stageDir, cfg);
 
+  // 3.6) 打包闸门：允许清单 + 脏文件 + 提示词特征（说明文件写完再查，免得漏扫）
+  assertHandGate(stageDir);
+
   // 4) 打 zip
-  const zipPath = path.join(pkgDir, `小红书评论助手-${stageName}.zip`);
+  const zipPath = path.join(pkgDir, pkgName + '.zip');
   zipDir(stageDir, zipPath);
 
-  // 4.5) 使用说明也放一份到 <小红书号> 目录根，方便先看再装
+  // 4.5) 使用说明也放一份到 <发放目录> 根，方便先看再装
   ['使用说明.txt', '使用说明.html'].forEach(f => {
     const s = path.join(stageDir, f);
     if (fs.existsSync(s)) fs.copyFileSync(s, path.join(pkgDir, f));
   });
 
   // 4.6) 追加打包记录（dist/打包记录.json 可编辑；自动生成可读表格 html）
-  appendBuildRecord(outDir, cfg, stageName, zipPath, stageDir);
+  appendBuildRecord(outDir, cfg, pkgName, zipPath, stageDir);
 
-  console.log('\n✅ 打包完成');
-  console.log('   版本类型 :', type, '(' + preset.label + ')');
+  console.log('\n✅ 打包完成（发货包＝执行器：只有手；干活从网页下单）');
+  console.log('   版本类型 :', type, '(' + preset.label + '·进门默认；真表在公网那台)');
   console.log('   授权对象 :', opts.licensee || '(无)');
-  console.log('   绑定账号 :', cfg.boundAccount.xhsId ? `${cfg.boundAccount.xhsId}${cfg.boundAccount.name ? '（' + cfg.boundAccount.name + '）' : ''}` : '(未绑定)');
+  if (cfg.boundAccount.xhsId) console.log('   绑定账号 :', `${cfg.boundAccount.xhsId}${cfg.boundAccount.name ? '（' + cfg.boundAccount.name + '）' : ''}`);
   console.log('   定价     :', cfg.price > 0 ? ('¥' + cfg.price + ' / 月') : '(自用/试用不标价)');
   console.log('   灌水关键词上限 :', cfg.keywordMax >= 1 ? (cfg.keywordMax + ' 个') : '不限量');
-  console.log('   有效天数 :', validDays > 0 ? validDays + ' 天' : '永久');
+  console.log('   有效天数 :', (validDays > 0 ? validDays + ' 天' : '永久'), '（进门默认；客户挂上线后到期由服务器判）');
   console.log('   到期时间 :', expireAt ? new Date(expireAt).toLocaleString('zh-CN') : '永不过期');
-  console.log('   功能开关 :', JSON.stringify(preset.features));
+  console.log('   功能开关 :', JSON.stringify(preset.features), '（包里这张＝进门默认；真表在公网那台）');
   console.log('   扩展名称 :', manifest.name);
   console.log('   解压目录 :', stageDir);
   console.log('   使用说明 :', path.join(stageDir, '使用说明.txt'));

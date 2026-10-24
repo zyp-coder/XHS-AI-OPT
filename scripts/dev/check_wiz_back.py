@@ -19,6 +19,7 @@ import sys
 import time
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -95,7 +96,7 @@ with sync_playwright() as p:
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append(str(e)[:200]))
         page.set_viewport_size({'width': 1160, 'height': 900})
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof npWizSig === "function"')
         page.wait_for_timeout(500)
 

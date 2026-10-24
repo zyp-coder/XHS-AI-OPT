@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -44,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-guard-') as profile, sync_playwrigh
 
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append('popup: ' + str(e)[:200]))
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function"')
 
         # 新 profile 没有 AI Key，弹窗会盖「首次设置」——先关掉再查小标

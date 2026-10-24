@@ -1,6 +1,6 @@
 # 三十一改自检：引流视频线「🎬 文案直出视频」——分镜出词并进写稿流
 # 四十四改（2026-10-12）：拆段出词 → 排全片分镜、照豆包 15 秒切条（小条并入相邻条）；断言按新形状
-# 覆盖：档案「下一步」两态（✏️ 编辑→🎬 成片预览，方向细节在 title）/ 五站条 / AI 按重点排 3~5 个分镜 /
+# 覆盖：档案「下一步」两态（✏️ 编辑→🎬 成片预览，方向细节在 title）/ 五站条 / 七十三改：AI 排几个分镜就照几个走（段数长短不卡）/
 #       照 15 秒切条＋≤5 秒小条并入（优先并前一条）/ 提示词硬约束兜底（缺了就补尾）＋拆分/并入交代 /
 #       角色按位置兜底 / 转法句透传 / ⬆ 传回来回写 / 音色落档 /
 #       拼片软守门（没传齐弹提示）/ 真拼片落 filmDocs＋xhsFilmDocs＋标「代发」/ 改稿后 src 对不上自动重排 / note_dgens 纯文本索引
@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXT = ROOT / 'extension'
@@ -25,7 +26,7 @@ DRAFT1 = ('知道吧，很多人买电脑散热垫都是随手搜一个销量高
 TURN = '于是我自己动手改了一个能拼装的支架'
 DRAFT2 = DRAFT1.replace('我前前后后换过七个', '我前前后后换过八个')
 
-# 第一版：4 个重点 → 4 个分镜；第 1 段提示词缺硬约束（考补尾）；第 2 段角色留空（考兜底）、且只有 5 秒（考并进前一条）；第 3 段提示词整段空（考通用词）
+# 第一版：AI 排 4 段＝台面 4 个分镜（七十三改：不并段不压段）；第 1 段提示词带旧硬约束（考换成新收尾那句、并把 AI 写的秒数抹掉）；第 2 段角色留空（考兜底）、且只有 5 秒（考并进前一条）；第 3 段提示词整段空（考通用词）
 P4 = {
     '重点': [
         {'句': '随手下单踩坑多', '为什么': '先勾住同样纠结的人'},
@@ -115,7 +116,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.set_default_timeout(20000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof _npWiz !== "undefined"')
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
@@ -125,7 +126,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         page.wait_for_selector('.npar-next[data-id="ndv1"]')
         nb1 = page.locator('.npar-next[data-id="ndv1"]')
         expect(nb1).to_have_text('✏️ 编辑')
-        assert '全片分镜' in (nb1.get_attribute('title') or ''), nb1.get_attribute('title')
+        assert '照讲到哪儿切到哪儿排成分镜' in (nb1.get_attribute('title') or ''), nb1.get_attribute('title')
         print('PASS: archive next-step reads 编辑 before splitting (title points to the dv station)')
 
         # ② 点「下一步」直落写稿⑤站：五站条 + 自动排分镜（等待条→生成条表）
@@ -141,12 +142,12 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         page.wait_for_function('() => document.querySelectorAll(".np-dv-prompt").length === 3')
 
         # ③ AI 契约：先标重点按重点数定分镜 / 转法句透传 / 照 15 秒切条＋小条并入 / 提示词硬约束兜底 / 角色按位置兜底
-        assert page.evaluate('_npWiz.dgen.points.length') == 4, '重点没落档'
+        assert page.evaluate('_npWiz.dgen.points.length') == 4, '重点没按 AI 给的 4 个落档（七十三改：上限放到 6）'
         sys_tx = sw.evaluate('self.testDvLastSystem')
-        assert '绝对不许按字数均分' in sys_tx and '按重点个数定段数' in sys_tx, '拆段口径没进系统提示'
+        assert '绝对不许按字数均分' in sys_tx and '分镜几个你自己定' in sys_tx and '同一个场' in sys_tx, '拆段口径没进系统提示（段数交回 AI／同一个场）'
         user_tx = sw.evaluate('self.testDvLastUser')
         assert '【转法那句】' in user_tx and TURN in user_tx, '转法句没透传给 AI'
-        assert page.evaluate('_npWiz.dgen.shots.length') == 4, 'AI 4 段没落成 4 个分镜'
+        assert page.evaluate('_npWiz.dgen.shots.length') == 4, 'AI 排的 4 段没收成 4 个分镜'
         assert page.evaluate('_npWiz.dgen.segs.length') == 3, '4 个分镜没照 15 秒切成 3 条'
         assert page.evaluate('_npWiz.dgen.segs[1].role') == '把料讲完', '角色空值时没按位置兜底'
         assert page.evaluate('_npWiz.dgen.total') == 28, '全片时长没按 4.6 字/秒估'
@@ -154,11 +155,12 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         assert page.evaluate('JSON.stringify(_npWiz.dgen.segs[0].ab)') == '[1]', '5 秒的小条没并进前一条'
         prompts = page.eval_on_selector_all('.np-dv-prompt', 'els => els.map(e => e.value)')
         for i, v in enumerate(prompts):
-            assert '不要出现人脸口型' in v and '不要出现任何文字' in v, f'第 {i+1} 条提示词缺硬约束: {v}'
-        assert '时长约 11.5 秒' in prompts[0] and '第 2 个分镜并进来一起拍' in prompts[0], '并入注没拼进第 1 条'
-        assert prompts[1].startswith('竖屏 9:16') and '时长约 9 秒' in prompts[1], '空提示词没兜出通用词'
-        assert '时长约 7.5 秒' in prompts[2]
-        print('PASS: AI contract honored — points first, 4 shots cut into 3 segments at the 15s cap, turn passed, prompts backfilled')
+            assert '不要出现人脸口型' in v and '能被读出来的整句话' in v, f'第 {i+1} 条提示词缺新收尾那句: {v}'
+            assert '时长' not in v, f'第 {i+1} 条提示词还写着时长（七十三改：不卡几秒，AI 写的也抹掉）: {v}'
+        assert '时长 5 秒左右' not in prompts[0] and '第 2 个分镜并进来一起拍' in prompts[0], 'AI 写的秒数没抹掉或并入注没拼进第 1 条'
+        assert prompts[1].startswith('竖屏 9:16') and '同一个地方、同一双手' in prompts[1], '空提示词没兜出「同一个场」那版通用词'
+        assert '缓慢拉远定格' in prompts[2]
+        print('PASS: AI contract honored — 4 段就排 4 个分镜、照 15 秒切成 3 条、转法句透传、秒数抹掉、新收尾补齐')
 
         # ④ src 快照 + note_dgens 纯文本索引
         assert page.evaluate('_npWiz.dgen.src') == DRAFT1

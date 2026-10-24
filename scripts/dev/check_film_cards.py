@@ -5,7 +5,7 @@
 一行＝一段底图，行里的话自动切成几幕（做字幕特效），同段的几幕打同一个 cardKey → 段内不翻卡只换字。
 
 跑法：python3 scripts/dev/check_film_cards.py
-  1) ⑤ 栏已不在（右侧只剩两栏；音色 / 风格旋钮收进「⚙ 音色与风格」弹层）；画面旋钮切「卡片轮播」：卡片真的画在画布上（逐像素验，与大字版明显不同）
+  1) ⑤ 栏已不在（顶上工作流只有「🎬 分幕」/「发布」两站，稿栏与幕栏同屏、底栏无步进；音色 / 风格旋钮收进「⚙ 音色与风格」弹层）；画面旋钮切「卡片轮播」：卡片真的画在画布上（逐像素验，与大字版明显不同）
   2) 画面表通路（Film.buildFromRows + Film.paveRows）：一行＝一段底图、行里的话自动切成几幕；
      off 段 / 还没传回图的段＝纯色卡；段内第二幕开头卡不重翻（逐像素验）
   3) Film.loadScript 带画面表进来（「出图 → 拿去出片」那条真入口）：自动排幕 + 自动铺底图
@@ -75,16 +75,22 @@ with sync_playwright() as p:
     page.goto(f'chrome-extension://{eid}/video.html')
     page.wait_for_function('() => window.Film && window.Renderer')
 
-    # 右侧两栏是横置 tab（① 口播稿 / ② 分幕）——⑤ 卡片底图已撤（底图全自动铺）；③ 音色 / ④ 风格
+    # 顶上那条工作流＝🎬 分幕 / 发布（七十一改：口播稿与分幕并成一屏、两站并成一站）——⑤ 卡片底图已撤（底图全自动铺）；③ 音色 / ④ 风格
     # 收进「⚙ 音色与风格」弹层（#cfgMask）：要动弹层里的控件（画面旋钮等），先把弹层点开
     def cfg():
         page.click('#cfgBtn')
         page.wait_for_function('() => { const m = document.getElementById("cfgMask"); return !!m && !m.hidden; }')
 
-    assert page.locator('#filmTabs .ftab[data-sec="card"]').count() == 0, '⑤ 卡片底图那一栏该撤了（底图跟着画面表全自动铺）'
+    assert page.locator('#flowBar [data-sec="card"]').count() == 0, '⑤ 卡片底图那一栏该撤了（底图跟着画面表全自动铺）'
     assert page.locator('#cardBody').count() == 0, '⑤ 栏的身子（#cardBody）该整块撤干净'
-    assert page.locator('#filmTabs .ftab').count() == 2, '右侧只剩两条横置 tab（口播稿 / 分幕）'
-    print('PASS: ⑤ 卡片底图栏整块已不在（右侧只剩两栏），底图全自动铺', flush=True)
+    labels = page.evaluate('''() => [...document.querySelectorAll('#flowBar .wst')].map(x => {
+        const l = x.querySelector('.wlbl'); return l && l.firstChild ? String(l.firstChild.textContent).trim() : ''; })''')
+    assert len(labels) == 2, '顶上工作流条只剩这两站（分幕 / 发布）：%s' % labels
+    assert page.locator('#prevStep').count() == 0 and page.locator('#nextStep').count() == 0, \
+        '底栏不该再有「上一步／下一步」（一站一屏，主钮就是出片）'
+    assert page.locator('.col.script').is_visible() and page.locator('.col.scenes').is_visible(), \
+        '一屏一站：左边稿栏、右边幕栏该同时摆着'
+    print('PASS: ⑤ 卡片底图栏整块已不在（顶上两站：%s），稿／幕同屏、底栏无步进' % ' / '.join(labels), flush=True)
 
     # 素材库先放两条本机图：a1 蓝底黄带、a3 绿底——画面表按 assetIds 认它们（paveRows 读的就是 np_assets）
     page.evaluate('''async (payload) => {

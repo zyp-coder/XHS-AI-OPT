@@ -130,6 +130,18 @@
     return [head].concat(linesOf(tail).map(strip).map(s => s.replace(LEAD, '')).filter(Boolean));
   }
 
+  /* 这一幕的「调」：混剪那一路字弹出来那一下响什么音用它（坑→闷一下，好处→轻亮一下，平常→轻轻带）。
+     AI 分幕时让它顺手标（PROMPT / SCRIPT_PROMPT 里带 tone），没标／没配 AI 就照下面的词表判。 */
+  const TONE_LOW = /(坑|踩|亏|贵|慢|差|失望|翻车|麻烦|愁|累|头疼|闹心|糟心|返工|后悔|风险|出错|问题|漏水|开裂|返潮|脏|破|旧|难|卡住|卡壳|超支|白花钱|焦虑|别急|小心|注意)/;
+  const TONE_HIGH = /(省|划算|便宜|快|干净|亮堂|舒心|舒服|满意|省心|翻倍|涨|新|值|好|赞|爆|多|免费|到手|拿下|搞定|一次过|好看|好用|提升|超出|没想到|惊喜|稳|轻松)/;
+  function toneOf(text, emTxt) {
+    const t = String(emTxt || text || '');
+    if (TONE_LOW.test(t)) return 'low';
+    if (TONE_HIGH.test(t)) return 'high';
+    return 'flat';
+  }
+  const toneOk = v => (v === 'low' || v === 'high' || v === 'flat' ? v : '');
+
   function fromScript(text) {
     const scenes = splitScenes(text);
     return scenes.map((t, i) => {
@@ -147,6 +159,7 @@
         lines,
         em: li >= 0 ? [{ l: li, t: emTxt }] : [],
         layout,
+        tone: toneOf(t, emTxt),
         estSec: Math.max(1.2, +(cn(t) / 4.5).toFixed(2)),   // 按 +20% 语速约 4.5 字/秒估的，出片时按真配音重算
       };
     });
@@ -165,10 +178,11 @@
   const PROMPT = [
     '把这段口播稿切成幕，只输出 JSON，不要解释。',
     '结构：{"scenes":[{"label":"01","name":"两个字左右的幕名","text":"这一幕的口播原文（不改词）",'
-      + '"lines":["屏幕上显示的一行"],"em":[{"l":0,"t":"重点词"}],"layout":"center"}]}',
+      + '"lines":["屏幕上显示的一行"],"em":[{"l":0,"t":"重点词"}],"layout":"center","tone":"flat"}]}',
     '规则：每幕 14~28 字，台词原样保留；lines 是把这一幕拆成屏幕上的短行，每行不超过 14 字，'
       + '去掉口语虚词、保留信息；em 每幕最多一个重点词（l 是它在 lines 里的行号）；'
       + 'layout 从 center（一句话居中）/ left（长句左对齐）/ list（并列要点）/ number（数字幕）里选；'
+      + 'tone 说这一幕的调：讲坑、讲麻烦、讲不好的 → low；讲好处、讲亮点 → high；平常一句 → flat；'
       + '最后一幕是收口，layout 用 center。',
   ].join('\n');
 
@@ -176,9 +190,9 @@
     '按给定的重点，把这篇口播稿改成一版「出片稿」，再把它切成幕。只输出 JSON，不要解释。',
     '结构：{"出片稿":"按重点改好的整篇稿（重点留、水话合并、句子顺；不改人称、不加新信息）",'
       + '"scenes":[{"label":"01","name":"两个字左右的幕名","text":"这一幕的口播原文（从出片稿原样摘）",'
-      + '"lines":["屏幕上显示的一行"],"em":[{"l":0,"t":"重点词"}],"layout":"center"}]}',
+      + '"lines":["屏幕上显示的一行"],"em":[{"l":0,"t":"重点词"}],"layout":"center","tone":"flat"}]}',
     '规则：每幕 14~28 字，到句末才切；lines 每行不超过 14 字；em 每幕最多一个重点词（l 是它在 lines 里的行号）；',
-    'layout 从 center / left / list / number 里选；最后一幕是收口，layout 用 center。',
+    'layout 从 center / left / list / number 里选；tone 是这一幕的调（讲坑→low，讲好处→high，平常→flat）；最后一幕是收口，layout 用 center。',
   ].join('\n');
 
   function normalize(o) {                     // AI 返回的兜一下：字段缺、行超宽、em 找不到行
@@ -196,15 +210,16 @@
         label: String(s.label || i + 1).padStart(2, '0'),
         name: String(s.name || lines[0] || '').slice(0, 6),
         text, lines: lines.length ? lines : [text], em, layout,
+        tone: toneOk(s.tone) || toneOf(text, em[0] && em[0].t),
         estSec: Math.max(1.2, +(cn(text) / 4.5).toFixed(2)),
       };
     });
     return out;
   }
 
-  g.Scenes = { fromScript, normalize, PROMPT, PICKS_PROMPT, SCRIPT_PROMPT, toJSON: list => ({
-    scenes: list.map(({ label, name, text, lines, em, layout }) => ({
-      label, name: name || '', text: (text || lines.join('')).trim(), lines, em, layout,
+  g.Scenes = { fromScript, normalize, toneOf, PROMPT, PICKS_PROMPT, SCRIPT_PROMPT, toJSON: list => ({
+    scenes: list.map(({ label, name, text, lines, em, layout, tone }) => ({
+      label, name: name || '', text: (text || lines.join('')).trim(), lines, em, layout, tone: tone || 'flat',
     })),
   }) };
 })(window);

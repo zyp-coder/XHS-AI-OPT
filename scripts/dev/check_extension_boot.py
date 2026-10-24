@@ -9,6 +9,7 @@ import pathlib
 import tempfile
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 ROOT = pathlib.Path(os.environ.get('XHS_ROOT') or '.').resolve()
 EXT = ROOT / 'extension'
@@ -26,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-boot-') as profile, sync_playwright
             '画面流派那张表在后台读不到：lib/visual-motif.js 没进 background.js 的 importScripts'
         page = ctx.new_page()
         page.on('pageerror', lambda e: print('[popup pageerror]', str(e)[:300]))
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function"')
         assert page.evaluate('typeof VisualMotif === "object" && VisualMotif.VISUAL_MOTIFS.length >= 10'), \
             '画面流派那张表在 popup 读不到：popup.html 少了 lib/visual-motif.js 那行 script'

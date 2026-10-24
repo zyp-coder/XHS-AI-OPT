@@ -13,6 +13,7 @@ import sys
 import tempfile
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -64,7 +65,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-wb-marks-') as profile, sync_playwr
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.set_default_timeout(15000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof AutoWaterApp !== "undefined" && typeof switchMainTab === "function"')
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()

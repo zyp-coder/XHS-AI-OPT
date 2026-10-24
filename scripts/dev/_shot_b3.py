@@ -116,16 +116,19 @@ with sync_playwright() as p:
         print('  ! 按钮不可见，跳过')
         bad.append('qAddDailyBtn 不可见')
 
-    print('== 任务配置：三节标题的问号 ==')
-    pg.click('#tabTaskCfg')
-    pg.wait_for_selector('#drainCfgContent [data-sec="kw"]', timeout=10000)
-    pg.wait_for_timeout(400)
-    for sec, label in [('kw', '关键词池'), ('acct', '盯的账号'), ('goal', '推广目标')]:
-        pg.click('#drainCfgContent [data-sec="%s"]' % sec)
+    print('== 配置三张卡：卡头与各节说明的问号 ==')
+    # 任务配置已并进「队列 → ⚙️ 配置」，三张卡点卡头展开（2026-10-24）
+    pg.click('#tabQueue')
+    pg.wait_for_timeout(500)
+    pg.click('#queueTabs .q-tab[data-qtab="config"]')
+    pg.wait_for_selector('#drainCfgContent details.cfgcard', timeout=10000)
+    pg.wait_for_timeout(600)
+    for sec, label in [('run', '跑什么'), ('daily', '日常浏览'), ('goal', '推广目标')]:
+        pg.click('#drainCfgContent details.cfgcard[data-cfgsec="%s"] > summary' % sec)
         pg.wait_for_selector('#sxScanCfgPanel .qhelp', timeout=8000)
         pg.wait_for_timeout(400)
         n = pg.eval_on_selector_all('#sxScanCfgPanel .qhelp', 'els => els.length')
-        print('  %s 节问号数: %d' % (label, n))
+        print('  %s 卡问号数: %d' % (label, n))
         hover_probe_shot(pg, '#sxScanCfgPanel .qhelp', 'cfg-' + label, 'cfg-' + sec)
     kept = pg.eval_on_selector_all('#sxScanCfgPanel .sx-hint',
                                    'els => els.map(e => e.textContent.trim()).filter(Boolean)')
@@ -134,8 +137,12 @@ with sync_playwright() as p:
         if any(n in k for k in kept):
             bad.append('说明本该收进问号: ' + n)
 
-    print('== 补开设置弹窗 ==')
-    pg.click('#replCfgBtn')
+    print('== 补开设置弹窗（笔记池顶栏）==')
+    # 补开的两颗按钮 2026-10-24 从任务配置顶栏搬到了笔记池顶栏
+    pg.click('#tabPool')
+    pg.wait_for_selector('#drainContent #replCfgBtn', timeout=10000)
+    pg.wait_for_timeout(600)
+    pg.click('#drainContent #replCfgBtn')
     pg.wait_for_selector('#replPop .qhelp', timeout=5000)
     pg.wait_for_timeout(300)
     print('  弹窗文案:', pg.inner_text('#replPop').replace('\n', ' | '))

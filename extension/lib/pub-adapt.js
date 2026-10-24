@@ -333,6 +333,141 @@ const NPA_XHS_FILL = function (args) {
   })();
 };
 
+/** 复制到剪贴板（clipboard API 优先，被拒就退 execCommand 选中临时框那条老路）——注入函数内部自带一份 */
+const NPA_COPY_TEXT = async function (text) {
+  const s = String(text || '');
+  if (!s) return false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(s); return true; }
+  } catch (e) {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = s; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (e) { return false; }
+};
+
+/** 📝 小红书「长文模式」一趟（2026-10-19 长文·B 档）：先把整篇复制好，再尽力点「写长文」入口把标题正文话题填进去。
+ *  ⚠️ 长文入口的真机结构没实锤过——所以只备料、不自动点发布；background 拿到结果会把页面留着交到人手上。
+ *  返回 {ok, copied, mode, filled, warn}：copied＝整篇进剪贴板了；mode＝点到写长文入口了；filled＝标题+正文都落上了。 */
+const NPA_XHS_LONG = function (args) {
+  const { title, body, tags } = args;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  const humanClick = async (el) => {
+    const r = el.getBoundingClientRect();
+    const tx = r.x + r.width / 2 + (r.width > 8 ? Math.random() * 4 - 2 : 0);
+    const ty = r.y + r.height / 2 + (r.height > 8 ? Math.random() * 4 - 2 : 0);
+    if (!window.__npaMouse) window.__npaMouse = { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight };
+    const sx = window.__npaMouse.x, sy = window.__npaMouse.y;
+    const base = { bubbles: true, cancelable: true, composed: true, view: window };
+    const ev = (C, t, x, y, o) => new C(t, Object.assign({ clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', isPrimary: true, width: 1, height: 1 }, base, o || {}));
+    const steps = 3 + Math.floor(Math.random() * 4);
+    for (let i = 1; i <= steps; i++) {
+      const k = i / steps, last = i === steps;
+      const x = last ? tx : sx + (tx - sx) * k + (Math.random() * 6 - 3);
+      const y = last ? ty : sy + (ty - sy) * k + (Math.random() * 6 - 3);
+      const under = document.elementFromPoint(x, y) || el;
+      under.dispatchEvent(ev(PointerEvent, 'pointermove', x, y));
+      under.dispatchEvent(ev(MouseEvent, 'mousemove', x, y));
+      await sleep(15 + Math.random() * 40);
+    }
+    el.dispatchEvent(ev(PointerEvent, 'pointerover', tx, ty));
+    el.dispatchEvent(ev(MouseEvent, 'mouseover', tx, ty));
+    await sleep(90 + Math.random() * 160);
+    el.dispatchEvent(ev(PointerEvent, 'pointerdown', tx, ty, { button: 0, buttons: 1, pressure: 0.5 }));
+    el.dispatchEvent(ev(MouseEvent, 'mousedown', tx, ty, { button: 0, buttons: 1 }));
+    await sleep(50 + Math.random() * 80);
+    el.dispatchEvent(ev(PointerEvent, 'pointerup', tx, ty, { button: 0, buttons: 0, pressure: 0 }));
+    el.dispatchEvent(ev(MouseEvent, 'mouseup', tx, ty, { button: 0, buttons: 0 }));
+    el.dispatchEvent(ev(MouseEvent, 'click', tx, ty, { button: 0, buttons: 0, detail: 1 }));
+    window.__npaMouse = { x: tx, y: ty };
+  };
+  const putLines = (ed, text) => {
+    ed.focus();
+    try { document.execCommand('selectAll'); document.execCommand('delete'); } catch (e) {}
+    const lines = String(text || '').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (i) document.execCommand('insertParagraph');
+      document.execCommand('insertText', false, lines[i]);
+    }
+  };
+  return (async () => {
+    const warn = [];
+    const tagTxt = (tags || []).map(t => '#' + String(t).replace(/^#/, '')).join(' ');
+    const full = [String(title || '').trim(), String(body || '').trim(), tagTxt].filter(Boolean).join('\n\n');
+    const copied = await NPA_COPY_TEXT(full);   // 先备一份整篇进剪贴板，入口没摸准也不慌
+    /* 找「写长文 / 长文模式」入口（发布页顶部那排切页签里的一个） */
+    const cands = [...document.querySelectorAll('a,button,[role="button"],div,span')].filter(e => vis(e));
+    const entry = cands.find(e => { const t = (e.innerText || '').trim(); return t && t.length <= 8 && /写长文|长文模式|长文/.test(t); });
+    let mode = false;
+    if (entry) {
+      await humanClick(entry);
+      await sleep(2000 + Math.random() * 1500);   // 进长文编辑页要等它渲染
+      mode = true;
+    } else warn.push('没找到「写长文」入口（已把整篇复制好，请手点入口再粘贴）');
+    /* 标题 */
+    let filled = false;
+    const ti = [...document.querySelectorAll('input')].find(i => /标题/.test(i.placeholder || '') && vis(i));
+    let ed = null;
+    if (ti) {
+      await humanClick(ti); await sleep(400 + Math.random() * 700);
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(ti, String(title || ''));
+      ti.dispatchEvent(new Event('input', { bubbles: true }));
+      ti.dispatchEvent(new Event('change', { bubbles: true }));
+    } else warn.push('标题框没找到');
+    /* 正文编辑器（长文编辑器也是 contenteditable / tiptap） */
+    const eds = [...document.querySelectorAll('.tiptap.ProseMirror, [contenteditable="true"]')].filter(e => {
+      if (!vis(e)) return false;
+      const r = e.getBoundingClientRect();
+      return r.width > 200 && r.height > 40;
+    });
+    eds.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+    ed = eds[0];
+    if (ed) {
+      await humanClick(ed); await sleep(500 + Math.random() * 800);
+      putLines(ed, body);
+      await sleep(400 + Math.random() * 700);
+      /* 话题（长文底部也能带标签；拉不到就当纯文本留着，别硬塞） */
+      for (const tg of (tags || [])) {
+        ed.focus();
+        document.execCommand('insertParagraph');
+        document.execCommand('insertText', false, '#' + String(tg).replace(/^#/, ''));
+        let item = null;
+        for (let i = 0; i < 10 && !item; i++) {
+          await sleep(150);
+          const boxes = [...document.querySelectorAll('.tippy-box')].filter(b => vis(b) && b.querySelector('.item'));
+          if (boxes.length) {
+            const its = [...boxes[0].querySelectorAll('.item')];
+            const want = String(tg).replace(/^#/, '');
+            item = its.find(it => ((it.querySelector('.name') || {}).innerText || '').replace(/^#/, '') === want) || its[0];
+          }
+        }
+        if (item) { await humanClick(item); await sleep(250); } else { document.execCommand('insertText', false, ' '); }
+      }
+      filled = !!(ti && ed);
+    } else warn.push('正文编辑器没找到（整篇已在剪贴板）');
+    return { ok: true, copied: copied, mode: mode, filled: filled, warn: warn };
+  })();
+};
+
+/** 📝 抖音「文字模式」B 档（2026-10-19 长文）：只把整篇复制好——抖音文字发布入口结构没实锤，人手点一下发。
+ *  返回 {ok, copied, warn}。 */
+const NPA_DY_LONG = function (args) {
+  const { title, body, tags } = args;
+  return (async () => {
+    const tagTxt = (tags || []).map(t => '#' + String(t).replace(/^#/, '')).join(' ');
+    const full = [String(title || '').trim(), String(body || '').trim(), tagTxt].filter(Boolean).join('\n\n');
+    const copied = await NPA_COPY_TEXT(full);
+    return { ok: true, copied: copied, warn: copied ? [] : ['剪贴板没写进去，请手动从档案复制正文'] };
+  })();
+};
+
 /** 找（并可点）发布按钮。dry=true 只回报在不在、点的位置，不点。
     发布按钮封在 <xhs-publish-btn> 的 closed shadow 里——先靠 lib/pub-shadow-hook.js 开壳
     （window.__npaShadowRoots），这里把 document + 所有能到的 open shadow 都翻一遍。 */

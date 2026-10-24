@@ -124,7 +124,7 @@ const DEFAULT_CONFIG = {
   customer: {
     dormantDays: 14, // 超过 N 天无有效互动视为"沉睡"（配合 AI 分类用）
   },
-  // ★ AI客服：触达场景(A) + 客户问答话术库(B) —— 小红书获客/销售统一话术体系
+  // ★ AI客服：触达场景(A) + 顾客问答话术库(B) —— 小红书获客/销售统一话术体系
   aiCustomerService: {
     scenes: {
       comment_first: { name: '评论首评', enabled: true, purpose: 'sell', mode: 'draft', minChars: 20, maxChars: 80, toneMannerisms: '', guidance: '主页', useKb: true, template: '这条说得太实在了，我也曾是这么过来的。关键别闷头试，{卖点1}。想少走弯路的可以看看{购买入口}，我把它整理成能直接用的了。', promptScene: 'scen_comment_first', schedule: { gapMin: 45, gapMax: 180, dailyMax: 15 } },
@@ -269,7 +269,9 @@ async function resetAllPrompts(defaultPrompts) {
 
 /* ─── 知识库 ─── */
 async function getKnowledgeBase() {
-  return (await get(KEYS.KNOWLEDGE_BASE)) || [];
+  const kb = (await get(KEYS.KNOWLEDGE_BASE)) || [];
+  kb.forEach((e) => { if (e && e.category === '客户痛点') e.category = '顾客痛点'; });
+  return kb;
 }
 
 async function addKnowledgeEntry(entry) {
@@ -868,7 +870,7 @@ async function clearProspectBucket(bucket) {
   return { ok: true, bucket, removed };
 }
 
-/* ─── AI客服：触达场景(A) + 客户问答话术库(B) 配置（按租户隔离，深合并默认） ─── */
+/* ─── AI客服：触达场景(A) + 顾客问答话术库(B) 配置（按租户隔离，深合并默认） ─── */
 async function getAiCsConfig() {
   const cfg = await getConfig();
   return {

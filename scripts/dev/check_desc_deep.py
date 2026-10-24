@@ -23,6 +23,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -142,7 +143,7 @@ with sync_playwright() as p:
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append(str(e)[:200]))
         page.set_viewport_size({'width': 1280, 'height': 1180})
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function" && typeof npDescsRegen === "function"')
         page.set_default_timeout(25000)
 
@@ -291,7 +292,7 @@ with sync_playwright() as p:
         for part in ('『这一张要证明』', '『画面里必须出现的元素』', '『背景』', '『先说清楚'):
             assert part in sys_d, '缺三块之一：%s' % part
         assert '『版式』' not in sys_d and '『多给的凭据』' not in sys_d, '字块与凭据已各自挪走，那一发不该再点名旧的两块'
-        assert '字块留在哪儿不归你写' in sys_d, '字排哪儿归界面上那一档，别在分镜里再写一遍'
+        assert '这一张图上要写的那几个字' in sys_d, '字排哪儿由提示词最后那句点名，画面这一块只管给它读得清的位置'
         assert '先想这段的结论靠什么一眼看得见' in sys_d, '那一发开头要先立「图替这段的结论举证」这条规矩'
         assert '别拿装饰凑' in sys_d, '补不出凭据要写「缺：××」，别拿装饰凑'
         assert '按 1. 2. 3. 逐条列、至少三条' in sys_d, '元素清单要逐条编号、数得出看得见的东西'

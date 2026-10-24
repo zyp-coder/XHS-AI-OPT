@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新手引导 · 小红书运营助手</title>
+<!-- ============================================================
+  新手引导页（扩展版）· 2026-10-16 随「前置流程重排」从公网版移植
+  ------------------------------------------------------------
+  和公网版（web/guide.html）的两点不同：
+    ① 扩展装在哪就在哪跑——没有「执行器 / 扩展功能」这套话术，模块三整块不要，
+       「要执行器」小标全撤；
+    ② 出口＝回工作台并把人送到「账号规划 · 问卷」（popup.html?mode=big&openQuiz=1&tabId=…）；
+       从工作台顶栏回看的（?from=bar）出口只回工作台。
+  前置分流在 popup.js extPreGate：老产品（问卷四步已生成）直接进系统、不弹这页；
+  「看过」按产品记 localStorage 'xhs_guide_seen:<产品id>'（guide.js 里写），换产品重新弹。
+  ============================================================ -->
+<style>
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #c77700;
+    --brand: #1f2329; --brand-soft: #f0f1f3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .gobig { font-size: 13px; color: var(--ink2); text-decoration: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 7px 13px; white-space: nowrap; }
+  .top .gobig:hover { background: var(--brand-soft); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .card h2 .sec { color: var(--ink3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+
+  .btn { display: inline-block; border: none; border-radius: 10px; padding: 11px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .foot { color: var(--ink3); font-size: 12px; margin-top: 14px; line-height: 1.8; }
+  .foot b { color: var(--ink2); }
+
+  .pill { display: inline-block; font-size: 11.5px; border-radius: 999px; padding: 1px 9px; }
+  .pill.ok { background: #e7f5ee; color: var(--ok); }
+
+  .gd-hero { background: linear-gradient(135deg, #1f2329, #3a4150); color: #fff; border-radius: 14px; padding: 22px 24px; margin-bottom: 14px; }
+  .gd-hero h2 { font-size: 19px; font-weight: 700; margin-bottom: 6px; }
+  .gd-hero p { font-size: 13.5px; color: #c9d0db; line-height: 1.8; }
+
+  .gd-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .gd-b { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: #fdfdfe; }
+  .gd-b .h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .gd-b .h .n { font-size: 14px; font-weight: 700; }
+  .gd-b .d { font-size: 12.5px; color: var(--ink2); line-height: 1.75; }
+  .gd-b .subs { font-size: 12px; color: var(--ink3); margin-top: 7px; line-height: 1.9; }
+  .gd-b .subs i { display: inline-block; font-style: normal; background: var(--brand-soft); border-radius: 6px; padding: 1px 7px; margin: 0 4px 4px 0; }
+
+  .gd-line { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+  .gd-line:last-child { border-bottom: none; }
+  .gd-line .k { flex: none; width: 210px; font-weight: 600; }
+  .gd-line .v { color: var(--ink2); font-size: 12.5px; line-height: 1.75; }
+
+  /* ── 模块二：三个签 ── */
+  .mtabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mtab { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 18px; font-size: 13.5px; font-weight: 600; color: var(--ink2); cursor: pointer; font-family: inherit; }
+  .mtab:hover { background: var(--brand-soft); }
+  .mtab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .mod-panel { display: none; margin-top: 14px; }
+  .mod-panel.show { display: block; animation: fadeIn .18s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  .mdesc { font-size: 13px; color: var(--ink); background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; line-height: 1.7; }
+  .mdesc b { font-weight: 700; }
+  .mpage { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .mpage:last-of-type { border-bottom: none; }
+  .mpage .mk { flex: none; width: 86px; font-weight: 700; color: var(--ink); }
+  .mpage .mv { color: var(--ink2); line-height: 1.7; min-width: 0; }
+  .mpage .mv p { margin: 0 0 2px; }
+  .mpage .mv ul { margin: 2px 0 0; padding-left: 16px; }
+  .mpage .mv li { margin: 3px 0; }
+  .mpage .mv li b { color: var(--ink); font-weight: 600; }
+  .muse { margin-top: 10px; font-size: 12.5px; color: var(--ink2); background: var(--brand-soft); border-radius: 10px; padding: 9px 14px; line-height: 1.8; }
+  .muse b { color: var(--ink); }
+
+  /* 带页进入的加亮 */
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(31,35,41,0); } 25% { box-shadow: 0 0 0 5px rgba(31,35,41,.16); } 100% { box-shadow: 0 0 0 0 rgba(31,35,41,0); } }
+  .flash { animation: ring 1.4s ease 1; }
+
+  @media (max-width: 640px) { .gd-line .k { width: auto; } .gd-line { flex-direction: column; gap: 2px; } .mpage { flex-direction: column; gap: 2px; } .mpage .mk { width: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>新手引导</h1><span class="ver">3 分钟看完</span>
+    <div class="top-right">
+      <a class="gobig" id="gdExit" href="popup.html?mode=big&openQuiz=1">下一步：填写信息 →</a>
+    </div>
+  </div>
+
+  <div class="gd-hero">
+    <h2>这是干啥的</h2>
+    <p>一个帮你在小红书上<b>写稿、出图、发笔记、接顾客</b>的助手。装在你浏览器里，下面讲的东西全部就在你这台电脑上跑。按「界面 → 功能」两块讲清楚。</p>
+  </div>
+
+  <!-- ── 模块一：工作台五块（顺序＝发笔记/获客/AI客服/账号规划/设置） ── -->
+  <section class="card" id="m1">
+    <h2>工作台分五块<span class="sec">点左栏就切过去</span></h2>
+    <div class="gd-grid">
+      <div class="gd-b" data-blk="note">
+        <div class="h"><span class="n">发笔记</span></div>
+        <div class="d">每篇写过的都留档。从档案里新建、继续写、出图、出片；排好队到点自动发。</div>
+        <div class="subs"><i>任务配置</i><i>笔记档案</i><i>发布台</i><i>素材库</i><i>复盘</i></div>
+      </div>
+      <div class="gd-b" data-blk="huoke">
+        <div class="h"><span class="n">获客</span></div>
+        <div class="d">按关键词去刷笔记、扫评论区、挑出<b>想买的人</b>，然后去评论区接话。</div>
+        <div class="subs"><i>任务配置</i><i>队列</i><i>工作台</i><i>笔记池</i><i>设置</i></div>
+      </div>
+      <div class="gd-b" data-blk="ai">
+        <div class="h"><span class="n">AI客服</span></div>
+        <div class="d">谁评论了、谁点赞了、谁私信了，都收拢到这；AI 帮你盯着私信、帮着回。</div>
+        <div class="subs"><i>任务配置</i><i>通知</i><i>消息</i><i>设置</i></div>
+      </div>
+      <div class="gd-b" data-blk="account">
+        <div class="h"><span class="n">账号规划</span></div>
+        <div class="d">先把账号底子搭起来：填个问卷，AI 就把<b>人设、产品卖点、知识库、内容规划</b>全生成好。新用户第一步就在这。</div>
+        <div class="subs"><i>基础配置</i><i>问卷</i><i>人设</i><i>产品卖点</i><i>知识库</i><i>规划</i></div>
+      </div>
+      <div class="gd-b" data-blk="settings">
+        <div class="h"><span class="n">设置</span></div>
+        <div class="d">系统级的东西：产品/租户、AI 模型、账号安全、界面主题、整机备份。</div>
+        <div class="subs"><i>租户/产品</i><i>AI 模型配置</i><i>账号安全</i><i>界面主题</i><i>整机备份</i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 模块二：功能模块讲解（三个签） ── -->
+  <section class="card" id="m2">
+    <h2>功能模块讲解<span class="sec">点签切换</span></h2>
+    <div class="mtabs">
+      <button class="mtab active" data-mod="note">发笔记</button>
+      <button class="mtab" data-mod="huoke">获客</button>
+      <button class="mtab" data-mod="ai">AI客服</button>
+    </div>
+
+    <div class="mod-panel show" data-mod="note">
+      <div class="mdesc"><b>从写稿到发出去的一条线</b>：AI 写稿、出图、出片、排期发布，每篇都留档；到点真发到你自己的号上——全都在这台电脑的浏览器里跑。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>出稿前看的两张默认表——定一次，后面所有稿都按它走。</p>
+          <ul>
+            <li><b>内容基调</b>：4 种基调挑一种——稿子怎么铺垫、什么时候上广告、广告占多少、写多长。</li>
+            <li><b>出图风格</b>：画面风格、印记、配文版式——出图都照这张表来。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">笔记档案</div>
+        <div class="mv">
+          <p>这一块的主页——写过的每一篇都在这留档，没写完的草稿也在。</p>
+          <ul>
+            <li><b>开始一篇</b>：点「✍️ 新建笔记」，填产品和想讲的方向 → AI 先写几份样稿 → 挑中一份 → 逐句改成你的话 → 定稿。</li>
+            <li><b>接着做</b>：每行一颗「下一步」，按这篇做到哪了（写稿 / 出图 / 出片 / 预览）直接送过去。</li>
+            <li><b>看全貌</b>：图文还是视频、写到哪步了、排到哪天，一张表里全看得见。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">发布台</div>
+        <div class="mv">
+          <p>排 + 发一条线。</p>
+          <ul>
+            <li><b>发布队列</b>：跟着每周排法自动滚 3 周——位子点「＋ 排一篇」从档案里挑；篇写好标「代发」，自动排进最早的空位。</li>
+            <li><b>到点自己发</b>：排到点了自动发出去（视频篇连发三家、图文篇两家）。</li>
+            <li><b>笔记规划</b>：每周发几篇、分几个阶段、每个阶段讲什么——有 AI 帮忙排。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">素材库</div>
+        <div class="mv">
+          <p>备料的地方，一类一个集合。</p>
+          <ul>
+            <li>案例视频段 + 图片混着放；空集合会标「待补充」。</li>
+            <li>点集合进去看料、传图、连播；写稿出片时直接从这里取。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">复盘</div>
+        <div class="mv">
+          <p>发完回头看的地方。</p>
+          <ul>
+            <li><b>选题盘点</b>：哪类知识、哪个角度讲过了、哪些还没讲——按分类一眼看。</li>
+            <li><b>已发复盘</b>：发过的笔记数字趋势都在这——哪篇在涨、互动多少。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>①「任务配置」把基调和出图风格定好（一次性的）→ ②「笔记档案」新建一篇，AI 出样稿你挑一份 → ③ 定稿（要多平台就各改写一版）→ ④ 配图去出图、要视频去出片 → ⑤「发布台」把这篇排进队列（或标「代发」自动排）→ ⑥ 到点自己发 → ⑦「复盘」看数字。</div>
+    </div>
+
+    <div class="mod-panel" data-mod="huoke">
+      <div class="mdesc"><b>按关键词去刷笔记、扫评论区</b>，把想买的人挑出来，去评论区接话。配词、看清单、真去刷、真去接话，都在这台电脑的浏览器里跑。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>告诉系统：去哪找、找什么样的人。</p>
+          <ul>
+            <li><b>词池</b>：搜什么词、每个词跑哪几类笔记、多久跑一次。</li>
+            <li><b>盯的账号</b>：同行 / 对标的主页放进来，也跟着刷。</li>
+            <li><b>推广目标与承接</b>：评论区接话带什么去向。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">队列</div>
+        <div class="mv">
+          <p>到点的活排成一队、串着自动跑。</p>
+          <ul>
+            <li>「词 × 类型」和盯的账号都进队；还有「日常浏览」——按方向随机刷刷首页。</li>
+            <li>正在跑 / 待跑 / 还没到点 / 已完成，一眼看清。</li>
+            <li>不想等，也可以现在手动来一轮。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">工作台</div>
+        <div class="mv">
+          <p>接话就发生在这。</p>
+          <ul>
+            <li>当前这篇的评论区：哪些评论是想买的、谁在问价，替你挑出来。</li>
+            <li>挑中的人一键接话；想搜个词现场来一轮，也从这页起。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">笔记池</div>
+        <div class="mv">
+          <p>刷过的笔记都进池子，留着底。</p>
+          <ul>
+            <li>按类型标着状态；点开就能去看它的评论区、接话。</li>
+            <li>哪轮扫的、发了多少条、哪些没打开过——都能回来补。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">设置</div>
+        <div class="mv">
+          <p>跑的时候多快、多密。</p>
+          <ul>
+            <li>操作节奏挡位、每步之间停多久、每轮跑多少、多久内不重复。</li>
+            <li>顺手关注这类互动，开不开。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>①「任务配置」把词、盯的账号、承接方式配好 → ②「队列」到点自己跑——按词去搜、把评论区扫一遍 → ③ 想买的人进「工作台」，挑人一键接话 → ④「笔记池」里留着底，没看到的随时补 → ⑤ 嫌快嫌慢去「设置」调节奏。</div>
+    </div>
+
+    <div class="mod-panel" data-mod="ai">
+      <div class="mdesc"><b>谁评论了、谁点赞了、谁私信了，都收拢到这</b>；AI 帮你盯着私信、照着话术帮你回。看、写、回，都在这台电脑的浏览器里跑。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>定 AI 开口说话的样子。</p>
+          <ul>
+            <li><b>渠道基调 / 成交引导</b>：AI 说话带什么去向、怎么一步步往成交带。</li>
+            <li><b>话术配置</b>：客服话术都存这；「试问答」能先试试它回得像不像你。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">通知</div>
+        <div class="mv">
+          <p>平台上所有动静的第一落点。</p>
+          <ul>
+            <li>评论、赞、收藏、关注、新粉丝——来了都在这。</li>
+            <li>每条旁边能直接：回评 / 让 AI 拟话术 / 去触达。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">消息</div>
+        <div class="mv">
+          <p>私信往来都在这。</p>
+          <ul>
+            <li>对方进线等你回；你先开口的，等对方回。</li>
+            <li>AI 照话术先拟好回复，你过一眼就能发出去。</li>
+            <li>开着「AI客服监听」，新私信自动收进来。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">设置</div>
+        <div class="mv">
+          <p>只管一件事：多久扫一次新来的评论和私信。</p>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>①「任务配置」定好去向和话术（还能在试问答里先试两句）→ ② 把「AI客服监听」开上 → ③ 新的评论、点赞、私信自动收进「通知」「消息」→ ④ AI 照话术拟好回复，你过一眼发出去。</div>
+    </div>
+  </section>
+
+  <div class="card">
+    <div class="actions">
+      <a class="btn primary" id="gdExitBottom" href="popup.html?mode=big&openQuiz=1">下一步：填写信息（进问卷）→</a>
+    </div>
+    <div class="foot"><b>提一句</b>：新用户第一步就填「账号规划 · 问卷」——AI 把人设 / 产品卖点 / 知识库 / 内容规划一次生成好，之后写稿、接话都照这套底子来。</div>
+  </div>
+
+</div>
+<script src="hand-mode.js"></script>
+<script src="hand-cover.js"></script>
+<script src="guide.js"></script>
+</body>
+</html>

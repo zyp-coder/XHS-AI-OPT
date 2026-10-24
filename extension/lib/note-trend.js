@@ -18,7 +18,7 @@ const NoteTrend = (function () {
     maxPerNote: 2,       // 每篇笔记最多总评论次数
     cooldownHours: 24,   // 真正灌水过的同一篇笔记冷却时间（小时）
     checkedHours: 2,     // 只"扫过、没东西可发"的笔记冷却时间（小时）——更短，给它更多被再次评估的机会
-    scanIntervalMin: 2,  // 循环计划扫描间隔（分钟，调试用，生产建议 20）
+    scanIntervalMin: 10, // 定时轮扫描间隔（分钟）：一项跑完歇约 10 分钟再跑下一项
   };
 
   function get(key, def) {

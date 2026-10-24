@@ -11,6 +11,7 @@ import sys
 import tempfile
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -48,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-cold-') as profile, sync_playwright
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.set_default_timeout(15000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function"')
         if page.locator('#firstSetupPanel').count():      # 保险：首次设置面板要是还铺着，点掉它
             page.locator('#fsClose').click()
@@ -93,13 +94,15 @@ with tempfile.TemporaryDirectory(prefix='xhs-cold-') as profile, sync_playwright
         no_old('🖼 出图（画面页）', page.locator('#noteOutputContent').inner_text())
         shot('4_out')
 
-        # ④ 字效编辑器（内嵌 video.html?embed=1）：带一篇走真实通路 npGoFilm，盖板该让开露出台子
-        #   三十七改后页头口径＝「出片 · {成片形式}」（原来那版写「字效编辑器」，页头已改「出片 · X」）
+        # ④ 字效编辑器（拆墙后不再隔一层网页：台子零件就挂在本页 #filmPane 里，
+        #   外壳三件＝外层画的 #filmHead／#filmSteps／#filmFoot，盖板 #filmGate 让开才算露出台子）
+        #   三十七改后页头口径＝「出片 · {成片形式}」：这句现在挂在台子里那根 #headKind 上
         page.evaluate('() => npGoFilm({ noteId: "cold_k1", title: "冷载点检·知识篇", kind: "PPT字体动效" })')
-        fr = page.frame_locator('#filmFrame')
-        expect(fr.locator('header b')).to_contain_text('出片 · PPT字体动效')
+        page.wait_for_function('() => { const F = window.Film; return !!(F && F.noteId === "cold_k1"); }', timeout=30000)
+        assert '出片 · PPT字体动效' in (page.locator('#filmPane #headKind').text_content() or ''), \
+            page.locator('#filmPane #headKind').text_content()
         page.wait_for_function('() => { const g = document.getElementById("filmGate"); return g && g.style.display === "none"; }')
-        no_old('字效编辑器', fr.locator('body').inner_text())
+        no_old('字效编辑器', page.locator('#filmContent').inner_text())
         shot('5_film')
 
         # ⑤ 📖 发布教程已整页下线（三十七改：发布台已替代）——容器 / 渲染函数 / 数据层都不该再存在

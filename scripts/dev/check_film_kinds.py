@@ -3,23 +3,25 @@
 
 七十改：前端那张「🎬 渲染任务」排活表整页撤了——出片这条链只剩档案那一行：点「下一步」直进字效编辑器
 （npArNext → to='film' → npArOpenFilm → npGoFilm；成片形式跟着这一篇自己的 filmKind / filmDocs 走，
-不再在表上「＋ 一片」加行）。成片形式的「六选一」盖板留在台子里，靠顶上「✏️ 换一种」重开。
-（按画面表铺底图 / 段模型那条口径在 check_film_cards.py 里也验一份；这里验形式状态机本身。）
+不再在表上「＋ 一片」加行）。成片形式的「六选一」盖板留在台子里，靠外壳顶栏（#filmHead）那颗「✏️ 换一种」重开。
+（按画面表铺底图 / 段模型那条口径在 check_film_cards.py 里也验一份；这里验形式状态机本身。
+ 拆墙后台子就落在「发笔记」那一页里：外壳三件（#filmHead 顶栏／#filmSteps 工作流条／#filmFoot 底栏）由外层画，
+ 台子零件挂 #filmPane 底下，window.Film 直接可驱动；盖板 #filmGate 盖住时那三件一起收。）
 
 跑法：python3 -X utf8 scripts/dev/check_film_kinds.py
-临时 profile 加载真扩展（msedge），AiClient 走桩——除了「生成分幕」那一发（桩返回 '{}'＝提不出重点 → B1 兜底），
-这一条链一发 AI 都不该烧。
+临时 profile 加载真扩展（msedge），AiClient 走桩——进站那一路的「提重点」一发＋手动「↻ 重新出一版」一发
+（桩返回 '{}'＝提不出重点 → B1 兜底本机规则切幕），这一条链别的都不烧 AI。
   0) 这一篇照 npKFinishFilm 那条真出口落档的形状造好（voice＝正文同文 / form=视频 / filmKind=PPT字体动效 /
      filmDocs 一行）；先照真用法去过一趟「🖼 出图」——换形式那句「稿子还是旧口径」的提示要台上还挂着这一篇
      （prev＝_npOut/_npWiz）才说得出口
-  1) 档案那行「下一步」（＝✏️ 编辑 · 进字效）进台子：带的是这一篇的稿（口播稿＝正文同文）、
-     Film.noteId＝档案 id；三十七改起进站不自动分幕、不烧 AI——台上点「🎬 生成分幕」，
-     AI 一发提重点（走桩，'{}' 提不出 → B1 兜底本机规则分幕＋② 面板标注），大字画面
+  1) 档案那行「下一步」（＝✏️ 编辑 · 进字效）进台子：带的是这一篇的稿（口播稿＝正文同文，有稿不重调）、
+     Film.noteId＝档案 id；七十一改起进站一路自动跑（提重点走桩 → '{}' 提不出 → B1 兜底本机规则切幕＋幕栏标注），
+     大字画面；稿栏上方那颗「↻ 重新出一版」再走一路，同样兜底
   2) 台子里「✏️ 换一种」→ 六选一盖板重开（两种本机出片 + 四种扩展给料），台子盖住不许接稿
   3) 选「实拍」（不在本机出片）→ 那一档一页：整段文案只读 + 复制 + 去发布台 + 换一种；filmKind 落档、
      不派生卡片口径、文案没被改写（三十七改：教程页已下线，「看教程」那颗换成了「🗓 去发布台」＋原位一句）
-  4) 再「换一种」→「卡片画面叙事」：台子露出来、画面切卡片、bar 记着这一档；这一步只换形式，不许偷偷改稿
-  5) 顶上「← 笔记档案」回来：档案那一行形式列跟着这一档
+  4) 再「换一种」→「卡片画面叙事」：台子露出来、画面切卡片、外壳顶栏记着这一档；这一步只换形式，不许偷偷改稿
+  5) 外壳顶栏「← 返回档案」回来：档案那一行形式列跟着这一档
   6) 纯编辑器段模型：一行＝一段底图，长行自动切成多幕共用同图；off 过场行 / 没传回图的行 → 纯色卡
 """
 import base64
@@ -32,6 +34,8 @@ import time
 
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
+
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -127,9 +131,8 @@ with sync_playwright() as p:
     page.set_default_timeout(20000)
     page.on('pageerror', lambda e: errs.append(str(e)))
     page.on('dialog', lambda d: d.accept())
-    page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
-    page.wait_for_function('typeof switchMainTab === "function" && typeof npGoFilm === "function" '
-                           '&& typeof npArOpenFilm === "function"')
+    goto_big(page, eid)
+    page.wait_for_function('() => typeof npGoFilm === "function" && typeof npArOpenFilm === "function"')
     if page.locator('#fsClose').is_visible():
         page.locator('#fsClose').click()
 
@@ -150,8 +153,7 @@ with sync_playwright() as p:
 
     def film_state():
         return page.evaluate('''() => {
-            const f = document.getElementById('filmFrame');
-            const F = f && f.contentWindow && f.contentWindow.Film;
+            const F = window.Film;
             if (!F) return null;
             return { noteId: String(F.noteId || ''), frame: String((F.cfg || {}).frame || ''),
                      scenes: (F.scenes || []).length, script: String(F.script || ''), scRule: !!F.scRule,
@@ -181,7 +183,7 @@ with sync_playwright() as p:
     }''')
     page.wait_for_function('() => _npMode === "out" && !!document.querySelector("#npImgTabs .np-imgtab")')
 
-    # ── 1) 档案那行「下一步」→ 进台子：带这一篇的稿；点「🎬 生成分幕」→ 本机兜底分幕 ───────────
+    # ── 1) 档案那行「下一步」→ 进台子：带这一篇的稿，进站一路自动跑到幕（提重点走桩回不出 → 本机兜底） ───────────
     open_archive()
     nx = next_btn()
     assert nx.inner_text().strip() == '✏️ 编辑', '视频档那行的「下一步」该是「✏️ 编辑」：%r' % nx.inner_text()
@@ -190,34 +192,34 @@ with sync_playwright() as p:
     row = nx.locator('xpath=ancestor::div[contains(@class,"npar-row")]').inner_text().replace(' ', '')
     assert '成片' in row and KIND_TEXT in row, '档案那一行该标着「成片 · PPT字体动效」：%s' % row
     open_film()
+    page.set_viewport_size({'width': 1500, 'height': 900})      # 宽一些：稿栏那颗「↻ 重新出一版」才露在并排那一栏里
     page.wait_for_function('''(id) => {
-        const f = document.getElementById('filmFrame');
-        const F = f && f.contentWindow && f.contentWindow.Film;
-        return !!(F && F.noteId === id && F.script);
+        const F = window.Film;
+        return !!(F && F.noteId === id && String(F.script || '') && F.scenes.length && !F.genBusy);
     }''', arg='film-1', timeout=30000)
     st1 = film_state()
     assert st1['noteId'] == 'film-1', '主行 key＝档案 id：%s' % st1
-    assert st1['script'] == VOICE, '台子念的是这一篇的口播稿（正文同文那份）：%r' % st1['script']
-    assert st1['frame'] == 'text' and st1['scenes'] == 0, '三十七改：进站不自动分幕——等台上点「🎬 生成分幕」：%s' % st1
-    expect(page.locator('#filmBar')).to_contain_text(KIND_TEXT)
-    assert sw.evaluate('self.aiCalls') == 0, '进台子这一趟一次 AI 都不该打（有稿不覆盖）：%s' % sw.evaluate('self.aiCalls')
+    assert st1['script'] == VOICE, '台子念的是这一篇的口播稿（有稿不覆盖，进站不重调）：%r' % st1['script']
+    assert st1['frame'] == 'text' and st1['scenes'] >= 2 and st1['scRule'], \
+        '进站一路自动跑（提重点走桩回不出重点 → 本机规则兜底切幕＋标注）：%s' % st1
+    expect(page.locator('#filmHead')).to_contain_text(KIND_TEXT)
+    assert sw.evaluate('self.aiCalls') == 1, '进台子这一趟只打「提重点」一发（有稿不重调），不成就兜底：%s' % sw.evaluate('self.aiCalls')
 
-    # 台上点「🎬 生成分幕」：AI 一发提重点（走桩，'{}' 提不出）→ B1 兜底本机规则分幕＋② 面板标注
-    page.frame_locator('#filmFrame').locator('#gen').click()
+    # 稿栏上方那颗「↻ 重新出一版」：再走一路（提重点走桩 → 兜底重切），幕还在同屏右边
+    page.locator('#filmPane #gen').click()
     page.wait_for_function('''() => {
-        const f = document.getElementById('filmFrame');
-        const F = f && f.contentWindow && f.contentWindow.Film;
-        return !!(F && F.scenes.length);
+        const F = window.Film;
+        return !!(F && F.scenes.length && !F.genBusy);
     }''', timeout=30000)
     st1b = film_state()
-    assert st1b['scenes'] >= 2 and st1b['scRule'], '桩提不出重点 → 本机规则兜底分幕并标注：%s' % st1b
-    expect(page.frame_locator('#filmFrame').locator('#scenes .fvnote')).to_contain_text('本机规则')
-    assert sw.evaluate('self.aiCalls') == 1, '「生成分幕」只走一发（提重点）就兜底：%s' % sw.evaluate('self.aiCalls')
-    print('PASS: 档案那行「下一步」（✏️ 编辑 · 进字效）→ 进台子带这一篇的稿（进站不自动分幕、不烧 AI）'
-          '→ 点「🎬 生成分幕」：一发 AI 不成 → 本机兜底分 %d 幕（② 面板标「本机规则」）' % st1b['scenes'], flush=True)
+    assert st1b['scenes'] >= 2 and st1b['scRule'], '桩提不出重点 → 本机规则兜底切幕并标注：%s' % st1b
+    expect(page.locator('#filmPane #scenes .fvnote')).to_contain_text('本机规则')
+    assert sw.evaluate('self.aiCalls') == 2, '「↻ 重新出一版」再走一发（提重点不成即兜底）：%s' % sw.evaluate('self.aiCalls')
+    print('PASS: 档案那行「下一步」（✏️ 编辑 · 进字效）→ 进台子带这一篇的稿、一路自动到幕（不重调稿）'
+          '→ 点「↻ 重新出一版」：一发 AI 不成 → 本机兜底重切 %d 幕（幕栏标「本机规则」）' % st1b['scenes'], flush=True)
 
     # ── 2) 台子里「✏️ 换一种」→ 六选一盖板重开（2 本机 + 4 给料），台子盖住 ─────────
-    page.locator('#filmBar .np-kind-change').click()
+    page.locator('#filmHead .np-kind-change').click()
     page.wait_for_function('() => getComputedStyle(document.getElementById("filmGate")).display === "block"')
     picks = page.locator('#filmGate .np-kind-pick')
     assert picks.count() == 6, '换一种该重摆六种成片形式：%d' % picks.count()
@@ -226,7 +228,7 @@ with sync_playwright() as p:
     off = [i for i in range(6) if '扩展给料' in txt[i]]
     assert sorted(local) == [0, 1] and len(off) == 4, (local, off)
     assert KIND_TEXT in txt[0] and KIND_CARD in txt[1], txt[:2]
-    assert page.locator('#filmBar').evaluate('el => getComputedStyle(el).display') == 'none', '重选时别露台子'
+    assert page.locator('#filmHead').evaluate('el => getComputedStyle(el).display') == 'none', '重选时别露台子'
     print('PASS: 「✏️ 换一种」→ 盖板六张卡重开（%d 项本机出片 + %d 项扩展给料）' % (len(local), len(off)), flush=True)
 
     # ── 3) 选「实拍」（不在本机出片）→ 那一档一页；filmKind 落档、文案不动 ───────────
@@ -237,12 +239,12 @@ with sync_playwright() as p:
     assert '去发布台' in page.locator('#filmGate .np-film-queue').inner_text()
     assert '发布台自动排' in page.locator('#filmGate').inner_text(), '原位那句要交代：出完标「代发」，发布台自动排'
     assert page.locator('#filmGate textarea').input_value() == VOICE, '只读那格该是这一篇现在那格文案'
-    assert page.locator('#filmBar').evaluate('el => getComputedStyle(el).display') == 'none', '不在本机出片就别露台子'
+    assert page.locator('#filmHead').evaluate('el => getComputedStyle(el).display') == 'none', '不在本机出片就别露台子'
     r3 = wait_rec(lambda r: r['filmKind'] == KIND_LIVE)
     assert r3['filmKind'] == KIND_LIVE, '成片形式要落进这一篇的档案档：%s' % r3
     assert r3['style'] != '卡片轮播口播', '实拍不派生卡片口径：%s' % r3
     assert r3['voice'] == VOICE, '选形式不许改写那格文案：%r' % r3['voice']
-    assert sw.evaluate('self.aiCalls') == 1, '换到实拍不烧 AI（仍只有分幕那一发走桩）：%s' % sw.evaluate('self.aiCalls')
+    assert sw.evaluate('self.aiCalls') == 2, '换到实拍不烧 AI（还是进站自动那一路＋手动重出那两发）：%s' % sw.evaluate('self.aiCalls')
     print('PASS: 「换一种」→ 实拍（不在本机出片）：那一档一页（文案只读 + 复制 + 去发布台 + 换一种），filmKind 落档、文案没被改写', flush=True)
 
     # ── 4) 再换一种 → 卡片画面叙事：台子露出、画面切卡片、文案不许偷偷改写 ────────────
@@ -251,29 +253,28 @@ with sync_playwright() as p:
     page.evaluate('() => { const b = document.getElementById("popToastBox"); if (b) b.innerHTML = ""; }')
     page.locator('#filmGate .np-kind-pick[data-k="%s"]' % KIND_CARD).click()
     page.wait_for_function('''() => {
-        const g = document.getElementById('filmGate'), b = document.getElementById('filmBar');
-        return getComputedStyle(g).display === "none" && getComputedStyle(b).display === "flex";
+        const g = document.getElementById('filmGate'), h = document.getElementById('filmHead');
+        return getComputedStyle(g).display === "none" && getComputedStyle(h).display === "flex";
     }''')
     page.wait_for_function('''() => {
-        const f = document.getElementById('filmFrame');
-        const F = f && f.contentWindow && f.contentWindow.Film;
+        const F = window.Film;
         return !!(F && F.cfg.frame === 'card' && F.scenes.length);
     }''', timeout=30000)
     st4 = film_state()
     assert st4['frame'] == 'card' and st4['scenes'] >= 2, st4
     assert st4['script'] == VOICE, '换形式不许顺手改写那格文案：%r' % st4['script']
-    bar = page.locator('#filmBar').inner_text()
+    bar = page.locator('#filmHead').inner_text()
     assert KIND_CARD in bar and '换一种' in bar, bar
     assert '口播稿还是按' in wait_toast(page, '口播稿还是按'), '换形式该提示稿子还是旧口径那份'
     r4 = wait_rec(lambda r: r['filmKind'] == KIND_CARD)
     assert r4['filmKind'] == KIND_CARD, '成片形式要落进这一篇的档案档：%s' % r4
     assert r4['style'] == '卡片轮播口播', '视频档的写法口径跟着成片形式派生：%s' % r4
-    assert sw.evaluate('self.aiCalls') == 1, '换到卡片不烧 AI（仍只有分幕那一发走桩）：%s' % sw.evaluate('self.aiCalls')
+    assert sw.evaluate('self.aiCalls') == 2, '换到卡片不烧 AI（还是那两发，换形式不补打）：%s' % sw.evaluate('self.aiCalls')
     print('PASS: 「✏️ 换一种」→ 卡片画面叙事：台子露出 + 画面切卡片 + bar 记着这一档，文案没被改写（只提示去哪改）', flush=True)
 
-    # ── 5) 编辑器顶栏「← 返回档案」回档案：那一行形式列跟着换成卡片画面叙事 ─────────────
-    #（三十七改：返回钮只留编辑器顶栏那一颗，窄条上那颗已撤）
-    page.frame_locator('#filmFrame').locator('#back').click()
+    # ── 5) 外壳顶栏「← 返回档案」回档案：那一行形式列跟着换成卡片画面叙事 ─────────────
+    #（三十七改：返回钮只留顶栏那一颗，窄条上那颗已撤；拆墙后这颗挂在外层 #filmHead 上）
+    page.locator('#filmHead .np-film-archive').click()
     page.wait_for_function('(a) => { const el = document.querySelector(".npar-next[data-id=\\"" + a[0] + "\\"]"); if (!el) return false; '
                            'const row = el.closest(".npar-row"); return !!row && row.innerText.indexOf(a[1]) >= 0; }',
                            arg=['film-1', KIND_CARD], timeout=15000)
@@ -282,14 +283,12 @@ with sync_playwright() as p:
     print('PASS: 编辑器顶栏「← 返回档案」回档案，这一行形式列跟着换成卡片画面叙事', flush=True)
 
     # ── 6) 纯编辑器段模型：一行＝一段底图，长行切成多幕共用同图；off / 没传回图的行 → 纯色卡 ─
-    # 从档案再点一次「下一步」，拿一个就绪的 video.html frame
+    # 从档案再点一次「下一步」，拿一个就绪的台子（拆墙后 window.Film 就是这一页里的台子）
     open_film()
     page.wait_for_function('''() => {
-        const f = document.getElementById('filmFrame');
-        const F = f && f.contentWindow && f.contentWindow.Film;
+        const F = window.Film;
         return !!(F && F.cfg.frame === 'card' && F.scenes.length);
     }''', timeout=30000)
-    vf = [f for f in page.frames if 'video.html' in f.url][0]
     # 素材库备好 a1/a2/a3 三张本机图（段模型里 x1 安 a1、x4 安 a3，才量得出 cardImg）
     page.evaluate('''async (rows) => {
         await chrome.storage.local.set({ np_assets: rows.map(r => ({
@@ -307,14 +306,14 @@ with sync_playwright() as p:
         {'rowId': 'x4', 'no': 3, 'off': False, 'assetIds': ['a3'],
          'text': '收口一句，私信我测评。'},
     ]
-    vf.evaluate("""(a) => Film.loadNote({ id: 'seg-model', title: '段模型', script: '占位稿', frame: 'card', shots: a })""", rows7)
-    vf.wait_for_function("""() => { const F = Film;
+    page.evaluate("""(a) => window.Film.loadNote({ id: 'seg-model', title: '段模型', script: '占位稿', frame: 'card', shots: a })""", rows7)
+    page.wait_for_function("""() => { const F = window.Film;
         return F.noteId === 'seg-model' && F.scenes.length && F.scenes[0].cardImg; }""", timeout=20000)
-    seg = vf.evaluate("""() => ({
-        scenes: Film.scenes.length,
-        keys: Film.scenes.map(s => s.cardKey),
-        ids: Film.scenes.map(s => String((s.card || {}).id || '')),
-        runs: Film.cardRuns().length,
+    seg = page.evaluate("""() => ({
+        scenes: window.Film.scenes.length,
+        keys: window.Film.scenes.map(s => s.cardKey),
+        ids: window.Film.scenes.map(s => String((s.card || {}).id || '')),
+        runs: window.Film.cardRuns().length,
     })""")
     x1 = [i for i, k in enumerate(seg['keys']) if k == 'shot:x1']
     x2 = [i for i, k in enumerate(seg['keys']) if k == 'shot:x2']
@@ -329,11 +328,11 @@ with sync_playwright() as p:
     assert seg['runs'] == 4, ('四行＝四段', seg)
     print('PASS: 画面表段模型：长行切 %d 幕共用 a1、off/没传图的行纯色卡、收口行按号安 a3（%d 段）' % (len(x1), seg['runs']), flush=True)
 
-    assert sw.evaluate('self.aiCalls') == 1, '整条链就「生成分幕」那一发走桩（提重点不成即兜底），其余零 AI：%s' % sw.evaluate('self.aiCalls')
+    assert sw.evaluate('self.aiCalls') == 2, '整条链就两发「提重点」走桩（进站一路 + 手动「↻ 重新出一版」，不成即兜底），其余零 AI：%s' % sw.evaluate('self.aiCalls')
     assert not errs, '页面报错：%s' % errs[:3]
     shot = OUT / 'film-kinds.png'
     page.screenshot(path=str(shot))
     print('PASS: 无 pageerror', flush=True)
     print('SCREENSHOT:', shot, flush=True)
-    print('\n全绿：出片台一档一个成片形式（档案「下一步」进台 → 带稿、点「生成分幕」本机兜底 → 换一种 6 选 1 → 实拍不本机单页 → 卡片画面叙事 → 回档案落档 → 段模型）', flush=True)
+    print('\n全绿：出片台一档一个成片形式（档案「下一步」进台 → 带稿、一路自动到幕（兜底）→ 换一种 6 选 1 → 实拍不本机单页 → 卡片画面叙事 → 回档案落档 → 段模型）', flush=True)
     ctx.close()

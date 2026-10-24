@@ -521,7 +521,7 @@ async function loadTouchTone() {
             '</tr>';
         }).join('') + '</tbody>' +
       '</table>' +
-      '<div class="tr-ch-foot">字数跟随「诊断&amp;配置 → 人设 → 说话风格」：<b>' + mn + '~' + mx + '</b> 字（要改去那里，四个渠道一起生效）</div>' +
+      '<div class="tr-ch-foot">字数跟随「账号规划 → 人设 → 说话风格」：<b>' + mn + '~' + mx + '</b> 字（要改去那里，四个渠道一起生效）</div>' +
     '</div>';
   const d = document.getElementById('trGuideDeliver'); if (d) d.value = guide.deliver || TR_GUIDE_DEFAULT;   // 默认「私信我」，看得见的就是会用的
 }
@@ -607,7 +607,7 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 上限存 note_trend_config（与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）；排序/类型归「任务配置·关键词池」，
 // 搜索页不再勾「未看过」筛选（去重靠笔记池的冷却/复核）
 // ══════════════════════════════════════════════════════════════
-const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 2 };
+const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
 const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
 // 「每轮最多处理」现在住在「⚙️ 高级配置」弹窗里：主页面那行「每轮处理」在弹窗关着时读这份缓存
 let _ntRoundCache = NT_DEFAULT_CONFIG.maxPerRound;
@@ -877,8 +877,7 @@ async function applyEditionToSettings() {
   // 顶部展示版本名 + 到期信息
   renderSettingsEditionInfo(status);
 
-  // 无网络：锁定
-  if (status.noNetwork) { showSettingsNoNetworkMask(); return; }
+  // 无网络不再锁屏：档位表归服务器下发，没领到过就按包里的进门默认显示（顶栏那句「未联网核对」说明来路）
 
   // 到期：全屏遮罩锁死
   if (status.expired) { showSettingsExpiredMask(ed); return; }
@@ -1059,20 +1058,6 @@ function showSettingsExpiredMask(edition) {
 }
 
 /** 无网络锁定遮罩 */
-function showSettingsNoNetworkMask() {
-  if (document.getElementById('editionExpiredMask')) return;
-  const mask = document.createElement('div');
-  mask.id = 'editionExpiredMask';
-  mask.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(30,30,30,0.94);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;';
-  mask.innerHTML = `
-    <div style="font-size:44px;margin-bottom:12px;">🌐</div>
-    <div style="font-size:18px;font-weight:600;margin-bottom:8px;">无法连接网络</div>
-    <div style="font-size:13px;color:#ddd;line-height:1.7;max-width:320px;">
-      本插件需要联网运行以验证授权状态。<br>请检查网络连接后重试。
-    </div>`;
-  document.body.appendChild(mask);
-}
-
 init().catch(console.error);
 
 // ═════════════════════════════════════════════════════════
@@ -1335,7 +1320,7 @@ async function renderAiCsSettings() {
       <button id="aicsExport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬇ 导出</button>
       <button id="aicsImport" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">⬆ 导入</button>
     </div>
-    <div style="font-weight:600;font-size:13px;margin:4px 0 6px;">客户问答话术库</div>
+    <div style="font-weight:600;font-size:13px;margin:4px 0 6px;">顾客问答话术库</div>
     <div id="aicsQa"></div>
     <!-- 一条话术的编辑弹窗：列表页只负责看，改/新增都收在这里（改完先在内存里，点「💾 保存全部」才落盘） -->
     <div class="modal" id="aicsQaModal" style="display:none;">
@@ -1355,7 +1340,7 @@ async function renderAiCsSettings() {
           </div>
         </div>
         <div style="margin-top:10px;">
-          <label style="font-size:12px;color:#555;">话术<span style="font-size:11px;color:#999;"> · 客户这么问时回什么</span></label>
+          <label style="font-size:12px;color:#555;">话术<span style="font-size:11px;color:#999;"> · 顾客这么问时回什么</span></label>
           <textarea id="aicsQaAns" rows="6" placeholder="用客服口吻写清楚：先答问题，再给下一步。" style="width:100%;box-sizing:border-box;padding:8px;font-size:13px;line-height:1.7;border:1px solid #ddd;border-radius:6px;margin-top:4px;resize:vertical;"></textarea>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px;">
@@ -1483,7 +1468,7 @@ function saveAicsQaModal() {
   const msg = document.getElementById('aicsQaModalMsg');
   const val = (id) => { const el = document.getElementById(id); return el ? String(el.value || '') : ''; };
   const answer = val('aicsQaAns').trim();
-  if (!answer) { if (msg) msg.textContent = '话术不能空着——客户这么问时回什么，得写一句。'; return; }
+  if (!answer) { if (msg) msg.textContent = '话术不能空着——顾客这么问时回什么，得写一句。'; return; }
   const i = parseInt(modal.dataset.i, 10);
   const prev = (i >= 0 && _aics.qa[i]) ? _aics.qa[i] : {};
   const next = {
@@ -1558,7 +1543,7 @@ function importAicsSettings() {
 let _aicsChat = [];
 function paintAicsChat() {
   const box = document.getElementById('aicsChat'); if (!box) return;
-  if (!_aicsChat.length) { box.innerHTML = '<div style="font-size:12px;color:#999;">还没有对话——在下面输入一句客户可能说的话，点「发送」。</div>'; return; }
+  if (!_aicsChat.length) { box.innerHTML = '<div style="font-size:12px;color:#999;">还没有对话——在下面输入一句顾客可能说的话，点「发送」。</div>'; return; }
   box.innerHTML = _aicsChat.map(function (row) {
     const mine = row.role === 'me';
     return '<div style="align-self:' + (mine ? 'flex-end' : 'flex-start') + ';max-width:82%;' +

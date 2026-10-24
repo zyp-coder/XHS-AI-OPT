@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新手引导 · 小红书运营助手</title>
+<!-- ============================================================
+  新手引导页（/guide）· 2026-10-15 改版（老板四点改单；确认单 资料/新手引导改版-确认单.md）
+  · 2026-10-17 二次（老板测试反馈六条）：两个折叠头改成可点条＋「展开/收起」胶囊；右上「下一步」改主色高亮；
+    删「找对地方」「AI 出稿，您把关」「发布台」三条；功能卡与模块讲解文案压短。
+  · 2026-10-17 三次（老板玩法说明改稿）：发笔记三条按老板原话换短；获客「搜索老帖」改名「搜索 TOP 笔记」并换说明，
+    删「会接话」及「就干 2 件事」旧结构；AI客服整块换成顾客问答话术库的 8 类场景＋通用兜底。
+  · 2026-10-17 四次（老板再收口）：AI客服只留破冰寒暄 / 适用性追问 / 产品细节 / 售后顾虑 4 类，各加一句说明。
+  · 2026-10-17 五次（老板加购买入口）：页尾加「加我微信」块（assets/qr-wechat.png）＋顶部导航③；
+    页内两处「联系客服」改成「加我微信（二维码在本页最下方）」，让来人知道开通、购买都找我本人。
+  · 2026-10-17 并为两大框（老板测试反馈三条：①②合并、③④合并、全页文案精简去怪说法）：
+    框一「三大功能」＝三块清单摊开 ＋「功能模块讲解」折叠（默认收起，点开是发笔记／获客／AI客服 三个签，
+      每签一句作用＋分条讲清做什么，附「从头走一遍」；IP玩法·知识·引流·案例四类＋5 种接法内容清单取自 资料/推广物料/功能总览.html，写成页面真字不放图）。
+    框二「怎么用、怎么收费」＝两层摊开（第一层新用户免费：50 次 AI 文本＋10 张图，用完填自己的 Key 接着免费、或买 30 元算力包；
+      第二层按档位：239 真发笔记＋🎭IP玩法 / 399 获客·日常浏览 / 539 AI客服，都先免费试用 1 个月，每月 150 次文本＋150 张图＋2 条数字人）
+      ＋「算力包」一张卡（30 元/份，＋150/30/2，30 天，每月最多 2 份，数字人改稿重做再扣 1 条）
+      ＋「扩展功能与安装」折叠（默认收起；两段＝怎么安装（路线＋一台挂一个）→ 装执行器三步＋按钮）。
+    账号规划与设置不在这页展开；收费只在框二讲一次；两个折叠用同款样式（.fold-hd＋chev＋fadeIn）。
+  · 2026-10-17 六次（测试反馈三条）：框一三块下拉通高；收费三档名右缩 12px；页尾标题改「想升级使用，请联系我」，
+    导航③与页尾说明同步补「升级」口径。
+  · 2026-10-18 七次（老板定稿）：账号页那块「账号级别与功能」整体搬进框二——免费一行＋239/399/539 三张卡
+    ＋顶部「你现在：…」行（登录后按账号档位显示；没登录显示未登录；演示号显示「演示号·某档」）；
+    账号页不再展示档位对照，只留三个入口。
+  带页进入：工作台点「❓ 新手引导」→ guide.html?mod=note|huoke|ai|account|settings
+    发笔记/获客/AI客服 → 展开框一里的功能模块讲解、对应签亮起并滚到框一；账号规划/设置 → 落到框一闪一下
+  配色（2026-10-16 定，老板选的「清爽蓝·工具感 ＋ 每块一个淡色底」）：主色 --brand #2b7fb8（深 --brand-deep #16527c），
+    页面底淡蓝渐变；框一里三大功能三块分别 --tint1 淡蓝／--tint2 淡青／--tint3 淡靛，块号与块名用同块深色；小格仍白底。
+    全页颜色都走 :root 变量，别在局部写死色值。
+  前置门（2026-10-16 流程重排，判断在 gate.js）：新号/演示号进门先弹这页；
+    「看过」按号记 localStorage 'xhs_guide_seen:<账号id>'（没登录记 :anon），换号重新弹。
+  出口（右上角，按来路动态）：从进门弹出来的 →「下一步：登录 / 领号」→ account.html（账号页，
+    已登录会直接跳过账号页，按问卷进度去问卷或工作台）；
+    从工作台顶栏回看的（?from=bar）→「了解，开始进入系统。」→ popup.html?mode=big；「装执行器（三步）」→ setup.html
+  ============================================================ -->
+<script src="gate.js"></script>
+<style>
+  :root {
+    --ink: #22303c; --ink2: #5a6b7a; --ink3: #8b9aa8;
+    --line: #dbe4ec; --bg: #f1f6fa; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #b45309;
+    --brand: #2b7fb8; --brand-deep: #16527c; --brand-soft: #eaf3f9; --brand-on: #fff;
+    /* 三大功能各一个淡色底（淡蓝 · 淡青 · 淡靛），块号与块名跟着这块的深色走 */
+    --tint1: #eef6fb; --tint1-line: #cfe4f1; --tint1-ink: #1f6ea0;
+    --tint2: #edf8f4; --tint2-line: #cbe8dc; --tint2-ink: #0d8367;
+    --tint3: #f0f2fb; --tint3-line: #d9ddf1; --tint3-ink: #4f5bb0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: linear-gradient(180deg, #e9f2f9, var(--bg) 240px) fixed; color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .gobig { font-size: 13.5px; color: #fff; text-decoration: none; background: var(--brand); border: 1px solid var(--brand); border-radius: 10px; padding: 10px 18px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(43, 127, 184, .28); transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+  .top .gobig:hover { background: var(--brand-deep); border-color: var(--brand-deep); transform: translateY(-1px); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px 20px; margin-bottom: 22px; box-shadow: 0 2px 10px rgba(22, 82, 124, .07); }
+  .card h2 { font-size: 17px; font-weight: 800; margin-bottom: 10px; display: flex; align-items: center; gap: 9px; }
+  .card h2 .sec { color: var(--ink3); font-weight: 400; font-size: 12.5px; margin-left: 2px; }
+
+  /* 两大框提重：框号标 ＋ 顶部导航（点了跳过去，滚到哪框哪框亮起） */
+  .bno { flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--brand); color: #fff; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+  section.card, .card .fold { scroll-margin-top: 62px; }
+  .gnav { position: sticky; top: 0; z-index: 6; display: flex; gap: 8px; flex-wrap: wrap; padding: 9px 0 11px; margin-bottom: 10px; background: rgba(238, 245, 250, .92); backdrop-filter: blur(4px); border-bottom: 1px solid var(--line); }
+  .gnav a { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--ink2); text-decoration: none; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px 4px 5px; white-space: nowrap; }
+  .gnav a .bno { width: 19px; height: 19px; border-radius: 999px; font-size: 11.5px; }
+  .gnav a:hover { border-color: var(--brand); color: var(--ink); }
+  .gnav a.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .gnav a.on .bno { background: #fff; color: var(--brand); }
+
+  .btn { display: inline-block; border: none; border-radius: 10px; padding: 11px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink2); font-weight: 600; font-size: 13px; padding: 9px 14px; }
+  .btn.ghost:hover { border-color: #a8cee5; color: var(--ink); background: var(--brand-soft); }
+  .actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .foot { color: var(--ink3); font-size: 12px; margin-top: 14px; line-height: 1.8; }
+  .foot b { color: var(--ink2); }
+  kbd { background: var(--brand-soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12.5px; font-family: inherit; }
+
+  .gd-hero { background: linear-gradient(135deg, var(--brand-deep), var(--brand)); color: #fff; border-radius: 14px; padding: 22px 24px; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(22, 82, 124, .22); }
+  .gd-hero h2 { font-size: 19px; font-weight: 700; margin-bottom: 6px; }
+  .gd-hero p { font-size: 13.5px; color: #d7e9f6; line-height: 1.8; }
+  .gd-hero p b { color: #fff; }
+
+  /* 框一：三大功能（三块并排三列，块内条目竖着一条一条列；窄屏自动叠成一列） */
+  .gd-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: stretch; }
+  .gd-b { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; padding: 13px 14px 14px; background: #fdfdfe; }
+  .gd-b:nth-child(1) { background: var(--tint1); border-color: var(--tint1-line); }
+  .gd-b:nth-child(1) .h .bno { background: var(--tint1-ink); }
+  .gd-b:nth-child(1) .h .n { color: var(--tint1-ink); }
+  .gd-b:nth-child(2) { background: var(--tint2); border-color: var(--tint2-line); }
+  .gd-b:nth-child(2) .h .bno { background: var(--tint2-ink); }
+  .gd-b:nth-child(2) .h .n { color: var(--tint2-ink); }
+  .gd-b:nth-child(3) { background: var(--tint3); border-color: var(--tint3-line); }
+  .gd-b:nth-child(3) .h .bno { background: var(--tint3-ink); }
+  .gd-b:nth-child(3) .h .n { color: var(--tint3-ink); }
+  .gd-b .h { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; margin-bottom: 4px; }
+  .gd-b .h .bno { width: 20px; height: 20px; border-radius: 6px; font-size: 12px; align-self: center; color: #fff; }
+  .gd-b .h .n { font-size: 15px; font-weight: 800; }
+  .gd-b .h .role { font-size: 12px; color: var(--ink3); line-height: 1.5; }
+  .gd-its { display: grid; grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: 7px; margin-top: 9px; flex: 1; }
+  .gd-it { border: 1px solid #fff; border-radius: 10px; padding: 8px 10px 9px; background: #fff; box-shadow: 0 1px 3px rgba(22, 82, 124, .06); }
+  .gd-it.star { border: 1.5px solid var(--brand); }
+  .gd-it .t { font-size: 12.5px; font-weight: 700; line-height: 1.45; }
+  .gd-it .t em { font-style: normal; color: var(--ink2); font-weight: 600; }
+  .gd-it .d { font-size: 11.5px; color: var(--ink2); line-height: 1.6; margin-top: 3px; }
+  .gd-it .cap { font-size: 11px; color: var(--ink3); margin-top: 4px; }
+  .gd-f { font-size: 12px; color: var(--ink2); line-height: 1.65; margin-top: 7px; }
+  .gd-f b { color: var(--ink); }
+  .gd-f:first-of-type { margin-top: 9px; }
+
+  .gd-line { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+  .gd-line:last-child { border-bottom: none; }
+  .gd-line .k { flex: none; width: 210px; font-weight: 600; }
+  .gd-line .v { color: var(--ink2); font-size: 12.5px; line-height: 1.75; }
+  .gd-line .v p { margin: 0 0 4px; }
+  .gd-line .v p:last-child { margin-bottom: 0; }
+  /* 缩进的子行（收费第三层下面那三档） */
+  .gd-line.sub { padding-left: 18px; }
+  .gd-line.sub .k { width: 192px; font-weight: 600; font-size: 12.5px; padding-left: 12px; }
+
+  /* ── 账号级别与功能（2026-10-18 从账号页搬来）── */
+  .tier-now {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--ink2); background: var(--brand-soft);
+    border: 1px solid #cfe5f3; border-radius: 10px; padding: 8px 13px; margin: 0 0 12px;
+  }
+  .tier-now b { color: var(--brand-deep); font-size: 13.5px; }
+  .tier-now span { color: var(--ink3); }
+  .tier { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: #fcfdfe; }
+  .tier.free { display: flex; gap: 16px; align-items: flex-start; background: #f4fbf8; border-color: #cfe9dd; }
+  .tier.free .tier-name { flex: none; min-width: 180px; }
+  .tier.free ul { flex: 1; }
+  .tier-name .tn { font-size: 15.5px; font-weight: 800; }
+  .tier-name .tag {
+    font-size: 10.5px; font-weight: 700; color: var(--ok); background: #e4f5ed;
+    border-radius: 5px; padding: 1px 6px; margin-left: 4px; vertical-align: 1px;
+  }
+  .tier-name .tp { font-size: 12px; color: var(--ink3); margin-top: 2px; }
+  .tier ul { list-style: none; display: grid; gap: 5px; }
+  .tier li { font-size: 12.5px; color: var(--ink2); line-height: 1.65; padding-left: 15px; position: relative; }
+  .tier li::before { content: "·"; position: absolute; left: 3px; color: var(--brand); font-weight: 800; }
+  .tier li b { color: var(--ink); }
+  .paid-hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 800; margin: 14px 0 9px; }
+  .paid-hd span { font-size: 11.5px; font-weight: 400; color: var(--warn); background: #fdf6e7; border-radius: 5px; padding: 1px 7px; }
+  .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tier-grid .tier { display: flex; flex-direction: column; gap: 7px; }
+  .quota-strip { margin: 0 0 9px; border: 1px solid #f0dfb8; background: #fffdf6; border-radius: 9px; padding: 8px 12px; font-size: 12px; color: var(--ink2); line-height: 1.8; }
+  .quota-strip b { color: var(--ink); }
+  .tier.pack { display: flex; gap: 16px; align-items: flex-start; margin-top: 10px; background: #fffaf0; border-color: #f0dfb8; }
+  .tier.pack .tier-name { flex: none; min-width: 180px; }
+  .tier.pack ul { flex: 1; }
+  .tier-foot {
+    margin-top: 13px; padding-top: 11px; border-top: 1px dashed var(--line);
+    font-size: 12px; color: var(--ink3); line-height: 1.8;
+  }
+
+  .steps { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+  .steps .step { display: flex; gap: 10px; font-size: 13.5px; }
+  .steps .step .no { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+  .steps .step .t { font-weight: 600; }
+  .steps .step .d { color: var(--ink2); font-size: 13px; }
+  .steps .step .d b { color: var(--ink); }
+  .steps .step .d .dim { color: var(--ink3); font-size: 12.5px; }
+
+  /* ── 功能模块讲解：三个签 ── */
+  .mtabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mtab { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 18px; font-size: 13.5px; font-weight: 600; color: var(--ink2); cursor: pointer; font-family: inherit; }
+  .mtab:hover { background: var(--brand-soft); }
+  .mtab.active { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .mod-panel { display: none; margin-top: 14px; }
+  .mod-panel.show { display: block; animation: fadeIn .18s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+  .mdesc { font-size: 13px; color: var(--ink); background: var(--brand-soft); border: 1px solid var(--line); border-left: 3px solid var(--brand); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; line-height: 1.7; }
+  .mdesc b { font-weight: 700; }
+  .mpage { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+  .mpage:last-of-type { border-bottom: none; }
+  .mpage .mk { flex: none; width: 86px; font-weight: 700; color: var(--ink); }
+  .mpage .mv { color: var(--ink2); line-height: 1.7; min-width: 0; }
+  .mpage .mv p { margin: 0 0 2px; }
+  .mpage .mv ul { margin: 2px 0 0; padding-left: 16px; }
+  .mpage .mv li { margin: 3px 0; }
+  .mpage .mv li b { color: var(--ink); font-weight: 600; }
+  .muse { margin-top: 10px; font-size: 12.5px; color: var(--ink2); background: var(--brand-soft); border-radius: 10px; padding: 9px 14px; line-height: 1.8; }
+  .muse b { color: var(--ink); }
+
+  /* ── 卡内折叠小节（功能模块讲解 / 扩展功能与安装）：与整卡折叠同款样式，默认收起 ── */
+  .card .fold { margin-top: 18px; }
+  .sub-hd h3 { font-size: 15px; font-weight: 800; margin-bottom: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sub-hd h3 .sec { color: var(--ink2); font-weight: 400; font-size: 12px; }
+
+  /* ── 折叠块：整条都可点，右侧胶囊明示「展开/收起」 ── */
+  .fold-hd { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; cursor: pointer; user-select: none; background: var(--brand-soft); border: 1px solid var(--line); border-radius: 11px; padding: 11px 14px; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+  .fold-hd:hover { background: #e1f0f9; border-color: #a8cee5; box-shadow: 0 2px 8px rgba(22, 82, 124, .08); }
+  .fold-hd > div { min-width: 0; }
+  .fold-hd h2 { margin-bottom: 4px; }
+  .fold-hd .fold-cue { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #c8dfee; color: var(--brand-deep); font-size: 12px; font-weight: 700; border-radius: 999px; padding: 4px 11px; box-shadow: 0 1px 3px rgba(22, 82, 124, .10); }
+  .fold-hd .fold-cue::before { content: "展开"; }
+  .fold.open .fold-hd .fold-cue::before { content: "收起"; }
+  .fold-hd .chev { color: var(--brand); font-size: 12px; transition: transform .18s ease; }
+  .fold.open .chev { transform: rotate(180deg); }
+  .fold-body { display: none; margin-top: 14px; }
+  .fold.open .fold-body { display: block; animation: fadeIn .18s ease; }
+  /* 折叠体内的小标题（扩展功能与安装两段：怎么安装 / 装执行器） */
+  .fold-sec { font-size: 14px; font-weight: 700; color: var(--ink); margin: 18px 0 2px; }
+  .fold-sec:first-child { margin-top: 0; }
+  .fold-sec .sec { color: var(--ink3); font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .fold-note { font-size: 12px; color: var(--ink2); background: var(--brand-soft); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; margin-top: 8px; line-height: 1.75; }
+  .fold-note b { color: var(--ink); }
+
+  /* ── 页尾：加我微信（开通、购买都找我本人） ── */
+  .buy-card { background: linear-gradient(135deg, #fff 0%, var(--brand-soft) 100%); border-color: #c8dfee; }
+  .buy-card h2 { flex-wrap: wrap; }
+  .buy-lead { font-size: 13px; color: var(--ink2); line-height: 1.8; }
+  .buy-lead b { color: var(--ink); }
+  .buy-box { display: flex; align-items: center; gap: 22px; margin-top: 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .buy-qr-wrap { flex: none; display: block; text-align: center; text-decoration: none; color: var(--ink2); }
+  .buy-qr { display: block; width: 172px; height: 172px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+  .buy-cap { font-size: 11.5px; color: var(--ink3); margin-top: 6px; }
+  .buy-info { min-width: 0; }
+  .buy-info .t { font-size: 16px; font-weight: 800; color: var(--ink); }
+  .buy-info p { font-size: 13px; color: var(--ink2); line-height: 1.8; margin-top: 6px; }
+  .buy-info b { color: var(--ink); }
+
+  /* 带页进入的加亮 */
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(31,35,41,0); } 25% { box-shadow: 0 0 0 5px rgba(31,35,41,.16); } 100% { box-shadow: 0 0 0 0 rgba(31,35,41,0); } }
+  .flash { animation: ring 1.4s ease 1; }
+
+  @media (max-width: 640px) { .gd-grid { grid-template-columns: 1fr; } .gd-line .k { width: auto; } .gd-line { flex-direction: column; gap: 2px; } .mpage { flex-direction: column; gap: 2px; } .mpage .mk { width: auto; } .tier.free { flex-direction: column; gap: 8px; } .tier.pack { flex-direction: column; gap: 8px; } .tier-grid { grid-template-columns: 1fr; } .buy-box { flex-direction: column; align-items: center; text-align: center; gap: 14px; } .buy-qr { width: 200px; height: 200px; } .buy-card h2 .sec { flex-basis: 100%; margin-left: 33px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>新手引导</h1><span class="ver">3 分钟看完</span>
+    <div class="top-right">
+      <a class="gobig" id="gdExit" href="account.html">下一步：登录 / 领号 →</a>
+    </div>
+  </div>
+
+  <div class="gd-hero">
+    <h2>这是干啥的</h2>
+    <p>一个帮你在小红书上<b>写稿、出图、发笔记、接顾客</b>的助手。核心就三块活，下面两大块讲清楚：功能一览 → 收费与安装。</p>
+  </div>
+
+  <!-- 顶部导航：点了跳到那框，滚到哪框哪框亮起 -->
+  <nav class="gnav" id="gnav">
+    <a href="#m1"><span class="bno">①</span>三大功能与模块讲解</a>
+    <a href="#m3"><span class="bno">②</span>怎么用、怎么收费与安装</a>
+    <a href="#m4"><span class="bno">③</span>升级使用，联系我</a>
+  </nav>
+
+  <!-- ── 框一：三大功能 ＋ 功能模块讲解（折叠）；清单内容＝资料/推广物料/功能总览.html 那份，写成页面真字；账号规划与设置不列 ── -->
+  <section class="card" id="m1">
+    <h2><span class="bno">①</span>三大功能<span class="sec">一条链：写内容 → 捞顾客 → 跟顾客</span></h2>
+    <div class="gd-grid">
+      <div class="gd-b" data-blk="note">
+        <div class="h"><span class="bno">①</span><span class="n">发笔记</span><span class="role">您要发的就 4 类，各有各的活</span></div>
+        <div class="gd-its">
+          <div class="gd-it"><div class="t">IP 玩法 <em>＝立人设</em></div><div class="d">为你量身订造的 IP 人设。</div><div class="cap">能出：图文</div></div>
+          <div class="gd-it"><div class="t">知识笔记 <em>＝立专业</em></div><div class="d">用专业知识来打动用户。</div><div class="cap">能出：思维导图 / 竖版视频 / 口播稿</div></div>
+          <div class="gd-it"><div class="t">引流笔记 <em>＝抓流量</em></div><div class="d">借热点、热梗、情绪、感悟，把路人吸进来。</div><div class="cap">能出：图文 / 竖版视频</div></div>
+          <div class="gd-it"><div class="t">案例笔记 <em>＝加信度</em></div><div class="d">帮你的案例视频制作切片和知识讲解。</div><div class="cap">能出：竖版视频</div></div>
+        </div>
+      </div>
+
+      <div class="gd-b" data-blk="huoke">
+        <div class="h"><span class="bno">②</span><span class="n">评论区获客</span><span class="role">去顾客正在看的地方接话——5 种笔记，5 种聊法</span></div>
+        <div class="gd-its">
+          <div class="gd-it"><div class="t">正在上涨的笔记 <em>＝抢前排</em></div><div class="d">观察流量上涨的笔记，借别人流量的春风。</div></div>
+          <div class="gd-it"><div class="t">搜索 TOP 笔记 <em>＝占深度</em></div><div class="d">确保你的评论一直在流量最大的前排。</div></div>
+          <div class="gd-it"><div class="t">同城帖 <em>＝拉近乎</em></div><div class="d">本地口吻聊一句，让顾客觉得是自己人。</div></div>
+          <div class="gd-it"><div class="t">求助帖 <em>＝给方案</em></div><div class="d">主动求助的最准，一个个给解答。</div></div>
+          <div class="gd-it"><div class="t">大V帖 <em>＝补干货</em></div><div class="d">大博主流量大，评论区补条内行干货。</div></div>
+        </div>
+      </div>
+
+      <div class="gd-b" data-blk="ai">
+        <div class="h"><span class="bno">③</span><span class="n">AI客服</span><span class="role">私信怎么开口，追问怎么答，都有现成说法</span></div>
+        <div class="gd-its">
+          <div class="gd-it"><div class="t">私信破冰</div><div class="d">同行帖里想买、不方便评论的人，标记下来私信一句「我也有同类的，您参考对比一下」。</div></div>
+          <div class="gd-it"><div class="t">适用性追问</div><div class="d">「我这种情况行不行」——帮顾客对号入座。</div></div>
+          <div class="gd-it"><div class="t">产品细节</div><div class="d">是什么、怎么用、包含什么——按知识库答清楚。</div></div>
+          <div class="gd-it"><div class="t">售后顾虑</div><div class="d">怕踩坑、能不能退——先把顾虑聊透。</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="gd-f"><b>三块都用得上：</b>多产品切换 · 数据只存本机 · 发送间隔与停留时间自己设。</div>
+
+    <div class="fold" id="m2">
+      <div class="fold-hd sub-hd">
+        <div>
+          <h3>功能模块讲解<span class="sec">每个模块有哪些页、从头走一遍</span></h3>
+        </div>
+        <span class="fold-cue"><span class="chev">▾</span></span>
+      </div>
+      <div class="fold-body">
+        <div class="mtabs">
+      <button class="mtab active" data-mod="note">发笔记</button>
+      <button class="mtab" data-mod="huoke">获客</button>
+      <button class="mtab" data-mod="ai">AI客服</button>
+    </div>
+
+    <div class="mod-panel show" data-mod="note">
+      <div class="mdesc"><b>从写稿到发出去</b>：AI 写稿、出图、出片、排期发布，每篇留档。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>出稿前的两张默认表，定一次全按它走。</p>
+          <ul>
+            <li><b>内容基调</b>：4 种基调挑一种：怎么铺垫、何时上广告、占多少、写多长。</li>
+            <li><b>出图风格</b>：画面风格、印记、配文版式，出图照这张表。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">笔记档案</div>
+        <div class="mv">
+          <p>写过的每篇都在这留档，草稿也在。</p>
+          <ul>
+            <li><b>开始一篇</b>：点「✍️ 新建笔记」，填产品和方向 → AI 出样稿 → 挑一份改成你的话 → 定稿。</li>
+            <li><b>接着做</b>：每行一颗「下一步」，写到哪步直接送过去。</li>
+            <li><b>看全貌</b>：图文/视频、写到哪步、排到哪天，一张表看清。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">发布台</div>
+        <div class="mv">
+          <p>排 + 发一条线。</p>
+          <ul>
+            <li><b>发布队列</b>：按每周排法滚 3 周；点「＋ 排一篇」从档案挑，标「代发」自动进最早空位。</li>
+            <li><b>到点自己发</b>：到点自动发；视频篇发三家、图文篇两家。</li>
+            <li><b>笔记规划</b>：每周几篇、分几阶段、每阶段讲什么，AI 帮排。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">素材库</div>
+        <div class="mv">
+          <p>备料的地方，一类一个集合。</p>
+          <ul>
+            <li>视频段和图片混放，空集合标「待补充」。</li>
+            <li>点进去看料、传图、连播；写稿出片直接取。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">复盘</div>
+        <div class="mv">
+          <p>发完回头看的地方。</p>
+          <ul>
+            <li><b>选题盘点</b>：哪类知识、哪个角度讲过、哪些没讲，按分类看。</li>
+            <li><b>已发复盘</b>：发过的数字趋势都在这，看哪篇在涨。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>定基调 → 新建笔记、挑样稿 → 定稿（多平台各改写一版）→ 出图/出片 → 发布台排期 → 到点发 → 复盘。</div>
+    </div>
+
+    <div class="mod-panel" data-mod="huoke">
+      <div class="mdesc"><b>按关键词刷笔记、扫评论区</b>，把想买的人挑出来接话。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>告诉系统去哪找、找什么样的人。</p>
+          <ul>
+            <li><b>词池</b>：搜什么词、跑哪几类笔记、多久跑一次。</li>
+            <li><b>盯的账号</b>：同行/对标主页放进来，也跟着刷。</li>
+            <li><b>推广目标与承接</b>：评论区接话带什么去向。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">队列</div>
+        <div class="mv">
+          <p>到点的活排队，串着自动跑。</p>
+          <ul>
+            <li>「词×类型」和盯的账号都进队；还有「日常浏览」随机刷首页。</li>
+            <li>在跑、待跑、没到点、已完成，一眼看清。</li>
+            <li>不想等，可手动来一轮。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">工作台</div>
+        <div class="mv">
+          <p>接话就发生在这。</p>
+          <ul>
+            <li>当前评论区里，谁想买、谁问价，替你挑出来。</li>
+            <li>挑中人一键接话；现场搜词也在这页。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">笔记池</div>
+        <div class="mv">
+          <p>刷过的笔记都进池子留底。</p>
+          <ul>
+            <li>按类型标状态，点开就去看评论区、接话。</li>
+            <li>哪轮扫的、发了多少、哪些没打开，都能回来补。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">设置</div>
+        <div class="mv">
+          <p>跑的时候多快、多密。</p>
+          <ul>
+            <li>操作挡位、每步停多久、每轮跑多少、多久不重复。</li>
+            <li>顺手关注开不开。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>配好词和账号 → 到点自动刷 → 想买的进工作台接话 → 笔记池留底可补 → 设置调节奏。</div>
+    </div>
+
+    <div class="mod-panel" data-mod="ai">
+      <div class="mdesc"><b>评论、点赞、私信都收拢到这</b>；AI 帮你盯私信、照话术回。</div>
+      <div class="mpage">
+        <div class="mk">任务配置</div>
+        <div class="mv">
+          <p>定 AI 开口说话的样子。</p>
+          <ul>
+            <li><b>渠道基调 / 成交引导</b>：AI 说话带什么去向、怎么往成交带。</li>
+            <li><b>话术配置</b>：客服话术都存这；「试问答」先试它回得像不像你。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">通知</div>
+        <div class="mv">
+          <p>平台动静的第一落点。</p>
+          <ul>
+            <li>评论、赞、收藏、关注、新粉丝都在这。</li>
+            <li>每条能直接回评 / 让 AI 拟话 / 去触达。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">消息</div>
+        <div class="mv">
+          <p>私信往来都在这。</p>
+          <ul>
+            <li>对方进线等你回；你先开口的等对方回。</li>
+            <li>AI 照话术拟好回复，你过一眼发出去。</li>
+            <li>开着「监听」，新私信自动收进来。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">设置</div>
+        <div class="mv">
+          <p>只管一件事：多久扫一次新评论和私信。</p>
+        </div>
+      </div>
+      <div class="muse"><b>从头走一遍：</b>定好去向和话术 → 开「AI客服监听」→ 新评论、点赞、私信自动收进通知/消息 → AI 拟好回复，你过一眼发出。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 框二：怎么用、怎么收费（两层摊开）＋ 扩展功能与安装（折叠）；收费档位只在这讲一次 ── -->
+  <section class="card" id="m3">
+    <h2><span class="bno">②</span>怎么用、怎么收费<span class="sec">两层——第一层不花钱，第二层按档位</span></h2>
+    <div class="tier-now" id="tierNow">你现在：<b>未登录</b><span>登录后这里会显示你自己的档位</span></div>
+
+    <div class="tier free">
+      <div class="tier-name">
+        <div class="tn">免费 <span class="tag">第一层 · 新号默认</span></div>
+        <div class="tp">不花钱</div>
+      </div>
+      <ul>
+        <li>写稿、出图、出片、排计划、建账号底子（问卷 / 人设 / 卖点 / 知识库）</li>
+        <li>送 <b>50 次 AI 文本 ＋ 10 张图</b>（一次性，用完不补；不含数字人）</li>
+        <li>用完了接着用：到「设置 → AI 模型配置」填<b>自己的 AI Key</b>（系统这边不再收钱），或买一份 <b>30 元算力包</b></li>
+      </ul>
+    </div>
+
+    <div class="paid-hd">要系统替你真干活 · 按档开通 <span>三档都先免费试用 1 个月</span></div>
+    <div class="quota-strip">三档每月都一样：<b>150 次 AI 文本 ＋ 150 张图 ＋ 2 条数字人视频（每条 30 秒）</b>。发笔记、到点发布不扣次数。</div>
+    <div class="tier-grid">
+      <div class="tier">
+        <div class="tier-name"><div class="tn">239 · 基础</div></div>
+        <ul>
+          <li>免费那些全有</li>
+          <li><b>替你发笔记</b>：排好队到点自己发，图文、视频都行</li>
+          <li><b>🎭 IP 玩法</b>：挑主题挑方式，AI 编好故事直接出图文</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <div class="tier-name"><div class="tn">399 · 升级</div></div>
+        <ul>
+          <li>基础那些全有</li>
+          <li><b>获客</b>：按词去刷笔记、扫评论区、挑出想买的人再去接话</li>
+          <li><b>日常浏览</b>也在这档</li>
+        </ul>
+      </div>
+      <div class="tier">
+        <div class="tier-name"><div class="tn">539 · 全功能</div></div>
+        <ul>
+          <li>升级那些全有</li>
+          <li><b>AI客服</b>：新评论、新私信自动收进来，AI 照话术拟好回复，你过一眼发出去</li>
+        </ul>
+      </div>
+    </div>
+    <div class="tier pack">
+      <div class="tier-name"><div class="tn">算力包 <span class="tag">不限档位 · 免费号也能买</span></div><div class="tp">30 元 / 份</div></div>
+      <ul>
+        <li>一份加 <b>150 次 AI 文本 ＋ 30 张图 ＋ 2 条数字人</b>；从买到那天算 <b>30 天</b>，跟档位额度叠着用</li>
+        <li>一个月最多买 <b>2 份</b>；先用档位额度，用完才动包里的</li>
+        <li><b>数字人只算首次出片</b>：同一篇稿子改稿重做算新的一条（再扣 1 条）；我们做坏、平台审核不过，免费重做</li>
+      </ul>
+    </div>
+    <div class="tier-foot">开通 / 试用到期：加我微信（二维码在本页最下方）。不开第二层，第一层的写稿、出图、出片照样能用。</div>
+    <div class="fold-note">第二层这些活得在你电脑上真跑，靠一个小插件（执行器）：<b>怎么装、装完怎么挂线，点开下面这块</b>。三档都先免费试用 1 个月，开通后你账号那行就会长出<b>配对号</b>。</div>
+
+    <div class="fold" id="foldCard">
+      <div class="fold-hd sub-hd" id="foldHd">
+        <div>
+          <h3>扩展功能与安装<span class="sec">第二层那三件活怎么在你电脑上跑起来</span></h3>
+        </div>
+        <span class="fold-cue"><span class="chev">▾</span></span>
+      </div>
+      <div class="fold-body">
+      <h3 class="fold-sec">怎么安装<span class="sec">扩展功能不用单独装——装好执行器它就通了</span></h3>
+      <div class="gd-line"><div class="k">路线</div><div class="v">① 加我微信开通档位（二维码在本页最下方）→ ② 你账号那行长出<b>配对号</b>（一串码）→ ③ 把执行器装进浏览器 → ④ 填配对号挂线，变 <b>🟢 在线待命</b>。装在哪台电脑就在哪台跑，干活时别关那个浏览器。</div></div>
+      <div class="gd-line"><div class="k">一台挂一个</div><div class="v">同一个配对号只能挂一台；换电脑就在新机照下面三步装好、填同一个码，旧的那台自动作废。</div></div>
+
+      <h3 class="fold-sec">装执行器（三步）</h3>
+      <div class="steps">
+        <div class="step"><div class="no">1</div><div><div class="t">下载解压</div><div class="d">下载执行器包，解压到一个固定文件夹。</div></div></div>
+        <div class="step"><div class="no">2</div><div><div class="t">浏览器里加载</div><div class="d">地址栏输 <kbd>edge://extensions/</kbd>（Chrome 用 <kbd>chrome://extensions/</kbd>）→ 开发者模式 → 加载解压缩的扩展。</div></div></div>
+        <div class="step"><div class="no">3</div><div><div class="t">填配对号挂线</div><div class="d">点执行器图标 → 填<b>你的配对号</b> → 变成 🟢 在线待命 就是挂上了。<span class="dim">（配对号在起始页你账号那一行（头图下面），点一下能复制。）</span></div></div></div>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="setup.html">装执行器（三步）→</a>
+        <a class="btn ghost" href="executor.html">装好能干什么（按档位看哪几格开着）→</a>
+      </div>
+      <div class="foot"><b>提一句</b>：执行器只认服务器——服务器一熔断，它当场全停；不挂线不干活。它只干网页上派的活，全在你家浏览器里跑，<b>不碰你的账号密码</b>。常见问题（Edge 把扩展偷偷禁掉、配对号填不对）在「装执行器」那页。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 页尾：加我微信（开通、购买都找我本人） ── -->
+  <section class="card buy-card" id="m4">
+    <h2><span class="bno">③</span>想升级使用，请联系我<span class="sec">升级、开通、试用、装执行器，都找我本人</span></h2>
+    <p class="buy-lead">档位和价格在上面第二块。想升级档位、想开通、想先免费试用 1 个月，或者装执行器卡住了——<b>扫码加我本人</b>，我直接给你办，不用再找别人。</p>
+    <div class="buy-box">
+      <a class="buy-qr-wrap" href="assets/qr-wechat.png" target="_blank" rel="noopener" title="点开看大图">
+        <img class="buy-qr" src="assets/qr-wechat.png" alt="我的微信二维码，扫码加我开通">
+        <div class="buy-cap">扫码加我微信 · 点图可放大</div>
+      </a>
+      <div class="buy-info">
+        <div class="t">加我时备注「小红书」</div>
+        <p>我好知道你是从这页来的，开通和试用都优先给你办。</p>
+        <p><b>升级、开通档位、问价格、执行器装不上</b>——都直接找我本人，这一个微信就够。</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+<script>
+/* 看过＝按号记下（未登录记 :anon，换号重新弹）；出口按钮按来路改词改跳 */
+(async () => {
+  let me = null;
+  try { const j = await XhsGate.apiRaw('/api/auth/me', {}); me = j.account || null; } catch (_) {}
+  XhsGate.markSeen(me);
+  const from = new URLSearchParams(location.search).get('from') || '';
+  const exit = document.getElementById('gdExit');
+  if (exit && from === 'bar') { exit.textContent = '了解，开始进入系统。'; exit.href = 'popup.html?mode=big'; }
+
+  /* 框二顶部「你现在」：没登录保持未登录；登录了按账号档位；演示号单独标 */
+  if (me) {
+    const box = document.getElementById('tierNow');
+    if (box) {
+      const isDemo = me.kind === 'demo';
+      const label = isDemo ? ('演示号 · ' + (me.tier || '全功能')) : (me.tier || '免费');
+      const note = isDemo
+        ? '底子只读，写稿 / 出图 / 出片照常用'
+        : (label === '免费' ? '新号默认 · 送 50 次 AI 生成' : '已开通 · 到期前按这档放开功能');
+      box.textContent = '你现在：';
+      const b = document.createElement('b'); b.textContent = label;
+      const s = document.createElement('span'); s.textContent = note;
+      box.appendChild(b); box.appendChild(s);
+    }
+  }
+})();
+</script>
+<script>
+(function () {
+  function setTab(m) {
+    document.querySelectorAll('.mtab').forEach(function (b) { b.classList.toggle('active', b.dataset.mod === m); });
+    document.querySelectorAll('.mod-panel').forEach(function (p) { p.classList.toggle('show', p.dataset.mod === m); });
+  }
+  function flash(el) {
+    if (!el) return;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+  function applyMod(m) {
+    if (!m) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    if (m === 'note' || m === 'huoke' || m === 'ai') {
+      setTab(m);
+      var card = document.getElementById('m2');
+      card.classList.add('open');
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(function () { flash(card); }, 350);
+    } else if (m === 'account' || m === 'settings') {
+      /* 账号规划／设置页上不单独展开 → 落到框一闪一下 */
+      var c1 = document.getElementById('m1');
+      c1.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(function () { flash(c1); }, 350);
+    }
+  }
+
+  /* 三个签（在框一的「功能模块讲解」折叠里） */
+  document.querySelectorAll('.mtab').forEach(function (b) {
+    b.addEventListener('click', function () { setTab(b.dataset.mod); });
+  });
+
+  /* 折叠：整页同款——点折叠头开合（功能模块讲解 / 扩展功能与安装两块） */
+  document.querySelectorAll('.fold-hd').forEach(function (hd) {
+    hd.addEventListener('click', function () {
+      var card = hd.closest('.fold');
+      if (card) card.classList.toggle('open');
+    });
+  });
+
+  /* 顶部导航：滚到哪框，哪框亮起 */
+  (function () {
+    var links = [].slice.call(document.querySelectorAll('#gnav a'));
+    var blocks = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+    function onScroll() {
+      var y = window.pageYOffset + 100, cur = 0;
+      blocks.forEach(function (el, i) { if (el && el.offsetTop <= y) cur = i; });
+      links.forEach(function (a, i) { a.classList.toggle('on', i === cur); });
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  })();
+
+  /* 带页进入：工作台点「❓ 新手引导」时带的 ?mod= 一进来就生效 */
+  try {
+    var mod0 = new URLSearchParams(location.search).get('mod') || '';
+    if (mod0) setTimeout(function () { applyMod(mod0); }, 150);
+  } catch (_) {}
+})();
+</script>
+</body>
+</html>

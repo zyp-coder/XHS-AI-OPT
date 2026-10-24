@@ -18,6 +18,7 @@
 
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
   .col{border:1.5px solid var(--line);border-radius:16px;padding:16px 18px 15px;}
+  .col.wide{grid-column:1 / -1;}
   .chead{display:flex;align-items:baseline;gap:9px;}
   .chead .no{font-size:20px;font-weight:800;color:var(--red);}
   .chead .mname{font-size:19px;font-weight:800;color:var(--ink);}
@@ -47,13 +48,18 @@
 <div class="sheet">
   <div class="kicker">AI雕兄 · 小红书评论区获客系统</div>
   <div class="title">功能总览</div>
-  <div class="sub">四个模块，一条链：发内容 <i>→</i> 捞客户 <i>→</i> 跟客户 <i>→</i> 管账号</div>
+  <div class="sub">四个模块一条链：发内容 <i>→</i> 捞客户 <i>→</i> 跟客户 <i>→</i> 管账号 <i>＋</i> 设置管系统本身</div>
 
   <div class="cols">
     <div class="col">
       <div class="chead"><span class="no">①</span><span class="mname">发笔记</span></div>
-      <div class="crole">您要发的，就 3 类，各有各的活</div>
+      <div class="crole">您要发的，就 4 类，各有各的活</div>
       <div class="fs">
+        <div class="it">
+          <div class="t">IP 玩法 <span class="hl">＝立人设</span></div>
+          <div class="d">AI 按您的人设配好「主题 × 方式」——一次编 3 段故事给您挑，挑完直接出稿；把账号人设立住，粉丝认的是您这个人。</div>
+          <div class="cap">能出：图文</div>
+        </div>
         <div class="it">
           <div class="t">知识笔记 <span class="hl">＝立专业</span></div>
           <div class="d">拿您的知识库讲一条——怎么选、怎么避坑、多少钱算合理；让搜这类问题的客户先搜到您、先信您。</div>
@@ -119,7 +125,7 @@
     </div>
 
     <div class="col">
-      <div class="chead"><span class="no">④</span><span class="mname">账号诊断与配置</span></div>
+      <div class="chead"><span class="no">④</span><span class="mname">账号规划</span></div>
       <div class="crole">先把您的号照一遍</div>
       <div class="fs">
         <div class="it">
@@ -128,6 +134,13 @@
           <div class="cap">交您四样：人设方向 / 笔记结构 / 选题清单 / 发布节奏</div>
         </div>
         <div class="f"><b>再配置</b>——人设（说话风格）· 卖点库（卖什么、凭什么）· 知识库（只引您的真资料）· 内容规划（一周几篇怎么搭）。</div>
+      </div>
+    </div>
+
+    <div class="col wide">
+      <div class="chead"><span class="no">⑤</span><span class="mname">设置</span><span class="crole">系统级的东西，配一次长期用</span></div>
+      <div class="fs">
+        <div class="f"><b>产品 / 租户</b> · <b>AI 模型配置</b>（填自己的 Key 接着用）· <b>账号安全</b> · <b>界面主题</b> · <b>整机备份</b>。</div>
       </div>
     </div>
   </div>

@@ -1,7 +1,7 @@
 // demo KB 录入页 + v-audit 自检（mock DOM，验证 demo 函数逻辑）
 // 覆盖：_diagKbParseTagsDemo / _diagKbValidateEditDemo / npAuditTopicsAlgoDemo
 
-const KB_CATEGORIES = ['产品介绍', '玩法与机制', '数据·成本', '客户痛点', '避坑经验', '个人经历', '使用技巧', '笔记架构'];
+const KB_CATEGORIES = ['产品介绍', '玩法与机制', '数据·成本', '顾客痛点', '避坑经验', '个人经历', '使用技巧', '笔记架构'];
 const KB_DEFAULT = '默认';
 
 // === mock DOM ===
@@ -91,8 +91,8 @@ const KB_ITEMS = [
   /* 数据·成本 */
   { id: 'k_data_1', title: '质保卡到底保什么', cat: '数据·成本' },
   { id: 'k_data_2', title: '楼上漏水维修费用谁出', cat: '数据·成本' },
-  /* 客户痛点 */
-  { id: 'k_pain_1', title: '楼上漏水到底该谁出钱', cat: '客户痛点' },
+  /* 顾客痛点 */
+  { id: 'k_pain_1', title: '楼上漏水到底该谁出钱', cat: '顾客痛点' },
   /* 避坑经验 */
   { id: 'k_pit_1', title: '国标卷材与非标的差异', cat: '避坑经验' },
   { id: 'k_pit_2', title: '工人最容易跳过的 3 道工序', cat: '避坑经验' },
@@ -221,11 +221,11 @@ pass('数据·成本：pub=1', data.pub === 1);
 pass('数据·成本：avgDay＝158/19', Math.abs(data.avgDay - 158 / 19) < 1e-9);
 pass('数据·成本：avgDay 显示 8.3', data.avgDay.toFixed(1) === '8.3');
 
-// 客户痛点：已归档 + 已发都挂过 → 已发优先，表现＝903 ÷ 10 天
-const pain = findC('客户痛点');
-pass('客户痛点：全讲过', pain.conclusion === '全讲过');
-pass('客户痛点：pub=1', pain.pub === 1);
-pass('客户痛点：avgDay≈90.3（已发优先于已归档）', Math.abs(pain.avgDay - 90.3) < 1e-9);
+// 顾客痛点：已归档 + 已发都挂过 → 已发优先，表现＝903 ÷ 10 天
+const pain = findC('顾客痛点');
+pass('顾客痛点：全讲过', pain.conclusion === '全讲过');
+pass('顾客痛点：pub=1', pain.pub === 1);
+pass('顾客痛点：avgDay≈90.3（已发优先于已归档）', Math.abs(pain.avgDay - 90.3) < 1e-9);
 
 // 避坑经验：国标非标挂已发篇2 → 有空白 + 有表现
 const pitfall = findC('避坑经验');

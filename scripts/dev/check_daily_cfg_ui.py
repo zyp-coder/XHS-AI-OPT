@@ -9,6 +9,7 @@ import sys
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -32,7 +33,7 @@ with sync_playwright() as p:
     pg = ctx.new_page()
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
-    pg.goto(f'chrome-extension://{eid}/popup.html?mode=big&tabId=0')
+    goto_big(pg, f'chrome-extension://{eid}/popup.html?mode=big&tabId=0')
     pg.wait_for_timeout(1500)
     # 新 profile 没配 AI 时会盖一层首启面板（挡住点击）→ 先关掉
     try:
@@ -43,9 +44,12 @@ with sync_playwright() as p:
         pass
     pg.click('#tabHuoke')
     pg.wait_for_timeout(300)
-    pg.click('#tabTaskCfg')
+    # 任务配置已并进「队列 → ⚙️ 配置」，日常浏览是一张可展开的卡（2026-10-24）
+    pg.click('#tabQueue')
     pg.wait_for_timeout(600)
-    pg.click('#drainCfgContent [data-sec="daily"]')
+    pg.click('#queueTabs .q-tab[data-qtab="config"]')
+    pg.wait_for_timeout(800)
+    pg.click('#drainCfgContent details.cfgcard[data-cfgsec="daily"] > summary')
     pg.wait_for_selector('#dbStatus', timeout=8000)
     pg.wait_for_timeout(400)
 
@@ -58,7 +62,8 @@ with sync_playwright() as p:
         assert n not in pg.inner_text('#sxScanCfgPanel'), '这段说明本该收进问号: ' + n
     pg.screenshot(path=str(OUT / 'panel.png'))
 
-    pg.hover('#sxScanCfgPanel .qhelp')
+    # 第一颗问号可能在折叠块里（收着＝点不到），挑一颗露在外面的
+    pg.locator('#sxScanCfgPanel .qhelp:visible').first.hover()
     pg.wait_for_timeout(300)
     pg.screenshot(path=str(OUT / 'hover.png'))
 
@@ -72,13 +77,14 @@ with sync_playwright() as p:
     pg.dispatch_event('#dbDetRound input[data-dbn="perRound"]', 'change')
     pg.wait_for_timeout(500)
     assert pg.inner_text('#dbSumRound').startswith('4 篇/轮'), '摘要没跟着刷新: ' + pg.inner_text('#dbSumRound')
-    pg.click('#drainCfgContent [data-sec="kw"]')
+    # 切到「跑什么」再切回「日常浏览」：三张卡一次只开一张，折叠块状态还在
+    pg.click('#drainCfgContent details.cfgcard[data-cfgsec="run"] > summary')
     pg.wait_for_timeout(400)
-    pg.click('#drainCfgContent [data-sec="daily"]')
+    pg.click('#drainCfgContent details.cfgcard[data-cfgsec="daily"] > summary')
     pg.wait_for_selector('#dbStatus', timeout=8000)
     pg.wait_for_timeout(400)
-    assert pg.eval_on_selector('#dbDetRound', 'e => e.open'), '切 tab 回来「一轮怎么刷」被收起了'
-    assert pg.eval_on_selector('#dbDetSocial', 'e => e.open'), '切 tab 回来「顺手互动」被收起了'
+    assert pg.eval_on_selector('#dbDetRound', 'e => e.open'), '切回来「一轮怎么刷」被收起了'
+    assert pg.eval_on_selector('#dbDetSocial', 'e => e.open'), '切回来「顺手互动」被收起了'
     assert pg.inner_text('#dbSumRound').startswith('4 篇/轮'), '重渲染后摘要没重算: ' + pg.inner_text('#dbSumRound')
     print('摘要行:', pg.inner_text('#dbDetRound > summary').replace('\n', ' '), '|', pg.inner_text('#dbDetSocial > summary').replace('\n', ' '))
 

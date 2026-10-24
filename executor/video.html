@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-exec-no-strip="1">
+<head>
+<meta charset="utf-8">
+<title>字效编辑器 · 小红书获客系统</title>
+<link rel="stylesheet" href="ui.css">
+<link rel="stylesheet" href="lib/video/video.css">
+<script src="hand-mode.js"></script>
+<script src="hand-cover.js"></script>
+<script src="theme.js"></script>
+</head>
+<!-- 这一页是「↗ 在新标签页打开」那一台：外壳（顶栏／工作流条／底栏）与里面的稿／幕／预览
+     都由 video.js 现搭在 #filmPane 里（跟「发笔记」那页里嵌的同一份零件、同一份样式），
+     这一页只负责把宿主撑起来：body.film-page 整屏高，#filmPane 不带 inline＝自己画一整套。
+     公网版多出的一座桥＝出片这活派给执行器；data-exec-no-strip 让桥只留下单口，不摆状态带、不轮询。
+     零件清单与样式口径请看 lib/video/video.css 顶上那段说明。 -->
+<body class="film-page">
+<div id="filmPane"></div>
+
+<script src="lib/video/mp4-muxer.js"></script>
+<script src="lib/video/fonts.js"></script>
+<script src="lib/video/voices.js"></script>
+<script src="lib/video/styles.js"></script>
+<script src="lib/video/scenes.js"></script>
+<script src="lib/video/tts-edge.js"></script>
+<script src="lib/video/audio.js"></script>
+<script src="lib/video/encoder.js"></script>
+<script src="lib/video/recorder.js"></script>
+<script src="video.js"></script>
+</body>
+</html>

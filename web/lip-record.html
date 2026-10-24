@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>对着镜头念 · 一句一屏 · 小红书助手</title>
+<!-- ============================================================
+  口播「自己念」那一档的交料页（/lip-record）——2026-10-19 三档出口改版
+  ------------------------------------------------------------
+  干什么：这一篇的口播稿一句一屏，看着提词对着镜头录视频。
+          录完这一句点停 → 立刻传这一句上云端 → 点「✓ 这句行」才解锁下一句。
+          全录齐了云端正按顺序直接串成一条片子（不重新编码），串好落进这一篇的代发区。
+          这一档不进工单台、不占老板每天接单额度。
+  旧走法：route=voice 的老单（一段段录声音）在这一页还能接着念完；
+          route=avatar（交照片那张单）不用这一页，照片在笔记里那颗「⬆ 交照片」传。
+  怎么开：从公网那台的笔记里点「🎥 拿逐句录的链接」跳过来，链接长这样：
+          /lip-record.html?job=lip_xxx&t=口令 —— 只认单上口令，手机不用登录。
+          关了再开接着录，录过的不丢。
+  打的口：POST /api/lip/feed {id,t} 取本单；
+          POST /api/lip/put?job=&part=seg&i=&mime=&t= 交一句视频（原始字节，一句 60MB 封顶）；
+          GET  /api/lip/file/<id>?p=seg:N&t= 看某一句；
+          GET  单上 takeUrl（/api/lip/out/<id>?t=）存串好的成片。
+  ============================================================ -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --ok-l: #e9f6f1; --err: #c62828; --err-l: #fdeeee;
+    --warn: #c77700; --warn-l: #fdf3e2;
+    --brand: #0d9488; --brand-d: #0a7a70; --brand-l: #eef8f7;
+  }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 18px 14px 60px; }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; }
+  h1 { font-size: 18px; font-weight: 700; }
+  .sub { color: var(--ink2); font-size: 13px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--brand-l); color: var(--brand-d); }
+  .pill.wait { background: var(--warn-l); color: var(--warn); }
+  .pill.done { background: var(--ok-l); color: var(--ok); }
+  .pill.bad { background: var(--err-l); color: var(--err); }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .sp { margin-left: auto; }
+  .btn { display: inline-block; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 10px; padding: 8px 14px; font-size: 14px; font-family: inherit; cursor: pointer; }
+  .btn:hover { border-color: var(--brand); color: var(--brand-d); }
+  .btn.pri { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.pri:hover { background: var(--brand-d); }
+  .btn.sm { padding: 5px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .rec { display: block; width: 100%; border: none; border-radius: 14px; padding: 17px; background: var(--brand); color: #fff; font-size: 17px; font-weight: 700; font-family: inherit; cursor: pointer; }
+  .rec.busy { background: var(--err); }
+  .ok { display: block; width: 100%; border: none; border-radius: 14px; padding: 15px; margin-top: 10px; background: var(--ok); color: #fff; font-size: 16px; font-weight: 700; font-family: inherit; cursor: pointer; }
+  .ok:disabled { opacity: .4; cursor: not-allowed; }
+  .stepline { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .stepline b { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--line); background: #fff; color: var(--ink3);
+    font-size: 12.5px; font-weight: 600; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .stepline b.got { background: var(--ok-l); border-color: #bfe3d5; color: var(--ok); }
+  .stepline b.cur { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 0 0 3px var(--brand-l); }
+  .bigtext { background: var(--brand-l); border-radius: 14px; padding: 22px 20px; font-size: 25px; line-height: 1.55; font-weight: 700; letter-spacing: .3px; margin-bottom: 14px; }
+  .note { background: var(--brand-l); color: #0b4f48; border-radius: 12px; padding: 11px 14px; font-size: 13px; margin-bottom: 12px; }
+  .note.warn { background: var(--warn-l); color: #8a5200; }
+  .note.err { background: var(--err-l); color: #8f1d1d; }
+  .flow { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: var(--ink3); }
+  .flow i { font-style: normal; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: #fff; }
+  .flow i.on { border-color: var(--brand); background: var(--brand-l); color: var(--brand-d); font-weight: 700; }
+  .flow i.did { border-color: #bfe3d5; background: var(--ok-l); color: var(--ok); font-weight: 700; }
+  .seg { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; border-top: 1px dashed var(--line); font-size: 14px; }
+  .seg .no { flex: none; width: 24px; height: 24px; border-radius: 7px; background: var(--brand-l); color: var(--brand-d); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+  .seg .no.got { background: var(--ok); color: #fff; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--brand); color: #fff; padding: 9px 18px; border-radius: 999px; font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: 1; }
+  .toast.bad { background: var(--err); }
+  #player { display: none; width: 100%; max-height: 56vh; background: #000; border-radius: 12px; margin-top: 10px; }
+  #cam { display: none; width: 100%; max-height: 56vh; background: #111; border-radius: 12px; margin-top: 10px; object-fit: contain; }
+  #upline { font-size: 13px; color: var(--brand-d); margin-top: 10px; min-height: 1px; }
+  #gate .btn { margin-top: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="row">
+      <h1 id="title">对着镜头念</h1>
+      <span class="sp"></span>
+      <span class="pill" id="statePill">—</span>
+    </div>
+    <div class="sub" id="line1">正在拿这一单…</div>
+  </div>
+
+  <div id="gate" class="card" style="display:none;">
+    <h1>这链接打不开这一单</h1>
+    <div class="sub" id="gateWhy" style="margin-top:6px;"></div>
+    <button class="btn pri" onclick="location.reload()">刷新再试</button>
+  </div>
+
+  <div id="main" style="display:none;">
+    <div id="banner"></div>
+    <div class="flow" id="flow"></div>
+
+    <div class="card">
+      <div class="row" style="margin-bottom:10px;">
+        <span class="sub">第 <b id="curNo">1</b> <span id="unitA">句</span> / 共 <span id="totNo">-</span> <span id="unitB">句</span></span>
+        <span class="sp"></span>
+        <button class="btn sm" id="prevBtn">← 上一句</button>
+        <button class="btn sm" id="nextBtn">下一句 →</button>
+      </div>
+      <div class="stepline" id="steps"></div>
+      <div class="bigtext" id="segText">—</div>
+      <button class="rec" id="recBtn">🎥 录这一句</button>
+      <video id="cam" autoplay playsinline muted></video>
+      <div class="sub" id="uptip"></div>
+      <button class="ok" id="okBtn" style="display:none;" disabled>✓ 这句行，念下一句</button>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn" id="playBtn" disabled>▶ 看这一句</button>
+        <button class="btn" id="againBtn" disabled>🔁 重录</button>
+        <button class="btn sm" id="fileBtn">📁 手机相机拍好了，选文件传</button>
+        <input type="file" id="fileInput" accept="video/*" capture="user" style="display:none;">
+      </div>
+      <video id="player" controls playsinline></video>
+      <div class="sub" id="footTip" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <b style="font-size:15px;">整篇稿子</b>
+        <span class="sp"></span>
+        <span class="sub" id="lackLine">—</span>
+      </div>
+      <div id="seglist" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="card" id="outCard" style="display:none;">
+      <b style="font-size:15px;">🎬 片子好了</b>
+      <div class="sub" style="margin:6px 0 10px;">客户机上线会自动取回去发；想现在存到手机也行。</div>
+      <a class="btn pri" id="takeBtn" download>⬇ 存这一条成片</a>
+    </div>
+
+    <div class="card" id="partsCard" style="display:none;">
+      <b style="font-size:15px;">📥 一句一句存</b>
+      <div class="sub" style="margin:6px 0 8px;">云端没串成一条的时候用：每一句单独存下来，自己去剪映按顺序拼一下就行。</div>
+      <div class="row" id="parts"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var JOB = qs.get('job') || '', TK = qs.get('t') || '';
+  var $ = function (s) { return document.querySelector(s); };
+  var job = null, cur = 0, first = true;
+  var isSelf = false;                  // ① 自己对着镜头念（一句一段视频）；false＝旧的「一段段录音」那类单
+  var urls = {};                       // idx -> 本句/本段试听地址（本地录的用 blob，云端来的用 file 口）
+  var rec = { on: false, mr: null, chunks: [], stream: null, t0: 0, tick: null };
+
+  function unit() { return isSelf ? '句' : '段'; }
+  function verb() { return isSelf ? '录' : '念'; }
+
+  function toast(msg, bad) {
+    var t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (bad ? ' bad' : '');
+    clearTimeout(t._k); t._k = setTimeout(function () { t.className = 'toast'; }, 2600);
+  }
+  function api(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ id: JOB, t: TK }, body || {})) })
+      .then(function (r) { return r.json(); });
+  }
+  function fileUrl(p) { return '/api/lip/file/' + JOB + '?p=' + encodeURIComponent(p) + '&t=' + TK; }
+  function size(b) { var n = Number(b) || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB'; }
+
+  function dead(why) {
+    $('#gate').style.display = ''; $('#main').style.display = 'none';
+    $('#gateWhy').textContent = why; $('#line1').textContent = why;
+  }
+
+  function paintState() {
+    var s = job.state, p = $('#statePill');
+    p.textContent = isSelf ? ({ await_mat: '还没录完', ready: '都录好了 · 正在串', delivered: '片好了 · 正在送回', taken: '已取回', canceled: '已取消' }[s] || job.stateLabel) : job.stateLabel;
+    p.className = 'pill' + (s === 'ready' || s === 'making' ? ' wait' : (s === 'delivered' || s === 'taken' ? ' done' : (s === 'rejected' || s === 'canceled' ? ' bad' : '')));
+    if (isSelf) {
+      $('#line1').textContent = '共 ' + job.segCount + ' 句' +
+        (job.segLack > 0 ? ' · 还差 ' + job.segLack + ' 句' : (job.trackSecs ? ' · 已经串成一条 ' + job.trackSecs + ' 秒' : ' · 句数齐了，云端正按顺序串'));
+    } else {
+      var due = new Date(job.dueAt), hour = ('0' + due.getHours()).slice(-2);
+      $('#line1').textContent = job.routeLabel + ' · ' + job.segCount + ' 段' +
+        (job.segLack > 0 ? ' · 还差 ' + job.segLack + ' 段' : (job.trackSecs ? ' · 已接成一条音轨 ' + job.trackSecs + ' 秒' : ' · 段数齐了，正在接音轨')) +
+        ' · 说好明天 ' + hour + ':00 前片回来' + (job.overdue ? '（已经过了这个点，我们优先补）' : '');
+    }
+    var b = '';
+    if (isSelf) {
+      if (s === 'rejected') b = '<div class="note err">要补：' + (job.rejectWhy || '按他说的原因') + '。重录那一句就够，别的不用动。</div>';
+      else if (s === 'await_mat') b = '<div class="note">手机架稳、正对脸，看着大字念这一句。点「🎥 录这一句」开始，念完点停 —— 停了就自动传这一句，传好点绿色的「✓ 这句行」才跳下一句。</div>';
+      else if (s === 'ready') b = job.selfErr
+        ? '<div class="note err">' + job.selfErr + '</div>'
+        : '<div class="note">句数齐了，云端正按顺序把各句直接串起来（不重新编码），串好就落进这一篇的代发区。</div>';
+      else if (s === 'delivered' || s === 'taken') b = '<div class="note" style="background:var(--ok-l);color:var(--ok);">片好了' + (s === 'taken' ? '，客户机已经取走了' : '，正送回客户机') + '——到点位那天会自动发出去。</div>';
+      else if (s === 'canceled') b = '<div class="note warn">这一张单已经取消了。</div>';
+    } else if (s === 'rejected') b = '<div class="note err">要补料：' + (job.rejectWhy || '按他说的原因') + '。重录那一段就够，别的不用动。</div>';
+    else if (s === 'await_mat') b = '<div class="note">念完一段传一段，全传齐了这边就开工。</div>';
+    else if (s === 'ready') b = '<div class="note">料齐了，等你那边排上做片。做好了片子会送回客户机。</div>';
+    else if (s === 'making') b = '<div class="note">已经在做了。明天这个时候前后就能拿到片。</div>';
+    else if (s === 'delivered' || s === 'taken') b = '<div class="note" style="background:var(--ok-l);color:var(--ok);">片好了' + (s === 'taken' ? '，客户机已经取走了' : '，正送回客户机') + '——到点位那天会自动发出去。</div>';
+    else if (s === 'canceled') b = '<div class="note warn">这一单已经取消了。</div>';
+    $('#banner').innerHTML = b;
+    paintFlow(s);
+    $('#outCard').style.display = (s === 'delivered' || s === 'taken') ? '' : 'none';
+    if (job.takeUrl) $('#takeBtn').setAttribute('href', job.takeUrl);
+    $('#partsCard').style.display = (isSelf && job.selfErr) ? '' : 'none';
+    paintParts();
+  }
+
+  /** 云端那三步走到哪儿了（自己念那一档才摆） */
+  function paintFlow(s) {
+    var box = $('#flow');
+    if (!isSelf) { box.innerHTML = ''; return; }
+    var step1 = s === 'await_mat' ? 'cur' : 'did';
+    var step2 = s === 'delivered' || s === 'taken' ? 'did' : (s === 'ready' ? 'cur' : '');
+    var step3 = s === 'taken' ? 'did' : (s === 'delivered' ? 'cur' : '');
+    box.innerHTML = '<i class="' + (step1 === 'did' ? 'did' : step1 === 'cur' ? 'on' : '') + '">① 各句录齐 ' + (job.segCount - job.segLack) + '/' + job.segCount + '</i>' +
+      '<i class="' + (step2 === 'did' ? 'did' : step2 === 'cur' ? 'on' : '') + '">② 云端按顺序串起来</i>' +
+      '<i class="' + (step3 === 'did' ? 'did' : step3 === 'cur' ? 'on' : '') + '">③ 落进这一篇的代发区</i>';
+  }
+  function paintParts() {
+    var box = $('#parts'); if (!box || !job.segHas) return;
+    box.innerHTML = '';
+    job.segHas.forEach(function (has, i) {
+      if (!has) return;
+      var a = document.createElement('a');
+      a.className = 'btn sm'; a.href = fileUrl('seg:' + i); a.download = '';
+      a.textContent = '第' + (i + 1) + unit();
+      box.appendChild(a);
+    });
+  }
+
+  function paintSteps() {
+    var box = $('#steps'); box.innerHTML = '';
+    job.segs.forEach(function (s, i) {
+      var b = document.createElement('b');
+      b.textContent = i + 1;
+      if (got(i)) b.className = 'got';
+      if (i === cur) b.className = 'cur';
+      b.onclick = function () { go(i); };
+      box.appendChild(b);
+    });
+    $('#unitA').textContent = unit(); $('#unitB').textContent = unit();
+    $('#curNo').textContent = cur + 1;
+    $('#totNo').textContent = job.segCount;
+    $('#segText').textContent = job.segs[cur] || '（这一单没有分段）';
+    $('#prevBtn').disabled = cur === 0;
+    $('#nextBtn').disabled = cur >= job.segs.length - 1;
+    var btn = $('#recBtn');
+    if (!rec.on) {
+      btn.textContent = (isSelf ? '🎥 ' : '🎤 ') + (got(cur) ? '重录这一' + unit() : (isSelf ? '录这一句' : '录这一段'));
+      btn.className = 'rec';
+    }
+    $('#playBtn').disabled = !got(cur);
+    $('#playBtn').textContent = (isSelf ? '▶ 看这一句' : '▶ 听这一段');
+    $('#againBtn').disabled = !got(cur) || rec.on;
+    var ok = $('#okBtn');
+    ok.style.display = isSelf ? '' : 'none';
+    ok.disabled = !(isSelf && got(cur) && !rec.on);
+    ok.textContent = cur >= job.segs.length - 1 ? '✓ 这句行（最后一句，等云端串片）' : '✓ 这句行，念下一句';
+    $('#lackLine').textContent = job.segLack > 0 ? '还差 ' + job.segLack + ' ' + unit() : '全部录完';
+  }
+
+  function paintList() {
+    var box = $('#seglist'); box.innerHTML = '';
+    job.segs.forEach(function (s, i) {
+      var d = document.createElement('div'); d.className = 'seg';
+      d.innerHTML = '<span class="no' + (got(i) ? ' got' : '') + '">' + (i + 1) + '</span>' +
+        '<span style="flex:1;">' + s + '</span>' +
+        '<button class="btn sm" data-i="' + i + '">' + (got(i) ? '看过' : '去录') + '</button>';
+      box.appendChild(d);
+    });
+    box.querySelectorAll('button').forEach(function (b) {
+      b.onclick = function () { go(Number(b.dataset.i)); window.scrollTo(0, 0); };
+    });
+  }
+
+  function got(i) { return !!((job.segHas || [])[i]); }
+  /** 第一句没录的格子＝能走到的最远一站：没点「这句行」跳不到后头去 */
+  function frontier() {
+    for (var i = 0; i < job.segs.length; i++) if (!got(i)) return i;
+    return job.segs.length;
+  }
+  function go(i) {
+    if (rec.on) { toast('这句还在录呢，先点停', true); return; }
+    if (isSelf && i > frontier()) { toast('先把第 ' + (frontier() + 1) + ' 句录了、点「✓ 这句行」——下一句才解锁', true); return; }
+    cur = Math.max(0, Math.min(job.segs.length - 1, i));
+    $('#player').style.display = 'none';
+    paintSteps();
+  }
+
+  function refresh(keepLocal) {
+    return api('/api/lip/feed', {}).then(function (r) {
+      if (!r.ok) { dead(r.error || '拿不到这一单'); return; }
+      job = r.job;
+      if (!job.segs || !job.segs.length) {
+        dead(job.route === 'avatar' ? '这一张单交的是正脸照，不用这一页——回笔记里点那颗「⬆ 交照片」传上来就行。' : '这一单没有分句，打不开录页');
+        return;
+      }
+      isSelf = job.route === 'self';
+      if (first) {
+        first = false; $('#gate').style.display = 'none'; $('#main').style.display = '';
+        $('#title').textContent = isSelf ? '对着镜头念' : '一段段念';
+        document.title = (isSelf ? '对着镜头念 · 一句一屏' : '念口播稿') + ' · 小红书助手';
+        $('#fileBtn').textContent = isSelf ? '📁 手机相机拍好了，选文件传' : '📁 手机自带的录音机录好了，选文件传';
+        $('#fileInput').setAttribute('accept', isSelf ? 'video/*' : 'audio/*,video/*');
+        $('#footTip').textContent = isSelf
+          ? '录坏了、卡壳了都不碍事，点「🔁 重录」再来一遍，后录的盖掉前面那一版。手机实在开不了录像——回笔记里改选「发工单」，那张单只要一张正脸照。'
+          : '念错了、卡壳了都不碍事，点「重录」再来一遍，后录的盖掉前录的。一段录顺了再往下走。';
+      }
+      if (!keepLocal) urls = {};
+      paintState(); paintSteps(); paintList();
+    }).catch(function (e) { if (first) dead('连不上云端这台：' + e.message); });
+  }
+
+  /* ── 录像 / 录音：自己念那一档收画面，旧走法只收声音 ── */
+  function start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      toast('这个浏览器不能录，用底下「选文件传」那条', true); return;
+    }
+    $('#recBtn').disabled = true;
+    var want = isSelf ? { video: { facingMode: 'user' }, audio: true } : { audio: true };
+    navigator.mediaDevices.getUserMedia(want).then(function (stream) {
+      rec.stream = stream; rec.chunks = [];
+      var mimes = isSelf
+        ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4', '']
+        : ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', ''];
+      var mr = null;
+      for (var i = 0; i < mimes.length; i++) {
+        try { mr = mimes[i] ? new MediaRecorder(stream, { mimeType: mimes[i] }) : new MediaRecorder(stream); break; }
+        catch (_) { mr = null; }
+      }
+      if (!mr) { stopStream(); $('#recBtn').disabled = false; toast(isSelf ? '这台机器录不了视频，改用「选文件传」' : '这台机器录不了音，改用「选文件传」', true); return; }
+      if (isSelf) { var c = $('#cam'); c.srcObject = stream; c.style.display = ''; }
+      rec.mr = mr;
+      mr.ondataavailable = function (e) { if (e.data && e.data.size) rec.chunks.push(e.data); };
+      mr.onstop = function () {
+        var type = (mr.mimeType || (isSelf ? 'video/webm' : 'audio/webm')).split(';')[0];
+        var blob = new Blob(rec.chunks, { type: type });
+        stopStream();
+        var floor = isSelf ? 20000 : 1200;
+        if (blob.size < floor) { toast(isSelf ? '这句太短了，没收到画面——再录一次' : '这段太短了，没收到声音——再录一次', true); paintSteps(); return; }
+        if (isSelf && blob.size > 60 * 1048576) { toast('这一句 ' + size(blob.size) + '，超过 60MB——这句太长念不动，砍短一句重录', true); paintSteps(); return; }
+        upload(blob, cur, type, isSelf ? '' : '这段录好了，正在传');
+      };
+      mr.start();
+      rec.on = true; rec.t0 = Date.now();
+      var btn = $('#recBtn'); btn.className = 'rec busy'; btn.disabled = false;
+      clearInterval(rec.tick);
+      rec.tick = setInterval(function () { btn.textContent = '● 正在录 ' + Math.round((Date.now() - rec.t0) / 1000) + ' 秒 · 念完点停'; }, 300);
+      btn.textContent = '● 正在录，念完点停';
+    }).catch(function () {
+      $('#recBtn').disabled = false;
+      toast(isSelf ? '没给摄像头权限：点地址栏的小锁允许后刷新；实在不行用相机 App 拍好再选文件传' : '没给麦克风权限：点地址栏的小锁允许后刷新，或者用录音机 App 录好再选文件传', true);
+    });
+  }
+  function stop() {
+    if (rec.mr && rec.on) { try { rec.mr.stop(); } catch (_) {} }
+  }
+  function stopStream() {
+    clearInterval(rec.tick); rec.on = false;
+    var c = $('#cam'); c.style.display = 'none'; try { c.srcObject = null; } catch (_) {}
+    if (rec.stream) { rec.stream.getTracks().forEach(function (t) { t.stop(); }); rec.stream = null; }
+    var btn = $('#recBtn'); btn.className = 'rec';
+  }
+
+  function upload(blob, i, mime, okMsg) {
+    var isVid = /^video\//i.test(mime);
+    var ext = isVid ? (/mp4/i.test(mime) ? 'mp4' : /quicktime|mov/i.test(mime) ? 'mov' : /matroska/i.test(mime) ? 'mkv' : 'webm')
+      : (/mp4|aac/i.test(mime) ? 'm4a' : /mpeg|mp3/i.test(mime) ? 'mp3' : /wav/i.test(mime) ? 'wav' : /ogg/i.test(mime) ? 'ogg' : 'webm');
+    var btn = $('#recBtn'); btn.disabled = true; btn.textContent = '正在传…';
+    $('#uptip').textContent = '本句 ' + size(blob.size) + ' · 正在传云端…（跨境慢，所以一句录完就传这一句）';
+    fetch('/api/lip/put?job=' + JOB + '&part=seg&i=' + i + '&mime=' + encodeURIComponent(mime) + '&name=' + encodeURIComponent('第' + (i + 1) + unit() + '.' + ext) + '&t=' + TK,
+      { method: 'POST', headers: { 'Content-Type': mime }, body: blob })
+      .then(function (r) { return r.json(); })
+      .then(function (out) {
+        btn.disabled = false; $('#uptip').textContent = '';
+        if (!out.ok) { toast(out.error || '没传上来，再试一次', true); paintSteps(); return; }
+        if (urls[i] && urls[i].indexOf('blob:') === 0) URL.revokeObjectURL(urls[i]);
+        urls[i] = URL.createObjectURL(blob);
+        job = out.job;
+        paintState(); paintList();
+        if (!isSelf && cur < job.segs.length - 1) cur++;
+        paintSteps();
+        if (isSelf) {
+          if (job.segLack > 0) toast('这句传好了——点绿色的「✓ 这句行」再念下一句');
+          else toast('最后一句也传好了，云端正按顺序串片（一般几十秒）');
+        } else {
+          toast(okMsg + (job.segLack > 0 ? '，还差 ' + job.segLack + ' 段' : '，全念完了，这边接成一条音轨'));
+        }
+        if (job.segLack === 0 && job.state === 'ready' && !job.trackSecs) setTimeout(function () { refresh(true); }, 6000);
+      })
+      .catch(function (e) { btn.disabled = false; $('#uptip').textContent = ''; toast('传不上去：' + e.message, true); });
+  }
+
+  /* ── 看/听已录的 ── */
+  function play() {
+    if (!got(cur)) return;
+    var p = $('#player');
+    p.src = urls[cur] || fileUrl('seg:' + cur);
+    p.style.display = ''; p.play();
+  }
+
+  $('#recBtn').onclick = function () { rec.on ? stop() : start(); };
+  $('#againBtn').onclick = function () { go(cur); start(); };
+  $('#okBtn').onclick = function () {
+    if (!got(cur)) { toast('这一句还没录好——先点「🎥 录这一句」', true); return; }
+    if (cur >= job.segs.length - 1) { toast('都录完了，云端正串片；串好这一篇的代发区就有片', false); refresh(true); return; }
+    go(cur + 1); window.scrollTo(0, 0);
+  };
+  $('#playBtn').onclick = play;
+  $('#prevBtn').onclick = function () { go(cur - 1); };
+  $('#nextBtn').onclick = function () { go(cur + 1); };
+  $('#fileBtn').onclick = function () { $('#fileInput').click(); };
+  $('#fileInput').onchange = function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    if (f.size > 60 * 1048576) { toast('这个文件超过 60MB，剪短一点再传', true); return; }
+    upload(f, cur, f.type || (isSelf ? 'video/webm' : 'audio/webm'), '文件收到了');
+    this.value = '';
+  };
+
+  if (!JOB || !TK) { dead('链接里少了单子号或口令——回笔记里重新点「🎥 拿逐句录的链接」'); }
+  else {
+    refresh().catch(function (e) { dead('连不上云端这台：' + e.message); });
+    setInterval(function () { if (!rec.on) refresh(true); }, 25000);
+  }
+})();
+</script>
+</body>
+</html>

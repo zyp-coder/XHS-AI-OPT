@@ -1,0 +1,8 @@
+这个目录是扩展后台的「只读副本」，给服务器试用 demo 用。
+
+来源：extension/background.js + extension/lib/ 里被 importScripts 的那 21 个文件
+规矩：
+  · 要改，先改 extension/ 里的原件，再把文件重新拷进这个目录（保持逐字节一致）；
+  · 别在这个目录里动刀——这里改了不算数，包里的扩展也不受影响；
+  · 副本只被 server/bg-env.mjs 加载（垫一套假浏览器环境跑），
+    碰平台的动作在服务器侧没有真身，由 server/dev-server.mjs 的白名单拦住。

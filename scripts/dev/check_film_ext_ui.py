@@ -45,39 +45,45 @@ with sync_playwright() as p:
             if (m && m.hidden) document.getElementById('cfgBtn').click(); }''')
         pg.wait_for_function('() => { const m = document.getElementById("cfgMask"); return !!m && !m.hidden; }')
 
-    # ① 右侧两栏＝横置 tab：一行放下、同屏只开一栏、默认停在①口播稿（⑤卡片底图整块已撤，底图按画面表自动铺）
+    # 顶上那条＝这一篇的工作流（七十一改：「🎙 口播稿／🎬 分幕」两站并成一屏一站）：
+    # 单开一页没有前头那几站可回，只剩 🎬 分幕 → 发布；一行放下、当前站那颗点亮（⑤卡片底图整块已撤，底图按画面表自动铺）
     lay = pg.evaluate('''() => {
-        const tabs = [...document.querySelectorAll('#filmTabs .ftab')];
-        return { labels: tabs.map(t => String((t.firstChild && t.firstChild.textContent) || '').trim()),
-                 rows: [...new Set(tabs.map(t => Math.round(t.getBoundingClientRect().top)))].length,
-                 on: [...document.querySelectorAll('.right .fsec.on')].map(s => s.getAttribute('data-sec')),
-                 nSec: document.querySelectorAll('.right .fsec').length };
+        const ws = [...document.querySelectorAll('#flowBar .wst')];
+        const lab = (x) => { const l = x.querySelector('.wlbl'); return String((l && l.firstChild ? l.firstChild.textContent : '')).trim(); };
+        const cur = ws.find(x => !!x.querySelector('.wdot.cur'));
+        return { labels: ws.map(lab),
+                 rows: [...new Set(ws.map(x => Math.round(x.getBoundingClientRect().top)))].length,
+                 on: cur ? lab(cur) : '',
+                 nCol: document.querySelectorAll('.col').length,
+                 steps: ['prevStep', 'nextStep'].filter(id => !!document.getElementById(id)) };
     }''')
-    assert lay['labels'] == ['① 口播稿', '② 分幕'], lay['labels']
-    assert lay['nSec'] == 2 and lay['rows'] == 1 and lay['on'] == ['script'], lay
-    print('PASS: 右侧两栏是横置 tab（%s，一行放下），默认只开①口播稿；音色·风格在「⚙ 音色与风格」弹层里' % ' / '.join(lay['labels']))
+    assert lay['labels'] == ['🎬 分幕', '发布'], lay['labels']
+    assert lay['nCol'] == 2 and lay['rows'] == 1 and lay['on'] == '🎬 分幕', lay
+    assert not lay['steps'], '底栏不该再有步进（一站一屏）：%s' % lay['steps']
+    print('PASS: 顶上工作流条＝%s（一行放下），单开一页只这两站、亮在「🎬 分幕」；音色·风格在「⚙ 音色与风格」弹层里' % ' / '.join(lay['labels']))
 
-    # ① 口播稿框把这一栏剩下的高度吃掉（不再是固定 270px）：量它跟右栏 / 预览的关系
+    # 口播稿框把这一栏剩下的高度吃掉（不再是固定 270px）：量它跟栏高 / 预览的关系
     hh = pg.evaluate('''() => {
         const s = document.getElementById('script').getBoundingClientRect();
         const c = document.getElementById('cv').getBoundingClientRect();
-        const r = document.querySelector('.right').getBoundingClientRect();
-        const f = document.querySelector('.right .fsec.on').getBoundingClientRect();
+        const r = document.querySelector('.col.script').getBoundingClientRect();
         return { s: Math.round(s.height), ch: Math.round(c.height), rBottom: Math.round(r.bottom),
-                 rH: Math.round(r.height), fBottom: Math.round(f.bottom), free: Math.round(r.bottom - f.bottom) };
+                 rH: Math.round(r.height), fBottom: Math.round(s.bottom), free: Math.round(r.bottom - s.bottom) };
     }''')
     assert hh['s'] > 260, '口播稿框该跟着栏高撑（>260px），实际 %spx' % hh['s']
-    assert abs(hh['free']) <= 2, '右栏底下还空着 %spx（口播稿那一栏没撑满）' % hh['free']
-    print('PASS: 口播稿框 %spx（右栏 %spx 高 · 预览 %spx 高），这一栏撑到底、没留空' % (hh['s'], hh['rH'], hh['ch']))
+    # 底下只该留「那颗一路跑完的钮 + 字数」那一行（≈60px），不该空出一大截
+    assert abs(hh['free']) <= 70, '稿栏底下还空着 %spx（口播稿框没撑满）' % hh['free']
+    assert hh['fBottom'] <= hh['rBottom'] + 2, '口播稿框该出到栏底：%s' % hh
+    print('PASS: 口播稿框 %spx（稿栏 %spx 高 · 预览 %spx 高），撑到只剩底下一行按钮' % (hh['s'], hh['rH'], hh['ch']))
 
-    # ① 试听：粘一段稿 → 点「🎬 生成分幕」（没配 AI → 本机规则兜底）→ 试听
+    # ① 试听：粘一段稿 → 点那颗一路跑完（没配 AI → 本机规则兜底）→ 试听
     pg.fill('#script', '一个人做小红书，凌晨还在发笔记。\n真正管用的就三步：找对人，说对话，接住他。')
     pg.click('#gen')
-    pg.wait_for_function('() => Film.scenes.length >= 2')
+    pg.wait_for_function('() => Film.scenes.length >= 2 && !Film.genBusy')
     print('分幕 =', pg.evaluate('() => Film.scenes.length'))
-    assert pg.evaluate('() => document.querySelector(".right .fsec.on").getAttribute("data-sec")') == 'scenes', \
-        '生成分幕后该自己落到②分幕（好接着改对白）'
-    print('PASS: 生成分幕后自动落到②分幕')
+    assert pg.locator('.col.scenes').is_visible() and pg.locator('#scenes .scene').count() == pg.evaluate('() => Film.scenes.length'), \
+        '切完幕右边那栏该跟着长出幕卡（一屏两栏，不用切站）'
+    print('PASS: 一路跑完右边幕栏直接长出幕卡（同屏，不用再切站）', flush=True)
     cfg()
     pg.click('#audition')
     for _ in range(60):
@@ -121,8 +127,11 @@ with sync_playwright() as p:
     pg.goto(url)
     pg.wait_for_timeout(800)
     print('刷新后 =', pg.evaluate('() => ({ accent: Film.cfg.accent, bg: Film.cfg.bg, label: Film.cfg.label })'))
-    print('默认落在 =', pg.evaluate('() => document.querySelector(".right .fsec.on").getAttribute("data-sec")'),
-          '(该是 script：口播稿)', ' tab=', pg.evaluate('() => [...document.querySelectorAll("#filmTabs .ftab")].map(b => b.textContent.trim())'))
+    print('默认亮在 =', pg.evaluate('''() => { const x = document.querySelector('#flowBar .wst'); if (!x) return '';
+          const cur = [...document.querySelectorAll('#flowBar .wst')].find(y => y.querySelector('.wdot.cur'));
+          const l = cur && cur.querySelector('.wlbl'); return l && l.firstChild ? String(l.firstChild.textContent).trim() : ''; }'''),
+          '(该是分幕这一站)  工作流条=', pg.evaluate('''() => [...document.querySelectorAll('#flowBar .wst')].map(x => {
+            const l = x.querySelector('.wlbl'); return l && l.firstChild ? String(l.firstChild.textContent).trim() : ''; })'''))
 
     # ③ 旋钮 UI 有没有把当前值标出来
     print('旋钮数 =', pg.evaluate('() => document.querySelectorAll("#knobs .chip, #knobs input").length'),

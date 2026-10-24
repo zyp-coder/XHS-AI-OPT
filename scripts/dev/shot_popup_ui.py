@@ -17,11 +17,11 @@ OUT = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / 'tmp' / 'ui-shot
 OUT.mkdir(parents=True, exist_ok=True)
 
 # 左栏顺序：诊断&配置（6 个二级：基础配置/问卷/人设含说话风格/产品卖点/知识库/规划）→ 发笔记（档案/素材库/任务配置）
-# → 获客（任务配置/队列/工作台/笔记池/设置）→ 线索（任务配置/通知/消息/设置）→ 设置
+# → 获客（队列：📜 队列 + ⚙️ 配置 / 工作台/笔记池/设置）→ 线索（任务配置/通知/消息/设置）→ 设置
 TABS = [
     ('1-huoke-work', 'switchMainTab("comment")'),
-    ('2b-huoke-taskcfg', 'switchMainTab("taskCfg")'),
-    ('2-huoke-queue', 'switchMainTab("queue")'),
+    ('2b-huoke-queue-config', 'switchMainTab("taskCfg")'),   # 原「任务配置」并进队列；taskCfg 是兼容别名，落到 ⚙️ 配置
+    ('2-huoke-queue', '(function(){const q=document.getElementById("drainQueueContent"); if(q) q._qTab="mgmt"; switchMainTab("queue");})()'),
     ('4-huoke-pool', 'switchMainTab("scenarioDrain")'),   # 笔记池这一页也带着评论记录（原「灌水总结」已收进来）
     ('5-lead-notif', 'switchMainTab("prospect")'),
     ('5b-lead-notif-comment', 'switchMainTab("notifComment")'),
@@ -73,20 +73,18 @@ with tempfile.TemporaryDirectory(prefix='xhs-shot-') as profile, sync_playwright
                 print('shot', name)
             except Exception as e:
                 print('FAIL', name, str(e)[:160])
-        # 任务配置页内两节 tab：默认落「关键词池」（上面 2b 那张），「👤 盯的账号」补一张
-        # （「⋯ 更多设置」2026-09-25 已撤，不再有第三张）
-        for sec, name in (('acct', '2c-taskcfg-acct'),):
-            try:
-                dismiss_setup()
-                page.evaluate('switchMainTab("taskCfg")')
-                page.wait_for_timeout(500)
-                page.locator(f'#sxCfgTabs [data-sec="{sec}"]').click()
-                page.wait_for_timeout(700)
-                dismiss_setup()
-                page.screenshot(path=str(OUT / f'{name}.png'))
-                print('shot', name)
-            except Exception as e:
-                print('FAIL', name, str(e)[:160])
+        # 配置页三张卡：2b 拍「🔎 跑什么」卡头；再补一张「👤 盯的账号」表（和词池同在跑什么卡里，往下滚）
+        try:
+            dismiss_setup()
+            page.evaluate('switchMainTab("taskCfg")')
+            page.wait_for_timeout(1200)
+            page.locator('#drainCfgContent #sxAcctAdd').scroll_into_view_if_needed()
+            page.wait_for_timeout(400)
+            dismiss_setup()
+            page.screenshot(path=str(OUT / '2c-taskcfg-acct.png'))
+            print('shot 2c-taskcfg-acct')
+        except Exception as e:
+            print('FAIL 2c-taskcfg-acct', str(e)[:160])
         # 线索 · 任务配置 / 设置 + 获客 · 设置：都是整页嵌的配置页
         # （线索·任务配置＝🎙 渠道基调 / 💰 成交引导 / 🗨 话术配置 / 🧪 试问答四个横 tab，默认那张＝🎙；获客·设置＝🤖 拟人化与频率；线索·设置只剩 Bot）
         for name, js in (('5d-lead-taskcfg', 'switchMainTab("leadTaskCfg")'), ('5e-lead-cfg', 'switchMainTab("leadCfg")'),

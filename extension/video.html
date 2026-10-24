@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-exec-no-strip="1">
 <head>
 <meta charset="utf-8">
 <title>字效编辑器 · 小红书获客系统</title>
@@ -7,90 +7,13 @@
 <link rel="stylesheet" href="lib/video/video.css">
 <script src="theme.js"></script>
 </head>
-<body>
-<header>
-  <button id="back" class="ghost" hidden>← 返回档案</button>
-  <span class="mark">🎬</span>
-  <b id="headKind">出片</b>
-  <span class="tiny" id="noteTitle"></span>
-  <span class="outflag" id="outFlag" hidden>🎬 已出过片</span>
-  <span class="qhelp" tabindex="0" data-tip="配音与画面都在本机算出来；按正文调口播稿、提重点那两步走你自己配的 AI。全程不上传别的东西">?</span>
-  <span class="hgroup">
-    <button id="cfgBtn">⚙ 音色与风格</button>
-    <button id="popout" title="在独立标签页里打开（出片期间切页/关窗会打断，长片建议单开一页慢慢编）">↗ 在新标签页打开</button>
-  </span>
-</header>
-
-<main>
-  <section class="left">
-    <canvas id="cv" width="1080" height="1920"></canvas>
-    <div id="done" hidden>
-      <video id="doneV" controls playsinline></video>
-      <div class="donebar">
-        <span id="doneInfo" class="tiny"></span>
-        <button id="doneAgain" class="ghost">💾 再下一遍</button>
-        <button id="doneBack" class="primary" hidden>✓ 完成，回档案</button>
-        <button id="doneX" class="ghost" title="收起这一层，接着编">✕</button>
-      </div>
-    </div>
-    <div class="hint" id="warn" hidden></div>
-  </section>
-
-  <section class="right">
-    <div class="ftabs" id="filmTabs">
-      <button type="button" class="ftab on" data-sec="script">① 口播稿<span class="qhelp" tabindex="0" data-tip="先按正文调出你的口播稿；点「生成分幕」时 AI 先提重点给你过目，按重点改出一版「出片稿」再切幕。分幕文字不必跟正文逐字一样。">?</span></button>
-      <button type="button" class="ftab" data-sec="scenes">② 分幕<span class="qhelp" tabindex="0" data-tip="一幕一句：念的就是框里的字，想分屏上行就在断开的地方打个 /（念的时候不念它）；重点词是给屏幕上标红的。改完记得回「① 口播稿」重新生成分幕才会按新稿走。">?</span></button>
-    </div>
-
-    <div class="fsec on" data-sec="script" id="secScript"></div>
-
-    <div class="fsec" data-sec="scenes">
-      <p class="fhint">一幕一句：念的就是框里的字，想分屏上行就在断开的地方打个 /（念的时候不念它）；重点词是给屏幕上标红的。<br>这版幕里的字＝AI 按你过的重点改出来的「出片稿」——不逐字跟正文一样正是要的效果；重生成会把配好的底图按序保留。<span class="tiny" id="est"></span></p>
-      <div id="scenes" class="scenes"><div class="empty">还没分幕——回「① 口播稿」点 🎬 生成分幕（AI 先提重点、你过目后按重点出稿切幕）。</div></div>
-    </div>
-  </section>
-</main>
-
-<!-- 底栏（三十六改·工作流口径）：主钮与步进钉窗口右下，跟写稿向导同一套 -->
-<div class="np-pinbar">
-  <button id="prevStep" class="ghost">上一步</button>
-  <button id="nextStep" class="ghost">下一步 →</button>
-  <button id="go" class="primary">出片（配音 + 画面）</button>
-  <button id="stop" class="ghost" hidden>⏹ 停</button>
-  <div class="prog"><div id="bar"></div></div>
-  <div id="st" class="st">就绪</div>
-  <div id="footHint" class="tiny"></div>
-</div>
-
-<!-- ⚙ 音色与风格：原 ③ 音色 / ④ 风格 两签收进这里（四签→两签），改完直接按新的出片 -->
-<div id="cfgMask" hidden>
-  <div id="cfgBox">
-    <h3>⚙ 音色与风格</h3>
-    <p class="fhint">拨一下画布就变——出片按这里的走；关掉弹窗接着编。</p>
-    <div class="cfgh">🔊 音色</div>
-    <table class="vtab" id="voices"></table>
-    <div class="row">
-      <span class="lab">语速</span>
-      <div id="rates" class="chips"></div>
-    </div>
-    <div class="row">
-      <button id="audition" class="ghost">🔊 试听这条</button>
-      <span class="tiny" id="audinfo"></span>
-    </div>
-    <hr class="cfgsep">
-    <div class="cfgh">🎨 风格</div>
-    <div id="presets" class="chips"></div>
-    <div id="knobs" class="knobs"></div>
-    <div class="row">
-      <button id="save" class="ghost">💾 存为默认风格</button>
-      <button id="copy" class="ghost">📋 复制配置行</button>
-      <span class="tiny" id="saved"></span>
-    </div>
-    <div class="cfgfoot"><button id="cfgOk" class="primary">好，接着编</button></div>
-  </div>
-</div>
-
-<div id="toast" hidden></div>
+<!-- 这一页是「↗ 在新标签页打开」那一台：外壳（顶栏／工作流条／底栏）与里面的稿／幕／预览
+     都由 video.js 现搭在 #filmPane 里（跟「发笔记」那页里嵌的同一份零件、同一份样式），
+     这一页只负责把宿主撑起来：body.film-page 整屏高，#filmPane 不带 inline＝自己画一整套。
+     公网版多出的一座桥＝出片这活派给执行器；data-exec-no-strip 让桥只留下单口，不摆状态带、不轮询。
+     零件清单与样式口径请看 lib/video/video.css 顶上那段说明。 -->
+<body class="film-page">
+<div id="filmPane"></div>
 
 <script src="lib/video/mp4-muxer.js"></script>
 <script src="lib/video/fonts.js"></script>
@@ -100,6 +23,7 @@
 <script src="lib/video/tts-edge.js"></script>
 <script src="lib/video/audio.js"></script>
 <script src="lib/video/encoder.js"></script>
+<script src="lib/video/recorder.js"></script>
 <script src="video.js"></script>
 </body>
 </html>

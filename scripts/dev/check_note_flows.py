@@ -4,6 +4,7 @@ import tempfile
 import time
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXT = ROOT / 'extension'
@@ -70,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-flows-') as profile, sync_play
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.set_default_timeout(15000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof _npWiz !== "undefined" && typeof switchMainTab === "function"')
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
@@ -216,11 +217,14 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-flows-') as profile, sync_play
         expect(page.locator('#drainContent #sxList tbody tr')).to_have_count(3)
         print('PASS: pool rows carry the search-derived type and can be re-typed in place')
 
-        # 扫描来源 = 关键词池 × 派生类型（属地/求助词/TOP 排序）；配置在左栏「获客 · ⚙️ 任务配置」
-        # （2026-09-25：三级 tab 的「⋯ 更多设置」已撤，页内只剩 📚关键词池 / 👤盯的账号 两节；
-        #   「本轮将扫描 N 个来源」那行预览也一并撤了——来源数直接按真源 drainBuildSources 算）
+        # 扫描来源 = 关键词池 × 派生类型（属地/求助词/TOP 排序）；配置在左栏「获客 → 🗂 队列 → ⚙️ 配置」
+        # （2026-10-24：原「任务配置」二级页并进队列，页内三张卡＝🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标，
+        #   一次只开一张；词表与盯的账号同在「跑什么」卡里）
         def cfg_sec(name):
-            page.locator(f'#sxCfgTabs [data-sec="{name}"]').click()
+            sec = {'kw': 'run', 'acct': 'run', 'goal': 'goal', 'daily': 'daily'}.get(name, name)
+            card = page.locator(f'details.cfgcard[data-cfgsec="{sec}"]')
+            if not card.evaluate('e => e.open'):
+                card.locator('summary').click()
 
         def sources():
             return page.evaluate('''async () => drainBuildSources(await drainGetScanCfg())
@@ -236,14 +240,15 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-flows-') as profile, sync_play
                 page.wait_for_timeout(200)
             raise AssertionError('%s（实测 %s）' % (msg, last))
 
-        page.locator('#tabTaskCfg').click()
-        expect(page.locator('#tabTaskCfg')).to_have_class(re.compile(r'\bactive\b'))
+        page.locator('#tabQueue').click()
+        page.locator('#queueTabs .q-tab[data-qtab="config"]').click()
+        expect(page.locator('#queueTabs .q-tab[data-qtab="config"]')).to_have_class(re.compile(r'\bactive\b'))
         cfg = page.locator('#drainCfgContent')
-        expect(cfg.locator('#sxCfgTabs [data-sec="kw"]')).to_have_class(re.compile(r'\bactive\b'))
-        assert cfg.locator('#sxCfgTabs [data-sec="more"]').count() == 0, '「⋯ 更多设置」三级 tab 该已撤'
-        # 四节固定：📚关键词池 / 👤盯的账号 / 🎯推广目标（2026-09-25 从诊断 ① 搬来）+ 🌿 日常浏览（2026-09-27 落地）
-        expect(cfg.locator('#sxCfgTabs .sx-cfgtab')).to_have_text(
-            ['📚 关键词池', '👤 盯的账号', '🎯 推广目标', '🌿 日常浏览'])
+        # 三张卡固定：🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标 · 承接；进来默认展开「跑什么」
+        expect(cfg.locator('details.cfgcard')).to_have_count(3)
+        expect(cfg.locator('.cfgcard-t')).to_have_text(
+            ['🔎 跑什么', '🌿 日常浏览', '🎯 推广目标 · 承接'])
+        expect(cfg.locator('details.cfgcard[data-cfgsec="run"]')).to_have_attribute('open', '')
         expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=20000)
 
         # 属地真源＝诊断&配置 ①「同城城市」，配置页里不该有第二个入口。

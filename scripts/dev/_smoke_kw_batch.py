@@ -7,6 +7,8 @@ import tempfile
 
 from playwright.sync_api import expect, sync_playwright
 
+from _guide_gate import goto_big
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 EXT = ROOT / 'extension'
 
@@ -43,14 +45,26 @@ with tempfile.TemporaryDirectory(prefix='xhs-kwbatch-') as profile, sync_playwri
         dialogs = []
         page.on('dialog', lambda d: (dialogs.append(d.message), d.accept()))
         page.set_default_timeout(15000)
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
-        page.wait_for_function('typeof switchMainTab === "function"')
+        # 新档案会被新手引导门弹走：走共用的 goto_big（它会记一笔「看过引导」再进）
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
+        # 扩展页 CSP 不许 eval，wait_for_function 会报 unsafe-eval；改成轮询
+        for _ in range(50):
+            try:
+                if page.evaluate('typeof switchMainTab === "function"'):
+                    break
+            except Exception:
+                pass
+            page.wait_for_timeout(300)
+        else:
+            raise AssertionError('popup 里的 switchMainTab 没起来')
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
         page.locator('#tabHuoke').click()
-        page.locator('#tabTaskCfg').click()
+        # 任务配置已并进「队列 → ⚙️ 配置」，词池在「🔎 跑什么」卡里且默认展开（2026-10-24）
+        page.locator('#tabQueue').click()
+        page.locator('#queueTabs .q-tab[data-qtab="config"]').click()
         cfg = page.locator('#drainCfgContent')
-        expect(cfg.locator('#sxKwAdd')).to_be_visible()
+        expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=20000)
 
         # 1) 两个批次卡；多批次首进＝都收起，词表不铺出来
         heads = cfg.locator('.sx-kwgrp-head')

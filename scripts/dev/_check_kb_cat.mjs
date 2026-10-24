@@ -1,7 +1,7 @@
 // KB_CAT 升级自检：mock chrome.storage.local + 假知识库
 // 验：老档补默认 / 批量归类批量 / KB_CATEGORIES 8 类齐 / B12 默认类提示
 
-const KB_CATEGORIES = ['产品介绍', '玩法与机制', '数据·成本', '客户痛点', '避坑经验', '个人经历', '使用技巧', '笔记架构'];
+const KB_CATEGORIES = ['产品介绍', '玩法与机制', '数据·成本', '顾客痛点', '避坑经验', '个人经历', '使用技巧', '笔记架构'];
 
 // mock KB 存储 + handlers
 const store = {};
@@ -36,7 +36,7 @@ async function _diagSay(action, data) {
       let cat = validCats[0];
       if (e.title.includes('价格') || e.title.includes('钱')) cat = '数据·成本';
       else if (e.title.includes('坑') || e.title.includes('错')) cat = '避坑经验';
-      else if (e.title.includes('客户') || e.title.includes('痛')) cat = '客户痛点';
+      else if (e.title.includes('客户') || e.title.includes('痛')) cat = '顾客痛点';
       else if (e.title.includes('玩法') || e.title.includes('功能')) cat = '玩法与机制';
       else if (e.title.includes('介绍') || e.title.includes('产品')) cat = '产品介绍';
       else if (e.title.includes('故事') || e.title.includes('经历')) cat = '个人经历';
@@ -127,7 +127,7 @@ store.kb = [
   { id: 'a1', title: '产品介绍 入门', content: '...', category: '产品介绍' },  // 已有，不参与
   { id: 'a2', title: '价格表 多少钱', content: '...' },                    // ＝默认
   { id: 'a3', title: '避坑经验 客户', content: '...' },                    // ＝默认
-  { id: 'a4', title: '客户痛点 故事', content: '...' },                    // ＝默认
+  { id: 'a4', title: '顾客痛点 故事', content: '...' },                    // ＝默认
   { id: 'a5', title: '产品介绍 二', content: '...' },                    // ＝默认
   { id: 'a6', title: '随机 老档', content: '...' },                       // ＝默认
   { id: 'a7', title: '产品介绍 三', content: '...' },                    // ＝默认
@@ -139,7 +139,7 @@ pass('assigned=6', r1.assigned === 6);
 const after = store.kb;
 pass('a2 归 数据·成本', after.find(e => e.id === 'a2').category === '数据·成本');
 pass('a3 归 避坑经验', after.find(e => e.id === 'a3').category === '避坑经验');
-pass('a4 归 客户痛点', after.find(e => e.id === 'a4').category === '客户痛点');
+pass('a4 归 顾客痛点', after.find(e => e.id === 'a4').category === '顾客痛点');
 pass('a5 归 产品介绍', after.find(e => e.id === 'a5').category === '产品介绍');
 pass('a6 归 产品介绍（默认兜底到 validCats[0]）', after.find(e => e.id === 'a6').category === '产品介绍');
 pass('a1 保留 原分类（未参与归类）', after.find(e => e.id === 'a1').category === '产品介绍');

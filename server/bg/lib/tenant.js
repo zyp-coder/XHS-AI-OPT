@@ -1,0 +1,222 @@
+/**
+ * tenant.js — 多租户（多产品）管理器
+ *
+ * 设计：快照交换（snapshot swap）。
+ *   - 现有所有代码继续读写固定 key（config / knowledge_base / watered_notes ...），一行不改。
+ *   - 每个租户在 tenant_data__<id> 里保存自己那一整套数据的快照。
+ *   - 切换租户时：先把当前活动 key 存回当前租户快照 → 再把目标租户快照写回活动 key → 更新 current_tenant_id。
+ *
+ * 这样切换租户 = 换一套“活动数据”，各产品的配置/知识库/话术/AI 密钥/已灌水记录彻底隔离。
+ */
+
+const TENANT_KEYS = {
+  LIST: 'tenants',              // [{ id, name, createdAt }]
+  CURRENT: 'current_tenant_id', // string
+  DATA_PREFIX: 'tenant_data__', // + id → 该租户的数据快照
+};
+
+// 随租户切换的“活动 key”（这些 key 的值属于当前租户，切换时整套换掉）
+const TENANT_SCOPED_KEYS = [
+  'config',              // 产品信息 + AI 配置 + 我的昵称 + 话术风格 + 关键词过滤 + 角色关键词
+  'knowledge_base',      // 知识库
+  'prompts',             // 提示词
+  'script_library',      // 话术库（兼容旧版）
+  'watered_notes',       // 已灌水
+  'replied_comments',    // 已回复
+  'opened_notes',        // 已打开
+  'auto_water_config',   // 灌水搜索配置
+  'auto_water_history',  // 灌水历史
+  'auto_water_daily',    // 每日计数
+  'auto_water_state',    // 搜索状态（含 foundNotes 笔记列表）
+  'prospect_list',       // 获客清单
+  'prospect_dm_history', // 获客清单私信历史
+  'prospect_sync_cursor',// 通知同步游标（识别"上次处理到最深那条"实现增量）
+  'note_plan',           // 内容规划（「诊断&配置 → 规划」产出）
+  'note_columns',        // 📅 栏目表（账号级长期设定：每个栏目＝每周固定一天发的一类笔记）
+  'deep_report',         // 账号诊断·深度评估报告（规划节点的产出，随租户切换）
+  'topic_pool',          // 🏷 话题采集池（笔记列表读到的 #话题，可一键转搜索关键词）
+  'np_used_topics',      // 发笔记：已用选题/卖点指纹池（剔除已发送，恢复后免重复发）
+  'np_notes',            // 发笔记：笔记档案（写过的每一篇留档：成稿/提示词/口播稿 + 状态）
+  'np_assets',           // 发笔记：画面表挂图内部仓（出图那侧在用；只存引用 + 缩略图）
+  'np_asset_needs',      // 发笔记：老备图清单（素材库集合化后只留读——启动期迁移用，不再写入）
+  'np_collections',      // 发笔记：素材库集合（一行一集：案例剪段 / 要备料，空集合＝待补充）
+  'np_clips',            // 发笔记：素材库片段（视频段 + 纯图混装；只记账不拷文件）
+  'np_collections_meta', // 发笔记：素材库整理外账（{ sig, genAt }——卖点/知识库没变就不重算）
+  'daily_browse_config', // 🌿 日常浏览：方向/插入规则/节奏与概率配置
+  'daily_browse_daily',  // 🌿 日常浏览：每日浏览计数
+  'daily_browse_last',   // 🌿 日常浏览：最近一轮结果（页面侧落盘，排查用）
+  'daily_browse_log',    // 🌿 日常浏览：运行日志
+  'daily_browse_stop_at',// 🌿 日常浏览：停止本轮信号
+  'drain_notes',         // ✂️ 截流：笔记监控池（扫描发现的笔记）
+  'drain_scan_cfg',      // ✂️ 截流：扫描来源配置（关键词/城市/高V + 定时）
+  'drain_queue',         // ✂️ 截流：队列状态（正在跑/欠账/手插/已完成，含日常流程项）
+  'ui_theme',            // 🎨 界面主题（一套配色的编号 / 自定义色值——跟着产品走，将来抖音那条线换一套预设）
+  'account_guard',       // 🛡 账号安全：挡位 + 本周单休日
+  'guard_daily',         // 🛡 账号安全：当日总账（各动作已用/波动/干歇节拍）
+  'account_health',      // 🛡 账号安全：体检卡历史（警告/限流/处罚）
+];
+
+/* ─── 底层读写 ─── */
+function _get(keys) {
+  return chrome.storage.local.get(keys);
+}
+function _set(obj) {
+  return chrome.storage.local.set(obj);
+}
+function _remove(keys) {
+  return chrome.storage.local.remove(keys);
+}
+
+async function _list() {
+  const data = await _get(TENANT_KEYS.LIST);
+  return data[TENANT_KEYS.LIST] || [];
+}
+
+async function _getCurrentId() {
+  const data = await _get(TENANT_KEYS.CURRENT);
+  return data[TENANT_KEYS.CURRENT] || null;
+}
+
+function _genId() {
+  return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+/** 把当前活动 key 的值整套存进 tenant_data__<id> */
+async function _dumpActiveTo(id) {
+  const active = await _get(TENANT_SCOPED_KEYS);
+  const snapshot = {};
+  for (const k of TENANT_SCOPED_KEYS) {
+    if (active[k] !== undefined) snapshot[k] = active[k];
+  }
+  await _set({ [TENANT_KEYS.DATA_PREFIX + id]: snapshot });
+}
+
+/** 把 tenant_data__<id> 的快照写回活动 key（快照里没有的 key → 删除，让默认值生效） */
+async function _loadActiveFrom(id) {
+  const data = await _get(TENANT_KEYS.DATA_PREFIX + id);
+  const snapshot = data[TENANT_KEYS.DATA_PREFIX + id] || {};
+  const writes = {};
+  const removes = [];
+  for (const k of TENANT_SCOPED_KEYS) {
+    if (snapshot[k] !== undefined) writes[k] = snapshot[k];
+    else removes.push(k);
+  }
+  if (removes.length) await _remove(removes);
+  if (Object.keys(writes).length) await _set(writes);
+}
+
+/**
+ * 确保至少存在一个租户。首次调用时：把“现有活动数据”打包成「默认租户」。
+ * 幂等，可在每次操作前调用。
+ */
+async function init(defaultPrompts) {
+  const list = await _list();
+  if (list.length === 0) {
+    const id = _genId();
+    const tenant = { id, name: '默认租户', createdAt: Date.now() };
+    // 把现有活动数据原样收进默认租户（不丢老用户数据）
+    await _dumpActiveTo(id);
+    await _set({ [TENANT_KEYS.LIST]: [tenant], [TENANT_KEYS.CURRENT]: id });
+    console.log('[租户] 初始化默认租户:', id);
+    return;
+  }
+  // ★ 防御：列表有租户但当前 id 丢失时，设回第一个（避免后续用空快照把活动数据清掉）
+  const cur = await _getCurrentId();
+  if (!cur && list.length) {
+    await _set({ [TENANT_KEYS.CURRENT]: list[0].id });
+    console.log('[租户] 当前 id 丢失，恢复为:', list[0].id);
+  }
+}
+
+/** 新建租户（不切换）。种子：仅提示词用默认，其余留空 → 各自默认（干净的新产品）。 */
+async function create(name, defaultPrompts) {
+  const list = await _list();
+  const id = _genId();
+  const tenant = { id, name: (name || '新租户').trim() || '新租户', createdAt: Date.now() };
+  const snapshot = {};
+  if (defaultPrompts) snapshot.prompts = defaultPrompts; // 新产品也要有可用的提示词
+  await _set({ [TENANT_KEYS.DATA_PREFIX + id]: snapshot });
+  list.push(tenant);
+  await _set({ [TENANT_KEYS.LIST]: list });
+  console.log('[租户] 新建:', id, tenant.name);
+  return tenant;
+}
+
+/** 切换到目标租户：存回当前 → 载入目标 → 更新 current。 */
+async function switchTo(id) {
+  const list = await _list();
+  const target = list.find(t => t.id === id);
+  if (!target) throw new Error('租户不存在: ' + id);
+  const cur = await _getCurrentId();
+  if (cur === id) return target; // 已是当前租户
+  if (cur) await _dumpActiveTo(cur);
+  else await _dumpActiveTo(id); // ★ 无当前租户时：把现有活动数据归到目标租户，避免被空快照清空（不丢刷新新增的数据）
+  await _loadActiveFrom(id);
+  await _set({ [TENANT_KEYS.CURRENT]: id });
+  console.log('[租户] 切换到:', id, target.name);
+  return target;
+}
+
+/** 重命名 */
+async function rename(id, name) {
+  const list = await _list();
+  const t = list.find(x => x.id === id);
+  if (!t) throw new Error('租户不存在: ' + id);
+  t.name = (name || '').trim() || t.name;
+  await _set({ [TENANT_KEYS.LIST]: list });
+  return t;
+}
+
+/** 删除租户。不能删最后一个；删当前时先切到另一个。 */
+async function remove(id) {
+  let list = await _list();
+  if (list.length <= 1) throw new Error('至少保留一个租户');
+  const cur = await _getCurrentId();
+  if (id === cur) {
+    // 先切到另一个租户，保证活动数据是有效的
+    const other = list.find(t => t.id !== id);
+    await switchTo(other.id);
+  }
+  list = (await _list()).filter(t => t.id !== id);
+  await _remove(TENANT_KEYS.DATA_PREFIX + id);
+  await _set({ [TENANT_KEYS.LIST]: list });
+  const currentId = await _getCurrentId();
+  console.log('[租户] 删除:', id, '当前:', currentId);
+  return { currentId };
+}
+
+/** 列出租户 + 当前 id */
+async function status() {
+  return { tenants: await _list(), currentId: await _getCurrentId() };
+}
+
+/** 把当前活动 key（含获客清单）立即写回当前租户快照，防止"活动侧新写入"在后续快照重载时被盖回旧快照而丢数据 */
+async function snapshotCurrent() {
+  const id = await _getCurrentId();
+  if (!id) return false;
+  await _dumpActiveTo(id);
+  return true;
+}
+
+const TenantManager = {
+  TENANT_KEYS,
+  TENANT_SCOPED_KEYS,
+  init,
+  create,
+  switchTo,
+  rename,
+  remove,
+  status,
+  snapshotCurrent,
+  list: _list,
+  getCurrentId: _getCurrentId,
+};
+
+// 支持 Service Worker importScripts（挂到全局）与 CommonJS
+if (typeof self !== 'undefined') {
+  self.TenantManager = TenantManager;
+}
+if (typeof module !== 'undefined') {
+  module.exports = TenantManager;
+}
+

@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -93,7 +94,7 @@ def run():
             # ── ② 弹窗左栏「设置 → 备份 / 恢复」：页面得真渲染出按钮 ──
             page = context.new_page()
             page.on('pageerror', lambda error: errors.append(str(error)))
-            page.goto(f'chrome-extension://{worker.url.split("/")[2]}/popup.html?mode=big')
+            goto_big(page, f'chrome-extension://{worker.url.split("/")[2]}/popup.html?mode=big')
             page.wait_for_load_state('domcontentloaded')
             if page.locator('#fsClose').is_visible():
                 page.locator('#fsClose').click()

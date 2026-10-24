@@ -9,6 +9,10 @@
  *
  * 边界说明：落盘密钥的盐随浏览器配置目录保存，防的是「拷贝数据文件 / 备份目录」这类离线读取，
  * 不防能直接操作本机的人（那种情况下数据本来就在他手上）。
+ *
+ * 降级通道：页面从局域网 / 公网地址（非 localhost）打开时，浏览器禁掉 crypto.subtle——
+ * 落盘加解密这时改由同源 demo 服务器代做（/api/crypt/*，算法、盐、密文格式与本文件一致，互通）。
+ * 备份文件的加密导出/导入涉及用户口令，不代做：非安全上下文时明确提示「回本机再用」。
  */
 
 (function (root) {
@@ -35,6 +39,28 @@
     return u8;
   }
   function rand(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+
+  /* ─── 无 WebCrypto 时的服务器代算通道 ───
+   * 只有「安全上下文」（https / localhost / 扩展页）才有 crypto.subtle；局域网 / 公网 http
+   * 页面里它是 undefined。这时把落盘加解密交给同源 demo 服务器代做，产出与本机算的完全互通。
+   * 扩展环境与 localhost 永远走本地 WebCrypto，不会碰这条路。 */
+  let _subtleOK = null;
+  function subtleOK() {
+    if (_subtleOK === null) _subtleOK = !!(typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.importKey === 'function');
+    return _subtleOK;
+  }
+  async function serverCrypt(op, payload) {
+    const resp = await fetch('/api/crypt/' + op, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    let r = null;
+    try { r = await resp.json(); } catch (_) {}
+    if (!r || !r.ok) throw new Error('服务器代' + (op === 'encrypt' ? '加密' : '解密') + '失败：' + ((r && r.error) || ('HTTP ' + resp.status)));
+    return r.result;
+  }
 
   async function deriveKey(password, saltBytes, iterations) {
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
@@ -101,6 +127,7 @@
 
   async function lockText(plain) {
     if (plain === undefined || plain === null) return plain;
+    if (!subtleOK()) return serverCrypt('encrypt', { plain: String(plain) });
     let key = await storeKey();
     let saltUsed = _salt;
     let env = await aesEncrypt(key, String(plain));
@@ -118,6 +145,13 @@
   /** 解密；非密文（存量明文）原样返回；解密失败返回 null 并告警 */
   async function unlockText(value) {
     if (typeof value !== 'string' || !isLocked(value)) return value;
+    if (!subtleOK()) {
+      try { return await serverCrypt('decrypt', { blob: value }); }
+      catch (e) {
+        console.error('[crypto] 服务器代解密失败（该条数据按空处理，未做覆盖）', e);
+        return null;
+      }
+    }
     try {
       const env = JSON.parse(new TextDecoder().decode(unb64(value.slice(PREFIX.length))));
       if (!env || env.f !== FMT || !env.i || !env.d) return null;
@@ -145,6 +179,7 @@
 
   /* ─── 导出文件：用户口令 ─── */
   async function encryptFile(text, password) {
+    if (!subtleOK()) throw new Error('加密备份需要在本机地址（127.0.0.1）打开时使用——当前浏览器把加密能力关了');
     const salt = rand(16);
     const key = await deriveKey(password, salt, FILE_ITER);
     const env = await aesEncrypt(key, String(text));
@@ -162,6 +197,7 @@
   }
 
   async function decryptFile(text, password) {
+    if (!subtleOK()) throw new Error('解密备份需要在本机地址（127.0.0.1）打开时使用——当前浏览器把加密能力关了');
     let o;
     try { o = JSON.parse(text); } catch (_) { throw new Error('文件不是合法的 JSON'); }
     if (!o || o.fmt !== FMT || !o.salt || !o.data) throw new Error('文件不是本工具的加密备份');

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>执行器能干什么 · 小红书运营助手</title>
+<!-- ============================================================
+  执行器功能介绍页（2026-10-22）
+  ------------------------------------------------------------
+  从公用演示号的提示条 / 「这一下要动真数据」引导弹层点进来。
+  只讲执行器真正负责的事（真发、获客、日常浏览、AI客服），
+  以及边界（只在你电脑上跑、不碰密码、演示号不能挂）。
+  开通与装机步骤不在这页重复，给链接去 account.html / setup.html。
+  ============================================================ -->
+<style>
+  :root {
+    --ink: #22303c; --ink2: #5a6b7a; --ink3: #8b9aa8;
+    --line: #dbe4ec; --bg: #f1f6fa; --card: #fff;
+    --brand: #2b7fb8; --brand-deep: #16527c; --brand-soft: #eaf3f9; --brand-on: #fff;
+    --warm: #b45309; --warm-soft: #fdf6e7; --warm-line: #f0e0b8;
+    --ok: #0a7b5a; --ok-soft: #ecfdf5; --ok-line: #a7f3d0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: linear-gradient(180deg, #e9f2f9, var(--bg) 260px) fixed;
+    color: var(--ink);
+    font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    padding: 26px 18px 60px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top .nav { margin-left: auto; display: flex; gap: 14px; font-size: 12.5px; }
+  .top .nav a { color: var(--ink2); text-decoration: none; }
+  .top .nav a:hover { color: var(--brand-deep); text-decoration: underline; }
+  .top .nav a.go { color: var(--brand-deep); font-weight: 700; }
+
+  .hero {
+    background: linear-gradient(135deg, var(--brand-deep), var(--brand));
+    color: #fff; border-radius: 14px; padding: 24px 26px; margin-bottom: 16px;
+    box-shadow: 0 4px 14px rgba(22, 82, 124, .22);
+  }
+  .hero h2 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+  .hero p { font-size: 13.5px; color: #d7e9f6; line-height: 1.9; max-width: 860px; }
+  .hero p b { color: #fff; }
+
+  .flow { display: flex; align-items: stretch; gap: 8px; flex-wrap: wrap; margin: 16px 0 2px; }
+  .flow .step {
+    flex: 1 1 150px; background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    padding: 13px 14px; box-shadow: 0 2px 8px rgba(22, 82, 124, .06);
+  }
+  .flow .step .k { font-size: 11px; font-weight: 700; color: var(--brand-deep); background: var(--brand-soft); border-radius: 6px; padding: 2px 7px; display: inline-block; margin-bottom: 7px; }
+  .flow .step b { display: block; font-size: 13.5px; margin-bottom: 3px; }
+  .flow .step span { font-size: 12px; color: var(--ink2); line-height: 1.7; }
+  .flow .arrow { align-self: center; color: var(--ink3); font-size: 16px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px 20px; margin-bottom: 16px;
+    box-shadow: 0 2px 10px rgba(22, 82, 124, .07);
+  }
+  .card h2 { font-size: 16px; font-weight: 800; margin-bottom: 3px; }
+  .card .sec { font-size: 11.5px; font-weight: 600; color: var(--ink3); margin-left: 8px; }
+  .card .sub { font-size: 12.5px; color: var(--ink2); line-height: 1.8; margin-bottom: 14px; }
+
+  .caps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .cap {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px;
+    background: #fbfdff; display: flex; gap: 12px; align-items: flex-start;
+  }
+  .cap .ico { flex: none; width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; background: var(--brand-soft); }
+  .cap:nth-child(2) .ico { background: #fdf0e6; }
+  .cap:nth-child(3) .ico { background: #eef6f1; }
+  .cap:nth-child(4) .ico { background: #f3eefb; }
+  .cap h3 { font-size: 14px; font-weight: 800; margin-bottom: 3px; }
+  .cap p { font-size: 12.5px; color: var(--ink2); line-height: 1.75; }
+  .cap .tier { display: inline-block; margin-top: 7px; font-size: 11px; font-weight: 700; color: var(--warm); background: var(--warm-soft); border: 1px solid var(--warm-line); border-radius: 999px; padding: 1px 8px; }
+  /* 登录后按档位裁：开着＝绿标；没开那格＝蓝标，点了跳装机页那张档位表 */
+  .cap .tier.open { color: var(--ok); background: var(--ok-soft); border-color: var(--ok-line); }
+  .cap .tier.upsell { color: var(--brand-deep); background: var(--brand-soft); border-color: #cfe3f1; cursor: pointer; text-decoration: none; }
+  .cap .tier.upsell:hover { background: #dfeefa; }
+  .cap.locked { background: #fafbfc; }
+  .cap.locked h3 { color: var(--ink2); }
+
+  .quiet { border: 1px dashed var(--line); background: #fafbfc; }
+  .quiet b { color: var(--ink); }
+
+  .rules { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; }
+  .rule { display: flex; gap: 9px; font-size: 12.5px; color: var(--ink2); line-height: 1.8; }
+  .rule .dot { flex: none; color: var(--brand); font-weight: 900; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .step-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px; background: #fff; }
+  .step-card .no { width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 12.5px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-bottom: 9px; }
+  .step-card > b { display: block; font-size: 13.5px; margin-bottom: 4px; }
+  .step-card span { font-size: 12px; color: var(--ink2); line-height: 1.75; }
+  .step-card a { color: var(--brand-deep); font-weight: 700; }
+
+  .cta {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: linear-gradient(180deg, #fff, #f7fbfe); border: 1.5px solid #cfe2ef;
+    border-radius: 14px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .cta .txt { flex: 1 1 320px; }
+  .cta .txt b { display: block; font-size: 15.5px; font-weight: 800; margin-bottom: 3px; }
+  .cta .txt span { font-size: 12.5px; color: var(--ink2); line-height: 1.75; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 10px; padding: 10px 18px; font: inherit; font-size: 13.5px; font-weight: 700;
+    text-decoration: none; cursor: pointer; border: none; white-space: nowrap;
+  }
+  .btn.primary { background: var(--brand); color: var(--brand-on); box-shadow: 0 3px 10px rgba(43, 127, 184, .25); }
+  .btn.primary:hover { background: var(--brand-deep); }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink2); }
+  .btn.ghost:hover { border-color: #a8cee5; color: var(--ink); background: var(--brand-soft); }
+  .foot { color: var(--ink3); font-size: 12px; margin-top: 4px; line-height: 1.85; }
+  .foot b { color: var(--ink2); }
+
+  @media (max-width: 760px) {
+    body { padding: 18px 13px 44px; }
+    .caps, .rules, .steps { grid-template-columns: 1fr; }
+    .flow .arrow { display: none; }
+    .top .nav { width: 100%; margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>执行器能干什么</h1><span class="ver">装在你自己浏览器里的那只手</span>
+    <div class="nav">
+      <a href="popup.html?mode=big">← 回去看演示</a>
+      <a href="func-demo.html">🎬 功能演示</a>
+      <a href="setup.html">装机步骤</a>
+      <a class="go" href="account.html">开自己的号 →</a>
+    </div>
+  </div>
+
+  <!-- 装机引导条（2026-10-23）：登录后按这个号的档位挂一条（演示号→开自己的号 / 免费→看档位 / 开通没装→去装 / 刚挂上→绿条） -->
+  <div id="execBarSlot"></div>
+
+  <div class="hero">
+    <h2>网页是大脑，执行器是你电脑上的手</h2>
+    <p>写稿、出图、想话术、排计划，都在网页上完成；<b>真正去小红书里点一下、发一条</b>的活，交给装在你浏览器里的执行器。
+      演示号里看到的顾客、评论、私信都是<b>示例数据</b>，只能看不能跑——开自己的号、装上执行器，它才会用你自己已登录的账号真干活。</p>
+  </div>
+
+  <section class="card">
+    <h2>活是怎么到你电脑上的<span class="sec">一句话看懂</span></h2>
+    <div class="flow">
+      <div class="step"><span class="k">网页</span><b>你点「发 / 开始」</b><span>服务器把这一趟活写成一张单。</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="k">执行器</span><b>在你浏览器里接单</b><span>用你已经登录的号，照单子一步步做。</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="k">小红书</span><b>真发 / 真评论 / 真私信</b><span>动作发生在你这台电脑上，不在我们服务器上。</span></div>
+      <div class="arrow">→</div>
+      <div class="step"><span class="k">网页</span><b>进度看得见</b><span>做到哪一步、成没成，工作台里都有记录。</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>它真正负责的四件事<span class="sec">不装就只能写，装了才真干</span></h2>
+    <div class="sub">下面这些是只有执行器在岗时才会发生的动作；写稿、出图、出片、排计划不装也能用。<span id="capsTier"></span></div>
+    <div class="caps">
+      <div class="cap" data-gate="notePublish">
+        <div class="ico">📝</div>
+        <div><h3>真发笔记</h3><p>写好的稿、配好的图、排好的队，到点在你的浏览器里发出去；发布台能看到成功没有、卡在哪一步。</p><span class="tier">基础档起</span></div>
+      </div>
+      <div class="cap" data-gate="autoWater">
+        <div class="ico">🔥</div>
+        <div><h3>评论区获客</h3><p>按关键词或对标账号找笔记、翻评论，按你定的策略评论 / 点赞 / 关注，把有意向的人收进线索列表。</p><span class="tier">升级档起</span></div>
+      </div>
+      <div class="cap" data-gate="dailyBrowse">
+        <div class="ico">🚶</div>
+        <div><h3>日常浏览</h3><p>每天像平时一样刷一刷、点一点，让账号有自己的日常动作；跑多少、隔多久，都在「账号安全」挡位里管着。</p><span class="tier">升级档起</span></div>
+      </div>
+      <div class="cap" data-gate="prospectList">
+        <div class="ico">💬</div>
+        <div><h3>AI客服</h3><p>盯着通知页和私信，把待回的话拎出来先起草回复；你看过点头，它再替你发出去。</p><span class="tier">全功能档</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card quiet">
+    <h2>不装执行器也能用的<span class="sec">先把内容准备好</span></h2>
+    <div class="sub"><b>写稿、配图、出片、排发布计划、整理知识库、做账号规划</b>——这些都在网页上完成，先用起来，等要真发的时候再装执行器。</div>
+  </section>
+
+  <section class="card">
+    <h2>边界说清楚<span class="sec">它不是什么都能干</span></h2>
+    <div class="rules">
+      <div class="rule"><span class="dot">·</span><span><b>不碰你的小红书密码</b>：用的是你浏览器里已经登录的状态，我们服务器不存你的平台密码。</span></div>
+      <div class="rule"><span class="dot">·</span><span><b>不在我们服务器上跑</b>：所有平台动作只发生在你这台电脑的浏览器里。</span></div>
+      <div class="rule"><span class="dot">·</span><span><b>一个号挂一台</b>：换电脑用同一个配对号重挂，旧的那台自动作废，正在跑的活也会停下。</span></div>
+      <div class="rule"><span class="dot">·</span><span><b>不挂线不干活</b>：服务器断开或熔断，它当场全停；登录过期会停下来等你扫码，不会硬跑。</span></div>
+      <div class="rule"><span class="dot">·</span><span><b>公用演示号不能挂</b>：演示号是给大家看页面的，挂不了执行器，也跑不了真动作。</span></div>
+      <div class="rule"><span class="dot">·</span><span><b>节奏有挡位拦着</b>：每天跑多少、隔多久，都在「账号安全」里设置，不会无限疯跑。</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>怎么用上<span class="sec">三步</span></h2>
+    <div class="steps">
+      <div class="step-card"><div class="no">1</div><b>开自己的号</b><span>名字 + 手机号 + 密码就行，不用短信验证。<a href="account.html">去开号 →</a></span></div>
+      <div class="step-card"><div class="no">2</div><b>开通带执行器的档位</b><span>开通后，登录专属页会显示你的<b>配对号</b>和下载按钮。<a href="setup.html">看档位与装机 →</a></span></div>
+      <div class="step-card"><div class="no">3</div><b>下载、填配对号挂上</b><span>解压后在浏览器里加载，填配对号，看到「🟢 在线待命」就成了。</span></div>
+    </div>
+  </section>
+
+  <div class="cta">
+    <div class="txt"><b>想用自己的号真跑一遍？</b><span>开号免费，先写稿出图；要真发、真获客时再开通带执行器的档位。</span></div>
+    <a class="btn primary" href="account.html">开自己的号 →</a>
+    <a class="btn ghost" href="func-demo.html">🎬 看功能演示</a>
+    <a class="btn ghost" href="popup.html?mode=big">先回去看演示</a>
+  </div>
+
+  <div class="foot">
+    <b>执行器只认服务器</b>：不挂线不干活；服务器一停，它当场全停。<br>
+    装机中遇到问题：把报错原话发给给你开通的人，一看就知道。
+  </div>
+
+</div>
+
+<script src="gate.js"></script>
+<script>
+/* 登录后按这个号的档位裁（2026-10-23）：开着的格子挂绿标，没开那格挂蓝标跳档位表；
+   没登录 / 演示号 → 这页一字不动，还是原样给人看。哪几格开着吃服务器那张表，本页不自己判档。 */
+(() => {
+  'use strict';
+  if (!window.XhsGate || !window.XhsExecBar) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  XhsGate.apiRaw('/api/auth/me', {}).then((j) => {
+    const me = j && j.account;
+    if (!me) return;
+    XhsExecBar.mount(document.getElementById('execBarSlot'), me, null, 'manual');
+    if (XhsExecBar.isDemo(me)) return;
+    const tags = XhsExecBar.jobTags(me);
+    const sub = document.getElementById('capsTier');
+    if (sub) sub.innerHTML = '　当前档位：<b>' + esc(XhsExecBar.tierLabel(me)) + '</b>。';
+    document.querySelectorAll('.cap[data-gate]').forEach((cap) => {
+      const t = tags[cap.getAttribute('data-gate')];
+      const span = cap.querySelector('.tier');
+      if (!t || !span) return;
+      if (t.on) { span.className = 'tier open'; span.textContent = '你这档开着 · 装了才真跑'; }
+      else {
+        cap.classList.add('locked');
+        span.outerHTML = '<a class="tier upsell" href="setup.html#tiers">这档 ' + t.from + ' 起 · 怎么开 →</a>';
+      }
+    });
+  }).catch(() => {});
+})();
+</script>
+</body>
+</html>

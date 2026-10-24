@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>装执行器 · 小红书运营助手</title>
+<!-- ============================================================
+  装执行器页（/setup）——登录后的专属装机页（2026-10-22 改）
+  ------------------------------------------------------------
+  干什么：客户先登录，再按自己的状态看：
+          未登录 → 去登录/领号；免费档 → 只看到开通说明；
+          已开档 → 下载 zip → 三步装上 → 配对号挂线；
+          已经挂过 → 显示在线/离线、上次报到时间。
+  怎么跑：读 /api/auth/me（账号自带 hasExec / exec）；每 15 秒自己刷新一次。
+          下载仍走 /download/executor.zip（pack.js 打的通用包）；
+          挂线凭据＝配对号（一个号一个码，一号一台）。
+  规矩：执行器包本身不在这页打，所有人共用一份；改的是网页上的入口与状态。
+  ============================================================ -->
+<script src="gate.js"></script>
+<style>
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #c77700;
+    --brand: #1f2329; --brand-soft: #f0f1f3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .gobig { font-size: 13px; color: var(--ink2); text-decoration: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 7px 13px; white-space: nowrap; }
+  .top .gobig:hover { background: var(--brand-soft); }
+  .sub { color: var(--ink2); font-size: 13px; margin-bottom: 16px; }
+  .sub b { color: var(--ink); }
+  .hidden { display: none !important; }
+
+  /* 账号那行：让人知道现在登的是哪个号 */
+  .acct { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 13px; margin-bottom: 12px; }
+  .acct b { color: var(--ink); }
+  .acct a { color: var(--ink2); text-decoration: underline; cursor: pointer; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .card h2 .sec { color: var(--ink3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+
+  /* 先看状态：不同的人看到不同的第一块 */
+  .state-card { border-color: #d9e6f2; background: linear-gradient(180deg, #fbfdff, #fff); }
+  .state-loading { color: var(--ink2); font-size: 13px; }
+  .state-p { font-size: 13.5px; color: var(--ink2); line-height: 1.8; margin: 6px 0 4px; }
+  .state-p b { color: var(--ink); }
+  .state-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .state-title { font-size: 16px; font-weight: 700; }
+  .state-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0 4px; }
+  .state-note { font-size: 12.5px; color: var(--ink3); line-height: 1.75; margin-top: 8px; }
+  .pill { display: inline-block; font-size: 12px; border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+  .pill.ok { background: #e7f5ee; color: var(--ok); }
+  .pill.warn { background: #fff6e5; color: var(--warn); }
+  .pill.off { background: #f0f1f3; color: var(--ink3); }
+  .pair-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0 4px; }
+  .pair-label { font-size: 12.5px; color: var(--ink2); }
+  .pcode { font-family: ui-monospace, Consolas, monospace; font-weight: 700; letter-spacing: 1px; font-size: 15px; color: var(--ink); }
+
+  /* 「这扩展是什么」的逐行问答（与引导页同款） */
+  .gd-line { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
+  .gd-line:last-child { border-bottom: none; }
+  .gd-line .k { flex: none; width: 150px; font-weight: 600; }
+  .gd-line .v { color: var(--ink2); font-size: 12.5px; line-height: 1.75; }
+  .gd-line .v b { color: var(--ink); }
+  @media (max-width: 640px) { .gd-line .k { width: auto; } .gd-line { flex-direction: column; gap: 2px; } }
+
+  .btn { display: inline-block; border: none; border-radius: 10px; padding: 11px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink2); font-weight: 500; font-size: 13px; }
+  .btn.small { padding: 6px 12px; font-size: 12.5px; }
+  .dl-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .dl-note { font-size: 12.5px; color: var(--ink3); }
+
+  .steps { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+  .step { display: flex; gap: 10px; font-size: 13.5px; }
+  .step .no { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 2px; }
+  .step .t { font-weight: 600; }
+  .step .d { color: var(--ink2); font-size: 13px; }
+  .step .d b { color: var(--ink); }
+  .step .d .dim { color: var(--ink3); font-size: 12.5px; }
+  kbd { background: var(--brand-soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12.5px; font-family: inherit; }
+
+  details { border-top: 1px dashed var(--line); padding: 10px 0 2px; }
+  details:first-of-type { border-top: none; }
+  summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+  details .a { color: var(--ink2); font-size: 13px; padding: 7px 0 3px 2px; line-height: 1.75; }
+  details .a b { color: var(--ink); }
+
+  table.tier { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 13px; }
+  table.tier th, table.tier td { border: 1px solid var(--line); padding: 8px 11px; text-align: left; vertical-align: top; }
+  table.tier th { background: var(--brand-soft); font-weight: 600; font-size: 12.5px; }
+  table.tier td.hit { color: var(--ok); font-weight: 600; }
+  table.tier td.miss { color: var(--ink3); }
+  .quota { margin-top: 10px; border: 1px solid var(--line); background: #fafbfc; border-radius: 10px; padding: 9px 12px; font-size: 12.5px; color: var(--ink2); line-height: 1.8; }
+  .quota b { color: var(--ink); }
+  .quota.pack { border-color: #f0dfb8; background: #fffdf6; }
+  .foot { color: var(--ink3); font-size: 12px; margin-top: 14px; line-height: 1.8; }
+  .foot b { color: var(--ink2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>装执行器</h1><span class="ver">三步 · 一次就好</span>
+    <div class="top-right">
+      <a class="gobig" href="start.html">← 回起始页</a>
+      <a class="gobig" href="popup.html?mode=big">进工作台</a>
+    </div>
+  </div>
+  <div class="acct hidden" id="acctLine"></div>
+  <div class="sub">网页上先写着稿；要让<b>发笔记、获客、AI客服</b>这些真在你家电脑上跑，装这个迷你执行器——
+    装上后，网页上点一下，活就在你这台浏览器里真干，网页上看得见进度。</div>
+
+  <section class="card state-card" id="stateCard">
+    <div class="state-loading" id="stateLoading">正在确认你的账号…</div>
+
+    <div class="hidden" id="stateGuest">
+      <h2>先登录你的号<span class="sec">装执行器要认人</span></h2>
+      <p class="state-p">登录后，这一页才会显示你的配对号和下载按钮。没号可以先领一个，不用短信验证。</p>
+      <div class="state-actions">
+        <a class="btn primary" href="account.html?need=setup&amp;next=setup">登录 / 领号</a>
+      </div>
+      <p class="state-note">执行器是 <b>239 起</b>档位带的；还没开通的，登录后这里会告诉你怎么开。</p>
+    </div>
+
+    <div class="hidden" id="stateDemo">
+      <h2>演示号不能装执行器</h2>
+      <p class="state-p">你现在用的是“随便逛逛”的演示号，不能挂执行器。领一个自己的号，开通后再来。</p>
+      <div class="state-actions">
+        <button class="btn primary" id="demoOutBtn" type="button">退出演示号，去领号</button>
+      </div>
+    </div>
+
+    <div class="hidden" id="stateFree">
+      <h2>执行器是 239 起档位带的<span class="sec">现在是免费档</span></h2>
+      <p class="state-p">网页上的写稿、出图、排计划都能用；要让<b>发笔记、获客、AI客服</b>真在你电脑上跑，需要开通带执行器的档位。</p>
+      <div class="state-actions">
+        <a class="btn primary" href="guide.html#m4">看档位 / 找客服开通</a>
+        <a class="btn ghost" href="executor.html">装好能干什么</a>
+        <a class="btn ghost" href="start.html">先回起始页</a>
+      </div>
+      <p class="state-note">开通后回到这一页，下载按钮和你的配对号就会出现。</p>
+    </div>
+
+    <div class="hidden" id="statePaid">
+      <div class="state-head">
+        <span class="pill" id="execPill">—</span>
+        <span class="state-title" id="execTitle">—</span>
+      </div>
+      <p class="state-p" id="execHint"></p>
+      <div class="pair-row" id="pairRow">
+        <span class="pair-label">你的配对号</span>
+        <span class="pcode" id="pairCode">—</span>
+        <button class="btn ghost small" id="copyCodeBtn" type="button">复制</button>
+      </div>
+      <p class="state-note hidden" id="noCodeHint">配对号还没生成——找给你开通的人点一下「换码」发一个。</p>
+      <div class="state-actions">
+        <a class="btn primary" id="downloadBtn" href="download/executor.zip" download="小红书助手-执行器.zip">⬇️ 下载执行器（zip）</a>
+        <a class="btn ghost" href="executor.html">装好能干什么</a>
+        <button class="btn ghost" id="refreshState" type="button">刷新状态</button>
+      </div>
+      <p class="state-note" id="tierLine"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>这扩展是什么<span class="sec">先看这 30 秒</span></h2>
+    <div class="gd-line"><div class="k">一句话</div><div class="v">它是你电脑上的<b>一只手</b>——网页（大脑）派活，它在你的浏览器里真干。</div></div>
+    <div class="gd-line"><div class="k">装在哪儿</div><div class="v">装在你自己的浏览器里（Edge / Chrome），跟着你自己的号走，不上传任何东西。</div></div>
+    <div class="gd-line"><div class="k">装了多什么</div><div class="v"><b>真发笔记 · 评论区获客 · 日常浏览 · AI客服</b>——这四样只有装了才能真干。</div></div>
+    <div class="gd-line"><div class="k">不装能干嘛</div><div class="v">写稿、出图、出片、排计划，全都能在网页上先用。</div></div>
+    <div class="gd-line"><div class="k">怎么上岗</div><div class="v">你的<b>配对号</b>填进去就挂上——不用记密码，一个号一个码，换机就重挂。</div></div>
+    <div class="gd-line"><div class="k">它认谁</div><div class="v">只认服务器：服务器一熔断，它当场全停；不挂线不干活。</div></div>
+  </section>
+
+  <section class="card hidden" id="downloadCard">
+    <h2>① 下载<span class="sec">约 1.2 MB</span></h2>
+    <div class="dl-row">
+      <a class="btn primary" href="download/executor.zip" download="小红书助手-执行器.zip">⬇️ 下载执行器（zip）</a>
+      <span class="dl-note">所有人共用同一个包；包里带「装机-看这里.txt」和一键小工具，解压先看说明书。</span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="installCard">
+    <h2>② 三步装上<span class="sec">Edge / Chrome 都一样</span></h2>
+    <div class="steps">
+      <div class="step"><div class="no">1</div>
+        <div><div class="t">解压到一个固定文件夹</div>
+          <div class="d">比如 <b>D:\小红书助手-执行器\</b>。解压完里面能看到 manifest.json、panel.html。
+            <span class="dim">（以后别挪这个文件夹，挪了要重新加载。）</span></div></div>
+      </div>
+      <div class="step"><div class="no">2</div>
+        <div><div class="t">浏览器里加载</div>
+          <div class="d">地址栏输 <kbd>edge://extensions/</kbd>（Chrome 用 <kbd>chrome://extensions/</kbd>）→
+            打开「开发者模式」→ 点「加载解压缩的扩展」→ 选中刚才那个文件夹。
+            <span class="dim">（列表里出现「小红书助手 · 执行器」＝成功，建议把它固定到工具栏。）</span></div></div>
+      </div>
+      <div class="step"><div class="no">3</div>
+        <div><div class="t">填配对号挂线</div>
+          <div class="d">点工具栏上的执行器图标 → 服务器地址已经填好了 →
+            填<b>上面那个配对号</b>（点「复制」）→ 点「🔗 挂上」→ 变成 <b>🟢 在线待命</b> 就是挂上了。
+            <span class="dim">（之后网页上点「发 / 开始」，这只手就去干活；别关这个浏览器——关了就不干活，单会排着，回来接着跑。登录过期会停下来等你扫码，不会硬跑。）</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>③ 常见问题</h2>
+    <details>
+      <summary>重启几次后，扩展变灰 / 被停用了（Edge 有这毛病）</summary>
+      <div class="a">新版 Edge 有时会把手动装的扩展“偷偷禁掉”。包里带了个小工具：<b>把 Edge 完全关闭 → 双击包里的「Edge-防禁用.bat」→ 再打开浏览器</b>，就好了。
+        嫌麻烦就直接用 <b>Chrome</b>（<kbd>chrome://extensions/</kbd>），一样的装法、没这毛病。</div>
+    </details>
+    <details>
+      <summary>挂线时提示“还没到能装执行器的档位”</summary>
+      <div class="a">这个号还是免费档。执行器是 <b>239 起</b>的档位带的——看下面「档位」那张表，找给你开通的人办；开通后这一页就会出现<b>下载按钮和配对号</b>。</div>
+    </details>
+    <details>
+      <summary>配对号填不对 / 换电脑了怎么办？</summary>
+      <div class="a">配对号一串字符，照抄就行，别漏字。换电脑：新电脑照三步装好、填同一个配对号挂上就行——<b>一个号挂一台</b>，旧的那台自动作废（正在跑的活也会停下）。
+        旧电脑不用了就丢了、或者你想把码换掉：找给你开通的人，在后台<b>换一个码</b>，旧的当场失效。</div>
+    </details>
+    <details>
+      <summary>它会乱动我的账号吗？</summary>
+      <div class="a">不会。它只干网页上派的活（发笔记 / 获客 / 日常浏览 / AI客服），全在你这台浏览器里跑；
+        频率还有「账号安全」挡位拦着，不会疯跑。服务器只下单、记账，<b>不碰你的账号</b>。</div>
+    </details>
+  </section>
+
+  <section class="card" id="tiers">
+    <h2>档位<span class="sec">执行器 239 起带；开通联系客服</span></h2>
+    <table class="tier">
+      <tr><th>档位</th><th>有什么</th><th>能真干活吗</th></tr>
+      <tr><td><b>免费</b></td><td>网页上写稿、出图、排计划（送 <b>50 次文本 ＋ 10 张图</b>，一次性）</td><td class="miss">只能写，不用装执行器</td></tr>
+      <tr><td><b>239 · 基础</b></td><td>写稿 ＋ 执行器：<b>真发笔记</b></td><td class="hit">✓ 能真发</td></tr>
+      <tr><td><b>399 · 升级</b></td><td>＋ 获客（评论区接客）、日常浏览</td><td class="hit">✓ 能</td></tr>
+      <tr><td><b>539 · 全功能</b></td><td>＋ AI客服（私信盯着、帮着回）</td><td class="hit">✓ 能</td></tr>
+    </table>
+    <div class="quota">每月 AI 额度跟档位走，<b>不用自己配 AI Key</b>：239 / 399 / 539 三档都是 <b>150 次 AI 文本 ＋ 150 张图 ＋ 2 条数字人视频（每条 30 秒）</b>。发笔记、到点发布不扣次数。</div>
+    <div class="quota pack"><b>算力包：30 元 / 份</b>——加 <b>150 次文本 ＋ 30 张图 ＋ 2 条数字人</b>，从买到那天算 30 天，一个月最多买 2 份，免费号也能买；先用档位额度，用完才动包里的。<br>数字人只算首次出片：<b>同一篇稿子改稿重做算新的一条（再扣 1 条）</b>；我们做坏、平台审核不过，免费重做。</div>
+  </section>
+
+  <div class="foot">
+    <b>执行器只认服务器</b>：服务器一熔断，它当场全停；不挂线不干活。<br>
+    装机中遇到问题：把报错原话发给给你开通的人，一看就知道。
+  </div>
+
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  let me = null;
+  let busy = false;
+  let timer = null;
+
+  const STATE_IDS = ['stateLoading', 'stateGuest', 'stateDemo', 'stateFree', 'statePaid'];
+
+  function showState(id) {
+    STATE_IDS.forEach((x) => $(x).classList.toggle('hidden', x !== id));
+  }
+  function switchCards(show) {
+    $('downloadCard').classList.toggle('hidden', !show);
+    $('installCard').classList.toggle('hidden', !show);
+  }
+  function fmtAgo(ts) {
+    if (!ts) return '—';
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return '刚刚';
+    if (s < 3600) return Math.floor(s / 60) + ' 分钟前';
+    if (s < 86400) return Math.floor(s / 3600) + ' 小时前';
+    return Math.floor(s / 86400) + ' 天前';
+  }
+  function tierText() {
+    if (!me) return '';
+    if (me.kind === 'demo') return '演示号';
+    const ed = me.edition || {};
+    return ed.tierLabel || (me.tier ? me.tier + '版' : '');
+  }
+  function isPaid() {
+    if (!me) return false;
+    const ed = me.edition || {};
+    return (me.tier && me.tier !== '免费') || !!(ed.label && ed.label !== '免费');
+  }
+
+  function renderAcct() {
+    const row = $('acctLine');
+    if (!me) { row.classList.add('hidden'); row.innerHTML = ''; return; }
+    const tier = tierText();
+    row.innerHTML = '👤 <b>' + esc(me.name) + '</b> · 尾号' + esc(me.phoneTail)
+      + (tier ? '　当前档位：<b>' + esc(tier) + '</b>' : '')
+      + '　<a id="switchAcct">换账号</a>';
+    row.classList.remove('hidden');
+    $('switchAcct').onclick = async () => {
+      try { await XhsGate.apiRaw('/api/auth/logout', {}); } catch (_) {}
+      try { XhsGate.invalidate(); } catch (_) {}
+      location.href = 'account.html?need=setup&next=setup';
+    };
+  }
+
+  function renderPaid() {
+    const ex = me.exec || null;
+    const online = !!(ex && ex.online);
+    const has = !!me.hasExec;
+    const pill = $('execPill');
+    pill.className = 'pill ' + (online ? 'ok' : has ? 'warn' : 'off');
+    pill.textContent = online ? '🟢 在线待命' : has ? '🟡 已挂过，现在离线' : '⚪ 还没挂上';
+    $('execTitle').textContent = online ? '这只手已经在干活了' : has ? '这只手现在没连上' : '还差最后一步：挂线';
+    $('execHint').textContent = online
+      ? '网页上点「发 / 开始」，活就在你这台电脑上真干；别关装执行器的浏览器。'
+      : has
+        ? '上次报到：' + fmtAgo(ex && ex.lastSeen) + '。打开装执行器的浏览器，或在执行器面板里重新点「挂上」；登录过期就扫码。'
+        : '先按下面三步装好，再把配对号填进执行器面板，点「挂上」；变绿就是挂上了。';
+
+    const code = me.pairCode || '';
+    $('pairRow').classList.toggle('hidden', !code);
+    $('noCodeHint').classList.toggle('hidden', !!code);
+    $('pairCode').textContent = code || '';
+
+    const ed = me.edition || {};
+    const label = ed.tierLabel || (me.tier ? me.tier + '版' : '');
+    $('tierLine').textContent = (ed.onTrial ? '试用中：' : '当前档位：') + (label || '—')
+      + '　一个号一台电脑；换电脑用同一个配对号重挂，旧电脑自动下线。';
+  }
+
+  function render() {
+    renderAcct();
+    if (!me) {
+      showState('stateGuest');
+      switchCards(false);
+      return;
+    }
+    if (me.kind === 'demo') {
+      showState('stateDemo');
+      switchCards(false);
+      return;
+    }
+    if (!isPaid()) {
+      showState('stateFree');
+      switchCards(false);
+      return;
+    }
+    showState('statePaid');
+    switchCards(true);
+    renderPaid();
+  }
+
+  async function copyCode() {
+    if (!me || !me.pairCode) return;
+    const btn = $('copyCodeBtn');
+    const old = btn.textContent;
+    const done = () => { btn.textContent = '已复制 ✓'; setTimeout(() => { btn.textContent = old; }, 1500); };
+    try {
+      await navigator.clipboard.writeText(me.pairCode);
+      done();
+      return;
+    } catch (_) {}
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = me.pairCode;
+      ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      if (ok) { done(); return; }
+    } catch (_) {}
+    btn.textContent = '照抄：' + me.pairCode;
+    setTimeout(() => { btn.textContent = old; }, 3000);
+  }
+
+  function startTimer() {
+    if (timer) return;
+    timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 15000);
+  }
+  function stopTimer() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  async function load() {
+    if (busy) return;
+    busy = true;
+    try {
+      const j = await XhsGate.apiRaw('/api/auth/me', {});
+      me = j.account || null;
+      render();
+      if (me && me.kind !== 'demo') startTimer();
+      else stopTimer();
+    } catch (e) {
+      if (!me) {
+        showState('stateLoading');
+        $('stateLoading').textContent = '连不上服务器——刷新一下试试，或看下网页地址对不对。';
+        switchCards(false);
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  $('copyCodeBtn').addEventListener('click', copyCode);
+  $('refreshState').addEventListener('click', load);
+  $('demoOutBtn').addEventListener('click', async () => {
+    try { await XhsGate.apiRaw('/api/auth/logout', {}); } catch (_) {}
+    try { XhsGate.invalidate(); } catch (_) {}
+    location.href = 'account.html?need=setup&next=setup';
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

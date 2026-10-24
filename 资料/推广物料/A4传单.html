@@ -33,20 +33,20 @@
   .page > *{position:relative; z-index:1;}
 
   /* ── 顶部品牌条 ── */
-  .brand{display:flex; align-items:center; justify-content:space-between; font-size:3mm; color:var(--tx-2);}
+  .brand{display:flex; align-items:center; justify-content:space-between; font-size:3.4mm; color:var(--tx-2);}
   .brand .l{display:flex; align-items:center; gap:2mm;}
-  .dot{width:2.6mm; height:2.6mm; border-radius:50%; background:var(--gold); box-shadow:0 0 2.6mm rgba(240,200,105,.85);}
-  .brand b{color:#fff; font-size:3.6mm; font-weight:400; letter-spacing:.2mm;}
+  .dot{width:3mm; height:3mm; border-radius:50%; background:var(--gold); box-shadow:0 0 2.6mm rgba(240,200,105,.85);}
+  .brand b{color:#fff; font-size:4.2mm; font-weight:400; letter-spacing:.2mm;}
   .brand .sep{color:var(--gold);}
   .brand .r{color:var(--tx-3);}
-  .rule{height:.35mm; margin:1.4mm 0 0; background:linear-gradient(90deg,var(--gold) 0%,rgba(240,200,105,.10) 42%,transparent 100%);}
+  .rule{height:.35mm; margin:2mm 0 0; background:linear-gradient(90deg,var(--gold) 0%,rgba(240,200,105,.10) 42%,transparent 100%);}
 
   /* ── ① 自我介绍 ── */
   /* 页首＝介绍 + 过渡行（第五轮起截图挪进第 6 问，页首不再两列） */
-  .hero{margin-top:2.6mm;}
-  .intro{border-left:.9mm solid var(--gold); padding:.6mm 0 .6mm 4.8mm; align-self:start;}
-  .intro .hi{margin-top:0; font-size:6.2mm; font-weight:900; color:#fff; line-height:1.32; letter-spacing:.1mm;}
-  .intro p{margin-top:2.4mm; font-size:4.3mm; line-height:1.55; color:var(--tx-2);}
+  .hero{margin-top:4mm;}
+  .intro{border-left:.9mm solid var(--gold); padding:.6mm 0 .6mm 6mm; align-self:start;}
+  .intro .hi{margin-top:0; font-size:8.4mm; font-weight:900; color:#fff; line-height:1.32; letter-spacing:.1mm;}
+  .intro p{margin-top:3mm; font-size:5.8mm; line-height:1.55; color:var(--tx-2);}
   .intro em{font-style:normal; color:var(--gold); font-weight:900;}
   .nb{white-space:nowrap;}
   /* ── ⓪ 开场痛点清单（老板六条原话；单列六行，条前 ✕ 标记，整块缩进让开左边） ── */
@@ -59,12 +59,12 @@
   body:not(.color) .plist span i{color:#000;}
   body:not(.color) .plist span{color:#3f444c;}   /* 断行别把词拆到两行（如「流/程」） */
   /* ── 过渡行：正面「看完 9 个再说」/ 背面「还有 5 个」共用一套 ── */
-  .trans{margin-top:2.8mm; font-size:4.6mm; font-weight:400; line-height:1.5;
+  .trans{margin-top:5mm; font-size:6mm; font-weight:400; line-height:1.5;
          color:#fff; letter-spacing:.1mm;}
   .trans em{font-style:normal; color:var(--gold);}
 
   /* ── ② 问题列表 ── */
-  .qa-list{margin-top:1.4mm; display:flex; flex-direction:column; gap:10mm;}
+  .qa-list{margin-top:4mm; display:flex; flex-direction:column; gap:10mm;}
   .qa{display:flex; align-items:flex-start; gap:4.2mm;}
   .qb{flex:none; width:7.2mm; height:7.2mm; border-radius:2mm; text-align:center;
       font-size:4.0mm; font-weight:400; line-height:6.8mm; color:var(--gold);
@@ -74,7 +74,7 @@
   .qc > p,.qc-row p{margin-top:2.7mm; font-size:3.5mm; line-height:1.74; color:var(--tx-2);}
   .qc em{font-style:normal; color:var(--gold); font-weight:400;}
   .qc p b{color:#fff; font-weight:400;}
-  .qc p i{display:block; font-style:normal; color:var(--tx-3); font-size:2.9mm;}   /* 小字合规句整句独占一行，别被正文尾行拆半个字 */
+  .qc p i{display:block; font-style:normal; color:var(--tx-3); font-size:3.6mm;}   /* 小字合规句整句独占一行，别被正文尾行拆半个字 */
   .qc-row{display:flex; align-items:flex-start; gap:5mm;}
   /* 截图缩略图：开头介绍 / 需要配图的问答共用一套 */
   .shot{flex:none; border-radius:2mm; overflow:hidden; background:#fff;
@@ -142,41 +142,39 @@
   .dmerge span{flex:1; text-align:center; font-size:3mm; line-height:1; color:var(--tx-3);}
 
   /* ── 翻面提示 ── */
-  .lead{margin-top:auto; padding-top:1.0mm; font-size:4.2mm; line-height:1.6; color:var(--tx-2); text-align:center;}
+  .lead{margin-top:auto; padding-top:2mm; font-size:5mm; line-height:1.6; color:var(--tx-2); text-align:center;}
   .lead b{color:#fff; font-weight:400;}
   .lead em{font-style:normal; color:var(--gold); font-weight:400;}
-  .foot{margin-top:0.8mm; display:flex; justify-content:space-between; align-items:center;
-        font-size:2.9mm; color:var(--tx-3);}
-  .foot b{color:var(--gold); font-size:3.3mm; font-weight:400; letter-spacing:.2mm;}
+  .foot{margin-top:1.6mm; display:flex; justify-content:space-between; align-items:center;
+        font-size:3.4mm; color:var(--tx-3);}
+  .foot b{color:var(--gold); font-size:3.9mm; font-weight:400; letter-spacing:.2mm;}
 
   /* ── ③ 双码：落地页大码（主）+ 微信小码（次） ── */
-  .qrbox{margin-top:auto; padding-top:1.4mm;}
-  .qri{display:flex; align-items:center; gap:4.6mm; border:.4mm solid var(--gl);
-       border-radius:3mm; padding:2.6mm 5mm; background:var(--card);}
+  .qrbox{margin-top:auto; padding-top:2mm;}
+  .qri{display:flex; align-items:center; gap:5.5mm; border:.4mm solid var(--gl);
+       border-radius:3.5mm; padding:3.6mm 6mm; background:var(--card);}
   .qcol{display:flex; align-items:center; gap:3.2mm; min-width:0;}
   .qcol.main{flex:1.42;}
   .qcol.side{flex:1;}
   .qcol img{flex:none; display:block; background:#fff; border-radius:1.8mm; padding:.8mm;}
-  .qcol.main img{width:26mm; height:26mm;}
-  .qcol.side img{width:17mm; height:17mm;}
-  .qrph{flex:none; width:26mm; height:26mm; border:.4mm dashed var(--tx-3); border-radius:1.8mm;
-        display:flex; align-items:center; justify-content:center; text-align:center;
-        font-size:2.5mm; line-height:1.35; color:var(--tx-3);}
-  .qdiv{flex:none; width:.3mm; height:28mm; background:var(--line);}
+  .qcol.main img{width:31mm; height:31mm;}
+  .qcol.side img{width:21mm; height:21mm;}
+  .qdiv{flex:none; width:.3mm; height:34mm; background:var(--line);}
   .qcol .qt{min-width:0;}
-  .qcol .qt b{display:block; font-size:4mm; font-weight:400; color:#fff; line-height:1.3;}
-  .qcol.main .qt b{font-size:4.5mm;}
-  .qcol .qt span{display:block; margin-top:1.4mm; font-size:2.9mm; color:var(--tx-2); line-height:1.5;}
+  .qcol .qt b{display:block; font-size:4.8mm; font-weight:400; color:#fff; line-height:1.3;}
+  .qcol.main .qt b{font-size:5.6mm;}
+  .qcol.side .qt b{font-size:4.6mm;}
+  .qcol .qt span:not(.nb){display:block; margin-top:2mm; font-size:3.6mm; color:var(--tx-2); line-height:1.5;}
   .qcol .qt em{font-style:normal; color:var(--gold); font-weight:400;}
-  .contact{margin-top:2.2mm; text-align:center; font-size:3mm; color:var(--tx-3);}
-  .contact b{color:#fff; font-weight:400; font-size:3.4mm;}
+  .contact{margin-top:3mm; text-align:center; font-size:3.6mm; color:var(--tx-3);}
+  .contact b{color:#fff; font-weight:400; font-size:4.2mm;}
   .contact .gold{color:var(--gold); font-weight:700;}
 
   /* ── 背面问题少，字号和间距整体放大一档，避免页尾留下空档 ── */
-  .back .qa-list{gap:5mm;}
-  .back .qb{width:8.0mm; height:8.0mm; font-size:4.5mm; line-height:7.6mm;}
-  .back .qc > b,.back .q4tall .rcol > b{font-size:4.9mm;}
-  .back .qc > p{font-size:3.7mm; line-height:1.54; margin-top:1.9mm;}
+  .back .qa-list{gap:5.5mm;}
+  .back .qb{width:9.6mm; height:9.6mm; font-size:5.4mm; line-height:9.2mm;}
+  .back .qc > b,.back .q4tall .rcol > b{font-size:6.2mm;}
+  .back .qc > p{font-size:5.1mm; line-height:1.7; margin-top:3.6mm;}
   .back .qc > p.cap{margin-top:1.1mm;}
   .back .qc > p.punch,.back .q4tall .rcol > p.punch{font-size:4.4mm; line-height:1.4;}
 
@@ -269,10 +267,121 @@
   body:not(.color) .qri .qt span{color:#3f444c;}
   body:not(.color) .qri .qt em{color:#000;}
   body:not(.color) .qdiv{background:#cfd3d9;}
-  body:not(.color) .qrph{border-color:#999; color:#777;}
   body:not(.color) .contact{color:#777;}
   body:not(.color) .contact b{color:#000;}
   body:not(.color) .contact .gold{color:#000;}
+
+  /* ─ 第三页：规划感（八十改续 2026-10-13）── */
+  .frees{margin-top:2.4mm; align-self:center;
+    padding:1.6mm 6mm; border-radius:1.5mm;
+    background:var(--gold);
+    font-size:5.6mm; font-weight:900; color:#2a1f08; line-height:1.3;
+    letter-spacing:.2mm; white-space:nowrap;}
+  .pbox{margin-top:3mm;}
+  .pbox .ptitle{font-size:4.4mm; font-weight:900; color:#fff; line-height:1.3; letter-spacing:.1mm;}
+  .pcols{margin-top:2mm; display:grid; grid-template-columns:1fr 1fr; gap:3mm;}
+  .pc{border:.3mm solid var(--gl); border-radius:2mm;
+      padding:2.2mm 2.6mm 2mm; background:rgba(240,200,105,.06);}
+  .pc .ph{font-size:4.4mm; font-weight:900; color:var(--gold); line-height:1.2;
+          padding-bottom:1.2mm; border-bottom:.2mm solid var(--gl);}
+  .pc .pl{margin-top:1.2mm; list-style:none; padding:0;}
+  .pc .pl li{display:flex; gap:1.8mm; margin-top:1.2mm; align-items:flex-start;}
+  .pc .pl li:first-child{margin-top:0;}
+  .pc .pn{flex:none; width:4.8mm; height:4.8mm; border-radius:50%;
+          background:var(--gold); color:#2a1f08;
+          font-size:2.8mm; font-weight:900; text-align:center; line-height:4.8mm; margin-top:.2mm;}
+  .pc .pt{font-size:3.4mm; font-weight:900; color:#fff; line-height:1.3;}
+  .pc .pd{font-size:2.9mm; line-height:1.4; color:var(--tx-2); margin-top:.3mm;}
+  .pc .pd em{font-style:normal; color:var(--gold); font-weight:400;}
+  .flow3{margin-top:2.2mm;}
+  .f3step{flex:1; border:.3mm solid var(--gl); border-radius:2mm;
+          padding:2mm 2mm 1.8mm; background:rgba(240,200,105,.08); text-align:center;}
+  .f3step b{display:block; font-size:4mm; font-weight:900; color:#fff; line-height:1.3;}
+  .f3step span{display:block; margin-top:.6mm; font-size:3mm; line-height:1.35; color:var(--tx-2);}
+  .f3step em{font-style:normal; color:var(--gold); font-weight:400; font-size:2.8mm;}
+  .f3ar{flex:none; align-self:center; font-size:4mm; color:var(--gold); padding:0 .8mm;}
+  body:not(.color) .frees{background:#111; color:#fff;}
+  body:not(.color) .pbox .ptitle{color:#000;}
+  body:not(.color) .pc{border-color:#111; background:#fff;}
+  body:not(.color) .pc .ph{color:#000; border-bottom-color:#ccc;}
+  body:not(.color) .pc .pn{background:#111; color:#fff;}
+  body:not(.color) .pc .pt{color:#000;}
+  body:not(.color) .pc .pd{color:#3f444c;}
+  body:not(.color) .pc .pd em{color:#000;}
+  body:not(.color) .f3step{border-color:#111; background:#fff;}
+  body:not(.color) .f3step b{color:#000;}
+  body:not(.color) .f3step span{color:#3f444c;}
+  body:not(.color) .f3step em{color:#000;}
+  body:not(.color) .f3ar{color:#000;}
+
+  /* ── 背面合并预览：收紧间距 ── */
+  .back .qa-list{gap:5.5mm;}
+  .back .pbox{margin-top:2mm;}
+  .back .pcols{margin-top:1.5mm; gap:2.5mm;}
+  .back .pc{padding:1.8mm 2.2mm 1.6mm;}
+  .back .pc .pl li{margin-top:0.8mm;}
+  .back .flow3{margin-top:1.5mm;}
+  .back .f3step{padding:1.4mm 1.6mm 1.2mm;}
+  .back .f3step b{font-size:3.5mm;}
+  .back .f3step span{font-size:2.6mm;}
+  .back .f3ar{font-size:3.5mm;}
+
+  /* ── 问题清单（做引流时遇到的问题）── */
+  .prob{margin-top:2.4mm;}
+  .prob .ph{font-size:4.8mm; font-weight:900; line-height:1.35; color:#fff; letter-spacing:.1mm;}
+  .prob .ph em{font-style:normal; color:var(--gold);}
+  .plist2{margin-top:1.6mm; display:flex; flex-direction:column; gap:1.6mm; padding-left:12mm;}
+  .plist2 span{font-size:3.8mm; line-height:1.45; color:var(--tx-2);}
+  .plist2 span i{font-style:normal; display:inline-block; width:5mm; color:var(--gold); font-weight:900;}
+  body:not(.color) .prob .ph{color:#000;}
+  body:not(.color) .prob .ph em{color:#000;}
+  body:not(.color) .plist2 span i{color:#000;}
+  body:not(.color) .plist2 span{color:#3f444c;}
+
+  /* ─ 我的做法（核心打法）── */
+  .approach{margin-top:4mm; border:.4mm solid var(--gl); border-radius:2.5mm;
+            padding:3mm 4mm; background:rgba(240,200,105,.08);}
+  .approach .at{font-size:5.4mm; font-weight:900; color:var(--gold); line-height:1.3;}
+  .approach p{margin-top:2mm; font-size:4.7mm; line-height:1.5; color:var(--tx);}
+  .approach p em{font-style:normal; color:var(--gold); font-weight:400;}
+  .approach .chain{margin-top:1.6mm; font-size:4.4mm; line-height:1.5; color:var(--tx-2);}
+  .approach .chain b{font-weight:900; color:var(--gold);}
+  body:not(.color) .approach .chain{color:#3f444c;}
+  body:not(.color) .approach .chain b{color:#000;}
+  body:not(.color) .approach{border-color:#111; background:#f5f6f8;}
+  body:not(.color) .approach .at{color:#000;}
+  body:not(.color) .approach p{color:#000;}
+  body:not(.color) .approach p em{color:#000;}
+
+  /* ── 功能清单（4 打法 +5 扫法 +3 步）── */
+  .featbox{margin-top:4.5mm;}
+  .featbox .ftitle{font-size:5.2mm; font-weight:900; color:#fff; line-height:1.3;}
+  .featcols{margin-top:3mm; display:grid; grid-template-columns:1fr 1fr; gap:3mm;}
+  .featcol{border:.3mm solid var(--gl); border-radius:2mm; padding:2.6mm 3mm; background:rgba(240,200,105,.06);}
+  .featcol .fch{font-size:4.8mm; font-weight:900; color:var(--gold); line-height:1.2;
+                padding-bottom:2.4mm; border-bottom:.2mm solid var(--gl);}
+  .featcol .fch i{font-style:normal; font-weight:400; font-size:3.5mm; color:var(--tx-2);}
+  .featcol ul{margin-top:2.6mm; list-style:none; padding:0;}
+  .featcol li{display:flex; gap:2mm; margin-top:2.6mm; align-items:flex-start;}
+  .featcol li:first-child{margin-top:0;}
+  .featcol .fn{flex:none; width:5.6mm; height:5.6mm; border-radius:50%;
+               background:var(--gold); color:#2a1f08;
+               font-size:3.2mm; font-weight:900; text-align:center; line-height:5.6mm; margin-top:.2mm;}
+  .featcol .ft{font-size:3.9mm; font-weight:900; color:#fff; line-height:1.25;}
+  .featcol .fd{font-size:3.6mm; line-height:1.45; color:var(--tx-2); margin-top:.6mm;}
+  .featcol .fd em{font-style:normal; color:var(--gold); font-weight:400;}
+  /* ③④ 整宽大块：与上面 ①② 两栏同一套框语言 */
+  .featcol.aione{margin-top:1.5mm;}
+  .featcol.aione ul{margin-top:2.4mm; display:grid; grid-template-columns:1fr 1fr; column-gap:6mm; row-gap:2.2mm;}
+  .featcol.aione li{margin-top:0;}
+  body:not(.color) .featbox .ftitle{color:#000;}
+  body:not(.color) .featcol{border-color:#111; background:#fff;}
+  body:not(.color) .featcol .fch{color:#000; border-bottom-color:#ccc;}
+  body:not(.color) .featcol .fch i{color:#3f444c;}
+  body:not(.color) .featcol .fn{background:#111; color:#fff;}
+  body:not(.color) .featcol .ft{color:#000;}
+  body:not(.color) .featcol .fd{color:#3f444c;}
+  body:not(.color) .featcol .fd em{color:#000;}
 </style>
 </head>
 <body>
@@ -281,169 +390,113 @@
 <section class="page">
   <div class="brand">
     <div class="l"><span class="dot"></span><b>AI雕兄</b><span class="sep">·</span><span>小红书评论区获客</span></div>
-    <div class="r">AI 运营教练 · AI杨小过</div>
+    <div class="r">AI 运营教练 · 张宇鹏</div>
   </div>
   <div class="rule"></div>
 
   <div class="hero">
     <div class="intro">
       <p class="hi">老板，您好。</p>
-      <p>我现在做小红书、抖音、视频号的线上运营——手头有个工具，帮您<span class="nb">发笔记</span>、在别人的评论区里<span class="nb">接客户</span>，还有 <span class="nb">AI 客服</span>帮您回消息，可以<span class="nb"><em>免费试用 1 个月</em></span>。眼下正在找第一批案例客户，想找几位不同行业的老板，<span class="nb">跟我一起</span>把流程跑通，帮我攒个案例。</p>
-      <p>我以前是大厂码农，这套系统我在自己号上<span class="nb">跑了 <em>15 天</em>，</span>没投广告、没买流量，<em>1000+ 真人<span class="nb">加进我微信</span></em>，<span class="nb">后台数据</span>可以现场打开给您看。</p>
+      <p>我以前是大厂码农，<span class="nb">美的</span>、<span class="nb">美赞臣</span>、<span class="nb">嘉士伯</span>、<span class="nb">简一</span>都做过——现在做小红书、抖音、视频号的线上运营。这套系统我在自己号上<span class="nb">跑了 <em>15 天</em>，</span>没投广告、没买流量，<em>1000+ 真人<span class="nb">加进我微信</span></em>，<span class="nb">后台数据</span>可以现场打开给您看。</p>
     </div>
-    <div class="pain">
-      <p class="ph">做生意，是不是难在这几条？</p>
-      <div class="plist">
-        <span><i>✕</i>守着门店，没客户上门——也不知道客户从哪来。</span>
-        <span><i>✕</i>纯靠设计师推荐——就这一条路。</span>
-        <span><i>✕</i>设计师推荐了，客户也把握不住。</span>
-        <span><i>✕</i>想做线上拉客单——不会玩。</span>
-        <span><i>✕</i>请了代运营团队——没效果。</span>
-        <span><i>✕</i>自己用 AI——耗不起。</span>
+
+    <div class="approach">
+      <p class="at">我的打法：从顶流的笔记里截流，把最大的流量为您所用</p>
+      <p>别人做引流是发笔记赌流量，等平台的流量施舍。我们邪修方案：去热门帖子的评论区接话——<em>您发表的每条评论都是一篇流量拉满的笔记</em>，他有多少流量，您就露多少次脸。您的用户就在这波流量里。</p>
+      <p class="chain">整个过程三步：<b>获客</b>——在流量最大的地方接话，把对您有意思的人捞过来；<b>立人设</b>——他点进主页，几篇笔记让他信您；<b>转化</b>——AI 客服把话接住，聊过的进名单交给您谈。</p>
+    </div>
+
+    <div class="featbox">
+      <p class="ftitle">整套系统的套路——三件事帮您干完</p>
+      <div class="featcols">
+        <div class="featcol">
+          <p class="fch">获客：<i>在流量最大的地方截流</i></p>
+          <ul>
+            <li><span class="fn">1</span><div><div class="ft">最新抢位</div><div class="fd">盯住笔记流量，<em>上涨那一刻您就在场</em></div></div></li>
+            <li><span class="fn">2</span><div><div class="ft">TOP 活水</div><div class="fd">长期大流量的搜索贴，<em>评论永远在顶部</em></div></div></li>
+            <li><span class="fn">3</span><div><div class="ft">高 V 借势</div><div class="fd">补大 V 干货，<em>不得罪大 V 还能温柔捞客</em></div></div></li>
+            <li><span class="fn">4</span><div><div class="ft">同城异业</div><div class="fd">搜同城别的行业，<em>别家的客户也是您的</em></div></div></li>
+            <li><span class="fn">5</span><div><div class="ft">求助精准</div><div class="fd">找到对上号的客户，<em>把人拉回来</em></div></div></li>
+          </ul>
+        </div>
+        <div class="featcol">
+          <p class="fch">立人设：<i>通过笔记和主页规划让用户信任您</i></p>
+          <ul>
+            <li><span class="fn">1</span><div><div class="ft">门面笔记</div><div class="fd">主页置顶两篇，<em>点进来就知道您是干嘛的</em></div></div></li>
+            <li><span class="fn">2</span><div><div class="ft">知识笔记</div><div class="fd">讲行业门道，<em>他觉得您专业就信您</em></div></div></li>
+            <li><span class="fn">3</span><div><div class="ft">引流笔记</div><div class="fd">笔记里埋钩子，<em>看完的人忍不住想问</em></div></div></li>
+            <li><span class="fn">4</span><div><div class="ft">案例笔记</div><div class="fd">用真实故事说话，<em>比什么广告都管用</em></div></div></li>
+          </ul>
+        </div>
+      </div>
+      <div class="featcol aione">
+        <p class="fch">转化：<i>用 AI 客服转化客户名单</i></p>
+        <ul>
+          <li><span class="fn">1</span><div><div class="ft">私信破冰</div><div class="fd">同行帖里想买但不好评论的，<em>标记下来私信</em></div></div></li>
+          <li><span class="fn">2</span><div><div class="ft">适用性追问</div><div class="fd">「我这情况行不行」，<em>帮客户对号入座</em></div></div></li>
+          <li><span class="fn">3</span><div><div class="ft">产品细节</div><div class="fd">是什么、怎么用、包含什么，<em>按知识库答清</em></div></div></li>
+          <li><span class="fn">4</span><div><div class="ft">售后顾虑</div><div class="fd">怕踩坑、能不能退，<em>先聊透再谈单</em></div></div></li>
+        </ul>
       </div>
     </div>
-    <p class="trans">上面这些，下面这 <em>8 个问题</em>里逐条说清楚。</p>
   </div>
 
+  <div class="lead">背面还有 <b>详细问答</b>，翻面看 →</div>
+
+  <div class="foot">
+    <div>前大厂码农 · 江湖散人 <b>张宇鹏</b></div>
+    <div>可以<span class="nb"><em>免费试用 1 个月</em></span>· 正在找第一批案例客户</div>
+  </div>
+</section>
+
+<!-- ══════════ 背面：详细问答 + 双码 ═════════ -->
+<section class="page back">
+  <div class="brand">
+    <div class="l"><span class="dot"></span><b>AI雕兄</b><span class="sep">·</span><span>小红书评论区获客</span></div>
+    <div class="r">AI 运营教练 · 张宇鹏</div>
+  </div>
+  <div class="rule"></div>
+
+  <p class="trans">几个常被问到的问题</p>
 
   <div class="qa-list">
     <div class="qa">
       <span class="qb">1</span>
       <div class="qc">
-        <b>本地用户在抖音、小红书、视频号的咨询流量，到底有多大？</b>
-        <p class="punch">每月 <em>1 万</em> 个带购买意图的人，在这三个平台找您这类东西——<b>您一个都没接住</b>。</p>
-        <div class="funnel">
-          <div class="fs"><b>10 亿</b><span>三个平台的月活</span></div>
-          <span class="ar"><i>×50%</i></span>
-          <div class="fs"><b>5 亿</b><span>一半人买东西前会上网逛</span></div>
-          <span class="ar"><i>×0.2%</i></span>
-          <div class="fs"><b>100 万</b><span>千分之二和您同城</span></div>
-          <span class="ar"><i>×1%</i></span>
-          <div class="fs"><b>1 万</b><span>百分之一和您同行 / 月</span></div>
-        </div>
+        <b>流量到底有多大？</b>
+        <p>三个平台月活 10 亿——砍到您的城市和行业，每月还有 <em>1 万</em>个带购买意图的人找您这类东西。以前的您一个都接不住，现在评论区捞客专门接这批人。</p>
       </div>
     </div>
 
     <div class="qa">
       <span class="qb">2</span>
       <div class="qc">
-        <b>客户到底是怎么选商家的？</b>
-        <div class="dec2">
-          <div class="dent">
-            <div class="de"><b>客户是推荐来的</b><span>设计师 / 朋友介绍</span></div>
-            <div class="de"><b>客户是自己搜来的</b><span>想买，先自己查一圈</span></div>
-          </div>
-          <div class="dmerge"><span>↓</span><span>↓</span></div>
-          <div class="decflow">
-            <div class="ds"><b>客户问 AI 求证</b><span>「哪家靠谱？」</span></div>
-            <span class="dar">→</span>
-            <div class="ds hot"><b>客户搜「同款」</b><span>小红书 / 抖音</span></div>
-            <span class="dar">→</span>
-            <div class="ds"><b>客户比评价 · 比价</b><span>看口碑、比价格</span></div>
-            <span class="dar">→</span>
-            <div class="ds"><b>客户决定去哪家买</b><span>买您，还是别家</span></div>
-          </div>
-        </div>
-        <p class="punch">最怕：设计师都把您推荐出去了，客户比一圈，还是<em>去了别家</em>。</p>
-        <p>客户问 AI、搜「同款」、看评价——翻的都是笔记、评论、文章。信源里<em>到处有您</em>，才会被推荐。</p>
+        <b>效果会咋样？</b>
+        <p>我自己号上跑了 15 天，没投广告没买流量，<b>1000+ 真人加进微信</b>。第一个月看信号——客户名单天天加人；两三个月看加微信的人数。<i>效果因人而异，出单靠您的产品，我保证流量动作天天在跑。</i></p>
       </div>
     </div>
 
     <div class="qa">
       <span class="qb">3</span>
       <div class="qc">
-        <b>只发案例、发视频，客户就会来吗？</b>
-        <p class="punch">只发案例不够——在消费者眼里是<em>自卖自夸</em>，路人刷到就划走。</p>
-        <p>想让人来看，得靠引流笔记＋知识笔记把曝光做大；案例真正的作用，是给已经在找您的人确认「值不值得合作」。系统还能把<b>一条案例拆成多条视频讲解</b>，素材给一次、内容批量出。</p>
+        <b>跟代运营、买 AI 工具的比呢？</b>
+        <p>代运营一个月几千起、套模板，号在别人手里人走号空；通用 AI 按次收钱、昨天能用今天废。这套<b>整条流水线固化进系统</b>——方向、内容、客户、时机全管，电脑开着 24 小时盯评论捞客。<b>一个工具，顶 N 个人的运营团队。</b></p>
       </div>
     </div>
 
-  </div>
-
-  <div class="lead">还有 <b>5 个问题</b> + 扫码入口，都在背面。<em>翻面 →</em></div>
-
-  <div class="foot">
-    <div>前大厂码农 · 江湖散人 <b>AI杨小过</b></div>
-    <div>来源：平台公开披露 · 三平台月活合计约 10 亿 · 每步系数均往保守取</div>
-  </div>
-</section>
-
-<!-- ══════════ 背面：第 4~8 问 + 双码 ══════════ -->
-<section class="page back">
-  <div class="brand">
-    <div class="l"><span class="dot"></span><b>AI雕兄</b><span class="sep">·</span><span>小红书评论区获客</span></div>
-    <div class="r">AI 运营教练 · AI杨小过</div>
-  </div>
-  <div class="rule"></div>
-
-  <p class="trans">接着上面，还有 <em>5 个</em></p>
-
-  <div class="qa-list">
     <div class="qa">
       <span class="qb">4</span>
       <div class="qc">
-        <div class="qc-row q4tall">
-          <div class="rcol">
-            <b>效果会咋样？能测算吗？</b>
-            <p class="punch">先看战绩：我自己号上跑了 15 天——没投广告、没买流量，<b>1000+ 真人加进微信</b>。</p>
-            <p>这 1000+ 全是从评论区一个个接回来的——只跟主动问「哪家好」的人聊。也不只是<span class="nb">评论区</span>：笔记、配图、视频天天在出，私信接着跟，聊过的全进<span class="nb">客户名单</span>。</p>
-            <p><span class="nb">效果看两档</span>：第一个月看信号——名单天天加人；两三个月看<span class="nb">加微信的人数</span>。<i>效果因人而异，出单靠您的产品，我保证流量动作天天在跑。</i></p>
-          </div>
-          <div class="shot q6"><img src="assets/实证-后台.jpg" alt="后台完整截图：累计用户数 1,412 与增长曲线"></div>
-        </div>
+        <b>我不懂小红书，能上手吗？</b>
+        <p>账号、内容、评论区、客户，系统全管——您每天花 <b>30 分钟</b>看一眼名单、点个头，其余全自动。</p>
       </div>
     </div>
+
     <div class="qa">
       <span class="qb">5</span>
       <div class="qc">
-        <b>我这套是怎么做的？</b>
-        <p class="punch">不是零散几个功能——我把<em>整套运营体系</em>搬进了系统，专门给小生意做的。</p>
-        <div class="flow">
-          <b>① 发笔记</b><span>帮您选题 → 圈人 → 整理素材 → 发笔记（按您的产品知识库出内容）</span>
-          <b>② 评论区唠嗑</b><span>扫同行和热门笔记的评论区，只跟主动问「哪家好」的人聊</span>
-          <b>③ AI 客服跟进</b><span>聊得来的，接上私信——话术您点头才发，都记进客户名单</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="qa">
-      <span class="qb">6</span>
-      <div class="qc">
-        <b>跟代运营、买 AI 工具的比呢？</b>
-        <div class="cmp3">
-          <div class="c3">
-            <b class="ct">买 AI 工具</b>
-            <p><b>时好时坏、爱瞎编</b>：昨天能用今天废；活儿一点没省，还得您自己干；简单任务也烧最贵的模型，账单吓人</p>
-          </div>
-          <div class="c3">
-            <b class="ct">找代运营</b>
-            <p><b>一个人盯 N 个号</b>、套模板，给不了行业定制；不可能 24 小时——<b>漏一个客户就是漏一笔钱</b>；号在别人手里，人走号空</p>
-          </div>
-          <div class="c3 us">
-            <b class="ct">AI雕兄</b>
-            <p><b>整条流水线固化进系统</b>：方向、内容、客户、时机全管；知识库只引用您的真数据，编不出来；电脑开着 24 小时盯评论捞客、跟单</p>
-          </div>
-        </div>
-        <p class="punch">说到底：一个工具，顶 N 个人的运营团队。</p>
-      </div>
-    </div>
-
-    <div class="qa">
-      <span class="qb">7</span>
-      <div class="qc">
-        <b>我不懂小红书，您是全盘负责吗？</b>
-        <p class="punch">全盘都在系统里——您每天只花 <em>10 分钟</em>，其余全自动。</p>
-        <p>账号诊断、<span class="nb">内容规划</span>、评论区动作、客户维护，都在里面。装好后<b>交给您门店的<span class="nb">顾问</span>、或店员直接<span class="nb">就能跑</span></b>——不用再找人专门维护。</p>
-      </div>
-    </div>
-
-    <div class="qa">
-      <span class="qb">8</span>
-      <div class="qc">
-        <b>这个要花多少钱？</b>
-        <p class="punch"><em>可以免费试用 1 个月</em>，不用先花钱——装在自己电脑上就能跑，值不值自己看。</p>
-        <p class="shared"><b>数据只存本机</b> · 多产品切换 · 发送间隔与停留时间自己设</p>
-        <p>想开始？<em>联系我免费做个测评</em>——我看完您的号和行业，告诉您怎么上手。</p>
+        <b>客户到底怎么选商家？</b>
+        <p>客户问 AI、搜「同款」、看评价——翻的都是<b>笔记、评论、文章</b>。信源里<em>到处有您</em>，才会被推荐：发笔记占住内容，评论区捞客占住讨论，两边都有您，客户比一圈，最后选您。</p>
       </div>
     </div>
   </div>
@@ -451,19 +504,21 @@
   <div class="qrbox">
     <div class="qri">
       <div class="qcol main">
-        <div class="qrph">落地页二维码<br>（待飞书链接）</div>
-        <div class="qt"><b>扫码看完整版</b><span>每个问题的详版答案 · 演示视频<br>免费测评入口，都在里面</span></div>
+        <img src="assets/qr-public.png" alt="公网试用二维码">
+        <div class="qt"><b>扫码看公网试用</b><span>每个问题的详版答案 · 演示视频<br>免费测评入口，都在里面<br>网址：<em>8.222.157.6</em></span></div>
       </div>
       <div class="qdiv"></div>
       <div class="qcol side">
         <img src="assets/qr-wechat.png" alt="微信二维码">
-        <div class="qt"><b>想直接聊，加我微信</b><span>备注「测评」，3 分钟演示直接发您<br><em>微信同号 13360308932</em></span></div>
+        <div class="qt"><b>想直接聊，加我<span class="nb">微信</span></b><span>备注「测评」，3 分钟演示直接发您<br><em>微信同号 13360308932</em></span></div>
       </div>
     </div>
   </div>
 
-  <div class="contact"><b>AI杨小过 · AI 运营教练</b> · 前大厂码农 · 江湖散人</div>
+  <div class="contact"><b>张宇鹏 · AI 运营教练</b> · 前大厂码农 · 江湖散人</div>
+
 </section>
+
 
 </body>
 </html>

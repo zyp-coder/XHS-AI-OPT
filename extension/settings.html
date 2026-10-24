@@ -38,7 +38,7 @@
           <p><b>免责声明：</b>因使用本工具、操作过于频繁或任何平台原因导致的账号异常、限流或封禁，责任由使用者自担，作者与工具方概不负责。任何自动化都有风险，请自行判断频率与节奏。</p>
           <p><b>数据说明：</b>你的全部数据——租户配置、知识库、话术、评论/私信同步记录、灌水与回复历史——都保存在<b>本机浏览器本地存储</b>，不会上传到任何云端服务器，也不存在任何外部服务端可以读取；调用 AI 生成内容时，仅将生成所必需的文本发送给你在「AI 模型配置」中自行选择的 AI 服务商。</p>
           <p><b>加密：</b>AI 密钥、昵称、邮箱、会话与评论正文等敏感字段在本机<b>加密落盘</b>；导出的备份/知识库/AI 客服配置文件由你设置的口令整体加密，换机器导入时输入同一口令即可还原。</p>
-          <p><b>保留期：</b><b>客户数据</b>（获客清单 / 私信往来 / 评论）自最后一次互动起静默满 <b>90 天</b>自动清除，<b>运行数据</b>（灌水历史 / AI 日志 / 回复流水）满 <b>30 天</b>自动清除；到期即删、不可恢复，成交客户同样按此规则处理。需要长期留存的内容请及时在「整机备份 / 恢复」里加密导出。</p>
+          <p><b>保留期：</b><b>顾客数据</b>（获客清单 / 私信往来 / 评论）自最后一次互动起静默满 <b>90 天</b>自动清除，<b>运行数据</b>（灌水历史 / AI 日志 / 回复流水）满 <b>30 天</b>自动清除；到期即删、不可恢复，成交客户同样按此规则处理。需要长期留存的内容请及时在「整机备份 / 恢复」里加密导出。</p>
         </div>
       </details>
 
@@ -134,7 +134,7 @@
         </div>
         <!-- ── 备用 / 看图模型（主模型失败自动顶上 + 诊断看头像，可选） ── -->
         <details class="adv-block" style="border-top:1px solid #eee;padding-top:12px;margin-top:18px;">
-          <summary style="cursor:pointer;font-weight:700;font-size:13px;color:#333;">🛟 备用 / 看图模型（高级 · 可选）<span class="qhelp" tabindex="0" data-tip="一台备胎干两件事：① 主模型报错时自动顶上（鉴权失败/余额不足/限流/断网/服务端错误都会自动改用这里重试一次，内容为空之类的问题不会切）；② 给账号诊断读你的头像图（「诊断&配置 → 基础配置」抓主页后，由它从视觉角度评头像；不配就跳过这段文字建议）。⚠️ 要读图就得选支持图片输入（能看图）的模型，例：通义千问 qwen-vl 系列 / OpenAI gpt-4o；只当备胎用的话，选任意便宜的即可。留空＝不启用备用。">?</span><span style="font-weight:400;color:#999;font-size:11px;">　默认不用管</span></summary>
+          <summary style="cursor:pointer;font-weight:700;font-size:13px;color:#333;">🛟 备用 / 看图模型（高级 · 可选）<span class="qhelp" tabindex="0" data-tip="一台备胎干两件事：① 主模型报错时自动顶上（鉴权失败/余额不足/限流/断网/服务端错误都会自动改用这里重试一次，内容为空之类的问题不会切）；② 给账号诊断读你的头像图（「账号规划 → 基础配置」抓主页后，由它从视觉角度评头像；不配就跳过这段文字建议）。⚠️ 要读图就得选支持图片输入（能看图）的模型，例：通义千问 qwen-vl 系列 / OpenAI gpt-4o；只当备胎用的话，选任意便宜的即可。留空＝不启用备用。">?</span><span style="font-weight:400;color:#999;font-size:11px;">　默认不用管</span></summary>
           <div class="form-group">
             <label>备用 API Key</label>
             <div class="input-eye-wrap">
@@ -190,7 +190,7 @@
         <div class="panel-header">
           <h2>整机备份 / 恢复</h2>
           <!-- 这一行是两条备份路的互指（与「诊断&配置 → 知识库 → 📦 备份」成对），别收进问号 -->
-          <p style="font-size:12px;color:#888;margin-top:6px;">只想存/搬<b>某一个产品</b>的账号资料（问卷 + 人设 + 卖点 + 知识库 + 内容规划，<b>不含 AI Key</b>）→ 用「诊断&amp;配置 → 知识库 → 📦 备份」。</p>
+          <p style="font-size:12px;color:#888;margin-top:6px;">只想存/搬<b>某一个产品</b>的账号资料（问卷 + 人设 + 卖点 + 知识库 + 内容规划，<b>不含 AI Key</b>）→ 用「账号规划 → 知识库 → 📦 备份」。</p>
         </div>
         <div id="backupBody" style="padding:12px;"></div>
       </section>
@@ -422,7 +422,7 @@
            评论里的承接在「👥 获客 → 📮 任务配置 → 🎯 推广目标」，三处互不覆盖 -->
       <section id="tab-leadtouch" class="tab-panel">
         <div class="panel-header">
-          <h2>🤖 扫描节奏：多久看一次新线索、要不要早点知道 <span class="qhelp" tabindex="0" data-tip="两件事：多久整轮扫一次新线索（扫进来的进「线索」清单，每天最多主动触达 10 条）和 要不要开新消息监听（对方刚回就早点知道）。私信 / 触达场合 AI 说话带什么去向在「🔔 线索 → 📮 任务配置」；评论里的承接在「👥 获客 → 📮 任务配置 → 🎯 推广目标」。">?</span></h2>
+          <h2>🤖 扫描节奏：多久看一次新线索、要不要早点知道 <span class="qhelp" tabindex="0" data-tip="两件事：多久整轮扫一次新线索（扫进来的进「AI客服」清单，每天最多主动触达 10 条）和 要不要开新消息监听（对方刚回就早点知道）。私信 / 触达场合 AI 说话带什么去向在「🔔 AI客服 → 📮 任务配置」；评论里的承接在「👥 获客 → 📮 任务配置 → 🎯 推广目标」。">?</span></h2>
         </div>
 
         <!-- 卡框与 获客 → ⚙️ 设置（拟人化与频率）同一套：标题行右侧挂状态、控件在卡里、细则收卡脚灰字。
@@ -467,7 +467,7 @@
         </div>
       </section>
 
-      <!-- 线索 · 📮 任务配置（入口＝弹窗「🔔 线索 → 任务配置」）：触达场合说什么 + 客户问答话术。
+      <!-- 线索 · 📮 任务配置（入口＝弹窗「🔔 线索 → 任务配置」）：触达场合说什么 + 顾客问答话术。
            页内四个平级横 tab（跟获客「任务配置」一个样式）：🎙 渠道基调（各渠道侧重，只读；字数跟人设里的「说话风格」）/
            💰 成交引导（存 aiCs.guide）/ 🗨 话术配置（原「客服话术」整块搬进来）/ 🧪 试问答（会话形式，多轮留记录）。
            评论里的承接在「👥 获客 → 📮 任务配置 → 🎯 推广目标」，两处互不覆盖 -->
@@ -506,12 +506,12 @@
 
         <!-- 试问答：会话形式（一问一答留记录，改完话术可以接着往下问） -->
         <div class="cfgsec" data-sec="test" style="display:none;">
-          <div style="font-size:11px;color:#888;margin-bottom:8px;">模拟客户说话，看 AI 会怎么接 <span class="qhelp" tabindex="0" data-tip="这里只试、不会真发出去。答得不满意就回「🗨 话术配置」改那一条，再来问一次；上面几轮会留着方便对比。">?</span></div>
+          <div style="font-size:11px;color:#888;margin-bottom:8px;">模拟顾客说话，看 AI 会怎么接 <span class="qhelp" tabindex="0" data-tip="这里只试、不会真发出去。答得不满意就回「🗨 话术配置」改那一条，再来问一次；上面几轮会留着方便对比。">?</span></div>
           <div id="aicsChat" style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto;border:1px solid #e3e7f0;border-radius:8px;padding:10px 12px;background:#fafbfc;">
-            <div style="font-size:12px;color:#999;">还没有对话——在下面输入一句客户可能说的话，点「发送」。</div>
+            <div style="font-size:12px;color:#999;">还没有对话——在下面输入一句顾客可能说的话，点「发送」。</div>
           </div>
           <div style="display:flex;gap:6px;margin-top:8px;align-items:center;">
-            <input type="text" id="aicsIn" placeholder="模拟客户说一句，如：几号发货（回车发送）" style="flex:1;min-width:0;">
+            <input type="text" id="aicsIn" placeholder="模拟顾客说一句，如：几号发货（回车发送）" style="flex:1;min-width:0;">
             <button class="btn-primary" id="aicsTest">发送</button>
             <button class="btn" id="aicsChatClear" style="font-size:12px;padding:6px 12px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;cursor:pointer;">清空</button>
           </div>

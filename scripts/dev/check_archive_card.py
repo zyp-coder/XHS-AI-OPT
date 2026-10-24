@@ -19,6 +19,7 @@ import sys
 import time
 
 from playwright.sync_api import expect, sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -120,7 +121,7 @@ with sync_playwright() as p:
     page = ctx.new_page()
     page.set_default_timeout(20000)
     page.on('pageerror', lambda e: errs.append(str(e)))
-    page.goto(f'chrome-extension://{eid}/popup.html?mode=big')
+    goto_big(page, f'chrome-extension://{eid}/popup.html?mode=big')
     page.wait_for_function('typeof switchMainTab === "function" && typeof renderNoteArchive === "function"')
     if page.locator('#firstSetupPanel').count():      # 保险：首次设置面板要是还铺着，点掉它
         page.locator('#fsClose').click()

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>云端造片页（只画画面，不编码）</title>
+<style>
+  body { margin: 0; background: #111; color: #ccc; font: 13px/1.6 system-ui, sans-serif; padding: 12px; }
+  canvas { display: block; width: 180px; height: 320px; border: 1px solid #333; }
+  #st { white-space: pre-wrap; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div>这一页是给服务器偷偷打开用的：外部一帧一帧要画面，本页只负责画。<br>不编码、不出声、不挑浏览器。</div>
+<canvas id="cv" width="1080" height="1920"></canvas>
+<div id="st">待命</div>
+
+<!-- 这一页没人拨旋钮，字体照旧进页面就下（EAGER），frame 才跟客户机一个样 -->
+<script>window.FONTS_EAGER = 1;</script>
+<script src="lib/video/fonts.js"></script>
+<script src="lib/video/styles.js"></script>
+<script>
+/* 云端造片页 —— 对外只给三个口：load(job) / frame(i) / info()
+ *
+ * 跟客户机出片同一套画法：Renderer.renderFrame(ctx, t, tl, style)，
+ * 每帧的时刻是外面按秒数算好了喂进来的（不靠浏览器自己的节拍器），所以画多少遍都是同一条片。
+ *
+ * job 里必须给：cfg（那行风格配置）、tl（{scenes:[{start,end,text/lines,layout,cta,cardSrc}],dur,head,gap,tail}）；
+ * 底图给 cardSrc（同源文件号 /api/blob/<id> 或直接 https 链接都行），这一页自己把它读进来当 sc.cardImg。
+ */
+(function () {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d', { alpha: false });
+  const st = document.getElementById('st');
+  const say = s => { st.textContent = s; };
+
+  let TL = null, STYLE = null, loaded = false;
+
+  function loadImg(src) {
+    return new Promise((resolve, reject) => {
+      const im = new Image();
+      if (/^https?:/i.test(src) && location.protocol !== 'file:') im.crossOrigin = 'anonymous';
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('底图读不进来：' + String(src).slice(0, 80)));
+      im.src = src;
+    });
+  }
+
+  /** 把这一篇的时间轴、风格、底图一次装好；回 {dur, fps, frames} */
+  async function load(job) {
+    job = job || {};
+    await Fonts.ready;                       // 字体没就绪就画，整片会用回退字体，客户机上补不回来
+    const cfg = job.cfg ? Renderer.parseCfg(job.cfg) : Object.assign({}, Renderer.DEFAULT_CFG);
+    STYLE = Renderer.buildStyle(cfg);
+    TL = job.tl;
+    if (!TL || !TL.scenes || !TL.scenes.length) throw new Error('任务里没有幕');
+
+    // 卡片底图：同一段底图的几幕共用一张图，读失败的按纯色卡出（跟客户机那份同口径）
+    const pool = {};
+    for (const sc of TL.scenes) {
+      if (!sc.cardSrc) { sc.cardImg = null; continue; }
+      if (!(sc.cardSrc in pool)) {
+        try { pool[sc.cardSrc] = await loadImg(sc.cardSrc); }
+        catch (e) { pool[sc.cardSrc] = null; sc.cardErr = String(e.message || e); }
+      }
+      sc.cardImg = pool[sc.cardSrc];
+    }
+    loaded = true;
+    const frames = Math.round(TL.dur * 30);
+    say('已装：' + TL.scenes.length + ' 幕 · ' + TL.dur.toFixed(2) + 's · ' + frames + ' 帧');
+    return { dur: TL.dur, fps: 30, frames, scenes: TL.scenes.length, fonts: 'ok' };
+  }
+
+  /** 要第 i 帧：画到 t=i/30，回 JPEG 的数据串（外部解码写盘喂给剪辑工具） */
+  function frame(i, q) {
+    if (!loaded) throw new Error('还没装任务（先 load）');
+    const t = Math.max(0, Math.min(TL.dur - 0.001, i / 30));
+    Renderer.renderFrame(ctx, t, TL, STYLE);
+    return cv.toDataURL('image/jpeg', q || 0.92);
+  }
+
+  function info() {
+    return { loaded, dur: TL ? TL.dur : 0, scenes: TL ? TL.scenes.length : 0,
+      frameSize: [cv.width, cv.height], styles: !!STYLE };
+  }
+
+  window.__film = { load, frame, info };
+  say('就绪');
+})();
+</script>
+</body>
+</html>

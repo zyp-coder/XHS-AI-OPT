@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>功能演示 · 搜索一轮一轮 · 小红书运营助手</title>
+<style>
+:root{
+  --font-ui:"Microsoft YaHei","PingFang SC","Microsoft YaHei UI",-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",sans-serif;
+  --c-bg:#f6f7f9; --c-surface:#fff; --c-surface-2:#fafbfc;
+  --c-line:#e9ecf0; --c-line-2:#dde2e9;
+  --c-ink:#14181f; --c-ink-2:#58616f; --c-ink-3:#8b95a3; --c-ink-4:#b6bec9;
+  --c-brand:#0d9488; --c-brand-ink:#0a7067; --c-brand-soft:#e6f5f3; --c-brand-soft2:#d0ebe7;
+  --c-brand-line:#b5ddd7; --c-brand-text:#0a7067; --c-brand-on:#fff;
+  --c-ok:#0f9d58; --c-ok-soft:#eaf7f0; --c-ok-line:#c9e9d8;
+  --c-warn:#b26a00; --c-warn-soft:#fff6e6; --c-warn-line:#f5dfb8;
+  --c-danger:#d92d20; --c-danger-soft:#fef1f0; --c-danger-line:#f7d3cf;
+  --sh-1:0 1px 2px rgba(16,24,40,.05);
+  --sh-2:0 4px 14px rgba(16,24,40,.07);
+  --sh-pop:0 12px 32px rgba(16,24,40,.14),0 2px 8px rgba(16,24,40,.06);
+  --r-sm:6px; --r-md:9px; --r-lg:13px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:var(--font-ui); font-size:13px; line-height:1.6; color:var(--c-ink);
+  background:#e8ebef; min-height:100vh; padding:18px 18px 40px;
+}
+button,select,input{font-family:inherit}
+.wrap{max-width:1320px;margin:0 auto}
+.topline{display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:14px}
+.topline-l{flex:1;min-width:320px}
+.demo-badge{display:inline-block;background:#14181f;color:#fff;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:.5px;vertical-align:3px}
+.topline h1{display:inline;font-size:21px;letter-spacing:.3px;margin-left:8px}
+.topline p{color:#4b5563;font-size:12.5px;margin-top:6px;line-height:1.75}
+.topline-r{display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;align-items:flex-start;justify-content:flex-end;max-width:560px}
+.pill{border:1px solid #d5dae1;background:#fff;color:#6b7280;border-radius:999px;padding:2px 10px;font-size:11.5px;white-space:nowrap}
+.pill-link{text-decoration:none;font-weight:700;color:#374151}
+.pill-link:hover{border-color:#9aa1ab;color:#111827;background:#f8fafc}
+.pill-link.go{background:#b45309;border-color:#b45309;color:#fff}
+.pill-link.go:hover{background:#92400e;color:#fff}
+
+/* ── 应用窗口 ── */
+.stage{display:flex;gap:16px;align-items:flex-start}
+.app{
+  flex:1;min-width:0;height:720px;background:var(--c-bg);
+  border:1px solid #dfe3e8;border-radius:14px;box-shadow:var(--sh-pop);
+  overflow:hidden;position:relative;display:flex;flex-direction:column;
+}
+.hdr{
+  height:48px;padding:0 14px;background:#fff;border-bottom:1px solid var(--c-line);
+  display:flex;align-items:center;gap:9px;flex:none;z-index:12;
+}
+.logo-dot{width:26px;height:26px;border-radius:7px;background:var(--c-brand);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+.brand-name{font-size:15px;font-weight:700;white-space:nowrap}
+.hdr-tenant{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 8px;border:1px solid var(--c-line-2);border-radius:var(--r-sm);color:var(--c-ink-3);font-size:12px;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.chip-exec{display:inline-flex;align-items:center;height:28px;padding:0 9px;border:1px solid var(--c-brand-line);background:var(--c-brand-soft);color:var(--c-brand-ink);border-radius:var(--r-sm);font-size:12px;font-weight:600;white-space:nowrap}
+.chip-exec.off{border-color:#e5e7eb;background:#f8f9fa;color:#6b7280}
+
+.app-body{flex:1;min-height:0;display:flex;position:relative}
+.view{flex:1;display:flex;min-height:0;min-width:0}
+.view[hidden]{display:none!important}
+
+/* ── 工作台左栏 ── */
+.panel-left{
+  width:430px;min-width:360px;max-width:520px;border-right:1px solid var(--c-line);
+  display:flex;flex-direction:column;background:#fbfbfc;flex-shrink:0;
+}
+.left-header{padding:10px 12px;background:#fff;border-bottom:1px solid var(--c-line);display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:none}
+.btn{padding:5px 12px;font-size:12px;border-radius:8px;cursor:pointer;border:1px solid;font-weight:600;transition:all .15s;background:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-primary{background:var(--c-brand);color:#fff;border-color:var(--c-brand)}
+.btn-primary:hover:not(:disabled){background:var(--c-brand-ink)}
+.btn-ghost{background:#fff;color:var(--c-ink-2);border-color:var(--c-line-2)}
+.btn-ghost:hover:not(:disabled){border-color:var(--c-ink-4);color:var(--c-ink)}
+
+.kw-fold{border-bottom:1px solid var(--c-line);background:#fbfbfc;flex:none}
+.kw-fold>summary{
+  list-style:none;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;color:#374151;
+  display:flex;align-items:center;gap:5px;line-height:1.6;
+}
+.kw-fold>summary::-webkit-details-marker{display:none}
+.kw-fold>summary::before{content:'▸';color:#b9bec7;font-size:10px}
+.kw-fold[open]>summary::before{content:'▾'}
+.kw-fold-h .kw-fold-n{font-weight:400;color:#9ca3af}
+.kw-fold-b{display:flex;flex-direction:column;gap:6px;padding:0 12px 8px}
+.kw-types{display:flex;gap:5px;flex-wrap:wrap}
+.kw-type{border:1px solid var(--c-line-2);background:#fff;color:#4b5563;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:600;cursor:pointer}
+.kw-type:hover:not(:disabled){border-color:var(--c-brand-line);color:var(--c-brand-ink);background:var(--c-brand-soft)}
+.kw-type.on{border-color:var(--c-brand);background:var(--c-brand-soft);color:var(--c-brand-ink)}
+.kw-type:disabled{opacity:.45;cursor:not-allowed}
+.demo-inline{font-size:11px;color:#9a6a12;background:#fffaf0;border:1px dashed #f0d4a4;border-radius:6px;padding:3px 8px;line-height:1.55}
+
+.left-content{flex:1;overflow-y:auto;padding:10px 12px}
+.left-content::-webkit-scrollbar{width:5px}
+.left-content::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+.panel{display:none}
+.panel.active{display:block}
+
+.empty{text-align:center;padding:48px 20px;color:var(--c-ink-3)}
+.empty .em-ico{font-size:32px;margin-bottom:8px}
+.empty .em-title{font-size:14px;font-weight:700;color:var(--c-ink-2);margin-bottom:6px}
+.empty .em-sub{font-size:12px;line-height:1.9}
+
+.search-status{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-md);padding:24px 16px;text-align:center;box-shadow:var(--sh-1)}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid var(--c-brand-line);border-top-color:var(--c-brand);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.search-text{font-size:13px;font-weight:600;color:var(--c-ink)}
+.search-detail{font-size:11.5px;color:var(--c-ink-3);margin-top:6px;line-height:1.7}
+.search-plan{display:flex;flex-wrap:wrap;gap:4px 6px;justify-content:center;font-size:11px;line-height:1.8;margin-top:8px}
+.plan-chip{border:1px solid var(--c-line);border-radius:999px;padding:1px 8px;background:#fbfbfc;color:#9ca3af;white-space:nowrap}
+.plan-chip.done{border-color:var(--c-ok-line);background:var(--c-ok-soft);color:#0a7b5a}
+.plan-chip.now{border-color:var(--c-brand-line);background:var(--c-brand-soft);color:var(--c-brand-ink);font-weight:600}
+.search-progress{margin-top:12px}
+.bar-bg{height:6px;background:#f3f3f5;border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(135deg,var(--c-brand-text),var(--c-brand));border-radius:3px;transition:width .3s;width:0}
+.bar-label{font-size:11px;color:var(--c-ink-3);margin-top:5px;text-align:right;min-height:17px}
+
+.results-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px}
+.round-line{font-size:13px;font-weight:700;color:#1f2937;line-height:1.6}
+.round-sub{font-size:11.5px;color:#9ca3af;margin:-1px 0 9px;line-height:1.7}
+.round-sub.stopped{color:#b45309}
+.note-list{list-style:none}
+.note-item{background:#fff;border:1px solid var(--c-line);border-radius:var(--r-md);padding:10px 12px;margin-bottom:6px;transition:all .15s;box-shadow:var(--sh-1)}
+.note-item:hover{border-color:var(--c-brand);box-shadow:var(--sh-2)}
+.note-top{display:flex;align-items:center;gap:10px}
+.note-body{flex:1;min-width:0}
+.note-title{font-size:13px;font-weight:500;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-title a{color:var(--c-ink);text-decoration:none}
+.note-title a:hover{color:var(--c-brand-ink)}
+.note-meta{font-size:12px;color:var(--c-ink-3);margin-top:3px;display:flex;align-items:center;gap:10px;white-space:nowrap;overflow:hidden}
+.note-author{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.note-likes{flex:none;color:var(--c-brand-ink);font-weight:600}
+.btn-open-note{flex:none;min-width:70px;background:var(--c-brand-soft);color:var(--c-brand-ink);border-color:var(--c-brand-line)}
+.empty-round{background:#fff;border:1px dashed var(--c-line-2);border-radius:var(--r-md);padding:30px 16px;text-align:center;color:#9ca3af;font-size:12.5px}
+
+/* ── 右栏 ── */
+.panel-right{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--c-bg)}
+.right-toolbar{height:46px;padding:0 14px;background:#fff;border-bottom:1px solid var(--c-line);display:flex;align-items:center;gap:8px;flex:none}
+.toolbar-title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px}
+.toolbar-bar{width:3px;height:14px;border-radius:2px;background:var(--c-brand)}
+.right-toolbar .btn{margin-left:auto}
+.status-bar{padding:7px 14px;background:#fff;border-bottom:1px solid var(--c-line);font-size:12px;color:#6b7280;flex:none;line-height:1.6}
+.right-body{flex:1;overflow:auto;padding:14px}
+.demo-placeholder{border:1px dashed #d9dee5;border-radius:var(--r-md);background:#fbfbfc;padding:20px;color:#8b95a3;font-size:12.5px;line-height:1.9;max-width:430px}
+.demo-placeholder .dp-h{font-weight:700;color:#58616f;margin-bottom:4px;font-size:13px}
+
+/* ── 提示条 ── */
+.banner{
+  position:absolute;left:50%;top:58px;transform:translateX(-50%);z-index:80;
+  display:none;align-items:flex-start;gap:12px;width:min(92%,700px);
+  background:#fff7ed;color:#7c2d12;border:1px solid #fdba74;border-left:5px solid #ea580c;
+  border-radius:10px;padding:13px 15px;box-shadow:0 10px 30px rgba(120,53,15,.18);
+  font-size:13px;line-height:1.65;
+}
+.banner.red{background:var(--c-danger-soft);color:#7f1d1d;border-color:var(--c-danger-line);border-left-color:var(--c-danger)}
+.banner-title{font-weight:700;font-size:14px;margin-bottom:2px}
+.banner-body{flex:1;min-width:0}
+.banner-btn{flex:none;border:1px solid #fdba74;background:#fff;color:#9a3412;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}
+.banner.red .banner-btn{border-color:var(--c-danger-line);color:#991b1b}
+.banner-btn:hover{filter:brightness(.98)}
+
+/* ── 队列页 ── */
+.view-queue{flex-direction:column;background:#fff;min-width:0}
+.queue-topline{display:flex;align-items:center;gap:10px;padding:8px 14px 0;flex:none}
+.link-back{border:0;background:none;color:var(--c-brand-text);font-size:12px;font-weight:700;cursor:pointer;padding:2px 0}
+.link-back:hover{text-decoration:underline}
+.q-tabs{display:flex;gap:2px;margin:6px 14px 0;border-bottom:1px solid var(--c-line);flex:none}
+.q-tab{border:0;background:none;padding:6px 12px;margin-bottom:-1px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent}
+.q-tab:hover{color:#374151}
+.q-tab.active{color:var(--c-brand-text);border-bottom-color:var(--c-brand)}
+#queueBar{
+  flex:none;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--c-line);
+  background:linear-gradient(180deg,#fbfbfc,#f7f8fa);
+}
+.left-bot-slot{display:flex;gap:6px;align-items:center;flex:1 1 260px;min-width:0}
+.bot-param{flex:1 1 0;min-width:0;padding:5px 6px;font-size:12.5px;border:1px solid #d0d0d0;border-radius:6px;background:#fff;color:#333;cursor:pointer}
+.bot-param:disabled{opacity:.55;cursor:not-allowed}
+.bot-toggle{flex:none;padding:6px 12px;font-size:13px;font-weight:600;border:1px solid #059669;background:#fff;color:#059669;border-radius:6px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.bot-toggle:hover:not(:disabled){background:#ecfdf5}
+.bot-toggle.running{border-color:#dc2626;background:#dc2626;color:#fff}
+.bot-toggle.running:hover:not(:disabled){background:#b91c1c}
+.bot-toggle:disabled{opacity:.55;cursor:not-allowed}
+#queueCaps{flex-basis:100%;font-size:12.5px;color:#6b7280;line-height:1.7}
+#queueCaps b{color:#374151}
+.caps-note{font-size:11.5px;color:#9a6a12;background:#fffaf0;border:1px dashed #f0d4a4;border-radius:6px;padding:2px 8px;display:inline-block;margin-top:3px}
+#queueBody{flex:1;min-height:0;overflow-y:auto;padding:12px 14px}
+#queueBody::-webkit-scrollbar{width:6px}
+#queueBody::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+.q-sec{margin-bottom:14px}
+.q-sec-h{display:flex;align-items:center;gap:6px;cursor:default;font-size:14px;font-weight:700;color:#1f2937;margin:2px 0 8px}
+details.q-sec>summary.q-sec-h{cursor:pointer;list-style:none}
+details.q-sec>summary.q-sec-h::-webkit-details-marker{display:none}
+details.q-sec>summary.q-sec-h::before{content:'▸';color:#b9bec7;font-size:12px}
+details.q-sec[open]>summary.q-sec-h::before{content:'▾'}
+.q-sec-h .q-n{font-weight:600;color:#9ca3af;font-size:12.5px}
+.q-list{display:flex;flex-direction:column;gap:6px}
+.q-item{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--c-line);border-radius:9px;background:#fff;padding:8px 10px}
+.q-item-run{border-color:var(--c-brand-line);background:linear-gradient(90deg,var(--c-brand-soft),#fff)}
+.q-i-no{flex:none;min-width:16px;padding-top:2px;text-align:center;color:#9aa1ab;font-weight:700;font-size:12.5px}
+.q-i-bd{flex:1;min-width:0}
+.q-i-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.q-i-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:#1f2937;font-size:13.5px}
+.q-i-type{flex:none;font-size:12px;color:#6b7280;background:#f4f5f7;border-radius:6px;padding:1px 7px}
+.q-i-types{display:inline-flex;flex-wrap:wrap;gap:4px}
+.q-i-sub{margin-top:3px;font-size:12px;color:#9ca3af;line-height:1.6}
+.q-live{font-size:12.5px;color:#b45309;font-weight:600;margin:2px 0;line-height:1.65}
+.q-hint{font-size:13px;color:#9ca3af;line-height:2;padding:18px 8px;text-align:center}
+.queue-wait-line{margin:0 0 12px;border:1px dashed var(--c-brand-line);background:var(--c-brand-soft);color:var(--c-brand-ink);border-radius:8px;padding:7px 10px;font-size:12.5px;font-weight:600}
+.queue-done-note{margin:0 0 12px;border:1px solid var(--c-ok-line);background:var(--c-ok-soft);color:#0a6b4d;border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:600}
+#queuePlaceholder{padding:20px 14px}
+#queuePlaceholder .demo-placeholder{max-width:none}
+
+/* ── 演示控制台 ── */
+.console{width:326px;flex:none;display:flex;flex-direction:column;gap:10px;position:sticky;top:16px;max-height:calc(100vh - 34px);overflow-y:auto;padding-right:2px}
+.console::-webkit-scrollbar{width:5px}
+.console::-webkit-scrollbar-thumb{background:#cfd5dc;border-radius:3px}
+.con-card{background:#fff;border:1px solid #dfe3e8;border-radius:11px;padding:11px 12px;box-shadow:var(--sh-1)}
+.con-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#374151;margin-bottom:7px}
+.con-tag{margin-left:auto;font-size:10.5px;font-weight:600;color:#8b95a3;background:#f3f4f6;border-radius:999px;padding:1px 7px}
+.clock{font-size:32px;font-weight:700;letter-spacing:.5px;font-variant-numeric:tabular-nums;line-height:1.15;color:#111827}
+.clock-sub{font-size:11.5px;color:#6b7280;line-height:1.65;margin:3px 0 7px;min-height:18px}
+.speed-row{display:flex;align-items:center;gap:7px;font-size:11.5px;color:#6b7280}
+.speed-row select{flex:1;padding:4px 6px;border:1px solid var(--c-line-2);border-radius:6px;background:#fff;font-size:12px;color:#333}
+.chain-line{font-size:12px;color:#374151;line-height:1.8;word-break:break-all}
+.chain-line.sub{color:#8b95a3;font-size:11.5px;margin-top:3px}
+.miniwin{border:1px solid #cfd5dc;border-radius:8px;overflow:hidden;background:#fff;margin-bottom:6px}
+.mw-bar{height:24px;background:#eef0f3;display:flex;align-items:center;gap:4px;padding:0 8px;border-bottom:1px solid #dde2e9}
+.mw-bar .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+.mw-bar .r{background:#fca5a5}.mw-bar .y{background:#fcd34d}.mw-bar .g{background:#86efac}
+.mw-title{font-size:10.5px;color:#6b7280;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mw-page{height:56px;padding:8px;font-size:11px;color:#4b5563;line-height:1.5;background:linear-gradient(180deg,#fff,#fbfbfc);overflow:hidden}
+.win-state{font-size:12px;font-weight:700;color:var(--c-brand-ink);margin-bottom:2px}
+.win-state.locked{color:#b45309}
+.win-state.login{color:var(--c-danger)}
+.win-note{font-size:11px;color:#9ca3af;line-height:1.6}
+.con-btn{border:1px solid var(--c-line-2);background:#fff;color:#374151;border-radius:7px;padding:5px 8px;font-size:11.5px;font-weight:600;cursor:pointer;text-align:center;line-height:1.4}
+.con-btn:hover{background:#f8fafc;border-color:var(--c-ink-4)}
+.con-btn.primary{width:100%;background:var(--c-brand);border-color:var(--c-brand);color:#fff;font-size:12.5px;padding:7px 8px;margin-bottom:7px}
+.con-btn.primary:hover{background:var(--c-brand-ink)}
+.con-btn.danger{color:var(--c-danger);border-color:var(--c-danger-line);background:#fffafa}
+.con-btn.warn{color:#b45309;border-color:var(--c-warn-line);background:#fffdf8}
+.con-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.con-grid.two{margin-top:6px;grid-template-columns:1fr 1fr}
+.con-check{display:flex;align-items:flex-start;gap:6px;font-size:11px;color:#6b7280;line-height:1.5;margin:8px 0 6px;cursor:pointer}
+.con-check input{margin-top:2px;flex:none}
+.logcard{min-height:150px;display:flex;flex-direction:column}
+.loglist{flex:1;max-height:260px;overflow-y:auto;font-size:11.5px;line-height:1.7;color:#4b5563}
+.loglist::-webkit-scrollbar{width:4px}
+.loglist::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+.logrow{display:flex;gap:6px;padding:2px 0;border-bottom:1px dashed #f1f3f6}
+.logrow .t{flex:none;color:#9ca3af;font-variant-numeric:tabular-nums}
+.logrow .m{min-width:0;word-break:break-word}
+.logrow.brand .m{color:var(--c-brand-ink);font-weight:600}
+.logrow.run .m{color:#2563eb}
+.logrow.ok .m{color:#0a7b5a}
+.logrow.warn .m{color:#b45309}
+.logrow.danger .m{color:var(--c-danger);font-weight:600}
+
+.toast{position:absolute;left:50%;bottom:18px;transform:translateX(-50%) translateY(8px);z-index:90;
+  background:rgba(20,24,31,.92);color:#fff;border-radius:8px;padding:7px 13px;font-size:12px;
+  opacity:0;pointer-events:none;transition:all .18s;max-width:80%;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ── 方案说明 ── */
+.spec{margin-top:16px;background:#fff;border:1px solid #dfe3e8;border-radius:12px;box-shadow:var(--sh-1)}
+.spec>summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:13px;font-weight:700;color:#374151;display:flex;align-items:center;gap:8px}
+.spec>summary::-webkit-details-marker{display:none}
+.spec>summary::before{content:'▸';color:#9ca3af}
+.spec[open]>summary::before{content:'▾'}
+.spec-body{padding:0 16px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.spec-box{border:1px solid var(--c-line);border-radius:9px;background:#fbfbfc;padding:10px 12px}
+.spec-box h3{font-size:12.5px;color:#1f2937;margin-bottom:5px}
+.spec-box p,.spec-box li{font-size:12px;color:#4b5563;line-height:1.8}
+.spec-box ul{padding-left:17px}
+.spec-foot{grid-column:1/-1;font-size:11.5px;color:#9ca3af;border-top:1px dashed var(--c-line);padding-top:9px;line-height:1.8}
+
+@media(max-width:1180px){
+  .stage{flex-direction:column}
+  .console{width:100%;position:static;max-height:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start}
+  .logcard{grid-column:1/-1}
+}
+@media(max-width:760px){
+  body{padding:10px}
+  .app{height:auto;min-height:700px}
+  .panel-left{width:100%;max-width:none;border-right:0;border-bottom:1px solid var(--c-line)}
+  .panel-right{display:none}
+  .view-bench{flex-direction:column}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topline">
+    <div class="topline-l">
+      <span class="demo-badge">功能演示</span><h1>搜索一轮一轮</h1>
+      <p>点一次「搜索」只跑「最新」一类；跑完由服务器约 10 分钟一类接着派，TOP / 本地 / 求助一个个来。<b>演示时间压缩过</b>，右边可以快进，也能模拟登录过期、账号安全、搜索失败和手动停。</p>
+      <p style="margin-top:4px;font-size:12px;color:#8b95a3;">这张页只是把过程演给你看：不会登录小红书、不会发任何东西。真实动作发生在装了执行器的那台电脑上。</p>
+    </div>
+    <div class="topline-r">
+      <a class="pill pill-link" href="popup.html?mode=big">← 回去看演示</a>
+      <a class="pill pill-link" href="executor.html">🖐 执行器能干什么</a>
+      <a class="pill pill-link go" href="account.html">开自己的号 →</a>
+      <span class="pill">示例词：瓷砖怎么选</span>
+      <span class="pill">示例身份均为虚构</span>
+      <span class="pill">右侧按钮只属于演示</span>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="app">
+      <div class="hdr">
+        <span class="logo-dot">✦</span>
+        <span class="brand-name">智慧运维</span>
+        <span class="hdr-tenant">示例产品 · 瓷砖 <span style="font-size:9px;color:#b6bec9">▾</span></span>
+        <span class="hdr-right"><span class="chip-exec" id="execChip">🖐 示例电脑 · 在线 · 升级档</span></span>
+      </div>
+
+      <div class="banner" id="banner">
+        <div class="banner-body">
+          <div class="banner-title" id="bannerTitle"></div>
+          <div id="bannerBody"></div>
+        </div>
+        <button class="banner-btn" id="bannerOk">知道了</button>
+      </div>
+
+      <div class="app-body">
+        <section class="view view-bench" id="viewBench">
+          <aside class="panel-left">
+            <div class="left-header">
+              <button class="btn btn-primary btn-sm" id="btnSearch" title="点一次只跑当前词的「最新」一类；后面几类由服务器约 10 分钟一类接着派">🔍 搜索</button>
+              <button class="btn btn-ghost btn-sm" id="btnQueue" style="margin-left:auto" title="打开队列页（看正在跑 / 待跑 / 已完成）">▶ 队列</button>
+            </div>
+            <details class="kw-fold" open>
+              <summary class="kw-fold-h">🔍 获客 · <b id="kwTypeNow">最新</b> · 当前词「瓷砖怎么选」 <span class="kw-fold-n">· 启用 1 个词</span></summary>
+              <div class="kw-fold-b">
+                <div class="kw-types" id="kwTypes">
+                  <button class="kw-type" data-sc="latest">最新</button>
+                  <button class="kw-type" data-sc="top">TOP</button>
+                  <button class="kw-type" data-sc="local">本地</button>
+                  <button class="kw-type" data-sc="pain">求助</button>
+                </div>
+                <div class="demo-inline">演示里把类型标签展开让你点：手点某一类＝当场只跑这一类，不排队（真实系统这个入口不变）。</div>
+              </div>
+            </details>
+            <div class="left-content">
+              <div class="panel active" id="panelIdle">
+                <div class="empty">
+                  <div class="em-ico">🔍</div>
+                  <div class="em-title">先搜一批笔记</div>
+                  <div class="em-sub">点上方「搜索」：先跑这个词的最新一类<br>跑完后，TOP / 本地 / 求助由服务器一个个接着派</div>
+                </div>
+              </div>
+
+              <div class="panel" id="panelSearching">
+                <div class="search-status">
+                  <div><span class="spinner"></span><span class="search-text" id="searchText">正在搜索…</span></div>
+                  <div class="search-detail" id="searchDetail"></div>
+                  <div class="search-plan" id="searchPlan"></div>
+                  <div class="search-progress">
+                    <div class="bar-bg"><div class="bar-fill" id="searchBar"></div></div>
+                    <div class="bar-label" id="searchBarLabel"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel" id="panelResults">
+                <div class="results-header"><span class="round-line" id="roundLine"></span></div>
+                <div class="round-sub" id="roundSub" style="display:none"></div>
+                <ul class="note-list" id="noteList"></ul>
+                <div class="empty-round" id="emptyRound" style="display:none">这一轮没搜到笔记（不算失败，后面照常接）</div>
+              </div>
+            </div>
+          </aside>
+
+          <main class="panel-right">
+            <div class="right-toolbar">
+              <span class="toolbar-title"><span class="toolbar-bar"></span>获客助手</span>
+              <button class="btn btn-primary btn-sm" id="btnRefreshFake" title="演示不搭">🔄 评论刷新</button>
+            </div>
+            <div class="status-bar" id="statusBar">⏸️ 待机中（未开始扫描）</div>
+            <div class="right-body">
+              <div class="demo-placeholder">
+                <div class="dp-h">这块演示没搭</div>
+                <div>真实系统里右边是笔记评论 / 商机助手。这次只演示左边的搜索列表、顶上提示条和队列页，别的不动。</div>
+              </div>
+            </div>
+          </main>
+        </section>
+
+        <section class="view view-queue" id="viewQueue" hidden>
+          <div class="queue-topline">
+            <button class="link-back" id="btnBackBench">← 回工作台</button>
+            <span class="demo-inline" style="margin-left:auto">演示用返回；真实系统走左栏切页</span>
+          </div>
+          <div class="q-tabs">
+            <button class="q-tab" data-qtab="strat">📖 评论策略</button>
+            <button class="q-tab" data-qtab="config">⚙️ 队列配置</button>
+            <button class="q-tab active" data-qtab="mgmt">🗂️ 队列管理</button>
+          </div>
+          <div id="queueBar">
+            <span class="left-bot-slot">
+              <select id="botScopeSel" class="bot-param" title="口径：全部未灌过 / 只追涨势">
+                <option value="all">全部未灌过</option>
+                <option value="growing">只追涨势</option>
+              </select>
+              <select id="botPaceSel" class="bot-param" title="节奏：定时轮＝一项跑完歇约 10 分钟再跑下一项；一遍跑完＝从队首连跑到队尾">
+                <option value="interval">定时轮</option>
+                <option value="once">一遍跑完</option>
+              </select>
+              <button id="botToggleBtn" class="bot-toggle">▶ 开始</button>
+            </span>
+            <span id="queueCaps"></span>
+          </div>
+          <div id="queueBody"></div>
+          <div id="queuePlaceholder" style="display:none">
+            <div class="demo-placeholder">
+              <div class="dp-h">这块 demo 没搭，看真实系统</div>
+              <div>「📖 评论策略」「⚙️ 队列配置」这两页这次没有改动，只演示「🗂️ 队列管理」怎么一项一项地跑。</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <aside class="console">
+      <div class="con-card">
+        <div class="con-h">⏱ 演示时间 <span class="con-tag">压缩过</span></div>
+        <div class="clock" id="conClock">09:30</div>
+        <div class="clock-sub" id="conCountdown">下一轮：还没起</div>
+        <div class="speed-row">
+          <label for="speedSel">走表</label>
+          <select id="speedSel">
+            <option value="60">1 秒＝1 分钟</option>
+            <option value="600">1 秒＝10 分钟（更快）</option>
+            <option value="0">暂停走表</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="con-card">
+        <div class="con-h">🔗 现在排到哪</div>
+        <div class="chain-line" id="chainLine">搜索链：还没起</div>
+        <div class="chain-line sub" id="queueLine">队列：待命</div>
+      </div>
+
+      <div class="con-card">
+        <div class="con-h">🪟 干活窗 <span class="con-tag" id="winNo">还没开</span></div>
+        <div class="miniwin">
+          <div class="mw-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="mw-title" id="mwTitle">小红书 · 干活窗</span></div>
+          <div class="mw-page" id="mwPage">—</div>
+        </div>
+        <div class="win-state" id="winState">—</div>
+        <div class="win-note">每轮跑完交还页面、下一轮再锁上；全跑完不关窗。</div>
+      </div>
+
+      <div class="con-card">
+        <div class="con-h">🧪 演示控制</div>
+        <button class="con-btn primary" id="btnFast">⏩ 快进到下一轮</button>
+        <div class="con-grid">
+          <button class="con-btn danger" data-stop="login" title="模拟小红书登录过期：红条 + 停手">登录过期</button>
+          <button class="con-btn warn" data-stop="guard" title="模拟账号安全挡下：橙条 + 停手">账号安全</button>
+          <button class="con-btn warn" data-stop="quiet" title="模拟到静默期 21:00–09:00：橙条 + 停手">到静默期</button>
+          <button class="con-btn warn" data-stop="fail" title="模拟页面没打开 / 一篇都没拿到：橙条 + 停手">搜索没起来</button>
+          <button class="con-btn" data-stop="manual" title="手动停这一趟：不弹横幅，日志一行">手动停这一趟</button>
+          <button class="con-btn" id="btnZero" title="下一轮演示成收 0 篇：不算失败，照常接下一类">下一轮收 0 篇</button>
+        </div>
+        <label class="con-check"><input type="checkbox" id="latestDue"> 下次点搜索时「最新」没到点（从 TOP 起）</label>
+        <div class="con-grid two">
+          <button class="con-btn" id="btnCloseWin" title="模拟你手动把干活窗关掉：下一轮会再开一扇">关掉干活窗</button>
+          <button class="con-btn" id="btnReset">重置演示</button>
+        </div>
+      </div>
+
+      <div class="con-card logcard">
+        <div class="con-h">📜 发生了什么</div>
+        <div class="loglist" id="logList"></div>
+      </div>
+    </aside>
+  </div>
+
+  <details class="spec" open>
+    <summary>演示怎么看：点两下就明白</summary>
+    <div class="spec-body">
+      <div class="spec-box">
+        <h3>① 点一次「搜索」</h3>
+        <p>只跑当前词「瓷砖怎么选」的「最新」一类。跑完列表顶上会出现「这一轮：最新 · 收 N 篇 · 今天共 M 篇」，下面写后面还剩哪几类。</p>
+      </div>
+      <div class="spec-box">
+        <h3>② 等下一类自己接上</h3>
+        <p>真实系统约 10 分钟一类；演示里点右边「⏩ 快进到下一轮」，看 TOP → 本地 → 求助一个个来。每一轮都用同一扇干活窗，跑完把页面交回来。</p>
+      </div>
+      <div class="spec-box">
+        <h3>③ 想看停手</h3>
+        <p>右边「🧪 演示控制」能模拟登录过期、账号安全、静默期、搜索没起来；停手会弹提示，后面几类不跑。手动停不弹提示，只记一行日志。</p>
+      </div>
+      <div class="spec-box">
+        <h3>④ 这张页是什么</h3>
+        <p>拿示例数据把过程演给你看。演示页不碰小红书、不发任何东西；真实动作只发生在装了执行器的那台电脑上。</p>
+      </div>
+      <div class="spec-foot">示例词「瓷砖怎么选」、示例身份「示例·某某」都是虚构的。时间、快进和停手按钮只在本页有效。</div>
+    </div>
+  </details>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const $ = (s) => document.querySelector(s);
+  const ORDER = ['latest','top','local','pain'];
+  const GAP = 10;
+  const BASE_DAY = 36;
+  const START_CLOCK = 9 * 60 + 30;
+
+  const ROUND_DEFS = {
+    latest: {
+      name: '最新',
+      searches: [{ name: '最新' }],
+      detail: '先跑最新；跑完服务器接着排后面的类',
+      notes: [
+        { t:'瓷砖怎么选？逛完建材市场我总结了 6 条', a:'示例·阿蕾装修记', l:'1.2万', c:386 },
+        { t:'800×800 和 750×1500，到底差在哪', a:'示例·老周说装修', l:'8642', c:214 },
+        { t:'选瓷砖别只看颜值，这 4 个参数才是关键', a:'示例·装修小课', l:'5231', c:180 },
+        { t:'柔光砖 or 亮光砖？住了一年的真实感受', a:'示例·住在杭州', l:'4310', c:156 },
+        { t:'瓷砖怎么选不踩坑，我的建材市场砍价记录', a:'示例·小李整家', l:'3977', c:143 },
+        { t:'老师傅说漏嘴：买瓷砖先问这 5 句话', a:'示例·工地日记', l:'3102', c:128 },
+        { t:'厨房墙砖怎么选，油污好不好擦最重要', a:'示例·下厨的阿岚', l:'2688', c:97 },
+        { t:'卫生间地砖防滑怎么测？带瓶水去店里', a:'示例·装修小白笔记', l:'2210', c:88 },
+        { t:'通铺还是分区？小户型瓷砖排版思路', a:'示例·六十平的家', l:'1875', c:74 },
+        { t:'瓷砖产地怎么分？广东砖和山东砖的区别', a:'示例·建材城蹲点', l:'1533', c:61 },
+        { t:'买瓷砖最容易忽略的辅料：美缝怎么配', a:'示例·家装碎碎念', l:'1279', c:45 },
+        { t:'预算有限，瓷砖该省在哪、不该省在哪', a:'示例·算账装修', l:'986', c:39 }
+      ]
+    },
+    top: {
+      name: 'TOP',
+      searches: [{ name: '点赞排序' }, { name: '评论排序' }, { name: '收藏排序' }],
+      detail: 'TOP 的 3 搜连着跑完，跑完这一轮才歇',
+      notes: [
+        { t:'装修小白选瓷砖避坑清单（收藏版）', a:'示例·装修日记', l:'2.4万', c:812 },
+        { t:'2026 瓷砖流行色和规格，一次讲清', a:'示例·家居趋势观察', l:'1.8万', c:603 },
+        { t:'全屋通铺瓷砖排版图，照着抄不翻车', a:'示例·图纸研究所', l:'1.1万', c:447 },
+        { t:'瓷砖验收就看这 5 处，师傅不敢糊弄', a:'示例·验房老陈', l:'9021', c:366 },
+        { t:'一线品牌瓷砖怎么挑系列，别被导购带跑', a:'示例·建材测评室', l:'7744', c:302 },
+        { t:'柔光砖通铺一年后：优点和后悔的地方', a:'示例·住了一年', l:'6602', c:261 },
+        { t:'瓷砖胶和水泥砂浆，什么情况用哪个', a:'示例·瓦工小课堂', l:'5120', c:198 },
+        { t:'买瓷砖报价单怎么看懂，增项都藏在哪', a:'示例·装修账本', l:'4388', c:170 }
+      ]
+    },
+    local: {
+      name: '本地',
+      searches: [{ name: '同城（示例城市）' }],
+      detail: '同城这一类只有 1 搜，跑完就交回页面',
+      notes: [
+        { t:'杭州买瓷砖去哪儿？本地人常逛的 3 个市场', a:'示例·杭城家居', l:'3204', c:122 },
+        { t:'在杭州找瓦工师傅，我踩过的 3 个坑', a:'示例·钱塘装修记', l:'2287', c:96 },
+        { t:'杭州回南天，瓷砖防潮怎么处理', a:'示例·江南住家', l:'1842', c:71 },
+        { t:'本地建材市场周末砍价实录', a:'示例·周末逛建材', l:'1510', c:58 },
+        { t:'同城瓷砖加工厂怎么找，省下一笔加工费', a:'示例·杭州装修群', l:'1206', c:44 },
+        { t:'杭州老房翻新，瓷砖拆旧和清运怎么算', a:'示例·老房改造笔记', l:'897', c:33 }
+      ]
+    },
+    pain: {
+      name: '求助',
+      searches: [{ name: '求推荐' }, { name: '听劝' }, { name: '怎么办' }, { name: '求建议' }],
+      detail: '求助的 4 个词连着跑完，跑完这一轮才歇',
+      notes: [
+        { t:'求推荐！客厅通铺选亮光还是柔光', a:'示例·纠结的小林', l:'864', c:96 },
+        { t:'听劝，小户型厨房墙砖选白色还是奶咖', a:'示例·听劝装修中', l:'712', c:81 },
+        { t:'怎么办，瓷砖送到家发现色差要不要退', a:'示例·求助的橙子', l:'655', c:74 },
+        { t:'求建议：预算 80 一平，选品牌基础款还是本地砖', a:'示例·算不明白', l:'590', c:66 },
+        { t:'求推荐靠谱的瓷砖品牌，广告别来', a:'示例·第一次装修', l:'521', c:59 },
+        { t:'听劝：卫生间地砖深色真的显脏吗', a:'示例·怕打扫的人', l:'468', c:52 },
+        { t:'怎么办，瓦工说砖不够要补货赶不上工期', a:'示例·工期告急', l:'402', c:47 },
+        { t:'求建议：儿童房地面用木纹砖还是地板', a:'示例·宝妈装修', l:'355', c:41 },
+        { t:'求推荐：阳台瓷砖要不要做防水层', a:'示例·阳台改造中', l:'298', c:36 }
+      ]
+    }
+  };
+
+  const STOP_LABEL = { login:'登录过期', guard:'账号安全挡下', quiet:'静默期', fail:'这一轮没跑起来', manual:'手动停' };
+  const BANNERS = {
+    login: { color:'red', title:'🔐 小红书登录过期了，机器人已经停手',
+      body:'去执行器那台电脑上弹出的「干活窗口」里扫码登录；登录好后回到这里重新点「搜索」。后面几类先不跑。' },
+    guard: { color:'orange', title:'🛡 账号安全挡下了，这一串活先停',
+      body:'先别在这个号上接着操作。过一阵回工作台重新点「搜索」：会先跑最新，再按到点情况接着跑。' },
+    quiet: { color:'orange', title:'🌙 到静默期了（21:00–09:00）',
+      body:'后面几类今晚不跑。明早再点「搜索」接着来。' },
+    fail: { color:'orange', title:'⚠️ 这一轮没跑起来，后面先停',
+      body:'页面没打开或一篇都没拿到。检查执行器那台电脑的小红书页面，回来重新点「搜索」。' }
+  };
+  const STOP_LOG = {
+    login:'登录过期：当下停手，后面几类不跑；干活窗留着等你扫码（红条已弹）',
+    guard:'账号安全挡下：当下停手，后面几类不跑（橙条已弹）',
+    quiet:'到静默期（21:00–09:00）：今晚不跑，明早再点搜索（橙条已弹）',
+    fail:'这一轮没跑起来：停手，后面几类不跑（橙条已弹）',
+    manual:'手动停这一趟：后面不再派（不弹横幅，日志留一行）'
+  };
+
+  let state;
+  let qtab = 'mgmt';
+  let timer = null;
+
+  function freshQueueItems(){
+    return [
+      { k:'瓷砖怎么选', sc:'latest' },
+      { k:'瓷砖怎么选', sc:'top' },
+      { k:'瓷砖怎么选', sc:'local' },
+      { k:'瓷砖怎么选', sc:'pain' }
+    ];
+  }
+  function initialState(){
+    return {
+      clock: START_CLOCK,
+      speed: 60,
+      dayTotal: BASE_DAY,
+      chain: null,
+      queue: { pace:'interval', running:false, current:null, items:freshQueueItems(), done:[], nextAt:null, startedAt:null, stopReason:'' },
+      busy: false,
+      live: null,
+      stopping: false,
+      abortReason: '',
+      failNext: false,
+      zeroNext: false,
+      latestDue: true,
+      typeNow: 'latest',
+      results: { sc:null, found:0, notes:[], source:'' },
+      workWin: { open:false, no:0, locked:false, state:'还没开', page:'—', note:'' },
+      logs: []
+    };
+  }
+
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+  const fmt = (min) => {
+    const m = Math.max(0, Math.floor(min));
+    return String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  };
+  const minsTo = (at) => Math.max(0, Math.ceil(at - state.clock));
+  const names = (arr) => arr.map((s) => ROUND_DEFS[s].name).join(' · ');
+
+  function log(msg, kind){
+    state.logs.push({ t: fmt(state.clock), msg, kind: kind || 'info' });
+    if (state.logs.length > 140) state.logs.shift();
+    renderLog();
+  }
+  function renderLog(){
+    const box = $('#logList');
+    if (!box) return;
+    box.innerHTML = state.logs.map((x) =>
+      '<div class="logrow ' + x.kind + '"><span class="t">' + x.t + '</span><span class="m">' + x.msg + '</span></div>'
+    ).join('');
+    box.scrollTop = box.scrollHeight;
+  }
+  let toastTimer = null;
+  function toast(msg){
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+  function switchView(view){
+    const bench = view === 'bench';
+    $('#viewBench').hidden = !bench;
+    $('#viewQueue').hidden = bench;
+    if (!bench) renderQueue();
+  }
+
+  /* ── 干活窗 ── */
+  function ensureWindow(){
+    const w = state.workWin;
+    if (!w.open){
+      w.no += 1;
+      w.open = true;
+      w.page = '小红书 · 准备开搜…';
+      log('开第 ' + w.no + ' 扇干活窗' + (w.no > 1 ? '（上一扇你关了）' : ''), 'run');
+    } else {
+      log('复用同一扇干活窗（#' + w.no + '）：页面交还过，再锁上', 'run');
+    }
+    w.locked = true;
+    w.state = '🔒 锁着在干活';
+    w.note = '正在搜，页面先不给你';
+  }
+  function windowPage(page){
+    state.workWin.page = page;
+  }
+  function handBackWindow(nextLabel){
+    const w = state.workWin;
+    w.locked = false;
+    w.state = '🔓 页面已交还（窗没关）';
+    w.note = nextLabel || '下一轮再锁上';
+  }
+
+  /* ── 一轮 ── */
+  function renderSearching(){
+    const live = state.live;
+    if (!live) return;
+    const def = ROUND_DEFS[live.sc];
+    $('#searchText').textContent = state.stopping
+      ? '正在收手…'
+      : ('正在搜「瓷砖怎么选」· 这一轮只跑「' + def.name + '」');
+    $('#searchDetail').textContent = state.stopping ? '停下当前这一轮，后面几类不跑' : def.detail;
+    $('#searchPlan').innerHTML = def.searches.map((s, i) => {
+      const cls = i < live.done ? 'done' : (i === live.done ? 'now' : '');
+      const mark = i < live.done ? '✓ ' : '';
+      return '<span class="plan-chip ' + cls + '">' + mark + '第 ' + (i + 1) + '/' + def.searches.length + ' 搜 · ' + s.name + '</span>';
+    }).join('');
+    $('#searchBar').style.width = Math.round((live.done / live.total) * 100) + '%';
+    $('#searchBarLabel').textContent = live.done + '/' + live.total + ' 搜' +
+      (state.stopping ? ' · 收手中' : (live.done < live.total ? ' · 现在：' + live.name : ' · 收尾'));
+  }
+
+  async function runRound(sc, source){
+    state.busy = true;
+    state.stopping = false;
+    state.abortReason = '';
+    const def = ROUND_DEFS[sc];
+    state.typeNow = sc;
+    state.live = { sc, done:0, total:def.searches.length, name:def.searches[0].name };
+    ensureWindow();
+    log('开跑「' + def.name + '」：' + def.searches.map((s) => s.name).join(' → ') + (def.searches.length > 1 ? '（这几搜算同一轮，连着跑完）' : ''), 'run');
+    renderAll();
+
+    for (let i = 0; i < def.searches.length; i++){
+      state.live.done = i;
+      state.live.name = def.searches[i].name;
+      windowPage('小红书 · 搜索「瓷砖怎么选 · ' + def.searches[i].name + '」');
+      renderSearching();
+      renderConsole();
+      renderQueue();
+      await sleep(760);
+
+      if (state.failNext){
+        state.failNext = false;
+        triggerStop('fail');
+      }
+      if (state.abortReason) return finishAbort();
+
+      state.live.done = i + 1;
+      renderSearching();
+      renderConsole();
+      renderQueue();
+      await sleep(170);
+      if (state.abortReason) return finishAbort();
+    }
+
+    const zero = state.zeroNext;
+    if (zero) state.zeroNext = false;
+    const found = zero ? 0 : def.notes.length;
+    if (!zero) state.dayTotal += found;
+
+    state.busy = false;
+    state.stopping = false;
+    state.abortReason = '';
+    state.live = null;
+    state.results = { sc, found, notes: zero ? [] : def.notes.slice(), source };
+    handBackWindow();
+    if (zero) log('「' + def.name + '」这一轮收 0 篇：不算失败，后面照常接', 'warn');
+    renderAll();
+    return { aborted:false, sc, found };
+  }
+
+  async function finishAbort(){
+    state.busy = false;
+    state.stopping = false;
+    state.abortReason = '';
+    state.live = null;
+    renderAll();
+    return { aborted:true };
+  }
+
+  /* ── 搜索链 ── */
+  function remainOf(chain){
+    return chain && chain.idx < chain.rounds.length ? chain.rounds.slice(chain.idx) : [];
+  }
+
+  async function startSearch(){
+    if (state.busy){ toast('工作台正忙：等这一轮跑完'); return; }
+    if (state.queue.running){ toast('队列正在跑：先点「停这一趟」再搜'); return; }
+    hideBanner();
+
+    const old = state.chain;
+    if (old && (old.status === 'waiting' || old.status === 'running')){
+      const rem = remainOf(old);
+      log('又点了一次「搜索」：先把旧的那串撤掉' + (rem.length ? '（还没跑的 ' + names(rem) + ' 不跑了）' : ''), 'warn');
+    }
+    const rounds = state.latestDue ? ORDER.slice() : ORDER.filter((s) => s !== 'latest');
+    if (!state.latestDue) log('「最新」这一轮没到点：先跑第一个到点的「TOP」', 'warn');
+    state.latestDue = true;
+    $('#latestDue').checked = false;
+
+    const chain = {
+      kw:'瓷砖怎么选', rounds, idx:0, status:'running', nextAt:null,
+      results:{}, lastSc:null, stopReason:''
+    };
+    state.chain = chain;
+    log('点了一次「搜索」：这一单只跑「' + ROUND_DEFS[rounds[0]].name + '」一类，不捎带别的类', 'brand');
+    const r = await runRound(rounds[0], 'chain');
+    if (r.aborted) return;
+
+    chain.results[r.sc] = r.found;
+    chain.lastSc = r.sc;
+    chain.idx += 1;
+    if (chain.idx < chain.rounds.length){
+      chain.status = 'waiting';
+      chain.nextAt = state.clock + GAP;
+      log('「' + ROUND_DEFS[r.sc].name + '」跑完：收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇；服务器记下后面 ' +
+        (chain.rounds.length - chain.idx) + ' 类，约 10 分钟后跑「' + ROUND_DEFS[chain.rounds[chain.idx]].name + '」', 'ok');
+    } else {
+      chain.status = 'done';
+      chain.nextAt = null;
+      state.workWin.state = '🔓 页面已交还 · 全跑完';
+      state.workWin.note = '窗停在最后一页，不关';
+      log('最后一类「' + ROUND_DEFS[r.sc].name + '」跑完：收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇；窗停在最后一页，不关', 'ok');
+    }
+    renderAll();
+  }
+
+  async function runChainRound(){
+    const c = state.chain;
+    if (!c || c.status !== 'waiting') return;
+    const sc = c.rounds[c.idx];
+    c.status = 'running';
+    c.nextAt = null;
+    log('到点：自动接上「' + ROUND_DEFS[sc].name + '」这一轮（用同一扇干活窗，不用人再点）', 'run');
+    renderAll();
+    const r = await runRound(sc, 'chain');
+    if (r.aborted) return;
+
+    c.results[r.sc] = r.found;
+    c.lastSc = r.sc;
+    c.idx += 1;
+    if (c.idx < c.rounds.length){
+      c.status = 'waiting';
+      c.nextAt = state.clock + GAP;
+      log('「' + ROUND_DEFS[r.sc].name + '」跑完：收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇；后面还有 ' +
+        names(c.rounds.slice(c.idx)) + '，约 10 分钟后接下一类', 'ok');
+    } else {
+      c.status = 'done';
+      state.workWin.state = '🔓 页面已交还 · 全跑完';
+      state.workWin.note = '窗停在最后一页，不关';
+      log('最后一类「' + ROUND_DEFS[r.sc].name + '」跑完：收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇；窗停在最后一页，不关', 'ok');
+    }
+    renderAll();
+  }
+
+  /* ── 队列 ── */
+  async function startQueue(){
+    if (state.busy){ toast('工作台正忙：等这一轮跑完'); return; }
+    const q = state.queue;
+    if (q.running) return;
+    hideBanner();
+
+    if (state.chain && (state.chain.status === 'waiting' || state.chain.status === 'running')){
+      const rem = remainOf(state.chain);
+      state.chain.status = 'cancelled';
+      state.chain.nextAt = null;
+      log('队列开始：先把搜索那串撤掉' + (rem.length ? '（没跑的 ' + names(rem) + ' 不跑了）' : '') + '，不叠两条', 'warn');
+    }
+    if (!q.items.length){
+      q.items = freshQueueItems();
+      q.done = [];
+      log('队列又到点了：重新排「瓷砖怎么选」的 4 类', 'brand');
+    }
+    q.running = true;
+    q.current = null;
+    q.nextAt = null;
+    q.stopReason = '';
+    q.startedAt = state.clock;
+    log('队列开始：节奏「' + (q.pace === 'interval' ? '定时轮' : '一遍跑完') + '」，一项＝词 × 类', 'brand');
+    renderAll();
+    await runQueueItem();
+  }
+
+  async function runQueueItem(){
+    const q = state.queue;
+    if (!q.running || q.current) return;
+    const item = q.items[0];
+    if (!item){
+      q.running = false;
+      q.nextAt = null;
+      log('队列这一圈跑完：窗停在最后一页，不关', 'ok');
+      renderAll();
+      return;
+    }
+    q.current = item;
+    q.nextAt = null;
+    log('队列到点：跑「' + item.k + '」的「' + ROUND_DEFS[item.sc].name + '」这一项', 'run');
+    const r = await runRound(item.sc, 'queue');
+    if (r.aborted){
+      q.current = null;
+      q.running = false;
+      renderAll();
+      return;
+    }
+    q.items.shift();
+    q.done.push({ k:item.k, sc:item.sc, at:state.clock, foundN:r.found });
+    q.current = null;
+    if (!q.items.length){
+      q.running = false;
+      q.nextAt = null;
+      state.workWin.state = '🔓 页面已交还 · 队列跑完';
+      state.workWin.note = '窗停在最后一页，不关';
+      log('队列这一圈跑完：4 项都跑完，窗停在最后一页不关', 'ok');
+    } else if (q.pace === 'interval'){
+      q.nextAt = state.clock + GAP;
+      log('下一项「' + ROUND_DEFS[q.items[0].sc].name + '」约 10 分钟后（' + fmt(q.nextAt) + '）接上', 'ok');
+    } else {
+      q.nextAt = state.clock;
+      log('「一遍跑完」：紧接着跑下一项「' + ROUND_DEFS[q.items[0].sc].name + '」', 'ok');
+    }
+    renderAll();
+  }
+
+  async function runManualClass(sc){
+    if (state.busy){ toast('工作台正忙：等这一轮跑完'); return; }
+    if (state.queue.running){ toast('队列正在跑：先停这一趟'); return; }
+    hideBanner();
+    log('类型标签手点：当场只跑「' + ROUND_DEFS[sc].name + '」这一类，不排队', 'brand');
+    if (state.chain && state.chain.status === 'waiting'){
+      log('原来那串还在等，跑完这一类它照旧接着走', 'info');
+    }
+    const r = await runRound(sc, 'manual');
+    if (r.aborted) return;
+    log('「' + ROUND_DEFS[sc].name + '」手点跑完：收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇', 'ok');
+    renderAll();
+  }
+
+  /* ── 停手 ── */
+  function triggerStop(reason){
+    const c = state.chain;
+    const q = state.queue;
+    const chainActive = !!(c && (c.status === 'waiting' || c.status === 'running'));
+    const queueActive = !!(q && (q.running || q.current));
+    const active = state.busy || chainActive || queueActive;
+
+    if (!active && reason === 'manual'){
+      log('现在没有在跑的活：不用停', 'warn');
+      return;
+    }
+    if (!active && reason !== 'manual'){
+      showBanner(reason);
+      log('现在没有在跑的活：只演示提示条（' + STOP_LABEL[reason] + '）', 'warn');
+      return;
+    }
+
+    if (state.busy){
+      state.abortReason = reason;
+      state.stopping = true;
+    }
+    if (chainActive){
+      c.status = 'stopped';
+      c.stopReason = reason;
+      c.nextAt = null;
+    }
+    if (queueActive){
+      q.running = false;
+      q.stopReason = reason;
+      q.nextAt = null;
+      q.current = null;
+    }
+    if (state.workWin.open){
+      state.workWin.locked = false;
+      state.workWin.state = reason === 'login' ? '🔐 等你扫码（窗没关）' : '🔓 已交还（窗没关）';
+      if (reason === 'login') state.workWin.page = '小红书 · 登录页（等你扫码）';
+    }
+    if (reason === 'manual'){
+      log(STOP_LOG.manual, 'warn');
+    } else {
+      showBanner(reason);
+      log(STOP_LOG[reason], reason === 'login' ? 'danger' : 'warn');
+    }
+    renderAll();
+  }
+
+  function showBanner(reason){
+    const b = BANNERS[reason];
+    if (!b) return;
+    const el = $('#banner');
+    el.className = 'banner' + (b.color === 'red' ? ' red' : '');
+    el.style.display = 'flex';
+    $('#bannerTitle').textContent = b.title;
+    $('#bannerBody').textContent = b.body;
+  }
+  function hideBanner(){
+    $('#banner').style.display = 'none';
+  }
+
+  /* ── 渲染 ── */
+  function renderAll(){
+    renderBench();
+    renderQueue();
+    renderConsole();
+    renderLiveBits();
+  }
+
+  function renderBench(){
+    const busy = state.busy;
+    const showResults = !busy && !!state.results.sc;
+    $('#panelIdle').classList.toggle('active', !busy && !showResults);
+    $('#panelSearching').classList.toggle('active', busy);
+    $('#panelResults').classList.toggle('active', showResults);
+
+    if (busy) renderSearching();
+    if (showResults) renderResults();
+
+    $('#btnSearch').disabled = busy || state.queue.running;
+    $('#btnSearch').title = busy ? '工作台正忙：等这一轮跑完'
+      : (state.queue.running ? '队列正在跑：先停这一趟再搜' : '点一次只跑当前词的「最新」一类；后面几类由服务器约 10 分钟一类接着派');
+    $('#kwTypeNow').textContent = ROUND_DEFS[state.typeNow] ? ROUND_DEFS[state.typeNow].name : '最新';
+
+    document.querySelectorAll('.kw-type').forEach((b) => {
+      b.disabled = busy || state.queue.running;
+      b.classList.toggle('on', b.dataset.sc === state.typeNow);
+    });
+
+    $('#statusBar').textContent = statusText();
+  }
+
+  function renderResults(){
+    const r = state.results;
+    if (!r.sc) return;
+    const def = ROUND_DEFS[r.sc];
+    $('#roundLine').textContent = '这一轮：' + def.name + ' · 收 ' + r.found + ' 篇 · 今天共 ' + state.dayTotal + ' 篇';
+    const sub = $('#roundSub');
+    const c = state.chain;
+    let txt = '';
+    let stopped = false;
+    if (r.source === 'chain' && c && c.lastSc === r.sc){
+      const rem = remainOf(c);
+      if (c.status === 'waiting' && rem.length){
+        txt = '后面还有：' + names(rem) + '（约 10 分钟一类）';
+      } else if (c.status === 'stopped' && rem.length){
+        txt = '后面还有：' + names(rem) + '（已停手，回来重新点「搜索」）';
+        stopped = true;
+      }
+    }
+    if (txt){
+      sub.style.display = 'block';
+      sub.textContent = txt;
+      sub.classList.toggle('stopped', stopped);
+    } else {
+      sub.style.display = 'none';
+      sub.textContent = '';
+      sub.classList.remove('stopped');
+    }
+
+    const list = $('#noteList');
+    list.innerHTML = r.notes.map((n) =>
+      '<li class="note-item">' +
+        '<div class="note-top">' +
+          '<div class="note-body">' +
+            '<div class="note-title"><a href="javascript:void(0)" data-note="1">' + n.t + '</a></div>' +
+            '<div class="note-meta"><span class="note-author">@' + n.a + '</span><span class="note-likes">👍 ' + n.l + '</span></div>' +
+          '</div>' +
+          '<button class="btn btn-sm btn-open-note" data-open-note="1">🔗 打开</button>' +
+        '</div>' +
+      '</li>'
+    ).join('');
+    $('#emptyRound').style.display = r.notes.length ? 'none' : 'block';
+  }
+
+  function statusText(){
+    if (state.busy){
+      const live = state.live;
+      return state.stopping ? '⏹ 正在收手…' : ('🔍 正在搜「瓷砖怎么选」· ' + (live ? ROUND_DEFS[live.sc].name : ''));
+    }
+    const c = state.chain;
+    const q = state.queue;
+    if (q.running && q.nextAt != null){
+      return '⏳ 队列在等：下一项约 ' + minsTo(q.nextAt) + ' 分钟后（' + fmt(q.nextAt) + '）';
+    }
+    if (c && c.status === 'waiting'){
+      return '⏳ 搜索链在等：下一类「' + ROUND_DEFS[c.rounds[c.idx]].name + '」约 ' + minsTo(c.nextAt) + ' 分钟后（' + fmt(c.nextAt) + '）';
+    }
+    if (c && c.status === 'stopped'){
+      return '⏹ 已停手（' + STOP_LABEL[c.stopReason] + '）';
+    }
+    if (c && c.status === 'done'){
+      return '✅ 这一串跑完了（窗还开着）';
+    }
+    if (q.running){
+      return '⏳ 队列在跑：等下一项';
+    }
+    return '⏸️ 待机中（未开始扫描）';
+  }
+
+  function renderQueue(){
+    const q = state.queue;
+    $('#botPaceSel').value = q.pace;
+    $('#botScopeSel').disabled = q.running;
+    $('#botPaceSel').disabled = q.running;
+    const btn = $('#botToggleBtn');
+    btn.textContent = q.running ? '■ 停这一趟' : '▶ 开始';
+    btn.className = 'bot-toggle' + (q.running ? ' running' : '');
+    btn.disabled = !q.running && state.busy;
+    btn.title = q.running ? '停这一趟：不再跑下一项（不弹横幅）'
+      : (state.busy ? '工作台正忙：等这一轮跑完' : '按队列串行跑：一项（词 × 类）一项地跑');
+
+    const todo = q.items.slice(q.current ? 1 : 0);
+    const doneN = q.done.length;
+    const current = q.current;
+    const waitingCount = 1;
+    $('#queueCaps').innerHTML =
+      '<div style="font-size:12px;color:#374151;">🗂 今天（周五）跑批次：默认 · 待跑 <b>' + todo.length + '</b> 项' +
+        (waitingCount ? ' · 还没到点 ' + waitingCount + ' 项' : '') +
+        ' · 今日评论 <b>8</b>（不限）</div>' +
+      '<div class="caps-note">🆕 这次：节奏默认「定时轮」——原来默认 2 分钟，现在约 10 分钟一类；自己调过的保持原值。</div>';
+
+    const showMgmt = qtab === 'mgmt';
+    $('#queueBar').style.display = showMgmt ? 'flex' : 'none';
+    $('#queueBody').style.display = showMgmt ? 'block' : 'none';
+    $('#queuePlaceholder').style.display = showMgmt ? 'none' : 'block';
+    if (!showMgmt) return;
+
+    let html = '';
+
+    if (current){
+      const liveLine = state.busy && state.live
+        ? '<div class="q-live">🔍 正在搜 第 ' + (state.live.done + 1) + '/' + state.live.total + ' 搜 · ' + state.live.name + '</div>'
+        : '';
+      html += '<div class="q-sec"><div class="q-sec-h">▶ 正在跑</div><div class="q-list">' +
+        '<div class="q-item q-item-run"><span class="q-i-no">▶</span><div class="q-i-bd">' +
+          '<div class="q-i-top"><span class="q-i-name">' + current.k + '</span><span class="q-i-type">' + ROUND_DEFS[current.sc].name + '</span></div>' +
+          '<div class="q-i-sub">这次 ' + fmt(q.startedAt) + ' 开跑</div>' + liveLine +
+        '</div></div></div></div>';
+    }
+
+    if (q.running && q.nextAt != null){
+      const next = q.items[0];
+      html += '<div class="queue-wait-line" id="qNextCountdown">⏳ 下一项：' + ROUND_DEFS[next.sc].name + ' · 约 ' +
+        minsTo(q.nextAt) + ' 分钟后（' + fmt(q.nextAt) + '）自动接上</div>';
+    }
+    if (!q.running && q.done.length && !q.items.length){
+      html += '<div class="queue-done-note">✅ 队列这一圈跑完了：' + q.done.length + ' 项都跑完，干活窗停在最后一页不关。</div>';
+    }
+
+    if (todo.length){
+      const first = todo[0];
+      const hasDoneSame = q.done.some((x) => x.k === first.k);
+      html += '<div class="q-sec"><div class="q-sec-h">⏳ 待跑 <span class="q-n">' + todo.length + ' 项 · 按关键词一行</span></div><div class="q-list">' +
+        '<div class="q-item q-item-group"><div class="q-i-bd">' +
+          '<div class="q-i-top"><span class="q-i-name">' + first.k + '</span>' +
+            '<span class="q-i-types">' + todo.map((x) => '<span class="q-i-type">' + ROUND_DEFS[x.sc].name + '</span>').join('') + '</span></div>' +
+          '<div class="q-i-sub">现在该跑' + (hasDoneSame ? ' · 上次 今天 ' + fmt(q.done[q.done.length - 1].at) : ' · 还没跑过') + '</div>' +
+        '</div></div></div></div>';
+    } else if (!q.running){
+      html += '<div class="q-hint">今天到点的都跑完了 👍<br>下一批到点会自动进「待跑」</div>';
+    }
+
+    html += '<details class="q-sec"><summary class="q-sec-h">🕓 还没到点 <span class="q-n">1 项 · 到点自动进待跑</span></summary><div class="q-list">' +
+      '<div class="q-item q-item-group"><div class="q-i-bd">' +
+        '<div class="q-i-top"><span class="q-i-name">装修避坑</span><span class="q-i-types"><span class="q-i-type">最新</span></span></div>' +
+        '<div class="q-i-sub">计划 14:00 · 上次 昨天 16:20</div>' +
+      '</div></div></div></details>';
+
+    if (q.done.length){
+      html += '<details class="q-sec"' + (q.done.length ? ' open' : '') + '><summary class="q-sec-h">✅ 已完成 <span class="q-n">今天 ' + doneN + ' 项</span></summary><div class="q-list">' +
+        q.done.map((x, i) =>
+          '<div class="q-item"><span class="q-i-no">' + (i + 1) + '</span><div class="q-i-bd">' +
+            '<div class="q-i-top"><span class="q-i-name">' + x.k + '</span><span class="q-i-type">' + ROUND_DEFS[x.sc].name + '</span></div>' +
+            '<div class="q-i-sub">' + fmt(x.at) + ' · 搜到 ' + x.foundN + ' 篇</div>' +
+          '</div></div>'
+        ).join('') + '</div></details>';
+    }
+
+    $('#queueBody').innerHTML = html;
+  }
+
+  function renderConsole(){
+    $('#conClock').textContent = fmt(state.clock);
+    $('#speedSel').value = String(state.speed);
+
+    const c = state.chain;
+    let chainTxt = '搜索链：还没起';
+    if (c){
+      if (c.status === 'running'){
+        chainTxt = '搜索链：正在跑「' + ROUND_DEFS[c.rounds[c.idx]].name + '」（第 ' + (c.idx + 1) + '/' + c.rounds.length + ' 类）';
+      } else if (c.status === 'waiting'){
+        chainTxt = '搜索链：' + c.rounds.map((s, i) =>
+          i < c.idx ? ROUND_DEFS[s].name + ' ✓' :
+          (i === c.idx ? ROUND_DEFS[s].name + '（下一类 · ' + fmt(c.nextAt) + '）' : ROUND_DEFS[s].name)
+        ).join(' → ');
+      } else if (c.status === 'stopped'){
+        chainTxt = '搜索链：停在「' + (c.lastSc ? ROUND_DEFS[c.lastSc].name : '最新') + '」，原因：' + STOP_LABEL[c.stopReason] +
+          (remainOf(c).length ? '；没跑的：' + names(remainOf(c)) : '');
+      } else if (c.status === 'done'){
+        chainTxt = '搜索链：' + names(c.rounds) + ' 全跑完 ✓';
+      } else if (c.status === 'cancelled'){
+        chainTxt = '搜索链：已撤（队列开始 / 新搜索）';
+      }
+    }
+    $('#chainLine').textContent = chainTxt;
+
+    const q = state.queue;
+    let qTxt = '队列：待命 · ' + q.items.length + ' 项';
+    if (q.current) qTxt = '队列：正在跑「' + ROUND_DEFS[q.current.sc].name + '」';
+    else if (q.running && q.nextAt != null) qTxt = '队列：等下一项「' + ROUND_DEFS[q.items[0].sc].name + '」· ' + fmt(q.nextAt);
+    else if (q.running) qTxt = '队列：正在排队';
+    else if (q.stopReason) qTxt = '队列：已停手（' + STOP_LABEL[q.stopReason] + '）· 还剩 ' + q.items.length + ' 项';
+    else if (q.done.length) qTxt = '队列：这一圈跑完 ' + q.done.length + ' 项';
+    $('#queueLine').textContent = qTxt;
+
+    const w = state.workWin;
+    $('#winNo').textContent = w.open ? ('#' + w.no) : (w.no ? '#' + w.no + ' 已关' : '还没开');
+    $('#mwTitle').textContent = w.open ? ('小红书 · 干活窗 #' + w.no) : (w.no ? '干活窗 #' + w.no + '（已关）' : '小红书 · 干活窗');
+    $('#mwPage').textContent = w.open ? w.page : (w.no ? '窗关了；下一轮会再开一扇' : '还没开窗');
+    const ws = $('#winState');
+    ws.textContent = w.open ? (w.state || '—') : (w.no ? '窗已关（模拟你手关的）' : '—');
+    ws.className = 'win-state' + (w.locked ? ' locked' : '') + (/扫码/.test(w.state || '') ? ' login' : '');
+  }
+
+  function renderLiveBits(){
+    $('#conClock').textContent = fmt(state.clock);
+    const c = state.chain;
+    const q = state.queue;
+    let txt = '下一轮：还没起';
+    if (state.busy){
+      txt = '正在跑，跑完再排下一类';
+    } else if (q.running && q.nextAt != null){
+      txt = '队列下一项：约 ' + minsTo(q.nextAt) + ' 分钟后（' + fmt(q.nextAt) + '）';
+    } else if (c && c.status === 'waiting'){
+      txt = '下一类「' + ROUND_DEFS[c.rounds[c.idx]].name + '」：约 ' + minsTo(c.nextAt) + ' 分钟后（' + fmt(c.nextAt) + '）';
+    } else if (c && c.status === 'done'){
+      txt = '这一串跑完了';
+    } else if (c && c.status === 'stopped'){
+      txt = '已停手：' + STOP_LABEL[c.stopReason];
+    } else if (q.running){
+      txt = '队列在跑';
+    }
+    $('#conCountdown').textContent = txt;
+    $('#statusBar').textContent = statusText();
+
+    const qn = document.getElementById('qNextCountdown');
+    if (qn && q.running && q.nextAt != null && q.items[0]){
+      qn.textContent = '⏳ 下一项：' + ROUND_DEFS[q.items[0].sc].name + ' · 约 ' + minsTo(q.nextAt) + ' 分钟后（' + fmt(q.nextAt) + '）自动接上';
+    }
+  }
+
+  /* ── 走表 ── */
+  function tick(){
+    if (state.speed > 0) state.clock += state.speed / 240;
+    renderLiveBits();
+    if (!state.busy){
+      if (state.queue.running && state.queue.nextAt != null && state.clock >= state.queue.nextAt){
+        state.queue.nextAt = null;
+        runQueueItem();
+      } else if (state.chain && state.chain.status === 'waiting' && state.chain.nextAt != null && state.clock >= state.chain.nextAt){
+        state.chain.nextAt = null;
+        runChainRound();
+      }
+    }
+  }
+
+  /* ── 事件 ── */
+  function bind(){
+    $('#btnSearch').onclick = startSearch;
+    $('#btnQueue').onclick = () => switchView('queue');
+    $('#btnBackBench').onclick = () => switchView('bench');
+
+    document.querySelectorAll('.kw-type').forEach((b) => {
+      b.onclick = () => runManualClass(b.dataset.sc);
+    });
+    $('#noteList').addEventListener('click', (e) => {
+      if (e.target.closest('[data-open-note]') || e.target.closest('[data-note]')){
+        toast('演示里不打开笔记（真实系统会开这一篇）');
+      }
+    });
+    $('#btnRefreshFake').onclick = () => toast('这块演示没搭，看真实系统');
+
+    $('#botToggleBtn').onclick = () => {
+      if (state.queue.running){
+        triggerStop('manual');
+      } else {
+        startQueue();
+      }
+    };
+    $('#botPaceSel').onchange = (e) => {
+      state.queue.pace = e.target.value;
+      renderQueue();
+    };
+    $('#botScopeSel').onchange = () => {};
+
+    document.querySelectorAll('.q-tab').forEach((b) => {
+      b.onclick = () => {
+        qtab = b.dataset.qtab;
+        document.querySelectorAll('.q-tab').forEach((x) => x.classList.toggle('active', x === b));
+        renderQueue();
+      };
+    });
+
+    document.querySelectorAll('[data-stop]').forEach((b) => {
+      b.onclick = () => triggerStop(b.dataset.stop);
+    });
+    $('#btnZero').onclick = () => {
+      state.zeroNext = true;
+      log('下一轮演示成收 0 篇：不算失败，后面照常接', 'warn');
+      toast('下一轮会收 0 篇（照常接下一类）');
+    };
+    $('#latestDue').onchange = (e) => {
+      state.latestDue = !e.target.checked;
+      if (e.target.checked) log('下次点「搜索」：演示「最新」没到点，从第一个到点的类起', 'warn');
+      else log('下次点「搜索」：「最新」照常先跑', 'info');
+    };
+    $('#btnCloseWin').onclick = () => {
+      const w = state.workWin;
+      if (!w.open){ toast('干活窗还没开'); return; }
+      w.open = false;
+      w.locked = false;
+      w.state = '窗已关';
+      w.note = '';
+      log('你手动把干活窗关了：下一轮会再开一扇（#' + (w.no + 1) + '）', 'warn');
+      renderAll();
+    };
+    $('#btnReset').onclick = resetAll;
+    $('#speedSel').onchange = (e) => {
+      state.speed = Number(e.target.value);
+      renderConsole();
+    };
+    $('#bannerOk').onclick = hideBanner;
+
+    $('#btnFast').onclick = () => {
+      if (state.busy){ toast('等这一轮跑完再快进'); return; }
+      if (state.queue.running && state.queue.nextAt != null){
+        state.clock = Math.max(state.clock, state.queue.nextAt);
+        state.queue.nextAt = null;
+        log('快进到 ' + fmt(state.clock) + '：接队列下一项', 'brand');
+        runQueueItem();
+        return;
+      }
+      if (state.chain && state.chain.status === 'waiting' && state.chain.nextAt != null){
+        state.clock = Math.max(state.clock, state.chain.nextAt);
+        state.chain.nextAt = null;
+        log('快进到 ' + fmt(state.clock) + '：接下一类「' + ROUND_DEFS[state.chain.rounds[state.chain.idx]].name + '」', 'brand');
+        runChainRound();
+        return;
+      }
+      toast('现在没有排着的下一轮');
+    };
+  }
+
+  function resetAll(){
+    const speed = state ? state.speed : 60;
+    state = initialState();
+    state.speed = speed;
+    qtab = 'mgmt';
+    hideBanner();
+    document.querySelectorAll('.q-tab').forEach((x) => x.classList.toggle('active', x.dataset.qtab === 'mgmt'));
+    switchView('bench');
+    log('演示已重置：演示时间 09:30，今天共 36 篇（含别的词和截流扫描收的）', 'brand');
+    log('点左上角「搜索」＝只跑「最新」一类；跑完后面几类由服务器约 10 分钟一类接着派', 'info');
+    $('#latestDue').checked = false;
+    renderAll();
+  }
+
+  state = initialState();
+  bind();
+  log('演示开始：演示时间 09:30，今天共 36 篇（含别的词和截流扫描收的）', 'brand');
+  log('点左上角「搜索」＝只跑「最新」一类；跑完后面几类由服务器约 10 分钟一类接着派', 'info');
+  renderAll();
+  timer = setInterval(tick, 250);
+})();
+</script>
+</body>
+</html>

@@ -1,10 +1,12 @@
-/* 全场景截流 · 扩展自带「任务配置 + 笔记监控列表」工具
+/* 全场景截流 · 扩展自带「队列配置 + 笔记监控列表」工具
  *
  * 同时被 background 与 popup 使用：
  *  - background.js importScripts：提供 SCENARIO_DRAIN 话术库 + handleDrainComment（调 AI）
- *  - popup <script>：获客分组下渲染两个二级页——
- *      · renderDrainCfg(container)            「⚙️ 任务配置」：两个横排三级 tab＝📚 关键词池 / 👤 盯的账号（补开的开关与阈值收在顶栏「⚙︎」小弹窗里）
- *      · renderScenarioDrain(container)       「📋 笔记列表」：笔记监控列表
+ *  - popup <script>：获客分组下渲染——
+ *      · renderDrainQueue(container)          「🗂 队列」：📜 队列 / ⚙️ 配置 两个横排三级 tab（配置＝三张卡：跑什么 / 日常浏览 / 推广目标·承接）
+ *      · renderScenarioDrain(container)       「📋 笔记列表」：笔记监控列表（顶栏带 🔁 补开未打开）
+ *
+ * 任务配置原来是个独立二级页，2026-10-24 并进「队列 → ⚙️ 配置」：一个入口，不再有第四级横签。
  *
  * 模型：一个关键词 × 不同搜索筛选条件 → 不同类型的笔记 → 各自不同的评论/维护方式
  *   1. 最新笔记(latest)：筛选「最新」。定时看点赞涨没涨，涨了就赶去评论（抢前排）。
@@ -94,15 +96,15 @@ const SCENARIO_DRAIN = [
     tag: '埋伏 · 只私信不评论',
     manual: false,  // 也能进配置表：把词填成竞品名、把「竞对」这一列打开，就按节奏蹲一轮
     noComment: true, // 跑法：本篇一个字都不评论
-    desc: '同行/竞品的爆帖：评论区里全是精准客户。只在评论区找有商机的人拉进获客清单去私信，绝不留评论惊动对方。',
-    system: `你是小红书真人号主，正在给一位刚从同行笔记评论区看到的潜在客户发第一条私信。我的产品={product}。
+    desc: '同行/竞品的爆帖：评论区里全是精准顾客。只在评论区找有商机的人拉进获客清单去私信，绝不留评论惊动对方。',
+    system: `你是小红书真人号主，正在给一位刚从同行笔记评论区看到的潜在顾客发第一条私信。我的产品={product}。
 策略（埋伏式首触）：
 1. 绝不提“我在某某笔记评论区看到你”（会让人觉得被盯着、像截流）
 2. 用「刷到你那条评论，说的正好是我之前踩过的坑」这类自然由头破冰
 3. 先给价值：一句话给出对方向题的判断/提醒，再自然带出「{product}」能帮他解决什么
 4. 先给价值、不硬推销、绝不放链接/微信/二维码，承接一律用「{guide}」
 5. 60-90 字，口语化真人，像随手发来的私信`,
-    user: `【对方留言】{pain}\n【来自笔记】{title}\n【笔记内容】{content}\n【搜索关键词】{keyword}\n\n我要给这个在同行评论区看到的潜在客户发第一条私信（竞对笔记不评论，只私信）。请生成一条埋伏式私信开场白（60-90 字），自然带出「{product}」，承接用「{guide}」，不放链接。直接返回私信文本。`,
+    user: `【对方留言】{pain}\n【来自笔记】{title}\n【笔记内容】{content}\n【搜索关键词】{keyword}\n\n我要给这个在同行评论区看到的潜在顾客发第一条私信（竞对笔记不评论，只私信）。请生成一条埋伏式私信开场白（60-90 字），自然带出「{product}」，承接用「{guide}」，不放链接。直接返回私信文本。`,
   },
   {
     scenario: 'highv',
@@ -912,20 +914,20 @@ function drainJudge(scenario, signals, opts) {
   }
 }
 
-/* ================= 弹窗渲染：任务配置 / 笔记池（获客分组两个二级页） ================= */
+/* ================= 弹窗渲染：队列配置 / 笔记池（获客分组两个二级页） ================= */
 let _drainNotesChanged = null;
 let _cand = null;    // 配置页候选区：{ kind:'ai'|'topic', label, loading, items:[{k,n}] }
 let _cfgWant = null; // 跳过来时要展开的候选区：'ai' | 'topic'（页面还没渲染完也认）
-let _cfgSec = 'kw';  // 配置页三级 tab：kw 关键词池 / acct 盯的账号 / goal 推广目标（⋯ 更多设置已撤，2026-09-25）
+let _cfgSec = 'run';  // 配置页三张卡哪张展开：run 跑什么（词池＋盯的账号）/ daily 日常浏览 / goal 推广目标
 let _kwOpen = {};     // 关键词池批次展开状态：{ 批次名: true/false }（2026-10-02 起批次＝列表外层骨架，点批次行展开词）
 let _kwCur = '';      // 最近展开/操作过的批次：顶部回车加词、候选入池都落到这一批
 let _kwInited = false; // 首次进页面时自动展开规则（只有一个批次就展开，多批次收起按需点开）
 const _dbDetOpen = { round: false, social: false };  // 🌿 日常浏览里两个折叠块（一轮怎么刷 / 顺手互动）的展开状态，切 tab 重渲染后照旧
-let _lastScanInfo = null;   // 本轮扫描结果 { text, warn }：任务配置顶栏下方那行 / 笔记池的提示行
+let _lastScanInfo = null;   // 本轮扫描结果 { text, warn }：配置页顶栏下方那行 / 笔记池的提示行
 /* 表格里类型下拉的短标签（列窄，完整名放进 title） */
 const DRAIN_TYPE_SHORT = { latest: '最新', top: 'TOP', local: '本地', pain: '求助', rival: '竞对', highv: '高V' };
 
-/* ── 🎯 推广目标（任务配置第三个 tab，2026-09-25 从「诊断&配置 → 基础配置」搬来）──
+/* ── 🎯 推广目标（配置页最下面那张卡，2026-09-25 从「诊断&配置 → 基础配置」搬来）──
    guide=null 表示要用户自己填去向；存 product.promoGoal / product.guideText，
    后台的引导规则与截流评论承接读的就是这两个字段，这里只换了个改的地方 */
 const SX_GOAL_DEFS = [
@@ -958,15 +960,17 @@ async function _sxSaveProduct(patch) {
   await chrome.storage.local.set({ config: locked });
 }
 
-/* ⚙️ 任务配置 二级页：📚 关键词池 / 👤 盯的账号 / 🎯 推广目标 三个三级 tab（整页就是扫描任务的定义） */
-async function renderDrainCfg(container) { return renderScenarioDrain(container, 'cfg'); }
+/* ⚙️ 配置：队列页的一个横签（三张卡：跑什么 / 日常浏览 / 推广目标·承接）。
+   统一走 renderScenarioDrain(container,'cfg')，任务配置那个独立二级页 2026-10-24 已并进队列页 */
 
-/* 「去任务配置」统一入口：词池配置已搬成弹窗里获客的「任务配置」二级页（不再去设置页）。
-   本文件也被 background.js importScripts，SW 里没有 window，所有判断压在 typeof 里 */
+/* 「去配置」统一入口：切到队列页的 ⚙️ 配置 横签（配置文件也被 background.js importScripts，SW 里没有 window） */
 function _goCfg() {
   if (typeof window === 'undefined') return;
-  if (typeof window.switchMainTab === 'function') { window.switchMainTab('taskCfg'); return; }
-  try { chrome.runtime.openOptionsPage(); } catch (_) {}
+  try {
+    const box = document.getElementById('drainQueueContent');
+    if (box) box._qTab = 'config';
+    if (typeof window.switchMainTab === 'function') window.switchMainTab('queue');
+  } catch (_) {}
 }
 
 /* ================= 🔁 队列页 =================
@@ -1095,7 +1099,7 @@ async function drainPaintStrategy(el) {
     try { growth = Number((await drainGetReplenishCfg()).growthDelta) || 50; } catch (_) {}
     const selScope = document.getElementById('botScopeSel'), selPace = document.getElementById('botPaceSel');
     const scope = (selScope && selScope.value) || 'all';
-    const pace = (selPace && selPace.value) || 'once';
+    const pace = (selPace && selPace.value) || 'interval';
     const { rows, live } = _stratTypeRows(cfg, growth);
     const dailyMax = Number(sch.dailyMax) || 0;
     const perRound = Number(trend.maxPerRound) || Number(sch.perRound) || 0;
@@ -1124,7 +1128,7 @@ async function drainPaintStrategy(el) {
       '口径：<b>' + (scope === 'growing' ? '只追涨势' : '全部未灌过') + '</b>' +
       (scope === 'growing' ? '（只挑点赞在涨的笔记）' : '（已灌过、队列跑过的自动跳过）') +
       ' ｜ 节奏：<b>' + (pace === 'interval' ? '定时轮' : '一遍跑完') + '</b>' +
-      (pace === 'interval' ? '（每 ' + (Number(trend.scanIntervalMin) || 2) + ' 分钟跑一项，把额度摊开到一天）' : '（从队首连跑到队尾）') + '</div>' +
+      (pace === 'interval' ? '（每 ' + (Number(trend.scanIntervalMin) || 10) + ' 分钟跑一项，把额度摊开到一天）' : '（从队首连跑到队尾）') + '</div>' +
       '<div class="strat-sec"><span class="strat-sec-h">② 六类怎么评</span>' +
       '<table class="strat-tab"><thead><tr><th>类型</th><th>开没开 · 节奏 · 来源</th><th>怎么评</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<div class="strat-sec"><span class="strat-sec-h">③ 评论长什么样</span><br>' +
@@ -1161,7 +1165,18 @@ async function renderDrainQueue(container) {
   const caps = container.querySelector('#queueCaps');
   if (!body) return;
   let _qTab = container._qTab || 'mgmt';
-  /* 队列页 3 个 3 级横置子 tab：🗂 队列管理（正在跑）/ ⚙️ 队列配置 / 📖 评论策略，切的是哪个面板显示 */
+  if (_qTab === 'strat') _qTab = 'mgmt';   // 评论策略并成队列页里的折叠块（2026-10-24），老位置不再有横签
+  /* ⚙️ 配置那一签：进来才画三张卡（配置页自己管卡的展开/收起）。
+     同一次进入只画一次——队列 render() 会因 storage 变化反复跑，别把正在填的输入框刷掉 */
+  let _cfgMounted = false;
+  const mountCfg = () => {
+    if (_cfgMounted) return;
+    const cfgBox = container.querySelector('#drainCfgContent');
+    if (!cfgBox) return;
+    _cfgMounted = true;
+    renderScenarioDrain(cfgBox, 'cfg');
+  };
+  /* 队列页 2 个横置子 tab：📜 队列 / ⚙️ 配置；评论策略是队列页底下的一个折叠块 */
   const paintQueueTab = () => {
     const tabs = container.querySelector('#queueTabs');
     if (!tabs) return;
@@ -1169,11 +1184,12 @@ async function renderDrainQueue(container) {
     const isMgmt = _qTab === 'mgmt';
     const bar = container.querySelector('#queueBar');
     const stratWrap = container.querySelector('#qStratWrap');
-    const mgmt = container.querySelector('#queueMgmt');
+    const cfgBox = container.querySelector('#drainCfgContent');
     if (bar) bar.style.display = isMgmt ? '' : 'none';
     if (body) body.style.display = isMgmt ? '' : 'none';
-    if (mgmt) mgmt.style.display = (_qTab === 'config') ? '' : 'none';
-    if (stratWrap) stratWrap.style.display = (_qTab === 'strat') ? '' : 'none';
+    if (stratWrap) stratWrap.style.display = isMgmt ? '' : 'none';
+    if (cfgBox) cfgBox.style.display = isMgmt ? 'none' : '';
+    if (!isMgmt) mountCfg();
   };
   const tabsBox = container.querySelector('#queueTabs');
   if (tabsBox && !tabsBox.dataset.qtabBound) {
@@ -1198,11 +1214,15 @@ async function renderDrainQueue(container) {
      点空白处收起——容器重新渲染后这个监听器自己摘掉（否则切页几次会攒一堆） */
   const onDocClick = (ev) => {
     if (!container.isConnected) { document.removeEventListener('click', onDocClick); return; }
-    const pop = container.querySelector('#qAddDailyPop');
-    const btn = container.querySelector('#qAddDailyBtn');
-    if (!pop || pop.style.display === 'none') return;
-    if (pop.contains(ev.target) || (btn && btn.contains(ev.target))) return;
-    pop.style.display = 'none';
+    /* 两个小弹层：🌿 塞一轮 / ⏰ 每周自动跑——点空白处都收起 */
+    const pops = [['#qAddDailyPop', '#qAddDailyBtn'], ['#qAutoPop', '#qAutoBtn']];
+    pops.forEach(pair => {
+      const pop = container.querySelector(pair[0]);
+      const btn = container.querySelector(pair[1]);
+      if (!pop || pop.style.display === 'none') return;
+      if (pop.contains(ev.target) || (btn && btn.contains(ev.target))) return;
+      pop.style.display = 'none';
+    });
   };
   document.addEventListener('click', onDocClick);
 
@@ -1243,125 +1263,21 @@ async function renderDrainQueue(container) {
         const nm = b.getAttribute('data-qdailyn') || id;
         pop.style.display = 'none';
         await drainQueuePushFront(id, 'daily', nm);
-        drainToast('🌿 已把「' + nm + '」这一轮插到队首');
+        if (typeof window.__xhsExecDaily === 'function') {
+          const r = await window.__xhsExecDaily(id, nm);
+          if (!r || !r.ok) {
+            drainToast('🌿 已插到队首，但派给执行器没成：' + ((r && r.error) || '未知'), 'warn');
+            await render();
+            return;
+          }
+          drainToast(r.delivered ? '🌿 已插到队首，执行器当场开跑' : '🌿 已插到队首——执行器不在线，等它上线就跑', 'ok');
+        } else {
+          drainToast('🌿 已把「' + nm + '」这一轮插到队首');
+        }
         await render();
       };
     });
   }
-
-  /* ⚙️ 队列管理：关键词批次「周几跑哪批」＋ 日常浏览「什么时候跑」。两个都收在这一格，
-     词池只管词挂哪个批（「获客 → 任务配置 → 关键词池」每行那个小下拉） */
-  const renderQueueMgmt = async (box, cfg, now) => {
-    const batches = drainBatchesOf(cfg.keywords || [], cfg);
-    const plan = (((cfg.batchPlan) || {}));
-    const cur = new Date(now).getDay();
-    const WD = [{ i: 1, l: '一' }, { i: 2, l: '二' }, { i: 3, l: '三' }, { i: 4, l: '四' }, { i: 5, l: '五' }, { i: 6, l: '六' }, { i: 0, l: '日' }];
-    const wdLbl = (n) => { const x = WD.find(w => w.i === n); return x ? '周' + x.l : ''; };
-    const batchRows = batches.map(b => {
-      const days = Array.isArray(plan[b]) ? plan[b] : [];
-      const toggles = WD.map(w => {
-        const on = days.indexOf(w.i) >= 0;
-        const today = w.i === cur ? ' today' : '';
-        return '<button type="button" class="qm-wd' + (on ? ' on' : '') + today + '" data-qm-batch="' + escAttr(b) + '" data-qm-d="' + w.i + '" ' +
-          'title="' + escAttr(b + ' · 这天跑这一批') + '">周' + w.l + '</button>';
-      }).join('');
-      return '<div class="qm-batch"><span class="qm-bname">' + escHtml(b) + '</span><span class="qm-wds">' + toggles + '</span></div>';
-    }).join('');
-    const dbC = (typeof DailyBrowse !== 'undefined') ? await DailyBrowse.getConfig() : null;
-    const everyN = dbC ? (Number(dbC.insert.everyN) || 0) : 0;
-    const au = (dbC && dbC.autorun) || { enabled: false, from: '09:00', to: '18:00' };
-    const qa = cfg.queueAuto || { enabled: false, days: [], from: '09:00', to: '18:00' };
-    const qaDays = WD.map(w => {
-      const on = (qa.days || []).indexOf(w.i) >= 0;
-      return '<button type="button" class="qm-wd' + (on ? ' on' : '') + '" data-qm-qa="' + w.i + '" data-qm-qa-state="' + (on ? 'on' : 'off') + '" title="整条队列这天跑">周' + w.l + '</button>';
-    }).join('');
-    box.innerHTML = '<div class="qmgmt">' +
-      '<div class="qmgmt-body">' +
-        /* ── ① 关键词批次 · 周几跑哪批 ── */
-        '<div class="qm-sec-h">📚 关键词批次 · 周几跑哪批 <span class="qm-note">（今天=' + WK_LABELS[cur] + '，只亮今天亮的批）</span></div>' +
-        '<div class="qm-batches">' + (batchRows || '<div class="qm-empty">还没有词：去「获客 → 任务配置 → 关键词池」加词并分到批次。</div>') + '</div>' +
-        '<div class="qm-note">每批点一个「周X」＝这天跑这一批；不点（全灰）＝这一批不加限定、每天跑。</div>' +
-        /* ── ② 队列整条 · 每周自动跑 ── */
-        '<div class="qm-sec-div"></div>' +
-        '<div class="qm-sec-h">🗂 每周自动跑 · 整条队列 <span class="qm-note">（按选的星期 + 时段，到点自动开跑全部关键词）</span></div>' +
-        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">' +
-          '<label style="font-size:12px;color:#374151;"><input type="checkbox" id="qmQaOn"' + (qa.enabled ? ' checked' : '') + '> 开启每周自动跑</label>' +
-        '</div>' +
-        '<div class="qm-wds" style="margin-top:6px;">' + qaDays + '</div>' +
-        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">' +
-          '<input id="qmQaFrom" maxlength="5" value="' + escAttr(qa.from) + '" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
-          '<span class="qm-note">→</span>' +
-          '<input id="qmQaTo" maxlength="5" value="' + escAttr(qa.to) + '" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
-          '<span class="qm-note">（起止一样＝全天）</span>' +
-          '<button type="button" class="btn btn-sm btn-primary" id="qmQaSave">保存</button>' +
-        '</div>' +
-        /* ── ③ 日常浏览 · 什么时候跑（隔开） ── */
-        '<div class="qm-sec-div"></div>' +
-        '<div class="qm-sec-h">🌿 日常浏览 · 什么时候跑</div>' +
-        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">' +
-          '<label style="font-size:12px;color:#374151;">每 <input type="number" id="qmEveryN" min="0" max="20" value="' + everyN + '" style="width:52px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;"> 格获客插 1 轮</label>' +
-          '<span class="qm-note">（0＝不自动插，只在上面手动塞一轮）</span>' +
-        '</div>' +
-        '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">' +
-          '<label style="font-size:12px;color:#374151;"><input type="checkbox" id="qmAutoOn"' + (au.enabled ? ' checked' : '') + '> 每天自动跑</label>' +
-          '<input id="qmFrom" maxlength="5" value="' + escAttr(String(au.from || '09:00')) + '" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
-          '<span class="qm-note">→</span>' +
-          '<input id="qmTo" maxlength="5" value="' + escAttr(String(au.to || '18:00')) + '" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
-          '<span class="qm-note">（起止一样＝全天）</span>' +
-          '<button type="button" class="btn btn-sm btn-primary" id="qmDbSave">保存</button>' +
-        '</div>' +
-      '</div></div>';
-    box.querySelectorAll('[data-qm-batch]').forEach(b => b.onclick = async () => {
-      const name = b.getAttribute('data-qm-batch');
-      const d = Number(b.getAttribute('data-qm-d'));
-      const curDays = Array.isArray(plan[name]) ? plan[name].slice() : [];
-      const idx = curDays.indexOf(d);
-      if (idx >= 0) curDays.splice(idx, 1); else curDays.push(d);
-      const nextPlan = Object.assign({}, plan, { [name]: curDays.slice().sort((x, y) => x - y) });
-      await drainSaveScanCfg(Object.assign({}, cfg, { batchPlan: nextPlan }));
-      drainToast('批次「' + name + '」改为：' + (curDays.length ? curDays.map(wdLbl).join('、') : '每天'));
-      await render();
-    });
-    /* 每周自动跑：选星期（chips）+ 时段 + 开关 */
-    let qaDaysCur = (qa.days || []).slice();
-    box.querySelectorAll('[data-qm-qa]').forEach(b => b.onclick = async () => {
-      const d = Number(b.getAttribute('data-qm-qa'));
-      const idx = qaDaysCur.indexOf(d);
-      if (idx >= 0) qaDaysCur.splice(idx, 1); else qaDaysCur.push(d);
-      await drainSaveScanCfg(Object.assign({}, cfg, { queueAuto: Object.assign({}, qa, { days: qaDaysCur.slice().sort((x, y) => x - y), enabled: (container.querySelector('#qmQaOn') || {}).checked !== false }) }));
-      drainToast('每周自动跑改成：' + (qaDaysCur.length ? qaDaysCur.map(wdLbl).join('、') : '（还没选星期，点了等于不跑）'));
-      await render();
-    });
-    const qaSave = box.querySelector('#qmQaSave');
-    if (qaSave) qaSave.onclick = async () => {
-      const from = String((box.querySelector('#qmQaFrom') || {}).value || '').trim();
-      const to = String((box.querySelector('#qmQaTo') || {}).value || '').trim();
-      const on = !!(box.querySelector('#qmQaOn') || {}).checked;
-      if (!/^\d{1,2}:\d{2}$/.test(from) || !/^\d{1,2}:\d{2}$/.test(to)) { drainToast('时段要写成 09:00 这样（起止一样＝全天）', 'warn'); return; }
-      await drainSaveScanCfg(Object.assign({}, cfg, { queueAuto: { enabled: on, days: qaDaysCur.slice().sort((x, y) => x - y), from: from, to: to } }));
-      drainToast('🗂 每周自动跑：' + (on ? '开（' + (from === to ? '全天' : from + '–' + to) + '）' : '关'));
-      try { chrome.runtime.sendMessage({ action: 'dailyAutoKick' }); } catch (_) {}
-      await render();
-    };
-    const everyNBox = box.querySelector('#qmEveryN');
-    const autoOnBox = box.querySelector('#qmAutoOn');
-    const fromBox = box.querySelector('#qmFrom');
-    const toBox = box.querySelector('#qmTo');
-    const dbSave = box.querySelector('#qmDbSave');
-    if (dbSave && dbC && typeof DailyBrowse !== 'undefined') {
-      const saveDb = async () => {
-        const everyNVal = Math.max(0, parseInt((everyNBox && everyNBox.value) || '0', 10) || 0);
-        const from = String((fromBox && fromBox.value) || '').trim();
-        const to = String((toBox && toBox.value) || '').trim();
-        if (!/^\d{1,2}:\d{2}$/.test(from) || !/^\d{1,2}:\d{2}$/.test(to)) { drainToast('时段要写成 09:00 这样（起止一样＝全天）', 'warn'); return; }
-        await DailyBrowse.saveConfig({ insert: Object.assign({}, dbC.insert, { everyN: everyNVal }), autorun: { enabled: !!(autoOnBox && autoOnBox.checked), from: from, to: to } });
-        drainToast('🌿 已保存：每 ' + (everyNVal) + ' 格插 1 轮，每天自动跑 ' + (autoOnBox && autoOnBox.checked ? from + '–' + to : '关'));
-        try { chrome.runtime.sendMessage({ action: 'dailyAutoKick' }); } catch (_) {}
-        await render();
-      };
-      dbSave.onclick = saveDb;
-    }
-  };
 
   async function render() {
     const now = Date.now();
@@ -1407,16 +1323,13 @@ async function renderDrainQueue(container) {
           : (DailyBrowse.autorunOn(dbCfg, now) ? '时段内，到点自己把队列拉起来' : '等 ' + escHtml(dbCfg.autorun.from) + ' 到点'));
       dbAutoLine = '⏰ 自动跑 ' + escHtml(dbCfg.autorun.from) + '–' + escHtml(dbCfg.autorun.to) + '：' + st;
     }
-    /* ⚙️ 队列管理：关键词批次「周几跑哪批」+ 日常浏览「什么时候跑」（移到这里统一配，2026-10-01） */
-    const qmBox = container.querySelector('#queueMgmt');
-    if (qmBox) await renderQueueMgmt(qmBox, cfg, now);
     paintQueueTab();
     if (caps) {
       const capsTip = '队列项＝词 × 类型（词池里勾上、且到了它那一列的节奏就该跑）＋ 👤 盯的账号（到了那两列的节奏就该盯）' +
         '＋ 🌿 日常流程（按「每 N 格插 1 轮」自动插，也可手动塞）。' +
-        '「今天跑批次」按「⚙️ 队列配置」里每批的周几排期算：只有今天亮的批才进队列。' +
+        '「今天跑批次」按批次卡头上点的周几算：只有今天亮的批才进队列。' +
         '工期按「🎯 获客 → ⚙️ 设置 → 🤖 拟人化与频率 → ⚙️ 高级配置」的每日评论上限 ÷ 每轮上限估，跑一项通常吃满一轮的额度。' +
-        (p.noCity.length ? ' 「📍本地」要先用「诊断&配置 → 基础配置」里的同城城市才搜得了。' : '');
+        (p.noCity.length ? ' 「📍本地」要先用「账号规划 → 基础配置」里的同城城市才搜得了。' : '');
       const todayIdx = new Date(now).getDay();
       const planB = cfg.batchPlan || {};
       const runToday = drainBatchesOf(cfg.keywords || [], cfg).filter(b => { const ds = planB[b]; return !Array.isArray(ds) || !ds.length || ds.indexOf(todayIdx) >= 0; });
@@ -1431,6 +1344,48 @@ async function renderDrainQueue(container) {
         (itemsPerDay > 0 && left > 0 ? ' · 按每天约 ' + itemsPerDay + ' 项估，这一圈约 ' + Math.ceil(left / itemsPerDay) + ' 天' : '') +
         '</div>';
       if (dbLine || dbAutoLine) caps.innerHTML += '<div style="font-size:11.5px;color:#6b7280;margin-top:2px;">' + [dbLine, dbAutoLine].filter(Boolean).join(' · ') + '</div>';
+      /* ⏰ 整条队列 · 每周自动跑（2026-10-24 从「队列配置」搬成顶栏这一颗） */
+      const qa = cfg.queueAuto || { enabled: false, days: [], from: '09:00', to: '18:00' };
+      const qaDayList = (qa.days || []).slice().sort((x, y) => x - y);
+      const qaTxt = qa.enabled ? ('开 · ' + (qaDayList.length ? qaDayList.map(d => WK_LABELS[d]).join('、') : '还没选星期') + ' ' + (qa.from === qa.to ? '全天' : qa.from + '–' + qa.to)) : '关';
+      const qaDayBtns = [1, 2, 3, 4, 5, 6, 0].map(d =>
+        '<button type="button" class="qm-wd' + (qaDayList.indexOf(d) >= 0 ? ' on' : '') + '" data-qm-qa="' + d + '">' + WK_LABELS[d] + '</button>').join('');
+      caps.innerHTML += '<div style="margin-top:6px;"><span style="position:relative;display:inline-flex;align-items:center;">' +
+        '<button type="button" class="btn btn-sm" id="qAutoBtn" title="整条队列每周自动跑：选了星期和时段，到点就自己把整条队列拉起来">⏰ 每周自动跑：' + escHtml(qaTxt) + '</button>' +
+        '<div id="qAutoPop" style="display:none;position:absolute;right:0;top:30px;z-index:40;width:264px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 26px rgba(16,24,40,.14);padding:10px 12px;text-align:left;">' +
+          '<div style="font-weight:700;font-size:12px;color:#1f2937;margin-bottom:6px;">⏰ 每周自动跑 · 整条队列</div>' +
+          '<label style="font-size:12px;color:#374151;display:block;margin-bottom:6px;"><input type="checkbox" id="qmQaOn"' + (qa.enabled ? ' checked' : '') + '> 开启</label>' +
+          '<div class="qm-wds" style="margin-bottom:6px;">' + qaDayBtns + '</div>' +
+          '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<input id="qmQaFrom" maxlength="5" value="' + escAttr(qa.from) + '" style="width:56px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
+            '<span class="sx-count">→</span>' +
+            '<input id="qmQaTo" maxlength="5" value="' + escAttr(qa.to) + '" style="width:56px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">' +
+          '</div>' +
+          '<div class="sx-count" style="margin-top:5px;">起止一样＝全天；不选星期＝点开也不跑</div>' +
+          '<div style="display:flex;justify-content:flex-end;margin-top:8px;"><button type="button" class="btn btn-sm btn-primary" id="qmQaSave">保存</button></div>' +
+        '</div></span></div>';
+      const qaBtn = container.querySelector('#qAutoBtn');
+      const qaPop = container.querySelector('#qAutoPop');
+      if (qaBtn && qaPop) qaBtn.onclick = (e) => { e.stopPropagation(); qaPop.style.display = (qaPop.style.display === 'none') ? '' : 'none'; };
+      let qaDaysCur = qaDayList.slice();
+      container.querySelectorAll('#qAutoPop [data-qm-qa]').forEach(b => b.onclick = async () => {
+        const d = Number(b.getAttribute('data-qm-qa'));
+        const i = qaDaysCur.indexOf(d);
+        if (i >= 0) qaDaysCur.splice(i, 1); else qaDaysCur.push(d);
+        await drainSaveScanCfg(Object.assign({}, cfg, { queueAuto: Object.assign({}, qa, { days: qaDaysCur.slice().sort((x, y) => x - y) }) }));
+        await render();
+      });
+      const qaSave = container.querySelector('#qmQaSave');
+      if (qaSave) qaSave.onclick = async () => {
+        const from = String((container.querySelector('#qmQaFrom') || {}).value || '').trim();
+        const to = String((container.querySelector('#qmQaTo') || {}).value || '').trim();
+        const on = !!(container.querySelector('#qmQaOn') || {}).checked;
+        if (!/^\d{1,2}:\d{2}$/.test(from) || !/^\d{1,2}:\d{2}$/.test(to)) { drainToast('时段要写成 09:00 这样（起止一样＝全天）', 'warn'); return; }
+        await drainSaveScanCfg(Object.assign({}, cfg, { queueAuto: { enabled: on, days: qaDaysCur.slice().sort((x, y) => x - y), from: from, to: to } }));
+        drainToast('⏰ 每周自动跑：' + (on ? ('开（' + (from === to ? '全天' : from + '–' + to) + '）') : '关'));
+        try { chrome.runtime.sendMessage({ action: 'dailyAutoKick' }); } catch (_) {}
+        await render();
+      };
     }
     paintAddDaily(p, dbCfg);
     await drainPaintStrategy(container.querySelector('#qStrat'));
@@ -1555,7 +1510,7 @@ async function renderDrainQueue(container) {
     } else if (!p.running) {
       html += p.waiting.length
         ? '<div class="q-hint">到点的都跑完了 👍<br>下一次到点会自动进「待跑」（见下面 🕓 还没到点）</div>'
-        : '<div class="q-hint">队列是空的<br>去 <a href="#" id="qToCfg" style="color:var(--c-brand-ink);font-weight:600;">任务配置</a> 勾上「词 × 类型」或加「👤 盯的账号」，到点就会自动排进来</div>';
+        : '<div class="q-hint">队列是空的<br>去 <a href="#" id="qToCfg" style="color:var(--c-brand-ink);font-weight:600;">⚙️ 配置</a> 勾上「词 × 类型」或加「👤 盯的账号」，到点就会自动排进来</div>';
     }
     // ── 🕓 还没到点（折叠）：同样按关键词归组 ──
     const waitGroups = groupByKeyword(p.waiting);
@@ -1617,15 +1572,17 @@ async function renderDrainQueue(container) {
   await render();
 }
 
-/* 从别的页面（灌水页的「✨ 找词 / 🏷 话题」）点过来 → 切到「任务配置 · 关键词池」并展开候选区。
-   切页会重渲染任务配置页，所以意图挂在 _cfgWant 上，渲染尾去取（同页，不走 storage）。
+/* 从别的页面（灌水页的「✨ 找词 / 🏷 话题」）点过来 → 切到「队列 → ⚙️ 配置」并展开候选区。
+   切页会重渲染配置卡，所以意图挂在 _cfgWant 上，渲染尾去取（同页，不走 storage）。
    本文件同时被 background.js 用 importScripts 加载，Service Worker 里没有 window：
    顶层裸写 window.xxx 会直接抛错、打断后台启动（消息路由全部失效），必须挡在 typeof 里 */
 if (typeof window !== 'undefined') {
   window.drainOpenCandidates = async (kind) => {
-    _cfgSec = 'kw';
+    _cfgSec = 'run';
     _cfgWant = (kind === 'topic') ? 'topic' : 'ai';
-    if (typeof window.switchMainTab === 'function') window.switchMainTab('taskCfg');
+    // 落到队列页的「⚙️ 配置」那一签（切页会重渲染，意图在渲染尾取走）
+    try { const box = document.getElementById('drainQueueContent'); if (box) box._qTab = 'config'; } catch (_) {}
+    if (typeof window.switchMainTab === 'function') window.switchMainTab('queue');
   };
 }
 
@@ -1723,39 +1680,23 @@ async function renderScenarioDrain(container, mode) {
       .sx-logs[open]>summary::before{content:'▾';}
       .sx-logs>summary:hover{color:var(--c-brand-text);}
       .sx-logs-n{font-weight:400;color:#9ca3af;font-size:11px;}
-      /* 任务配置页内的三级 tab：关键词池 / 👤 盯的账号 */
-      .sx-cfgtabs{display:flex;gap:2px;margin:0 0 10px;border-bottom:1px solid var(--line,#eceef0);}
-      .sx-cfgtab{border:0;background:none;padding:6px 12px;margin-bottom:-1px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent;}
-      .sx-cfgtab:hover{color:#374151;}
-      .sx-cfgtab.active{color:var(--c-brand-text);border-bottom-color:var(--c-brand);}
+      /* 配置页三张卡（2026-10-24）：🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标·承接，点卡头展开收起 */
+      .cfgcard{margin-bottom:10px;background:#fff;border:1px solid var(--line,#eceef0);border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+      .cfgcard-h{list-style:none;display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;user-select:none;flex-wrap:wrap;}
+      .cfgcard-h::-webkit-details-marker{display:none;}
+      .cfgcard-t{font-size:12.5px;font-weight:800;color:#1f2937;white-space:nowrap;}
+      .cfgcard-s{font-size:11px;color:#6b7280;background:#f6f8fa;border:1px solid #eceef0;border-radius:20px;padding:1px 8px;white-space:nowrap;}
+      .cfgcard-x{font-size:11px;color:#9ca3af;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
+      .cfgcard-chev{margin-left:auto;color:#b9bec7;font-size:10px;transition:transform .15s;flex:none;}
+      .cfgcard[open] .cfgcard-chev{transform:rotate(180deg);}
+      .cfgcard-b{padding:2px 12px 12px;border-top:1px solid var(--line,#eceef0);}
       .sx-sec-h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1f2937;margin:14px 0 6px;padding-top:10px;border-top:1px dashed #e5e7eb;}
       .sx-sec-h.first{margin-top:0;padding-top:0;border-top:0;}
       /* 问号气泡 .qhelp / 折叠块 .fdet 是全站公用样式，在 ui.css 里 */
     </style>
     <div class="sx-wrap">
       ${isCfg ? `
-      <div class="sx-bar">
-        <span style="font-size:13px;font-weight:700;color:#1f2937;">⚙️ 任务配置</span>
-        <span class="sx-count">搜什么词 · 盯谁 · 多久跑一次，队列和笔记池都按这套走</span>
-        <span style="flex:1;"></span>
-        <button type="button" class="btn btn-sm" id="sxGoList"><svg class="ic ic-sm"><use href="#i-note"></use></svg>去笔记池</button>
-        <span style="position:relative;display:inline-flex;align-items:center;">
-          <button type="button" class="btn btn-sm" id="replRun" title="把本轮没打开的池内笔记回看一遍、刷新指标">🔁 补开未打开</button>
-          <button type="button" class="btn btn-sm" id="replCfgBtn" title="补开设置：自动补开开关、点赞增量阈值" style="padding:4px 7px;margin-left:-1px;">⚙︎</button>
-          <div id="replPop" style="display:none;position:absolute;right:0;top:32px;z-index:40;width:280px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 26px rgba(16,24,40,.14);padding:10px 12px;text-align:left;">
-            <div style="font-weight:700;font-size:12px;color:#1f2937;margin-bottom:6px;">🔁 补开设置</div>
-            <div id="replPopBody"></div>
-          </div>
-        </span>
-        <button type="button" class="btn btn-sm btn-primary" id="sxScan"><svg class="ic ic-sm"><use href="#i-search"></use></svg>按这套扫一轮</button>
-      </div>
-      <div class="sx-hint" id="sxScanNote" style="display:none;margin:-2px 0 8px;white-space:pre-line;color:#d97706;"></div>
-      <div class="sx-cfgtabs" id="sxCfgTabs">
-        <button type="button" class="sx-cfgtab" data-sec="kw">📚 关键词池</button>
-        <button type="button" class="sx-cfgtab" data-sec="acct">👤 盯的账号</button>
-        <button type="button" class="sx-cfgtab" data-sec="goal">🎯 推广目标</button>
-        <button type="button" class="sx-cfgtab" data-sec="daily" title="日常浏览：队列里的一种流程项——泛刷一轮，也可顺手赞藏评，只记自己的账">🌿 日常浏览</button>
-      </div>
+      <div class="sx-hint" id="sxScanNote" style="display:none;margin:0 0 8px;white-space:pre-line;color:#d97706;"></div>
       <div id="sxScanCfgPanel"></div>
       ` : `
       <div class="sx-bar">
@@ -1766,6 +1707,14 @@ async function renderScenarioDrain(container, mode) {
         </select>
         <span class="sx-count" id="sxCount"></span>
         <span style="flex:1;"></span>
+        <span style="position:relative;display:inline-flex;align-items:center;">
+          <button type="button" class="btn btn-sm" id="replRun" title="把本轮没打开的池内笔记回看一遍、刷新指标">🔁 补开未打开</button>
+          <button type="button" class="btn btn-sm" id="replCfgBtn" title="补开设置：自动补开开关、点赞增量阈值" style="padding:4px 7px;margin-left:-1px;">⚙︎</button>
+          <div id="replPop" style="display:none;position:absolute;right:0;top:32px;z-index:40;width:280px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 26px rgba(16,24,40,.14);padding:10px 12px;text-align:left;">
+            <div style="font-weight:700;font-size:12px;color:#1f2937;margin-bottom:6px;">🔁 补开设置</div>
+            <div id="replPopBody"></div>
+          </div>
+        </span>
         <button type="button" class="btn btn-sm" id="sxAdd">＋ 加笔记</button>
         <button type="button" class="btn btn-sm btn-primary" id="sxScan">${scanLabel}</button>
       </div>
@@ -1792,15 +1741,15 @@ async function renderScenarioDrain(container, mode) {
     </div>
   `;
 
-  /* ---- 任务配置页：四节 tab（📚 关键词池 / 👤 盯的账号 / 🎯 推广目标 / 🌿 日常浏览），一次只渲染当前那一节 ---- */
+  /* ---- 配置页：三张卡（🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标·承接）---- */
   const renderScanCfg = async () => {
     const r = await chrome.runtime.sendMessage({ action: 'drainGetScanCfg' });
     const cfg = (r && r.ok && r.cfg) || _drainNormalizeScanCfg({});
     const panel = _sel('sxScanCfgPanel');
     if (!panel) return;
-    // 日常浏览那一节要这一档开通了才显示（没开通就退回关键词池，不留一个空 tab）
+    // 日常浏览那张卡要这一档开通了才显示（没开通就退回「跑什么」）
     const dbOn = drainDailyOn();
-    if (_cfgSec === 'daily' && !dbOn) _cfgSec = 'kw';
+    if (_cfgSec === 'daily' && !dbOn) _cfgSec = 'run';
     const sec = _cfgSec;
     const max = await drainPoolMax();
     const prod = await _sxReadProduct();
@@ -1882,18 +1831,23 @@ async function renderScenarioDrain(container, mode) {
       const allOn = words.length > 0 && onWords === words.length;
       const open = !!_kwOpen[b];
       const plan = (cfg.batchPlan || {})[b];
-      const planTxt = (Array.isArray(plan) && plan.length) ? plan.slice().sort().map(d => WK_LABELS[d] || d).join('·') : '每天跑';
+      const planDays = Array.isArray(plan) ? plan : [];
+      const planTxt = planDays.length ? planDays.map(d => WK_LABELS[d] || d).join('·') : '每天跑';
+      /* 周几跑就挂在这张卡的卡头上（2026-10-24 从「队列 → 队列配置」搬来）：不点＝每天跑 */
+      const todayWd = new Date(now).getDay();
+      const wdChips = [1, 2, 3, 4, 5, 6, 0].map(d =>
+        `<button type="button" class="qm-wd${planDays.indexOf(d) >= 0 ? ' on' : ''}${d === todayWd ? ' today' : ''}" data-kwplan="${escAttr(b)}" data-kwd="${d}" title="${escAttr(b + ' · ' + (WK_LABELS[d] || '') + '跑这一批')}">${WK_LABELS[d] || ''}</button>`).join('');
       const isDef = b === DRAIN_DEFAULT_BATCH;
       const body = !open ? '' : `<div class="sx-kwgrp-body">${words.length
         ? `<table class="sx-table sx-pool">${poolHead()}<tbody>${poolRows(words)}</tbody></table>`
         : `<div class="sx-empty" style="padding:12px 10px;line-height:1.8;">${isDef && !pool.length ? '词池是空的：在顶部输入框加词（回车进展开中的批次），或点「✨ 找词 / 🏷 话题」从候选里勾。' : '这批还没有词：点卡头上的「＋ 关键词」往「' + escHtml(b) + '」里加词。'}</div>`}</div>`;
       return `<div class="sx-kwgrp" data-kwgroup="${escAttr(b)}">
-        <div class="sx-kwgrp-head" data-kwtoggle="${escAttr(b)}" title="点一下${open ? '收起' : '展开'}这一批的关键词（同一批在「队列」页共用一个「周几跑」排期）">
+        <div class="sx-kwgrp-head" data-kwtoggle="${escAttr(b)}" title="点一下${open ? '收起' : '展开'}这一批的关键词（周几在卡头上点）">
           <input type="checkbox" data-kwgroupsel="${escAttr(b)}" ${allOn ? 'checked' : ''} ${words.length ? '' : 'disabled'} style="width:14px;height:14px;margin:0;flex:none;cursor:pointer;accent-color:var(--c-brand);" title="全选这一批：勾上＝这批词全部启用，取消＝全部停用（词和勾选都留着）">
           <span class="sx-kwgrp-caret">${open ? '▾' : '▸'}</span>
           <span class="sx-kwgrp-name">🗂 ${escHtml(b)}${b === curBatch() ? '<span style="font-weight:400;color:#9ca3af;font-size:11px;"> · 当前</span>' : ''}</span>
           <span class="sx-count">${words.length} 词 · 启用 ${onWords}</span>
-          <span class="sx-kwgrp-plan" title="周几跑在「队列 → 队列配置」里设">⏱ ${escHtml(planTxt)}</span>
+          <span class="qm-wds" data-kwplanbox="${escAttr(b)}" title="这一批哪几天跑（不点＝每天跑）；今日 ${escAttr(WK_LABELS[todayWd] || '')}：${escAttr(planTxt)}">${wdChips}</span>
           <span style="flex:1;"></span>
           <button type="button" class="btn btn-sm" data-kwgrpadd="${escAttr(b)}" title="往「${escAttr(b)}」这批加关键词">＋ 关键词</button>
           ${isDef ? '' : `<button type="button" class="sx-ico sx-ico-del" data-kwgrpdel="${escAttr(b)}" title="删掉这个批次：这批的词退回「默认」批（词和勾选都留着）">✕</button>`}
@@ -1972,7 +1926,7 @@ async function renderScenarioDrain(container, mode) {
               <div id="kbmPick" style="display:flex;flex-wrap:wrap;gap:6px;max-height:120px;overflow:auto;padding:4px 0;">${defKws.map(x => '<label class="kbm-chip"><input type="checkbox" data-kbm-pick="' + escAttr(x.k) + '"> ' + escHtml(x.k) + '</label>').join('')}</div>
             </details>` : ''}
           </div>
-          <div class="profile-field"><label>周几跑<span class="kbm-count">不勾＝每天跑；之后在「队列 → 队列配置」也能改</span></label>
+          <div class="profile-field"><label>周几跑<span class="kbm-count">不勾＝每天跑；之后在批次卡头上也能改</span></label>
             <div class="kbm-days">${WK_LABELS.map((w, i) => '<button type="button" class="kbm-day" data-kbmd="' + i + '">' + w + '</button>').join('')}</div>
           </div>
           <div class="modal-footer">
@@ -1997,7 +1951,7 @@ async function renderScenarioDrain(container, mode) {
       </div>`;
     const kwHtml = `
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
-        <span style="font-size:12px;font-weight:600;color:#1f2937;">📚 关键词池<span class="qhelp" tabindex="0" data-tip="批次是外层分组：一批一张卡，点卡头展开/收起这一批的词；卡头最左「全选」勾＝整批词一键启用/停用（部分启用时是半选）。挪词两种：拖词行首的 ⠿ 到别的批次卡上，或用词行末小下拉划过去。顶部输入框回车＝往带「当前」标记的那批加词；「＋ 关键词」在批次卡头上＝往那一批加；「＋ 批次」一次配好名字、词和周几跑。展开的词表：一行一个词、一列一种搜法，勾上＝这个词跑这一类，表头节奏整列通用；✕＝从池里移除，取消勾＝停用（词和勾选都留着）。同一批在「队列」页的队列配置里共用一个「周几跑」排期。🕵️竞对那列默认不勾——要蹲同行，把竞品名加成一个词、单独勾它这一格。">?</span></span>
+        <span style="font-size:12px;font-weight:600;color:#1f2937;">📚 关键词池<span class="qhelp" tabindex="0" data-tip="批次是外层分组：一批一张卡，点卡头展开/收起这一批的词；卡头最左「全选」勾＝整批词一键启用/停用（部分启用时是半选）。挪词两种：拖词行首的 ⠿ 到别的批次卡上，或用词行末小下拉划过去。顶部输入框回车＝往带「当前」标记的那批加词；「＋ 关键词」在批次卡头上＝往那一批加；「＋ 批次」一次配好名字、词和周几跑。展开的词表：一行一个词、一列一种搜法，勾上＝这个词跑这一类，表头节奏整列通用；✕＝从池里移除，取消勾＝停用（词和勾选都留着）。同一批的「周几跑」就在这张卡的卡头上点。🕵️竞对那列默认不勾——要蹲同行，把竞品名加成一个词、单独勾它这一格。">?</span></span>
         <button type="button" class="btn btn-sm" id="sxKwBatchAdd" title="新建一个批次，并一次配好这一批的关键词">＋ 批次</button>
         <span style="flex:1;"></span>
         <input class="sx-in" id="sxKwAdd" placeholder="回车加词 → 「${escAttr(curBatch())}」批" style="width:172px;margin:0;" title="输入关键词回车：加进带「当前」标记的那一批（点某批的卡头就换当前批）">
@@ -2006,8 +1960,6 @@ async function renderScenarioDrain(container, mode) {
       </div>
       ${candHtml}
       ${groupsHtml}
-      ${kwBatchModalHtml}
-      ${kwAddModalHtml}
     `;
     /* ── ③ 🎯 推广目标 & 评论区承接：评论 / 回复里 AI 怎么接话、引对方去哪 ──
        存 product.promoGoal / product.guideText / product.guidePhrase —— 与后台的引导规则、截流评论的承接是同一份真源，
@@ -2028,6 +1980,8 @@ async function renderScenarioDrain(container, mode) {
        它是队列里的一种流程项（泛刷一轮），只记自己的账：不进消息 / 通知 / 线索 / 评论记录 */
     const dbC = (typeof DailyBrowse !== 'undefined') ? await DailyBrowse.getConfig() : null;
     const dbD = (typeof DailyBrowse !== 'undefined') ? await DailyBrowse.getDaily() : null;
+    const dbEveryN = dbC ? (Number(dbC.insert && dbC.insert.everyN) || 0) : 0;
+    const dbAu = (dbC && dbC.autorun) || { enabled: false, from: '09:00', to: '18:00' };
     const dbProg = (dbC && typeof DailyBrowse !== 'undefined') ? DailyBrowse.progress(dbC, dbD, Date.now()) : [];
     const dbDirs = (dbC && dbC.directions) || [];
     const dbNum = (key, label, val, min, max, unit, tip) =>
@@ -2066,7 +2020,7 @@ async function renderScenarioDrain(container, mode) {
     const dailyHtml = !dbC ? '<div class="sx-empty" style="padding:14px 10px;">这一档没开通「日常浏览」。</div>' : `
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px;">
         <span style="font-size:12px;font-weight:600;color:#1f2937;">🌿 日常浏览</span>
-        <span class="qhelp" tabindex="0" data-tip="队列里的一种流程项：泛刷一轮（可带顺手互动），只记自己的账。它和「词 × 类型」的格子排在同一条时间轴上串行跑：每天几轮 / 怎么自动安排在「队列」页的队列配置里配，这里只定刷什么方向、一轮怎么刷、互动比例。这里刷了什么、赞藏评了什么，不进消息 / 通知 / 线索 / 评论记录，也不会在笔记池上打标。">?</span>
+        <span class="qhelp" tabindex="0" data-tip="队列里的一种流程项：泛刷一轮（可带顺手互动），只记自己的账。它和「词 × 类型」的格子排在同一条时间轴上串行跑：「每 N 格插 1 轮」「每天自动跑」在这张卡底下配，这里定刷什么方向、一轮怎么刷、互动比例。这里刷了什么、赞藏评了什么，不进消息 / 通知 / 线索 / 评论记录，也不会在笔记池上打标。">?</span>
         <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#374151;">
           <input type="checkbox" id="dbOn"${dbC.enabled ? ' checked' : ''}> 开启
         </label>
@@ -2106,6 +2060,21 @@ async function renderScenarioDrain(container, mode) {
           <div class="sx-count" style="margin-top:2px;">上限填 0＝这个动作不做</div>
         </div>
       </details>
+      <div class="sx-sec-h">什么时候跑 <span class="qhelp" tabindex="0" data-tip="这里是唯一入口（队列页只看状态）：每 N 个获客格插 1 轮日常浏览；「每天自动跑」是指到了时段自己把整条队列拉起来。">?</span><span style="flex:1;"></span><button type="button" class="btn btn-sm btn-primary" id="qmDbSave">💾 保存</button></div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;">
+        <label style="font-size:12px;color:#374151;">每 <input type="number" id="qmEveryN" min="0" max="20" value="${dbEveryN}" style="width:52px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;"> 格获客插 1 轮</label>
+        <span class="sx-count">（0＝不自动插，只在队列页手动塞一轮）</span>
+      </div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px;">
+        <label style="font-size:12px;color:#374151;"><input type="checkbox" id="qmAutoOn"${dbAu.enabled ? ' checked' : ''}> 每天自动跑</label>
+        <input id="qmFrom" maxlength="5" value="${escAttr(String(dbAu.from || '09:00'))}" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">
+        <span class="sx-count">→</span>
+        <input id="qmTo" maxlength="5" value="${escAttr(String(dbAu.to || '18:00'))}" style="width:60px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;text-align:center;">
+        <span class="sx-count">（起止一样＝全天）</span>
+      </div>
+    `;
+    /* 方向的编辑弹窗：挂在卡片外面（<details> 收起时里面的内容不渲染，弹窗会跟着点不出来） */
+    const dbModalHtml = `
       <div class="modal-mask" id="dbModal"><div class="modal-box" style="max-width:420px;">
         <h3 id="dbModalTitle">编辑方向</h3>
         <div class="profile-field"><label>方向名（≤10 字）</label><input id="dbMName" maxlength="10" placeholder="例：读书"></div>
@@ -2122,23 +2091,53 @@ async function renderScenarioDrain(container, mode) {
         </div>
       </div></div>
     `;
-    /* 四节 tab：只渲染当前这一节（📚 关键词池 / 👤 盯的账号 / 🎯 推广目标 / 🌿 日常浏览），切 tab 就重渲染 */
-    panel.innerHTML = sec === 'acct' ? acctHtml : (sec === 'goal' ? goalHtml : (sec === 'daily' ? dailyHtml : kwHtml));
-    const tabBox = _sel('sxCfgTabs');
-    if (tabBox) tabBox.querySelectorAll('[data-sec]').forEach(b => {
-      const isDailyTab = b.getAttribute('data-sec') === 'daily';
-      if (isDailyTab) b.style.display = dbOn ? '' : 'none';
-      b.classList.toggle('active', b.getAttribute('data-sec') === sec);
-      b.onclick = () => {
-        const next = b.getAttribute('data-sec');
-        if (next === _cfgSec) return;
-        _cfgSec = next;
-        renderScanCfg();
+    /* 三张卡（2026-10-24 合并）：🔎 跑什么（词池＋盯的账号两张表） / 🌿 日常浏览 / 🎯 推广目标·承接。
+       一次全画出来（下面那几百行事件绑定照旧全挂），开合交给原生 details；开一张就收起别的 */
+    const runSum = batches.length + ' 批 · ' + pool.length + ' 词 / ' + accts.length + ' 账号 · 启用 ' + enabledN;
+    const dailySum = !dbC ? '这一档没开通' : ((dbC.enabled ? '开' : '关') + ' · 今日刷 ' + ((dbD && dbD.count) || 0) + ' 篇');
+    const goalSum = '承接：' + ((prod && prod.guideText) || '还没填');
+    panel.innerHTML = `
+      <details class="cfgcard" data-cfgsec="run"${sec === 'run' ? ' open' : ''}>
+        <summary class="cfgcard-h">
+          <span class="cfgcard-t">🔎 跑什么</span>
+          <span class="cfgcard-s">${escHtml(runSum)}</span>
+          <span class="cfgcard-x">一行一种跑法；周几在批次卡头上</span>
+          <span class="cfgcard-chev">▾</span>
+        </summary>
+        <div class="cfgcard-b">${kwHtml}${acctHtml}</div>
+      </details>
+      <details class="cfgcard" data-cfgsec="daily"${sec === 'daily' ? ' open' : ''}${dbOn ? '' : ' style="display:none;"'}>
+        <summary class="cfgcard-h">
+          <span class="cfgcard-t">🌿 日常浏览</span>
+          <span class="cfgcard-s">${escHtml(dailySum)}</span>
+          <span class="cfgcard-x">不占「跑什么」的表，按自己的规则插进队列中间</span>
+          <span class="cfgcard-chev">▾</span>
+        </summary>
+        <div class="cfgcard-b">${dailyHtml}</div>
+      </details>
+      <details class="cfgcard" data-cfgsec="goal"${sec === 'goal' ? ' open' : ''}>
+        <summary class="cfgcard-h">
+          <span class="cfgcard-t">🎯 推广目标 · 承接</span>
+          <span class="cfgcard-s">${escHtml(goalSum)}</span>
+          <span class="cfgcard-x">只管 AI 在评论 / 回复里怎么接话，不占排期</span>
+          <span class="cfgcard-chev">▾</span>
+        </summary>
+        <div class="cfgcard-b">${goalHtml}</div>
+      </details>
+      ${kwBatchModalHtml}
+      ${kwAddModalHtml}
+      ${dbModalHtml}
+    `;
+    panel.querySelectorAll('details[data-cfgsec]').forEach(d => {
+      d.ontoggle = () => {
+        if (!d.open) return;
+        _cfgSec = d.getAttribute('data-cfgsec');
+        panel.querySelectorAll('details[data-cfgsec]').forEach(o => { if (o !== d) o.open = false; });
       };
     });
 
-    /* 🎯 推广目标：切下拉带出该目标的默认承接（工具/应用要自己写），点「保存」才落库（目标与承接一起存） */
-    if (sec === 'goal') {
+    /* 🎯 推广目标：两张卡都画在页上，所以这里不带「当前是哪张卡」的条件，一进来就挂 */
+    {
       const goalMsg = _sel('sxGoalMsg');
       const goalSave = _sel('sxGoalSave');
       if (goalSave) goalSave.onclick = async () => {
@@ -2158,7 +2157,7 @@ async function renderScenarioDrain(container, mode) {
     }
 
     /* 🌿 日常浏览：开关 / 方向增删改（编辑进弹窗）/ 塞入规则与旋钮 / 句池 / 状态区 / 停止本轮 */
-    if (sec === 'daily' && dbC) {
+    if (dbC) {
       /* 状态区：今日刷了多少（各方向）、顺手互动、每天自动跑实况 */
       const paintDbStatus = async () => {
         const box = _sel('dbStatus');
@@ -2219,7 +2218,19 @@ async function renderScenarioDrain(container, mode) {
         drainToast('⏹ 已发出停止：这一轮刷完手上这篇就停（今天不再自动拉起）');
         await paintDbStatus();
       };
-      /* 「什么时候跑」已挪去「队列」页的队列管理（2026-10-01） */
+      /* 什么时候跑（每 N 格插 1 轮 + 每天自动跑时段）：2026-10-24 从「队列 → 队列配置」搬回这张卡 */
+      const dbAutoSave = _sel('qmDbSave');
+      if (dbAutoSave) dbAutoSave.onclick = async () => {
+        const everyNVal = Math.max(0, parseInt((_sel('qmEveryN') || {}).value || '0', 10) || 0);
+        const from = String((_sel('qmFrom') || {}).value || '').trim();
+        const to = String((_sel('qmTo') || {}).value || '').trim();
+        if (!/^\d{1,2}:\d{2}$/.test(from) || !/^\d{1,2}:\d{2}$/.test(to)) { drainToast('时段要写成 09:00 这样（起止一样＝全天）', 'warn'); return; }
+        const autoOn = !!(_sel('qmAutoOn') || {}).checked;
+        await DailyBrowse.saveConfig({ insert: Object.assign({}, dbC.insert, { everyN: everyNVal }), autorun: { enabled: autoOn, from: from, to: to } });
+        drainToast('🌿 已保存：每 ' + everyNVal + ' 格插 1 轮，每天自动跑 ' + (autoOn ? (from === to ? '全天' : from + '–' + to) : '关'));
+        try { chrome.runtime.sendMessage({ action: 'dailyAutoKick' }); } catch (_) {}
+        await renderScanCfg();
+      };
       // 数字旋钮：改了就存（不整页重渲染，输入框不失焦）
       panel.querySelectorAll('[data-dbn]').forEach(el => el.onchange = async () => {
         const key = el.getAttribute('data-dbn');
@@ -2246,7 +2257,13 @@ async function renderScenarioDrain(container, mode) {
         const id = b.getAttribute('data-dbpush');
         const d = dbDirs.find(x => x.id === id) || {};
         await drainQueuePushFront(id, 'daily', d.name || id);
-        drainToast('🌿 已把「' + (d.name || id) + '」这一轮插到队首');
+        if (typeof window.__xhsExecDaily === 'function') {
+          const r = await window.__xhsExecDaily(id, d.name || id);
+          if (!r || !r.ok) drainToast('🌿 已插到队首，但派给执行器没成：' + ((r && r.error) || '未知'), 'warn');
+          else drainToast(r.delivered ? '🌿 已插到队首，执行器当场开跑' : '🌿 已插到队首——执行器不在线，等它上线就跑', 'ok');
+        } else {
+          drainToast('🌿 已把「' + (d.name || id) + '」这一轮插到队首');
+        }
       });
       panel.querySelectorAll('[data-dbdel]').forEach(b => b.onclick = async () => {
         const id = b.getAttribute('data-dbdel');
@@ -2438,7 +2455,20 @@ async function renderScenarioDrain(container, mode) {
       const next = pool.map(e => Object.assign({}, e, { batch: (e.k === k ? sel.value : e.batch) }));
       _kwOpen[sel.value] = true;
       save({ keywords: next });
-      drainToast('「' + k + '」已划到批次「' + sel.value + '」（周几在「队列」页的队列配置里配）');
+      drainToast('「' + k + '」已划到批次「' + sel.value + '」（周几在批次卡头上点）');
+    });
+    /* 批次卡头上的「周几」：点一下就切换这一天跑不跑（全不点＝每天跑） */
+    panel.querySelectorAll('button[data-kwplan]').forEach(btn => btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const b = btn.getAttribute('data-kwplan');
+      const d = Number(btn.getAttribute('data-kwd'));
+      const plan = Object.assign({}, cfg.batchPlan || {});
+      const curDays = Array.isArray(plan[b]) ? plan[b].slice() : [];
+      const i = curDays.indexOf(d);
+      if (i >= 0) curDays.splice(i, 1); else curDays.push(d);
+      plan[b] = curDays.slice().sort((x, y) => x - y);
+      await save({ batchPlan: plan });
+      drainToast('批次「' + b + '」改为：' + (curDays.length ? curDays.map(x => WK_LABELS[x] || x).join('、') : '每天'));
     });
     /* 批次卡头：点一下展开/收起（落在按钮/勾选框上的点击不算），展开的那批＝当前批 */
     panel.querySelectorAll('[data-kwtoggle]').forEach(h => h.onclick = (ev) => {
@@ -2646,7 +2676,7 @@ async function renderScenarioDrain(container, mode) {
   const fetchAiCandidates = async () => {
     const cfg = await drainGetScanCfg();
     const max = await drainPoolMax();
-    _cfgSec = 'kw';   // 候选区在这一节，别让用户回来找
+    _cfgSec = 'run';   // 候选区在「跑什么」这张卡里，别让用户回来找
     _cand = { kind: 'ai', label: 'AI 找词', loading: true, items: [] };
     await renderScanCfg();
     try {
@@ -2663,7 +2693,7 @@ async function renderScenarioDrain(container, mode) {
   const fetchTopicCandidates = async () => {
     let list = [];
     try { list = (window.NoteTags && await window.NoteTags.list()) || []; } catch (_) { list = []; }
-    _cfgSec = 'kw';
+    _cfgSec = 'run';
     if (!list.length) {
       _cand = null;
       await renderScanCfg();
@@ -2681,7 +2711,10 @@ async function renderScenarioDrain(container, mode) {
     btn.disabled = true; btn.textContent = '⏳ 扫描中(后台开小红书页)...';
     try {
       const r = await chrome.runtime.sendMessage({ action: 'drainScan' });
-      if (r && r.ok) {
+      if (r && r.ok && r.ordered) {
+        // 公网版：扫描这活派给执行器，它在那台机器上开小红书页逐词扫；结果不回网页这头
+        drainToast('📤 已派给执行器扫一轮——进度点右上角执行器按钮看 / 工作台日志', 'ok');
+      } else if (r && r.ok) {
         const s = r.summary || {};
         drainToast(`扫描完成：新${s.foundNew} 并入获客${s.imported || 0} 补开${s.backfilled}（共${s.total}）`);
         notes.length = 0; notes.push(...await drainLoad());
@@ -2709,7 +2742,9 @@ async function renderScenarioDrain(container, mode) {
     render(); await refreshSrcLine();
   }
 
-  _sel('sxScan').onclick = runScan;
+  // 🔍 扫描一轮只在笔记池的顶栏上有；配置页（三张卡）没有这颗按钮
+  const scanBtn = _sel('sxScan');
+  if (scanBtn) scanBtn.onclick = runScan;
   // ＋ 加笔记：抓当前页 / 粘贴链接（按需展开）
   const addBtn = _sel('sxAdd');
   if (addBtn) addBtn.onclick = () => {
@@ -2757,7 +2792,9 @@ async function renderScenarioDrain(container, mode) {
     if (btn) { btn.disabled = true; btn.textContent = '⏳ 补开中...'; }
     try {
       const r = await chrome.runtime.sendMessage({ action: 'drainReplenish', round: true, force: true });
-      if (r && r.ok && r.busy) {
+      if (r && r.ok && r.ordered) {
+        drainToast('📤 已派给执行器补开未打开——进度点右上角执行器按钮看 / 工作台日志', 'ok');
+      } else if (r && r.ok && r.busy) {
         drainToast('补开正在进行中，稍等…', 'info');
       } else if (r && r.ok) {
         const s = r.summary || {};
@@ -2789,7 +2826,7 @@ async function renderScenarioDrain(container, mode) {
   }
 
   /* 词池概览一行（列表页用）：几个词 / 本轮到点几个来源。
-     改配置去左栏「获客 · ⚙️ 任务配置」，这里不再放入口（2026-09-25 老板：两个入口都撤） */
+     改配置去左栏「获客 · 🗂 队列 → ⚙️ 配置」，这里不再放入口（2026-09-25 老板：两个入口都撤） */
   async function refreshSrcLine() {
     const box = _sel('sxSrcLine');
     if (!box) return;
@@ -2801,18 +2838,17 @@ async function renderScenarioDrain(container, mode) {
     let due = 0;
     try { due = drainBuildSources(cfg).length; } catch (_) {}
     box.innerHTML = `📚 词池 ${onN}/${pool.length} 个启用 · 本轮到点 <b style="color:var(--c-brand-text);">${due}</b> 个来源
-      ${due ? '' : '<span style="color:#d97706;margin-left:6px;">（还没到点：可在「任务配置」把要跑的类型改成「每轮跑」）</span>'}`;
+      ${due ? '' : '<span style="color:#d97706;margin-left:6px;">（还没到点：可在「队列 → ⚙️ 配置」把要跑的类型改成「每轮跑」）</span>'}`;
   }
 
-  /* ⚙️ 任务配置页：三级 tab 只剩关键词池 / 👤 盯的账号，渲染完就结束（列表逻辑整段不跑） */
+  /* 顶栏「🔁 补开未打开」+ 它右边的「⚙︎」小弹窗（自动补开开关 / 点赞增量阈值）
+     这两颗在笔记池的顶栏上（2026-10-24 从任务配置顶栏搬来），配置页和列表页都要挂 */
+  const replRunBtn = _sel('replRun');
+  if (replRunBtn) replRunBtn.onclick = () => runReplenish();
+  const replCfgBtn = _sel('replCfgBtn');
+  if (replCfgBtn) replCfgBtn.onclick = () => { const p = _sel('replPop'); if (p) p.style.display = p.style.display === 'none' ? '' : 'none'; };
+
   if (isCfg) {
-    const goList = _sel('sxGoList');
-    if (goList) goList.onclick = () => { if (window.switchMainTab) window.switchMainTab('scenarioDrain'); };
-    // 顶栏「🔁 补开未打开」+ 它右边的「⚙︎」小弹窗（自动补开开关 / 点赞增量阈值）
-    const replRunBtn = _sel('replRun');
-    if (replRunBtn) replRunBtn.onclick = () => runReplenish();
-    const replCfgBtn = _sel('replCfgBtn');
-    if (replCfgBtn) replCfgBtn.onclick = () => { const p = _sel('replPop'); if (p) p.style.display = p.style.display === 'none' ? '' : 'none'; };
     await renderScanCfg();   // 里面顺带重挂补开弹窗内容 / 上次扫描那行
     // 别的 Tab 点「✨找词 / 🏷话题」跳过来 → 交接意图：渲染完直接把候选区拉出来
     const want = _cfgWant;
@@ -2864,11 +2900,8 @@ async function renderScenarioDrain(container, mode) {
       paintHistN();
     });
   }
-  try {
-    const rr = await chrome.runtime.sendMessage({ action: 'drainGetReplenishCfg' });
-    const rp = (rr && rr.ok && rr.repl) || {};
-    st.growthDelta = Number(rp.growthDelta) > 0 ? Number(rp.growthDelta) : 50;
-  } catch (_) {}
+  // 补开弹窗内容（「🔁 补开未打开」和它右边的 ⚙︎ 现在挂在笔记池顶栏上，进页就得先画好）
+  await renderReplCfg();
 
   function render() {
     if (isCfg) return;   // 配置页没有列表 DOM：扫描/补开回调里调 render 时直接跳过
@@ -3026,6 +3059,10 @@ async function renderScenarioDrain(container, mode) {
         action: 'openNote',
         note: { noteId: note.noteId || '', title: note.title || '', author: note.author || '', url: note.url || '' },
       });
+      if (r && r.ok && r.ordered) {
+        drainToast('📤 已派给执行器打开这篇——评论/指标在它那台加载，网页这头不碰平台', 'ok');
+        return;
+      }
       if (!r || !r.ok) {
         const skipped = !!(r && r.skipped);
         drainToast((skipped ? '⏭ ' : '打开失败：') + ((r && r.error) || '未知原因'), 'warn');

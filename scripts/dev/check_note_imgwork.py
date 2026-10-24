@@ -34,6 +34,7 @@ import time
 import zlib
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 try:
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -141,7 +142,7 @@ def run(ctx):
     page = ctx.new_page()
     page.on('pageerror', lambda e: ERRORS.append(str(e)[:220]))
     page.set_viewport_size({'width': 1280, 'height': 980})
-    page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+    goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
     page.wait_for_function('typeof switchMainTab === "function" && typeof npImgTabsHtml === "function" '
                            '&& typeof npPreviewHtml === "function" && typeof npCheckHtml === "function"')
     page.set_default_timeout(25000)

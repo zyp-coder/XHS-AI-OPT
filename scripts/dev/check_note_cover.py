@@ -356,9 +356,9 @@ def run(ctx):
     assert (ai('cover'), ai('desc')) == (1, 0), '✨＝一发 AI，别的不碰'
     assert other() == [], '烧了不该烧的那一发：%s' % other()[:2]
     sysmsg = sw.evaluate('() => self.coverSystems[0]')
-    assert '只出两样东西' in sysmsg and '{"文案":"...","重点":[{"字":"","标":"变色|加粗|加标识"}],"提示词":"..."}' in sysmsg, sysmsg[:300]
+    assert '只出两样东西' in sysmsg and '{"文案":"...","提示词":"..."}' in sysmsg, sysmsg[:300]
     assert '≤14 字' in sysmsg and '纯文字' in sysmsg, '文案那一段硬性要求：%s' % sysmsg[:300]
-    assert '另外给一份『重点』' in sysmsg and '「字」从『文案』里原样抄出来' in sysmsg, '重点那几处要按 copy 的子串报：%s' % sysmsg[:400]
+    assert '要把『文案』那几个字画进图上' in sysmsg and '封面那一张也必须有字' in sysmsg, '封面必须带字（老板 2026-10-20）：%s' % sysmsg[:400]
     assert '【这一套图的取材路子】' in sysmsg and '画面做成一页方案' in sysmsg, '流派喂给这一发（方案页的 take 指纹）：%s' % sysmsg[:400]
     u1 = sw.evaluate('() => self.coverUsers[0]')
     assert '【整篇文案' in u1 and LINES[0] in u1, '那一发读的是整篇文案：%s' % u1[:200]

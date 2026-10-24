@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>小红书助手 · 执行器</title>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--line:#2a2f3a;--fg:#e6e9ef;--dim:#8b93a3;--green:#4ade80;--red:#f87171;--blue:#60a5fa;--amber:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.7 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;width:340px}
+  .wrap{padding:14px 14px 18px}
+  h1{font-size:15px;margin:0 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin:0 0 12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+  .big{font-size:30px;text-align:center;margin:6px 0 2px}
+  .state-t{text-align:center;font-size:14px;margin:2px 0 6px}
+  .state-t.warn{color:var(--amber)}
+  .state-t.bad{color:var(--red)}
+  .kv{display:flex;justify-content:space-between;align-items:flex-start;font-size:12.5px;color:var(--dim);border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
+  .kv span{flex:0 0 auto;white-space:nowrap;margin-right:10px}
+  .kv b{flex:1 1 auto;min-width:0;text-align:right;color:var(--fg);font-weight:600;word-break:break-word}
+  .kv b.warn{color:var(--amber)}
+  .kv b.bad{color:var(--red)}
+  .kv b.ok{color:var(--green)}
+  .kv .who{color:var(--dim);font-weight:400}
+  .lk{width:auto;margin:0 0 0 6px;padding:2px 8px;font-size:11px;border-radius:6px;display:inline-block;vertical-align:middle;background:#1d2330;border:1px solid #354055}
+  .why{color:var(--amber);font-size:12.5px;text-align:center;margin:4px 0 2px;word-break:break-word}
+  .hint{color:var(--dim);font-size:12px;margin-top:8px}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:10px 0 4px}
+  input{width:100%;background:#0b0d12;border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:9px 10px;font-size:14px}
+  button{background:#1d2330;color:var(--fg);border:1px solid #354055;border-radius:10px;padding:10px 14px;font-size:14px;cursor:pointer;width:100%;margin-top:10px}
+  button:hover{background:#243049;border-color:#4a5a7a}
+  button.primary{background:#1e3a8a;border-color:#3b82f6}
+  button.danger{background:#7f1d1d;border-color:#b91c1c}
+  .row{display:flex;gap:8px}
+  .row button{margin-top:10px}
+  .msg{font-size:12.5px;margin-top:10px;color:var(--amber);min-height:18px;word-break:break-all}
+  .ok{color:var(--green)} .err{color:var(--red)}
+  .ver{text-align:center;color:#5b6372;font-size:11px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🤖 小红书助手 · 执行器</h1>
+  <p class="sub">网页上派的活，在你这台浏览器里真跑。</p>
+
+  <div class="card" id="viewUnpaired" style="display:none">
+    <div class="big">🔌</div>
+    <div class="state-t">还没挂线</div>
+    <div class="why" id="unpairedWhy" style="display:none"></div>
+    <label>服务器地址</label>
+    <input id="server" value="http://8.222.157.6/" autocomplete="off" readonly>
+    <label>配对号</label>
+    <input id="code" placeholder="例：XHD-4K7Q" autocomplete="off">
+    <button class="primary" id="btnPair">🔗 挂上</button>
+    <div class="hint">配对号在起始页、你账号那一行（头图下面，点一下能复制）；工作台里不显示。找不着的问给你网址的人。<br>挂上时会各读一次：小红书号、抖音号。哪个平台没登录，那一格先空着，不影响另一个。</div>
+  </div>
+
+  <div class="card" id="viewPaired" style="display:none">
+    <div class="big" id="stateIcon">🟢</div>
+    <div class="state-t" id="stateLine">在线待命</div>
+    <div class="kv"><span>账号</span><b id="kvAccount">—</b></div>
+    <div class="kv"><span>档位</span><b id="kvTier">—</b></div>
+    <div class="kv"><span>小红书号</span><b id="kvXhs">—</b></div>
+    <div class="kv"><span>抖音号</span><b id="kvDy">—</b></div>
+    <div class="kv"><span>当前在做</span><b id="kvAct">待命</b></div>
+    <div class="row">
+      <button id="btnStop">⏹ 停这一趟</button>
+      <button id="btnLogout">退出挂线</button>
+    </div>
+    <div class="hint">两个号各绑一个，发哪个平台就只认那个平台的号。这只手只认服务器：服务器一熔断，当场全停。别关这个浏览器——关了就不干活了。</div>
+  </div>
+
+  <div class="msg" id="msg"></div>
+  <div class="ver" id="ver"></div>
+</div>
+<script src="panel.js"></script>
+</body>
+</html>

@@ -94,13 +94,11 @@ const AutoWater = {
       }
       idx = start; plan = p;
     } else if (scanCfg) {
-      for (let n = 0; n < all.length; n++) {
-        const i = (start + n) % all.length;
-        let p = [];
-        try { p = drainKeywordPasses(all[i], scanCfg); } catch (_) { p = []; }
-        if (p.length) { idx = i; plan = p; break; }
-        skipped.push(all[i]);
-      }
+      // ★ 只认词标签上的这一个词：这个词都没到点就提示去改，不偷偷顺延到别的词
+      let p = [];
+      try { p = drainKeywordPasses(all[start], scanCfg); } catch (_) { p = []; }
+      if (p.length) { idx = start; plan = p; }
+      else skipped.push(all[start]);
     }
     if (idx < 0) {
       if (scanCfg) {
@@ -112,6 +110,28 @@ const AutoWater = {
       idx = start;
       plan = [{ scenario: 'latest', term: all[idx], sort: 'latest' }];
     }
+    /* ★ 一轮＝一类（2026-10-23 确认单）：到点清单按类切开，这一趟只跑第一类；
+       后面几类交给服务器排着，到点再一类一类往下派。TOP 的 3 搜 / 求助的 4 搜留在同一类里连着跑。 */
+    const _groups = [];
+    for (const ps of plan) {
+      const sc = ps.scenario || 'latest';
+      let g = _groups.find(x => x.scenario === sc);
+      if (!g) { g = { scenario: sc, passes: [] }; _groups.push(g); }
+      g.passes.push(ps);
+    }
+    let _pick = 0, latestNotDue = false;
+    if (!only && !acctUrl) {
+      const li = _groups.findIndex(g => g.scenario === 'latest');
+      if (li >= 0) _pick = li;
+      else { _pick = 0; latestNotDue = true; }
+    }
+    const _chosen = _groups[_pick] || { scenario: 'latest', passes: plan };
+    const roundPlan = _chosen.passes;
+    const _scName = (s) => {
+      try { return (typeof drainScenarioDef === 'function') ? drainScenarioDef(s).label : s; } catch (_) { return s; }
+    };
+    // 手点某类 / 盯的账号 → 就这一轮，不排队；正常搜索 → 后面的类排给服务器
+    const chainRemain = (only || acctUrl) ? [] : _groups.slice(_pick + 1).map(g => g.scenario);
     const keyword = all[idx];
     if (skipped.length) console.log('[一键灌水] 跳过未到点的词: ' + skipped.join('、') + ' → 改搜 "' + keyword + '"');
     // 指针推进到实际要搜的词，下次点搜索从这里接着走（盯的账号不占词池指针）
@@ -133,9 +153,9 @@ const AutoWater = {
       keywords: [keyword],            // 只搜这一个词
       currentKeywordIdx: 0,
       currentKeyword: keyword,
-      plan,                           // 本词的搜索动作清单（一个词 N 搜）
+      plan: roundPlan,                // 这一轮＝这一类；TOP 的 3 搜 / 求助的 4 搜在同一轮里连着跑
       planIdx: 0,
-      planTotal: plan.length,
+      planTotal: roundPlan.length,
       typeStats: {},                  // { latest: { found: 12 }, top: {...} } 供前台逐类显示
       foundNotes: [],
       totalKeywords: 1,
@@ -143,7 +163,12 @@ const AutoWater = {
       kwIdx: acctUrl ? null : idx,    // 该词在完整列表中的位置（盯的账号不占词池指针 → null）
       kwTotal: acctUrl ? null : all.length,   // 完整列表长度（用于 UI 显示第几个/共几个）
       acct: !!acctUrl,                // 这一趟是"进某人主页扒笔记"（不是搜词）
-      scenario: plan[0].scenario,
+      scenario: _chosen.scenario,
+      round: _chosen.scenario,        // 这一轮的类
+      roundName: _scName(_chosen.scenario),
+      chainRemain,                    // 这个词后面还没跑的类（交给服务器排期）
+      chainRemainNames: chainRemain.map(_scName),
+      latestNotDue,                   // 最新关着/没到点，先跑了第一个到点的类
       searchStartedAt: Date.now(),    // popup 超时兜底用
     };
     await Storage.setAutoWaterState({
@@ -153,13 +178,20 @@ const AutoWater = {
       logs: [],
       error: null,
     });
-    console.log('[一键灌水] 开始' + (acctUrl ? '盯主页' : '搜索当前词') + ': "' + keyword + '"（列表第 ' + (idx + 1) + '/' + all.length + '），本趟 ' + plan.length + ' 个动作: ' + plan.map(p => drainPassLabel(p)).join(' / '));
-
+    console.log('[一键灌水] 开始' + (acctUrl ? '盯主页' : '搜索当前词') + ': "' + keyword + '"（列表第 ' + (idx + 1) + '/' + all.length + '），这一轮 ' + _scName(_chosen.scenario) + '：' + roundPlan.map(p => drainPassLabel(p)).join(' / ') +
+      (latestNotDue ? '（最新没到点，先跑这一轮）' : '') +
+      (chainRemain.length ? '；后面还有: ' + chainRemain.map(_scName).join(' / ') : ''));
     this._doSearchNotes().catch(err => {
       console.error('[一键灌水] searchNotes 异常:', err);
       this._syncError(err).catch(() => {});
     });
-    return { ok: true, keyword: keyword, kwIdx: idx, kwTotal: all.length, acct: !!acctUrl, planTotal: plan.length, plan: plan.map(p => drainPassLabel(p)) };
+    return {
+      ok: true, keyword: keyword, kwIdx: idx, kwTotal: all.length, acct: !!acctUrl,
+      planTotal: roundPlan.length, plan: roundPlan.map(p => drainPassLabel(p)),
+      round: _chosen.scenario, roundName: _scName(_chosen.scenario),
+      remain: chainRemain, remainNames: chainRemain.map(_scName),
+      latestNotDue,
+    };
   },
 
   /* 取消搜索 */
@@ -401,6 +433,7 @@ const AutoWater = {
       //   （去重靠笔记池的冷却/复核，跟截流那条通路口径一致）
       const typeStats = {};   // 类型累计（最新/TOP/本地/求助各找到几篇）
       const passStats = [];   // 每一搜找到几篇（与 plan 下标对齐）
+      let pageErr = 0, pageOk = 0;   // 页面打不开 / 拿到了搜索页（0 篇也算拿到了）
 
       for (let i = 0; i < plan.length; i++) {
         state = await Storage.getAutoWaterState();
@@ -415,12 +448,15 @@ const AutoWater = {
         state.searchState.scenario = pass.scenario;
         state.searchState.typeStats = typeStats;
         state.searchState.passStats = passStats;
+        state.searchState.pageErrors = pageErr;
+        state.searchState.pageOk = pageOk;
         await Storage.setAutoWaterState(state);
         console.log('[一键灌水] 搜索动作 ' + (i + 1) + '/' + plan.length + ': ' + drainPassLabel(pass) + ' → ' + pass.term);
 
         const tab = await this._getXhsTab();
         if (!tab) {
           console.error('[一键灌水] 未找到小红书标签页');
+          pageErr++;
           continue;
         }
 
@@ -436,6 +472,7 @@ const AutoWater = {
         } catch (navErr) {
           // 标签页被关闭等导航异常：跳过本搜（外层 finally 保证状态收尾）
           console.error('[一键灌水] 导航到搜索页失败，跳过本搜:', navErr.message);
+          pageErr++;
           continue;
         }
 
@@ -470,17 +507,28 @@ const AutoWater = {
             results = await this._send(tab.id, { action: 'extractSearchResults' }, 15000);
           } catch (e2) {
             console.error('[一键灌水] 提取搜索结果失败:', e2);
+            pageErr++;
             continue;
           }
         }
+        pageOk++;
 
         if (!results || !results.notes || results.notes.length === 0) {
           console.log('[一键灌水] 本搜无结果:', drainPassLabel(pass), '|', pass.term);
           state = await Storage.getAutoWaterState();
           if (state.searchState) {
-            state.searchState.planIdx = i;
+            state.searchState.planIdx = i + 1;
             state.searchState.typeStats = typeStats;
             state.searchState.passStats = passStats;
+            state.searchState.pageErrors = pageErr;
+            state.searchState.pageOk = pageOk;
+            /* ★ 最后一搜没结果也要当场关闸：别把 searching=false 留给 finally 的单次补写 */
+            if (i + 1 >= plan.length) {
+              state.searchState.searching = false;
+              state.searchState.completedKeywords = (state.searchState.keywords || []).length;
+              state.searchState.finishedAt = Date.now();
+              state.searchResults = state.searchState.foundNotes;
+            }
             await Storage.setAutoWaterState(state);
           }
           continue;
@@ -531,7 +579,17 @@ const AutoWater = {
         state.searchState.planIdx = i + 1;
         state.searchState.typeStats = typeStats;
         state.searchState.passStats = passStats;
+        state.searchState.pageErrors = pageErr;
+        state.searchState.pageOk = pageOk;
         state.searchState.scenario = pass.scenario;
+        /* ★ 最后一搜的这一笔写入就把「跑完了」一起落定：原先把 searching=false 单独留给 finally，
+           那一次读改写在扩展后台被打断时闸门就一直开着，执行器干等 15 分钟也不见停。 */
+        if (i + 1 >= plan.length) {
+          state.searchState.searching = false;
+          state.searchState.completedKeywords = (state.searchState.keywords || []).length;
+          state.searchState.finishedAt = Date.now();
+          state.searchResults = state.searchState.foundNotes;
+        }
         await Storage.setAutoWaterState(state);
         console.log('[一键灌水] 搜索动作 ' + (i + 1) + '/' + plan.length + ' 完成（' + drainPassLabel(pass) + '）: 新增 ' + addedCount + ' 篇, 累计 ' + state.searchState.foundNotes.length + ' 篇');
       }
@@ -543,6 +601,8 @@ const AutoWater = {
           st.searchState.searching = false;
           st.searchState.completedKeywords = (st.searchState.keywords || []).length;
           st.searchState.planIdx = (st.searchState.plan || []).length;
+          st.searchState.pageErrors = pageErr;
+          st.searchState.pageOk = pageOk;
           st.searchResults = st.searchState.foundNotes;
           await Storage.setAutoWaterState(st);
           console.log('[一键灌水] 搜索结束（收尾），共找到 ' + (st.searchResults?.length || 0) + ' 篇笔记');

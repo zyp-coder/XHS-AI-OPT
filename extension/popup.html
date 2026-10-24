@@ -2,7 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <!-- 首屏提速：获客那三件提前预告给浏览器，让它和引擎文件同时下载（不是在引擎文件下完之后才排队） -->
+  <link rel="preload" as="script" href="lib/scenario-drain.js">
+  <link rel="preload" as="script" href="auto-water-app.js">
+  <link rel="preload" as="script" href="auto-bot.js">
   <link rel="stylesheet" href="ui.css">
+  <link rel="stylesheet" href="lib/video/video.css">
   <script src="theme.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -69,6 +74,33 @@
       min-width: 0; max-width: 138px; color: var(--c-ink);
       font: 600 var(--fs-sm)/1.4 var(--font-ui);
     }
+    /* 顶栏两条文字入口：⬇️ 执行器（→装执行器页）/ ❓ 新手引导 */
+    .hdr-link {
+      display: inline-flex; align-items: center;
+      height: 28px; padding: 0 11px;
+      border: 1px solid var(--c-line-2); border-radius: var(--r-sm);
+      background: var(--c-surface); color: var(--c-ink-3);
+      font-size: 12.5px; font-weight: 600;
+      text-decoration: none; white-space: nowrap;
+    }
+    .hdr-link:hover { border-color: var(--c-ink-4); color: var(--c-ink); }
+    /* 演示号：顶栏退出按钮 ＋ 底子只读提示条（2026-10-18） */
+    .hdr-demo {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 28px; padding: 0 10px;
+      border: 1px solid #f0e0b8; border-radius: var(--r-sm);
+      background: #fdf6e7; color: #7a5a00;
+      font-size: 12px; font-weight: 700; white-space: nowrap;
+      cursor: pointer; font-family: var(--font-ui);
+    }
+    .hdr-demo:hover { background: #fbecd0; border-color: #e6cf9a; }
+    .hdr-demo:disabled { opacity: .55; cursor: default; }
+    #demoRoBanner {
+      flex: none; padding: 6px 14px;
+      background: #fdf6e7; border-bottom: 1px solid #f0e0b8;
+      color: #7a5a00; font-size: 12px; line-height: 1.65;
+    }
+    #demoRoBanner b { color: #5c4300; }
     #hdrMore { position: relative; }
     .hdr-menu { top: 32px; right: 0; min-width: 236px; }
     .hdr-menu .pop-item.static { cursor: default; }
@@ -82,6 +114,39 @@
     .hdr-menu .pop-note { padding: 2px 10px 8px 33px; font-size: var(--fs-xs); color: var(--c-ink-4); line-height: 1.7; }
     .badge.offline { background: var(--c-danger-soft); color: var(--c-danger); border-color: var(--c-danger-line); }
     .badge.loading { background: var(--c-warn-soft); color: var(--c-warn); border-color: var(--c-warn-line); }
+
+    /* ===== 页头渐变带（IP 玩法 demo 那套外壳）：白顶栏底下一条带子＝当前页名 ＋ 一句这页干啥的
+       方向按老板定的：前面深、后面白——页名坐在主色块上（白字），带子往右一路退到白（那句用深字）
+       文字由 popup.js 的 pageHeroSync() 从当前选中的导航项现取，页面不用各写一份 ===== */
+    .page-hero {
+      flex: none; display: flex; align-items: stretch;
+      background: linear-gradient(90deg, var(--c-brand-soft) 0, #ffffff 72%);
+      z-index: 9;
+    }
+    .page-hero .ph-name {
+      flex: none; display: flex; align-items: center;
+      padding: 8px 16px 8px 14px; margin-right: 10px;
+      background: var(--c-brand); color: var(--c-brand-on);
+      border-radius: 0 9px 9px 0;
+      font-size: var(--fs-lg); font-weight: 800; letter-spacing: .4px; white-space: nowrap;
+    }
+    .page-hero .ph-sub {
+      flex: 1; min-width: 0; display: flex; align-items: center; padding-right: 14px;
+      font-size: var(--fs-xs); line-height: 1.6; color: var(--c-brand-ink);   /* 跟一级选中同一条深字，压在淡底上有 5.5:1 */
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    @media (min-width: 900px) {
+      /* 深色块的左内缩进对齐宽栏右边，页名正好跟内容列起头齐 */
+      .page-hero .ph-name { padding: 10px 18px 10px 198px; border-radius: 0 11px 11px 0; font-size: var(--fs-xl); }
+      .page-hero .ph-sub { padding-right: 18px; font-size: var(--fs-sm); }
+    }
+
+    /* ===== 分区淡色底：跟 .card 叠用（demo 里那三块区的分色）——一页多区时靠底色分开，不靠描边硬切
+       一律引用主题变量：主色淡底 / 蓝（info）/ 琥珀（warn） ===== */
+    .zone-brand { background: var(--c-brand-soft); border-color: var(--c-brand-line); }
+    .zone-blue  { background: var(--c-info-soft);  border-color: var(--c-info-line); }
+    .zone-amber { background: var(--c-warn-soft);  border-color: var(--c-warn-line); }
+    .zone-blue .card-hd, .zone-amber .card-hd, .zone-brand .card-hd { background: rgba(255, 255, 255, .55); }
 
     /* ===== Split Layout ===== */
     .split-layout {
@@ -292,6 +357,40 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* 首屏加载罩：第一次进工作台要下载十几秒程序文件（跨境链路），这期间页面看着像死在那儿——
+       罩子在 HTML 最前面先画出来：转圈＋进度条（按已下载字节走）＋大白话一句；
+       popup.js 把第一屏内容画出来时调 window.__wbLoadHide() 收罩（页面末尾还有 DOMContentLoaded 兜底）。 */
+    #wbLoadOverlay {
+      position: fixed; inset: 0; z-index: 99998;
+      background: rgba(250, 250, 251, .96);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #wbLoadOverlay.wb-load-hide { animation: wbLoadFade .4s ease forwards; pointer-events: none; }
+    @keyframes wbLoadFade { to { opacity: 0; visibility: hidden; } }
+    .wb-load-card { text-align: center; max-width: 420px; padding: 0 24px; }
+    .wb-load-spin {
+      display: inline-block; width: 34px; height: 34px; box-sizing: border-box;
+      border: 3px solid var(--c-brand-line, #b5ddd7); border-top-color: var(--c-brand, #0d9488);
+      border-radius: 50%; animation: spin .9s linear infinite; margin-bottom: 16px;
+    }
+    .wb-load-t1 { font-size: 16px; font-weight: 600; color: #2b2f36; }
+    .wb-load-t2 { font-size: 12.5px; color: #7b828c; margin-top: 8px; line-height: 1.7; }
+    .wb-load-bar { height: 6px; border-radius: 3px; background: #e3e6ea; overflow: hidden; margin-top: 18px; }
+    .wb-load-bar i { display: block; height: 100%; width: 2%; border-radius: 3px; background: var(--c-brand, #0d9488); transition: width .25s ease; }
+    .wb-load-pct { font-size: 12px; color: #98a0a8; margin-top: 8px; }
+    /* 分页补下载 / 获客文件等待时的顶部细条转圈（popup.js 的 wbSpin 用） */
+    .wb-top-spin {
+      position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 99997;
+      display: flex; align-items: center; gap: 8px; padding: 7px 14px 8px;
+      background: rgba(43, 47, 54, .92); color: #fff; font-size: 12.5px;
+      border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0, 0, 0, .18); pointer-events: none;
+    }
+    .wb-top-spin i {
+      display: inline-block; width: 13px; height: 13px; box-sizing: border-box;
+      border: 2px solid rgba(255, 255, 255, .35); border-top-color: #fff;
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+
     /* Card base */
     .card {
       background: var(--card); border-radius: var(--radius); padding: 12px 14px;
@@ -470,6 +569,10 @@
       padding: 8px 5px; overflow-x: hidden; overflow-y: auto;
     }
     .rail-nav, .rail-group { display: flex; flex-direction: column; gap: 2px; }
+    /* 服务器发页时先按档位挂类：首帧就不露不属于本档的入口；popup.js 上锁后摘掉，改由 xhs-ed-off 管 */
+    html.ed-no-huoke #tabHuoke,
+    html.ed-no-prospect #tabProspect,
+    html.ed-draft-only #tabNoteQueue { display: none !important; }
     /* 二级贴在「获客」正下方。窄栏只有 58px，缩进摆不下——缩进与引导线留到宽栏再上 */
     .rail-group { margin-bottom: 4px; }
     .main-tab, .sub-tab {
@@ -487,6 +590,12 @@
     .sub-tab[disabled] { opacity: .55; cursor: not-allowed; }
     .main-tab .ic { width: 17px; height: 17px; }
     .sub-tab .ic { width: 14px; height: 14px; }
+    /* 左栏图标走 emoji（demo 那套）：emoji 自带颜色，一眼分得清哪块是哪块；
+       原来的线性 SVG 跟着文字色走，整栏看过去是一片灰 */
+    .main-tab .rail-emo, .sub-tab .rail-emo {
+      flex: none; width: 18px; text-align: center; line-height: 1; font-size: 15px;
+    }
+    .sub-tab .rail-emo { width: 15px; font-size: 12px; }
     .rail-tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
     .main-tab:hover, .sub-tab:hover { background: var(--c-bg-2); color: var(--c-ink); }
     .main-tab.active, .sub-tab.active { background: var(--c-brand-soft); color: var(--c-brand-ink); }
@@ -525,6 +634,18 @@
       .rail-glabel { font-size: var(--fs-xs); font-weight: 600; text-align: left; padding: 7px 6px 0; }
       .main-tab .ic { width: 16px; height: 16px; }
       .main-tab.active::before, .sub-tab.active::before { height: 18px; }
+      /* ── 宽栏照 demo 那套导航来 ──
+         一级＝整行加粗带图标、选中主色淡底（跟原来一致）；二级＝挂一条更粗的引导线，选中整行涂主色白字，
+         一眼分清「这一块」和「这一块里的哪一页」；窄栏（640 弹窗）摆不下，仍走上面 58px 图标那套 */
+      .rail { padding: 12px 8px; }
+      .main-tab { font-weight: 800; border-radius: 8px; }
+      .rail-group { margin: 2px 0 9px 16px; padding-left: 9px; border-left: 2px solid var(--c-line-2); }
+      .rail-group .sub-tab { border-radius: 7px; padding: 5px 8px; }
+      .sub-tab.active { background: var(--c-brand); color: var(--c-brand-on); font-weight: 700; }
+      .sub-tab.active .ic { color: var(--c-brand-on); }
+      .sub-tab.active::before { display: none; }
+      .main-tab .rail-emo { width: 20px; font-size: 16px; }
+      .sub-tab .rail-emo { width: 16px; font-size: 13px; }
     }
     /* 窄窗（手动把大窗拉小）：导航只剩图标，笔记列表也让一步，别把右栏挤到换行 */
     @media (max-width: 899px) {
@@ -1199,30 +1320,14 @@
     .q-sub-row .q-sub-n { margin-left: auto; color: #374151; font-weight: 600; white-space: nowrap; }
     .q-hint { font-size: 13.5px; color: #9ca3af; line-height: 2; padding: 20px 8px; text-align: center; }
 
-    /* ⚙️ 队列管理：关键词批次「周几跑哪批」＋ 日常浏览「什么时候跑」（2026-10-01） */
-    #queueMgmt { margin: 8px 0 2px; }
-    .qmgmt { border: 1px solid var(--c-line, #eceef0); border-radius: 9px; background: #fff; }
-    .qmgmt > summary { display: flex; align-items: center; gap: 6px; list-style: none; cursor: pointer; user-select: none; padding: 7px 10px; font-size: 12.5px; font-weight: 700; color: #1f2937; }
-    .qmgmt > summary::-webkit-details-marker { display: none; }
-    .qmgmt > summary::before { content: '▸'; color: #b9bec7; font-size: 11px; }
-    .qmgmt[open] > summary::before { content: '▾'; }
-    .qmgmt > summary:hover { color: var(--c-brand-text); }
-    .qm-sum { font-weight: 400; font-size: 11.5px; color: #9ca3af; }
-    .qmgmt-body { padding: 4px 10px 10px; border-top: 1px dashed #eef0f3; margin-top: 4px; }
-    .qm-sec-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #374151; margin: 10px 0 6px; }
-    .qm-note { font-size: 11px; color: #9aa1ab; }
-    .qm-batches { display: flex; flex-direction: column; gap: 5px; }
-    .qm-batch { display: flex; align-items: center; gap: 8px; }
-    .qm-bname { flex: none; font-size: 12px; font-weight: 600; color: #1f2937; min-width: 52px; }
+    /* 周几小圆片：配置页批次卡头 / 日常浏览卡 / 队列顶栏「每周自动跑」共用（2026-10-24） */
     .qm-wds { display: flex; gap: 4px; flex-wrap: wrap; }
     .qm-wd { font-size: 11px; padding: 2px 7px; border: 1px solid #e5e7eb; border-radius: 14px; background: #fff; color: #9aa1ab; cursor: pointer; font-weight: 600; }
     .qm-wd:hover { border-color: var(--c-brand-line); }
     .qm-wd.on { background: var(--c-brand-soft); border-color: var(--c-brand-line); color: var(--c-brand-ink); }
     .qm-wd.on.today { box-shadow: 0 0 0 1px var(--c-brand); }
-    .qm-empty { font-size: 12px; color: #9aa1ab; }
-    .qm-sec-div { border-top: 1px dashed #e2e5ea; margin: 12px 0 2px; }
 
-    /* 队列页 3 级横置子 tab：📖 评论策略 / ⚙️ 队列配置（2026-10-01） */
+    /* 队列页 2 级横置子 tab：📜 队列 / ⚙️ 配置 */
     .q-tabs { display: flex; gap: 2px; margin: 6px 0 8px; border-bottom: 1px solid var(--c-line, #eceef0); }
     .q-tab { border: 0; background: none; padding: 6px 12px; margin-bottom: -1px; font-size: 12px; font-weight: 600; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; }
     .q-tab:hover { color: #374151; }
@@ -1233,12 +1338,12 @@
     .card.npas-focus { background: var(--c-brand-soft); box-shadow: inset 3px 0 0 var(--c-brand); }
 
     /* 🗂 笔记档案：一行＝一篇，做成表格（同一份 grid-template，表头与每行天然对齐）。
-       列＝缩略图 / 篇目（标题＋平台）/ 方向 / 最终形式 / 内容（正文开头＋已出哪些料）/ 时间 / 状态（就地改，行末一眼看到）/ 下一步（最右）。
+       列＝缩略图 / 篇目 / 分类 / 玩法 / 最终形式 / 内容（正文开头＋已出哪些料）/ 时间 / 状态（就地改，行末一眼看到）/ 下一步（最右）。
        全文与提示词不铺在表里，去「写稿」「出图」里看。窗口拖窄时从右往左依次砍：时间 → 最终形式 → 内容。 */
     .npar-list { border: 1px solid var(--c-line, #eceef0); border-radius: 10px; background: #fff; overflow: hidden; }
     .npar-row {
       display: grid; align-items: center; gap: 8px;
-      grid-template-columns: 44px minmax(110px, 1.1fr) 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto;
+      grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto;
       padding: 5px 10px; border-bottom: 1px solid var(--c-line, #eceef0);
     }
     .npar-row:last-child { border-bottom: 0; }
@@ -1282,30 +1387,30 @@
     .npar-gap { flex: none; max-width: 190px; overflow: hidden; text-overflow: ellipsis; border: 1px solid #f3d3a3; background: #fff8ef; color: #b45309; border-radius: 8px; font-size: 10.5px; padding: 2px 7px; cursor: pointer; line-height: 1.5; }
     .npar-out { font-size: var(--fs-xs, 11px); color: var(--c-ink-3, #8b95a3); margin-top: 2px; }
     @media (max-width: 1180px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
       .npar-col-time { display: none !important; }
     }
     @media (max-width: 980px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 58px minmax(110px, 1.2fr) 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px auto; }
       .npar-col-form { display: none !important; }
     }
     @media (max-width: 860px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1fr) 58px 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1fr) 64px 58px 74px auto; }
       .npar-col-peek { display: none !important; }
     }
     /* ☑️ 批量多选（2026-10-10 老板口述）：开了批量，行首多一列勾选框——四套断点模板各加一格 26px */
-    .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto; }
+    .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto; }
     .npar-col-sel { display: flex; align-items: center; justify-content: center; overflow: visible; }
     .npar-col-sel input { width: 14px; height: 14px; accent-color: var(--c-brand); cursor: pointer; margin: 0; }
     .npar-row.npar-sel, .npar-row.npar-sel:hover { background: var(--c-brand-soft, #fdf2f2); }
     @media (max-width: 1180px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
     }
     @media (max-width: 980px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 58px minmax(110px, 1.2fr) 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px auto; }
     }
     @media (max-width: 860px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1fr) 58px 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1fr) 64px 58px 74px auto; }
     }
 
     /* ✍️ 新建笔记：六卡一页＝三个方向 × 各自最终效果，点一张卡直接开工（镜像 demo dirPageHtml）。
@@ -1319,6 +1424,30 @@
     .np-dir-eff b { font-size: 13px; color: var(--c-ink, #1f2937); }
     .np-dir-eff .np-dir-eff-d { margin: 5px 0 0; min-height: 38px; font-size: 12px; color: var(--c-ink-3, #8b95a3); line-height: 1.6; }
     .np-dir-eff .np-dir-eff-lv { display: inline-block; font-size: 10px; color: #1f4e8c; background: #eef4ff; border-radius: 6px; padding: 1px 6px; }
+
+    /* 🎭 玩法三步向导（2026-10-19 玩法合并·批2）：引流笔记新建＝第 1 步定玩法 → 第 2 步定出口 → 第 3 步写稿。
+       一张卡＝玩法表的一行（名＋只摆数的账＋默认出口），一次摊 7 张；镜像 tmp/玩法合并-demo.html */
+    .np-pw-steps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 12px; font-size: 11.5px; }
+    .np-pw-steps .ws { border: 1px solid var(--c-brand-line, #b5ddd7); background: var(--c-brand-soft, #e6f5f3); color: var(--c-brand-text, #0a7067); border-radius: 20px; padding: 3px 11px; font-weight: 700; }
+    .np-pw-steps .ws.dn { background: #fff; color: var(--c-ink-3, #8b95a3); border-color: var(--c-line, #eceef0); font-weight: 400; }
+    .np-pw-steps i { font-style: normal; color: var(--c-ink-4, #b6bec9); }
+    .np-pw-tab { cursor: pointer; font-size: 11.5px; color: var(--c-ink-2, #58616f); border: 1px solid var(--c-line, #eceef0); background: #fff; border-radius: 8px; padding: 3px 10px; }
+    .np-pw-tab.on { border-color: var(--c-brand); background: var(--c-brand-soft, #e6f5f3); color: var(--c-brand-text, #0a7067); font-weight: 700; }
+    .np-pw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(216px, 1fr)); gap: 8px; margin-top: 8px; }
+    .np-pw-card { cursor: pointer; border: 1.5px solid var(--c-line, #eceef0); border-radius: 10px; padding: 9px 11px; background: #fff; transition: border-color .15s; }
+    .np-pw-card:hover { border-color: var(--c-brand); }
+    .np-pw-card.cur { border-color: var(--c-brand); background: var(--c-brand-soft, #e6f5f3); }
+    .np-pw-card.cand { border-color: var(--c-accent-line, #e0d8fb); background: var(--c-accent-soft, #f4f1fe); }
+    .np-pw-card.off { opacity: .64; }
+    .np-pw-nm { font-size: 12.5px; font-weight: 700; color: var(--c-ink, #1f2937); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .np-pw-how { margin-top: 4px; font-size: 11.5px; color: var(--c-ink-2, #58616f); line-height: 1.65; }
+    .np-pw-meta { margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
+    .np-pw-chip { font-size: 10px; border-radius: 6px; padding: 1px 6px; background: #f0f1f3; color: var(--c-ink-2, #58616f); white-space: nowrap; }
+    .np-pw-chip.out { background: #eef4ff; color: #1f4e8c; }
+    .np-pw-chip.src { background: var(--c-brand-soft, #e6f5f3); color: var(--c-brand-text, #0a7067); }
+    .np-pw-chip.ok { background: var(--c-ok-soft, #eaf7f0); color: var(--c-ok, #0f9d58); }
+    .np-pw-chip.warn { background: var(--c-warn-soft, #fff6e6); color: var(--c-warn, #b26a00); }
+    .np-pw-chip.dim { color: var(--c-ink-3, #8b95a3); }
 
     /* 📱 ④ 挑稿：一条线底下的几种写法各写一篇＝几部手机并排摆着挑。
        窗口自适应：宽窗五台并排、各自随窗宽一起变宽（大窗铺满屏时每台 300px 上下，字看得清、好比稿），
@@ -1504,6 +1633,16 @@
   </style>
 </head>
 <body>
+  <!-- 首屏加载罩（样式见上方「首屏加载罩」注释）：必须放在 body 最前面，后面的大文件还在下载时它已经画出来了 -->
+  <div id="wbLoadOverlay">
+    <div class="wb-load-card">
+      <span class="wb-load-spin"></span>
+      <div class="wb-load-t1">正在打开工作台…</div>
+      <div class="wb-load-t2">第一次打开要下载一批程序文件，网络慢的时候大约要十几秒到半分钟。<br>下载过的机器第二次打开就快了。</div>
+      <div class="wb-load-bar"><i></i></div>
+      <div class="wb-load-pct">准备中…</div>
+    </div>
+  </div>
   <div class="header">
     <div class="brand">
       <span class="logo-dot"><svg class="ic ic-sm"><use href="#i-spark"></use></svg></span>
@@ -1517,6 +1656,7 @@
         <svg class="ic ic-sm"><use href="#i-building"></use></svg>
         <select id="tenantSwitcher"></select>
       </label>
+      <a class="hdr-link" id="hdrGuideLink" href="guide.html" title="新手引导：工作台五块、各页干啥、哪些是扩展功能">❓ 新手引导</a>
       <span id="hdrMore">
         <button class="btn btn-icon btn-sm" id="hdrMoreBtn" title="更多：大窗 / 拟人化挡位 / 设置">
           <svg class="ic"><use href="#i-more"></use></svg>
@@ -1539,67 +1679,71 @@
     </div>
   </div>
 
+  <!-- 页头渐变带：当前页名 ＋ 一句这页干啥的（文字由 popup.js 从选中的导航项现取，窄窗只留页名） -->
+  <div class="page-hero" id="pageHero">
+    <span class="ph-name" id="phName">智慧运维</span>
+    <span class="ph-sub" id="phSub"></span>
+  </div>
+
   <!-- 左侧导航栏：一级 4 个（诊断&配置 / 获客 / 线索 / 发笔记，设置独立在最下），各自下挂二级
-       （诊断&配置 6 节点 / 发笔记：任务配置·笔记档案·发布台·素材库·复盘 / 获客：任务配置·队列·工作台·笔记池·设置 / 线索：任务配置·通知·消息·设置 / 设置：系统级几页）
+       （诊断&配置 6 节点 / 发笔记：笔记档案·发布台·素材·复盘（素材页内两签：切片台 / 素材库） / 获客：任务配置·队列·工作台·笔记池·设置 / 线索：任务配置·通知·消息·设置 / 设置：系统级几页）
        窄窗（默认 640 弹窗）只 58px 宽——竖着排省下原来两行 Tab 的高度；窗宽 ≥900 自动展成带文字的整栏 -->
   <div class="app-row">
     <aside class="rail" id="rail">
       <nav id="mainTabs" class="rail-nav">
-        <button id="tabDiagnose" class="main-tab" title="诊断&amp;配置：账号资料（基本盘 / 问卷 / 人设含说话风格 / 卖点 / 知识库）+ 抓主页出的整改建议与内容规划"><svg class="ic"><use href="#i-pulse"></use></svg><span class="rail-tx">诊断&amp;配置</span></button>
-        <!-- 二级导航：6 个节点（节点号只是内部 id，界面上不再显示 ①~⑨）。
-             顺序＝配置链：先填基本盘，问卷出资料，人设（含说话风格）/卖点/知识库是资料本身，规划按资料排产。
-             说话风格已并进「人设」页 tab；客服话术搬到「线索 → 任务配置」；内容基调搬到「发笔记 → 任务配置」 -->
-        <nav id="diagSubTabs" class="rail-group" style="display:none;">
-          <button class="sub-tab" data-go="1" title="基础配置：产品名称（可多个）+ 账号类型 + 抓主页 + 昵称 / 同城挡位（推广目标与评论区承接在 获客 → 任务配置）"><svg class="ic ic-sm"><use href="#i-users"></use></svg><span class="rail-tx">基础配置</span></button>
-          <button class="sub-tab" data-go="2" title="问卷：一次问清 —— 唯一的生成入口，提交一次就把人设、卖点、知识库、规划都生成并保存"><svg class="ic ic-sm"><use href="#i-note"></use></svg><span class="rail-tx">问卷</span></button>
-          <button class="sub-tab" data-go="3" title="人设：立住「你是谁」。页内两个 tab——人设 / 说话风格（AI 写评论私信的口吻与字数在这儿定）"><svg class="ic ic-sm"><use href="#i-spark"></use></svg><span class="rail-tx">人设</span></button>
-          <button class="sub-tab" data-go="4" title="产品卖点：卖点清单。这一页可以直接维护，也可以在「新增卖点」里选「从问卷同步」重新提炼"><svg class="ic ic-sm"><use href="#i-tag"></use></svg><span class="rail-tx">产品卖点</span></button>
-          <button class="sub-tab" data-go="5" title="知识库：条目的新增 / 编辑 / 启停 + 整套账号资料的备份与导入"><svg class="ic ic-sm"><use href="#i-db"></use></svg><span class="rail-tx">知识库</span></button>
-          <button class="sub-tab" data-go="6" title="规划：内容排产表（按 发笔记 → 任务配置 定的基调 + ⚖️ 配比排版）+ 深度评估报告，可整份重新生成（账号类型在 基础配置里改）"><svg class="ic ic-sm"><use href="#i-chart"></use></svg><span class="rail-tx">规划</span></button>
-        </nav>
-        <button id="tabNotePublish" class="main-tab" title="发笔记：这里的「笔记档案」是这一块的主页 —— 每篇写过的都留档，新建 / 继续写 / 出片都从档案里进；素材库备料也挂在它下面"><svg class="ic"><use href="#i-pen"></use></svg><span class="rail-tx">发笔记</span></button>
-        <!-- 二级导航：任务配置 → 笔记档案（主入口，写稿 / 出图 / 出片 / 教程都从档案里进；字效编辑器不再是二级项，它是档案衍生的站内页）→ 发布台 → 素材库，挂在「发笔记」正下方（切到别的 Tab 这组就没了） -->
+        <button id="tabNotePublish" class="main-tab" title="发笔记：这里的「笔记档案」是这一块的主页 —— 每篇写过的都留档，新建 / 继续写 / 出片都从档案里进；素材库备料也挂在它下面"><span class="rail-emo">📝</span><span class="rail-tx">发笔记</span></button>
+        <!-- 二级导航：笔记档案（主入口，写稿 / 出图 / 出片 / 教程都从档案里进；字效编辑器不再是二级项，它是档案衍生的站内页）→ 发布台 → 素材 → 复盘，挂在「发笔记」正下方（切到别的 Tab 这组就没了） -->
         <nav id="noteTabs" class="rail-group" style="display:none;">
-          <button id="tabNoteTaskCfg" class="sub-tab" title="任务配置（内容基调 · 出图风格）：出稿前看的两张默认表——内容基调（4 种基调的铺垫/广告与字数＋阶段广告占比）、出图风格（画面风格 / 印记 / 配文版式）。「🧬 笔记规划」（每周排法＋阶段计划）在「发布台」那一页。写稿 ③④⑤ 全按这里改出来的账号默认走"><svg class="ic ic-sm"><use href="#i-filter"></use></svg><span class="rail-tx">任务配置</span></button>
-          <button id="tabNoteArchive" class="sub-tab active" title="笔记档案：这一块的主页 —— 写过的每一篇都留档（没写完的草稿也在），页顶「✍️ 新建笔记」起新篇；每行一颗「下一步」——按这篇做到哪了（写稿 / 出图 / 出片 / 预览）直接送过去"><svg class="ic ic-sm"><use href="#i-db"></use></svg><span class="rail-tx">笔记档案</span></button>
-          <button id="tabNoteQueue" class="sub-tab" title="发布台：排＋发一条线，页内两签——📅 发布队列：跟着「🧬 笔记规划」的每周排法滚 3 周，位子点「＋ 排一篇」从档案里挑，篇写好标「代发」自动排进最早的未来空位，到点自己发（视频篇三家、图文篇两家）；🧬 笔记规划：怎么用发笔记＋每周排法＋阶段计划＋AI规划"><svg class="ic ic-sm"><use href="#i-check"></use></svg><span class="rail-tx">发布台</span></button>
-          <button id="tabNoteAssets" class="sub-tab" title="素材库：按集合分类的料库——案例视频段＋图片混装，空集合标「待补充」；点集合进去看料、传图、连播"><svg class="ic ic-sm"><use href="#i-image"></use></svg><span class="rail-tx">素材库</span></button>
-          <button id="tabNoteReview" class="sub-tab" title="复盘：选题盘点（按知识库类看讲过 / 没讲过）+ 已发复盘（抓主页数字趋势）"><svg class="ic ic-sm"><use href="#i-pulse"></use></svg><span class="rail-tx">复盘</span></button>
+          <button id="tabNoteArchive" class="sub-tab active" title="笔记档案：这一块的主页 —— 写过的每一篇都留档（没写完的草稿也在），页顶「✍️ 新建笔记」起新篇；每行一颗「下一步」——按这篇做到哪了（写稿 / 出图 / 出片 / 预览）直接送过去"><span class="rail-emo">📒</span><span class="rail-tx">笔记档案</span></button>
+          <button id="tabNoteQueue" class="sub-tab" title="发布台：排＋发一条线，页内两签——📅 发布队列：跟着「🧬 笔记规划」的每周排法滚 3 周，位子点「＋ 排一篇」从档案里挑，篇写好标「代发」自动排进最早的未来空位，到点自己发（视频篇三家、图文篇两家）；🧬 笔记规划：怎么用发笔记＋每周排法＋阶段计划＋AI规划"><span class="rail-emo">🚀</span><span class="rail-tx">发布台</span></button>
+          <button id="tabNoteBench" class="sub-tab" title="素材：切原片、整理成素材。页内两签——「切片台」导入这一批、挑片切段、整批放进素材文件夹；「素材库」放整理好的文件夹和段，按标签 / 名字 / 说明搜，跨文件夹也能找到。切完就在旁边，直接来用"><span class="rail-emo">📚</span><span class="rail-tx">素材</span></button>
+          <button id="tabNoteReview" class="sub-tab" title="复盘：选题盘点（按知识库类看讲过 / 没讲过）+ 已发复盘（抓主页数字趋势）"><span class="rail-emo">📈</span><span class="rail-tx">复盘</span></button>
         </nav>
-        <button id="tabHuoke" class="main-tab active" title="获客：任务配置（搜什么词·盯谁）+ 队列（自动跑）+ 工作台（评论分析/商机）+ 笔记池 + 设置（拟人化与频率）"><svg class="ic"><use href="#i-target"></use></svg><span class="rail-tx">获客</span></button>
+        <button id="tabHuoke" class="main-tab active" title="获客：队列（看进度 / 配怎么跑：搜什么词·盯谁·日常浏览·推广目标）+ 工作台（评论分析/商机）+ 笔记池 + 设置（拟人化与频率）"><span class="rail-emo">🔥</span><span class="rail-tx">获客</span></button>
         <!-- 二级导航：挂在「获客」正下方，跟着它展开收起（切到别的 Tab 这组就没了） -->
         <nav id="subTabs" class="rail-group" style="display:none;">
-          <button id="tabTaskCfg" class="sub-tab" title="任务配置：搜什么词、每个词跑哪几类、多久跑一次；👤 盯的账号；🎯 推广目标与评论区承接"><svg class="ic ic-sm"><use href="#i-filter"></use></svg><span class="rail-tx">任务配置</span></button>
-          <button id="tabQueue" class="sub-tab" title="队列：任务配置里到点的「词 × 类型」和「👤 盯的账号」排成一队串行跑（正在跑 / 待跑 / 还没到点 / 已完成）"><svg class="ic ic-sm"><use href="#i-play"></use></svg><span class="rail-tx">队列</span></button>
-          <button id="tabCommentAssistant" class="sub-tab active" title="工作台：当前笔记的评论分析 / 商机挖掘 / 一键回复"><svg class="ic ic-sm"><use href="#i-chat"></use></svg><span class="rail-tx">工作台</span></button>
-          <button id="tabPool" class="sub-tab" title="笔记池：扫进来的笔记都在这（按类型判状态）——点开去截流评论，扫描一轮 / 补开 / 评论记录也在这页"><svg class="ic ic-sm"><use href="#i-list"></use></svg><span class="rail-tx">笔记池</span></button>
-          <button id="tabHuokeCfg" class="sub-tab" title="设置：拟人化与频率 —— 灌水跑多少 / 多久不重复、操作节奏挡位、各环节停留 / 间隔、关注这类互动行为"><svg class="ic ic-sm"><use href="#i-gear"></use></svg><span class="rail-tx">设置</span></button>
+          <button id="tabQueue" class="sub-tab" title="队列：看这轮要跑什么、跑到哪（正在跑 / 待跑 / 还没到点 / 已完成）；「⚙️ 配置」里改搜什么词、盯谁、日常浏览、推广目标"><span class="rail-emo">📜</span><span class="rail-tx">队列</span></button>
+          <button id="tabCommentAssistant" class="sub-tab active" title="工作台：当前笔记的评论分析 / 商机挖掘 / 一键回复"><span class="rail-emo">🧐</span><span class="rail-tx">工作台</span></button>
+          <button id="tabPool" class="sub-tab" title="笔记池：扫进来的笔记都在这（按类型判状态）——点开去截流评论，扫描一轮 / 补开 / 评论记录也在这页"><span class="rail-emo">📥</span><span class="rail-tx">笔记池</span></button>
+          <button id="tabHuokeCfg" class="sub-tab" title="设置：拟人化与频率 —— 灌水跑多少 / 多久不重复、操作节奏挡位、各环节停留 / 间隔、关注这类互动行为"><span class="rail-emo">🕒</span><span class="rail-tx">设置</span></button>
         </nav>
-        <button id="tabProspect" class="main-tab" title="线索：谁来了、谁该去聊。通知＝平台消息（评论/赞藏/关注），消息＝私信往来"><svg class="ic"><use href="#i-inbox"></use></svg><span class="rail-tx">线索</span></button>
+        <button id="tabProspect" class="main-tab" title="AI客服：谁来了、谁该去聊。通知＝平台消息（评论/赞藏/关注），消息＝私信往来"><span class="rail-emo">💬</span><span class="rail-tx">AI客服</span></button>
         <!-- 二级导航：任务配置 / 通知 / 消息 / 设置，挂在「线索」正下方（切到别的 Tab 这组就没了） -->
         <nav id="leadTabs" class="rail-group" style="display:none;">
-          <button id="tabLeadTaskCfg" class="sub-tab" title="任务配置：私信 / 触达场合 AI 说话带什么去向，加上客服话术库与试问答 —— 🎙 渠道基调 / 💰 成交引导 / 🗨 话术配置 / 🧪 试问答四个横 tab（评论里的承接在 获客 → 任务配置 → 🎯 推广目标）"><svg class="ic ic-sm"><use href="#i-send"></use></svg><span class="rail-tx">任务配置</span></button>
-          <button id="tabLeadNotif" class="sub-tab" title="通知：评论 / 赞藏 / 关注 / AI 里露出的人，回评、生成话术、触达都在这"><svg class="ic ic-sm"><use href="#i-bell"></use></svg><span class="rail-tx">通知</span></button>
-          <button id="tabLeadMsg" class="sub-tab" title="消息：私信往来 —— 对方进线等我回、我方触达等对方回"><svg class="ic ic-sm"><use href="#i-mail"></use></svg><span class="rail-tx">消息</span></button>
-          <button id="tabLeadCfg" class="sub-tab" title="设置：只管 Bot —— 多久扫一次新线索（渠道基调与成交引导在「任务配置」里）"><svg class="ic ic-sm"><use href="#i-gear"></use></svg><span class="rail-tx">设置</span></button>
+          <button id="tabLeadTaskCfg" class="sub-tab" title="任务配置：私信 / 触达场合 AI 说话带什么去向，加上客服话术库与试问答 —— 🎙 渠道基调 / 💰 成交引导 / 🗨 话术配置 / 🧪 试问答四个横 tab（评论里的承接在 获客 → 任务配置 → 🎯 推广目标）"><span class="rail-emo">🎤</span><span class="rail-tx">任务配置</span></button>
+          <button id="tabLeadNotif" class="sub-tab" title="通知：评论 / 赞藏 / 关注 / AI 里露出的人，回评、生成话术、触达都在这"><span class="rail-emo">🔔</span><span class="rail-tx">通知</span></button>
+          <button id="tabLeadMsg" class="sub-tab" title="消息：私信往来 —— 对方进线等我回、我方触达等对方回"><span class="rail-emo">📩</span><span class="rail-tx">消息</span></button>
+          <button id="tabLeadCfg" class="sub-tab" title="设置：只管 Bot —— 多久扫一次新线索（渠道基调与成交引导在「任务配置」里）"><span class="rail-emo">🤖</span><span class="rail-tx">设置</span></button>
+        </nav>
+        <button id="tabDiagnose" class="main-tab" title="账号规划：账号资料（基本盘 / 问卷 / 人设含说话风格 / 卖点 / 知识库）+ 抓主页出的整改建议与内容规划"><span class="rail-emo">🧭</span><span class="rail-tx">账号规划</span></button>
+        <!-- 二级导航：6 个节点（节点号只是内部 id，界面上不再显示 ①~⑨）。
+             顺序＝配置链：先填基本盘，问卷出资料，人设（含说话风格）/卖点/知识库是资料本身，规划按资料排产。
+             说话风格已并进「人设」页 tab；客服话术搬到「线索 → 任务配置」；内容基调在写稿 ③、出图风格在写稿 ⑤ 就地展开 -->
+        <nav id="diagSubTabs" class="rail-group" style="display:none;">
+          <button class="sub-tab" data-go="1" title="基础配置：产品名称（可多个）+ 账号类型 + 抓主页 + 昵称 / 同城挡位（推广目标与评论区承接在 获客 → 任务配置）"><span class="rail-emo">👥</span><span class="rail-tx">基础配置</span></button>
+          <button class="sub-tab" data-go="2" title="问卷：一次问清 —— 唯一的生成入口，提交一次就把人设、卖点、知识库、规划都生成并保存"><span class="rail-emo">📋</span><span class="rail-tx">问卷</span></button>
+          <button class="sub-tab" data-go="3" title="人设：立住「你是谁」。页内两个 tab——人设 / 说话风格（AI 写评论私信的口吻与字数在这儿定）"><span class="rail-emo">🎭</span><span class="rail-tx">人设</span></button>
+          <button class="sub-tab" data-go="4" title="产品卖点：卖点清单。这一页可以直接维护，也可以在「新增卖点」里选「从问卷同步」重新提炼"><span class="rail-emo">💎</span><span class="rail-tx">产品卖点</span></button>
+          <button class="sub-tab" data-go="5" title="知识库：条目的新增 / 编辑 / 启停 + 整套账号资料的备份与导入"><span class="rail-emo">📚</span><span class="rail-tx">知识库</span></button>
+          <button class="sub-tab" data-go="6" title="规划：内容排产表（按 发笔记 ③ 里「📄 内容基调」定的配比与字数 + ⚖️ 配比排版）+ 深度评估报告，可整份重新生成（账号类型在 基础配置里改）"><span class="rail-emo">📆</span><span class="rail-tx">规划</span></button>
         </nav>
         <!-- 设置：只剩「系统级」那几页。业务侧配置都跟着业务走了 ——
              诊断&配置（人设 / 卖点 / 知识库 / 说话风格 / 客服话术 / 规划）、获客 → 任务配置（词池 / 盯的账号 / 推广目标与评论区承接）、
              获客 → 设置（拟人化与频率）、线索 → 设置（Bot 间隔）/ 线索 → 任务配置（渠道基调与成交引导） -->
         <div class="rail-sep"></div>
-        <button id="tabSettings" class="main-tab" title="设置：系统级配置 —— 租户/产品、AI 模型、日志统计、整机备份"><svg class="ic"><use href="#i-gear"></use></svg><span class="rail-tx">设置</span></button>
+        <button id="tabSettings" class="main-tab" title="设置：系统级配置 —— 租户/产品、AI 模型、日志统计、整机备份"><span class="rail-emo">🔧</span><span class="rail-tx">设置</span></button>
         <!-- 二级导航：设置的几页，挂在「设置」正下方。一层平铺，别再插分组名（那会看着像三层） -->
         <nav id="setTabs" class="rail-group" style="display:none;">
-          <button class="sub-tab" data-stab="tenant" title="租户 / 产品：一个租户＝一个产品，新建 / 改名 / 删除在这里；切换当前产品用顶栏的下拉框"><svg class="ic ic-sm"><use href="#i-building"></use></svg><span class="rail-tx">租户 / 产品</span></button>
-          <button class="sub-tab" data-stab="ai" title="AI 模型配置：用哪家模型、Key、以及各场景的模型档位"><svg class="ic ic-sm"><use href="#i-bot"></use></svg><span class="rail-tx">AI 模型配置</span></button>
+          <button class="sub-tab" data-stab="tenant" title="租户 / 产品：一个租户＝一个产品，新建 / 改名 / 删除在这里；切换当前产品用顶栏的下拉框"><span class="rail-emo">🏢</span><span class="rail-tx">租户 / 产品</span></button>
+          <button class="sub-tab" data-stab="ai" title="AI 模型配置：用哪家模型、Key、以及各场景的模型档位"><span class="rail-emo">🧠</span><span class="rail-tx">AI 模型配置</span></button>
           <!-- 🛡 账号安全（2026-10-11 行为层加固）：一天所有自动化的总账 + 静默期 + 每周单休 + 体检卡；自动化任何时候先过这里 -->
-          <button class="sub-tab" data-stab="guard" title="账号安全：一天所有自动化的总账（保守 / 谨慎 / 正常）+ 静默期 21:00–09:00 + 每周单休 + 账号体检卡。发布队列撞静默 / 休息日自动顺延"><svg class="ic ic-sm"><use href="#i-shield"></use></svg><span class="rail-tx">账号安全</span></button>
+          <button class="sub-tab" data-stab="guard" title="账号安全：一天所有自动化的总账（保守 / 谨慎 / 正常）+ 静默期 21:00–09:00 + 每周单休 + 账号体检卡。发布队列撞静默 / 休息日自动顺延"><span class="rail-emo">🔐</span><span class="rail-tx">账号安全</span></button>
           <!-- 拟人化与频率：② 升级版起（随获客开通），在 获客 → ⚙️ 设置 里（applyEditionToPopup 会删掉这条）；
                没开通获客的档（① 基础版 / 自定义包）用它兜底，否则那档没地方改节奏 -->
-          <button class="sub-tab" data-stab="delays" title="拟人化与频率：灌水跑多少/多久不重复 + 操作节奏挡位、各环节停留/间隔、互动行为"><svg class="ic ic-sm"><use href="#i-clock"></use></svg><span class="rail-tx">拟人化与频率</span></button>
-          <button class="sub-tab" data-stab="logs" title="日志统计：运行次数与 AI 用量"><svg class="ic ic-sm"><use href="#i-pulse"></use></svg><span class="rail-tx">日志统计</span></button>
-          <button class="sub-tab" data-stab="theme" title="界面主题：整个扩展的配色（预设 / 自定义主色），选完立刻生效；主题跟着产品租户走"><svg class="ic ic-sm"><use href="#i-palette"></use></svg><span class="rail-tx">界面主题</span></button>
-          <button class="sub-tab" data-stab="backup" title="整机备份 / 恢复：所有产品 + 运行数据（含 AI Key）加密导出与合并导入"><svg class="ic ic-sm"><use href="#i-shield"></use></svg><span class="rail-tx">整机备份 / 恢复</span></button>
+          <button class="sub-tab" data-stab="delays" title="拟人化与频率：灌水跑多少/多久不重复 + 操作节奏挡位、各环节停留/间隔、互动行为"><span class="rail-emo">🚶</span><span class="rail-tx">拟人化与频率</span></button>
+          <button class="sub-tab" data-stab="logs" title="日志统计：运行次数与 AI 用量"><span class="rail-emo">📊</span><span class="rail-tx">日志统计</span></button>
+          <button class="sub-tab" data-stab="theme" title="界面主题：整个扩展的配色（预设 / 自定义主色），选完立刻生效；主题跟着产品租户走"><span class="rail-emo">🎨</span><span class="rail-tx">界面主题</span></button>
+          <button class="sub-tab" data-stab="backup" title="整机备份 / 恢复：所有产品 + 运行数据（含 AI Key）加密导出与合并导入"><span class="rail-emo">💾</span><span class="rail-tx">整机备份 / 恢复</span></button>
         </nav>
       </nav>
     </aside>
@@ -1609,7 +1753,7 @@
     <div class="panel-left" id="panelLeft">
       <div class="left-header">
         <div class="btn-group" id="searchBtnGroup">
-          <button class="btn btn-primary btn-sm" id="btnSearch" title="按关键词列表开始搜索（自动灌水去「队列」页：口径 × 节奏 × 开始）"><svg class="ic ic-sm"><use href="#i-search"></use></svg>搜索</button>
+          <button class="btn btn-primary btn-sm" id="btnSearch" title="点一次只跑当前词的「最新」一类；后面 TOP / 本地 / 求助由服务器约 10 分钟一类接着派（自动灌水去「队列」页：口径 × 节奏 × 开始）"><svg class="ic ic-sm"><use href="#i-search"></use></svg>搜索</button>
         </div>
         <button class="btn btn-ghost btn-sm" id="btnCancelSearch" style="display:none;" title="取消当前搜索"><svg class="ic ic-sm"><use href="#i-close"></use></svg>取消</button>
         <button class="btn btn-ghost btn-sm" id="btnToQueue" style="margin-left:auto;flex:none;" title="自动灌水在「队列」页：看队列（正在跑/待跑/已完成）→ 选「口径 × 节奏」→ 开始"><svg class="ic ic-sm"><use href="#i-play"></use></svg>队列</button>
@@ -1661,6 +1805,9 @@
 
         <!-- 搜索结果 -->
         <div class="panel" id="panelResults">
+          <!-- 这一轮：X · 收 N 篇 · 今天共 M 篇 / 后面还有哪几类（2026-10-23 一轮一类） -->
+          <div id="roundLine" style="display:none;font-size:13px;font-weight:700;color:#1f2937;line-height:1.6;padding:8px 10px 0;"></div>
+          <div id="roundSub" style="display:none;font-size:11.5px;color:#9ca3af;line-height:1.7;padding:0 10px 8px;"></div>
           <div class="results-header">
             <span class="count" id="resultsCount"></span>
           </div>
@@ -1728,10 +1875,10 @@
       <div id="noteMindContent" class="content" style="display:none;"></div>
       <!-- 发笔记：案例工作台（案例篇走这条：① 进料·剪切·定义 → ② 大组装）。入口在「笔记档案」那篇的「🎬 开始做片」 -->
       <div id="noteCaseContent" class="content" style="display:none;"></div>
-      <!-- 发笔记：素材库（集合：一行一集，点进去看料 / 传图 / ▶ 连播本集；案例剪段自动入库） -->
+      <!-- 发笔记：切片台（生产：导入这一批 → 挑片切段 → 打名字/标签/说明 → 整批放进一个素材文件夹；只管原片和批次） -->
+      <div id="noteBenchContent" class="content" style="display:none;"></div>
+      <!-- 发笔记：素材库（成品：文件夹卡片 + 跨文件夹搜段；点文件夹看原片入口和段） -->
       <div id="noteAssetsContent" class="content" style="display:none;"></div>
-      <!-- 发笔记：任务配置（从「诊断&配置」搬来）：页内两签——📄 内容基调（4 种基调＋知识·干货的铺垫/广告与字数）/ 🎨 出图风格；🧬 笔记规划已挪进「发布台」页内签 -->
-      <div id="noteTaskCfgContent" class="content" style="display:none;"></div>
       <!-- 发笔记：笔记档案（写过的每一篇都留档，标状态跟进）-->
       <div id="noteArchiveContent" class="content" style="display:none;"></div>
       <!-- 发笔记：发布台（页内两签：📅 发布队列——位子从「🧬 笔记规划」的每周排法长出来，今天往后滚 3 周、一行一篇，篇只记引用；🧬 笔记规划——从任务配置整块搬来） -->
@@ -1741,17 +1888,24 @@
         <nav class="audit-tabs">
           <button class="audit-tab active" data-atab="topics" title="选题盘点：按知识库类看没写过、撞过的、已发的">📋 选题盘点与规划</button>
           <button class="audit-tab" data-atab="sent" title="已发复盘：基于抓主页的 stats 数据，没抓的可以现场抓">📈 已发复盘</button>
+          <button class="audit-tab" data-atab="play" title="玩法效果：IP 玩法篇按招牌归堆，拿评论对账号平均——哪招带得动、哪招该换">🎭 玩法效果</button>
         </nav>
         <div id="auditTopicsPane" class="audit-pane"></div>
         <div id="auditSentPane" class="audit-pane" style="display:none;"></div>
+        <div id="auditPlayPane" class="audit-pane" style="display:none;"></div>
       </div>
-      <!-- 发笔记：字效编辑器（口播稿 → 分幕 → 配音 → 本机出片）。内嵌的是 video.html?embed=1
-           （它自己的顶栏换成细条 + 「↗ 在新标签页打开」）；src 首次进入才赋值，免得每次开弹窗都白跑。
+      <!-- 发笔记：字效编辑器（口播稿 → 分幕 → 配音 → 本机出片）。
+           这一页有自己的一套外壳，跟「挑知识／改稿」那几页同画法：
+           #filmHead 顶栏一行 ＋ #filmSteps 工作流圆点条 ＋ #filmFoot 那颗钉窗口右下的底栏；
+           拆墙：里面那页不再隔一层网页——#filmPane 就在这页里，零件由 video.js 现搭
+           （带 data-inline＝告诉它外壳归外层画，自己那三件只当状态存身），首次进入才把那几个脚本请进来。
            这一档先要定「成片形式」（五选一，真源在档案 filmKind）：#filmGate 盖住片台让人选 / 说明这一档不在本机出片，
-           #filmBar 是选过之后压在顶上的一行（写着这一档是什么、点「换一种」重新盖回选择面板） -->
-      <div id="filmContent" class="content" style="display:none;padding:0;overflow:hidden;position:relative;">
-        <iframe id="filmFrame" title="字效编辑器" style="position:absolute;top:0;left:0;width:100%;height:100%;border:0;"></iframe>
-        <div id="filmBar" style="display:none;position:absolute;top:0;left:0;right:0;z-index:3;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 12px;background:#fff;border-bottom:1px solid var(--line);font-size:11px;color:#555;"></div>
+           「✏️ 换一种」挪到顶栏右边那颗。 -->
+      <div id="filmContent" class="content" style="display:none;padding:0;overflow:hidden;position:relative;flex-direction:column;">
+        <div id="filmHead" style="display:none;flex:none;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);"></div>
+        <div id="filmSteps" style="display:none;flex:none;padding:10px 14px;border-bottom:1px solid var(--line);font-size:11px;"></div>
+        <div id="filmPane" data-inline="1"></div>
+        <div id="filmFoot" class="np-pinbar" style="display:none;"></div>
         <div id="filmGate" style="display:none;position:absolute;inset:0;z-index:4;overflow:auto;background:#fbfbfd;padding:16px 18px;"></div>
       </div>
       <!-- 账号诊断独立视图（Tab 切换显示） -->
@@ -1767,23 +1921,20 @@
       </div>
       <!-- 线索 · 设置（🤖 Bot 间隔：多久扫一次新线索）：同一份 settings.html?embed=1 的第 #leadtouch 页 -->
       <div id="leadCfgContent" class="content" style="display:none;padding:0;overflow:hidden;position:relative;">
-        <iframe id="leadCfgFrame" title="线索设置" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>
+        <iframe id="leadCfgFrame" title="AI客服设置" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>
       </div>
       <!-- 线索 · 任务配置（📮 触达场合：🎙 渠道基调 / 💰 成交引导两个横 tab）：同一份 settings.html?embed=1 的第 #leadtask 页 -->
       <div id="leadTaskCfgContent" class="content" style="display:none;padding:0;overflow:hidden;position:relative;">
-        <iframe id="leadTaskCfgFrame" title="线索任务配置" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>
+        <iframe id="leadTaskCfgFrame" title="AI客服任务配置" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>
       </div>
-      <!-- 任务配置独立视图（获客二级页，第一位置）：关键词池 / 👤 盯的账号 / ⋯ 更多设置 三级 tab -->
-      <div id="drainCfgContent" class="content" style="display:none;"></div>
       <!-- 笔记池独立视图：监控池 + 扫描，打开笔记去当前笔记上做截流评论 -->
       <div id="drainContent" class="content" style="display:none;"></div>
-      <!-- 🔁 队列独立视图（获客分组二级页）：顶栏＝执行器（口径 × 节奏 × 开始）+ 额度/工期概览，下面三段队列 -->
+      <!-- 🔁 队列独立视图（获客分组二级页）：📜 队列（执行器＋进度）/ ⚙️ 配置（三张卡：跑什么 / 日常浏览 / 推广目标·承接） -->
       <div id="drainQueueContent" class="content" style="display:none;flex-direction:column;padding:0;">
-        <!-- 队列页 3 个 3 级横置子 tab：队列管理 / 队列配置 / 评论策略（在顶，执行条收进队列管理里） -->
+        <!-- 队列页 2 个横置子 tab：📜 队列 / ⚙️ 配置（评论策略并成队列页底下的折叠块，2026-10-24） -->
         <div class="q-tabs" id="queueTabs">
-          <button type="button" class="q-tab" data-qtab="strat" title="这条队列在评论 / 回复里 AI 说话的风格与承接">📖 评论策略</button>
-          <button type="button" class="q-tab" data-qtab="config" title="每周每天跑哪批关键词 ＋ 日常浏览怎么放进队列 ＋ 整条队列每周自动跑">⚙️ 队列配置</button>
-          <button type="button" class="q-tab active" data-qtab="mgmt" title="现在队列要跑的关键词：口径 × 节奏，点开始串行跑">🗂️ 队列管理</button>
+          <button type="button" class="q-tab active" data-qtab="mgmt" title="这轮要跑什么、跑到哪：口径 × 节奏，点开始串行跑">📜 队列</button>
+          <button type="button" class="q-tab" data-qtab="config" title="改下一次怎么跑：搜什么词 / 盯谁 / 日常浏览 / 推广目标与承接">⚙️ 配置</button>
         </div>
         <div id="queueBar">
           <!-- 灌水执行器：口径 × 节奏两个参数直给（原「🧊冷启动 / 🔄循环计划」即这两参数的两个组合），按队列串行跑 -->
@@ -1794,9 +1945,9 @@
               <option value="all">全部未灌过</option>
               <option value="growing">只追涨势</option>
             </select>
-            <select id="botPaceSel" class="bot-param" title="节奏：一遍跑完=从队首连跑到队尾；定时轮=每「扫描间隔」分钟跑一项，把额度摊开到一天（间隔在「🎯 获客 → ⚙️ 设置 → ⚙️ 高级配置」里改）">
+            <select id="botPaceSel" class="bot-param" title="节奏：定时轮=每「扫描间隔」跑一项，把额度摊开到一天（默认，间隔约 10 分钟，在「🎯 获客 → ⚙️ 设置 → ⚙️ 高级配置」里改）；一遍跑完=从队首连跑到队尾">
+              <option value="interval" selected>定时轮</option>
               <option value="once">一遍跑完</option>
-              <option value="interval">定时轮</option>
             </select>
             <button id="botPauseBtn" class="bot-toggle" style="display:none;" title="暂停：当前这一步做完就停下等，点「继续」接着跑（进度不丢）"><svg class="ic ic-sm"><use href="#i-pause"></use></svg>暂停</button>
             <button id="botToggleBtn" class="bot-toggle" title="按队列串行跑：跑一项（词 × 类型）→ 记一笔已完成 → 接着下一项"><svg class="ic ic-sm"><use href="#i-play"></use></svg>开始</button>
@@ -1807,9 +1958,14 @@
           </span>
           <span id="queueCaps"></span>
         </div>
-        <div id="queueMgmt" style="display:none;"></div>
-        <div id="qStratWrap" style="display:none;"><div class="strat-panel" id="qStrat"><div class="strat-h"></div><div class="strat-b"></div></div></div>
         <div id="queueBody"></div>
+        <!-- 📖 评论策略：队列页底下的折叠块（原第三个横签，2026-10-24 收进来） -->
+        <details id="qStratWrap" style="display:none;margin:10px 14px 16px;border:1px solid var(--c-line,#eceef0);border-radius:10px;background:#fff;">
+          <summary style="list-style:none;cursor:pointer;user-select:none;padding:9px 12px;font-size:12.5px;font-weight:700;color:#1f2937;">📖 评论策略 <span style="font-weight:400;color:#6b7280;font-size:11px;">这条队列在评论 / 回复里怎么说话</span></summary>
+          <div class="strat-panel" id="qStrat" style="padding:0 12px 12px;"><div class="strat-h"></div><div class="strat-b"></div></div>
+        </details>
+        <!-- ⚙️ 配置那一签的内容：三张卡（🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标·承接）在切到这一签时才画 -->
+        <div id="drainCfgContent" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:12px 14px;"></div>
       </div>
       <div id="logPanel" class="log-panel" style="display:none;">
         <div class="log-entry info">操作日志将显示在这里</div>
@@ -1871,7 +2027,7 @@
 
   <!-- ✍️ 新建笔记：六卡一页（三方向 × 各自最终效果，点一张卡直接开工；内容由 npDirOpen() 画） -->
   <div class="modal-mask" id="dirModal">
-    <div class="modal-box" id="dirBox" style="max-width:680px;"></div>
+    <div class="modal-box" id="dirBox" style="max-width:760px;"></div>
   </div>
 
   <!-- 👁 适配稿对照层（发布队列「👁 适配稿」开；内容由 npPubCopyPaint() 画） -->
@@ -1889,15 +2045,15 @@
   <script src="lib/kb-file.js"></script>
   <script src="lib/platforms.js"></script>
   <script src="lib/visual-motif.js"></script>
+  <script src="lib/asset-kinds.js"></script>
   <script src="lib/note-plan.js"></script>
   <script src="lib/account-guard.js"></script>
   <script src="lib/video/tts-edge.js"></script>
   <script src="lib/video/voices.js"></script>
+  <script src="lib/edition-source.js"></script>
   <script src="popup.js"></script>
   <script src="lib/daily-browse.js"></script>
-  <script src="lib/scenario-drain.js"></script>
-  <script src="auto-water-app.js"></script>
-  <script src="auto-bot.js"></script>
   <script src="dropdown-ui.js"></script>
+  <script src="boot-pack.js"></script>
 </body>
 </html>

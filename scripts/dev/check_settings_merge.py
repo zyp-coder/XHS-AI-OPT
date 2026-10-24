@@ -43,6 +43,7 @@ import tempfile
 import time
 
 from playwright.sync_api import sync_playwright
+from _guide_gate import goto_big
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -73,7 +74,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-merge-') as profile, sync_playwrigh
 
         page = ctx.new_page()
         page.on('pageerror', lambda e: ERRORS.append('popup: ' + str(e)[:200]))
-        page.goto(sw.url.replace('background.js', 'popup.html?mode=big'))
+        goto_big(page, sw.url.replace('background.js', 'popup.html?mode=big'))
         page.wait_for_function('typeof switchMainTab === "function"')
 
         # 1) 共享表在弹窗页可用（模型表 + 分类表 + 挡位表）

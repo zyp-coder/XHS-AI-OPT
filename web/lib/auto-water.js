@@ -80,7 +80,7 @@ const AutoWater = {
       if (!p.length) {
         const meta = (typeof DRAIN_TYPE_META !== 'undefined') ? DRAIN_TYPE_META.find(m => m.scenario === only) : null;
         if (meta && meta.needCity && !String(scanCfg.city || '').trim()) {
-          return { ok: false, error: '「' + all[start] + '」要搜「' + (drainPassLabel({ scenario: only }) || only) + '」，但还没设城市：「📍本地」搜的是「诊断&配置 → 基础配置」里的同城城市，去那里抓一下主页或手填。' };
+          return { ok: false, error: '「' + all[start] + '」要搜「' + (drainPassLabel({ scenario: only }) || only) + '」，但还没设城市：「📍本地」搜的是「账号规划 → 基础配置」里的同城城市，去那里抓一下主页或手填。' };
         }
         return { ok: false, error: '「' + all[start] + '」没勾「' + (drainPassLabel({ scenario: only }) || only) + '」这一类：到「任务配置 → 📚 关键词池」把这个词这一列的格勾上，或换一个词。' };
       }

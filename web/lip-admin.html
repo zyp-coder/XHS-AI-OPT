@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>口播工单台 · 小红书助手</title>
+<!-- ============================================================
+  老板工单台（/lip-jobs）——2026-10-19 口播三档出口改版后
+  ------------------------------------------------------------
+  干什么：口播那三档出口里「📤 发工单」这一档的台子——客户交一张正脸照＋稿＋一句想要的音色，
+          看料齐没齐、今天还剩几条额度；点「我接这单」开工，
+          用剪映把片子做出来后在这页「传成片」→ 点「交回客户机」，
+          客户机上到点位自己发。不做的单点「退回补料」写明缺什么。
+          「🎙 自己对着镜头念」那一档不进这台（云端自己串，不占这里每天的额度）；
+          「一段段录音」是旧走法的老单，在这台还能看完、交片。
+  怎么开：本机 http://127.0.0.1:8799/lip-jobs 直接看（不用口令）；
+          开公网在 server/.env 配 DEMO_ADMIN_PASS，这页会让你输口令（与发放管理同一把）。
+  打的口：POST /api/lip/jobs 列单+今日概览+按天汇总；/api/lip/claim 接单；
+          POST /api/lip/put?job=&part=out 传成片（原始字节）；/api/lip/done 交回；
+          /api/lip/reject 退回补料；/api/lip/probe 体检（有没有剪辑工具）。
+  ============================================================ -->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --ok-l: #e9f6f1; --err: #c62828; --err-l: #fdeeee;
+    --warn: #c77700; --warn-l: #fdf3e2;
+    --brand: #0d9488; --brand-d: #0a7a70; --brand-l: #eef8f7;
+  }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 24px 16px 70px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 13px; }
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .sub { color: var(--ink2); font-size: 13px; }
+  .sp { margin-left: auto; }
+  .btn { display: inline-block; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 9px; padding: 6px 13px; font-size: 13.5px; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .btn:hover { border-color: var(--brand); color: var(--brand-d); }
+  .btn.pri { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.pri:hover { background: var(--brand-d); color: #fff; }
+  .btn.warn { background: #fff; border-color: #eccf9a; color: var(--warn); }
+  .btn.sm { padding: 4px 9px; font-size: 12.5px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=password], input[type=text] { border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; font: inherit; font-size: 13.5px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; background: var(--brand-l); color: var(--brand-d); }
+  .pill.wait { background: var(--warn-l); color: var(--warn); }
+  .pill.doing { background: #eaf2fd; color: #1c56a0; }
+  .pill.done { background: var(--ok-l); color: var(--ok); }
+  .pill.bad { background: var(--err-l); color: var(--err); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .kpi { background: var(--brand-l); border-radius: 12px; padding: 12px 14px; }
+  .kpi.amber { background: var(--warn-l); } .kpi.blue { background: #eaf2fd; } .kpi.green { background: var(--ok-l); }
+  .kpi b { display: block; font-size: 22px; line-height: 1.2; }
+  .kpi span { font-size: 12px; color: var(--ink2); }
+  .note { border-radius: 12px; padding: 10px 14px; font-size: 13px; margin-bottom: 12px; background: var(--brand-l); color: #0b4f48; }
+  .note.warn { background: var(--warn-l); color: #8a5200; }
+  .note.err { background: var(--err-l); color: #8f1d1d; }
+  .job { border-left: 4px solid var(--line); }
+  .job.st-ready { border-left-color: var(--warn); }
+  .job.st-making { border-left-color: #4a86d0; }
+  .job.st-rejected { border-left-color: var(--err); }
+  .job.st-await_mat { border-left-color: var(--ink3); }
+  .job.st-delivered, .job.st-taken { border-left-color: var(--ok); }
+  .jrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .jrow h3 { font-size: 16px; font-weight: 700; }
+  .meta { color: var(--ink2); font-size: 12.5px; margin: 5px 0 8px; }
+  .meta .late { color: var(--err); font-weight: 700; }
+  .mats { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0 10px; }
+  .mats img { width: 74px; height: 74px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+  .mats audio { height: 32px; max-width: 300px; }
+  details { margin: 4px 0 10px; font-size: 13px; color: var(--ink2); }
+  details summary { cursor: pointer; color: var(--brand-d); font-size: 12.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--line); }
+  th { color: var(--ink2); font-weight: 600; font-size: 12.5px; background: #fafbfc; }
+  .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--brand); color: #fff; padding: 9px 18px; border-radius: 999px; font-size: 13.5px; opacity: 0; transition: opacity .25s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: 1; } .toast.bad { background: var(--err); }
+  .rej { display: none; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .rej.on { display: flex; }
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tabs button { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 7px 14px; font: inherit; font-size: 13.5px; cursor: pointer; color: var(--ink2); }
+  .tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>📋 口播工单台</h1>
+    <span class="sub">客户交料 · 你用剪映做片 · 传回来客户机自己发</span>
+    <span class="sp"></span>
+    <a class="btn" href="/admin">发放管理</a>
+    <button class="btn" id="refreshBtn">↻ 刷新</button>
+  </div>
+  <div class="sub" id="knobLine" style="margin-bottom:14px;"></div>
+
+  <div class="card" id="passCard" style="display:none;">
+    <span class="sub">服务器要口令（server/.env 里的 DEMO_ADMIN_PASS）：</span>
+    <input type="password" id="passInput" style="width:200px;margin:0 8px;" placeholder="输口令">
+    <button class="btn pri" id="passBtn">好</button>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button data-t="0" class="on">① 今天这摊活</button>
+    <button data-t="1">② 还没接走的</button>
+    <button data-t="2">③ 按天汇总</button>
+  </div>
+
+  <div id="notice"></div>
+
+  <div class="panel" id="p0">
+    <div class="card">
+      <div class="grid" id="kpis"></div>
+    </div>
+    <div class="card" style="padding-bottom:6px;">
+      <div class="jrow" style="margin-bottom:8px;">
+        <b style="font-size:15px;">今天交进来的单子</b>
+        <span class="sp"></span>
+        <button class="btn sm" id="copyBtn">📋 复制今天的明细</button>
+      </div>
+      <div id="jobs"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="p1" style="display:none;">
+    <div class="card" style="padding-bottom:6px;">
+      <div class="jrow" style="margin-bottom:8px;">
+        <b style="font-size:15px;">往前欠着的单子（先做超时那条）</b>
+        <span class="sp"></span>
+        <span class="sub" id="owLine">—</span>
+      </div>
+      <div id="jobs2"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="p2" style="display:none;">
+    <div class="card">
+      <b style="font-size:15px;">按天汇总</b>
+      <div class="sub" style="margin:4px 0 10px;">做一条约 20 分钟 · 一天接得住 9 条（改口径在 server/.env 里配 LIP_* ）</div>
+      <table id="days"><thead><tr>
+        <th>日期</th><th>新来</th><th>照片</th><th>旧走法（一段段录音）</th><th>已交片</th><th>还欠着</th><th>平均用时</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <div class="card" style="padding-bottom:6px;">
+      <b style="font-size:15px;">交回的片子（近 7 天）</b>
+      <div class="sub" style="margin:4px 0 8px;">客户机上到点位自己发；这一栏用来看有没有漏取。</div>
+      <div id="jobs3"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<input type="file" id="outInput" accept="video/*" style="display:none;">
+
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var PASS_KEY = 'demo_admin_pass';
+  var DATA = null, curOutId = '', timer = null, PROBE = null;
+
+  function toast(msg, bad) {
+    var t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (bad ? ' bad' : '');
+    clearTimeout(t._k); t._k = setTimeout(function () { t.className = 'toast'; }, 2800);
+  }
+  function api(path, body) {
+    return fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-pass': localStorage.getItem(PASS_KEY) || '' },
+      body: JSON.stringify(body || {}) }).then(function (r) { return r.json(); });
+  }
+  function hm(ts) { var d = new Date(ts); return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function dur(m) { return m < 60 ? m + ' 分钟' : Math.floor(m / 60) + ' 小时 ' + (m % 60) + ' 分'; }
+  function sz(b) { return b > 1048576 ? (b / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(b / 1024)) + 'KB'; }
+  function pillCls(s) { return s === 'ready' ? 'wait' : s === 'making' ? 'doing' : (s === 'delivered' || s === 'taken') ? 'done' : s === 'rejected' ? 'bad' : ''; }
+
+  function paintNotice() {
+    var s = DATA.stats, n = '';
+    if (s.overdue > 0) n += '<div class="note err">有 ' + s.overdue + ' 单过了说好明天交片的时间，先做这些。</div>';
+    if (s.waiting > s.left) n += '<div class="note warn">等你做的有 ' + s.waiting + ' 单，今天额度只剩 ' + s.left + ' 条——要么今天多做几小时，要么跟客户说顺延到明天。</div>';
+    if (PROBE && /✗/.test(PROBE.bin)) n += '<div class="note warn">' + PROBE.bin + '</div>';
+    if (!n) n = '<div class="note">今天没积压。新单会一直进来，做完一单交回一单。</div>';
+    $('#notice').innerHTML = n;
+  }
+
+  function paintKpis() {
+    var s = DATA.stats;
+    $('#kpis').innerHTML = [
+      { k: '今天新来', v: s.todayIn, c: '' },
+      { k: '等你做', v: s.waiting, c: 'amber' },
+      { k: '今天做好', v: s.madeToday, c: 'green' },
+      { k: '今天已花', v: s.usedHours + ' 小时', c: 'blue' },
+      { k: '今天还能接', v: s.left + ' / ' + s.dailyCap + ' 条', c: '' },
+    ].map(function (x) { return '<div class="kpi ' + x.c + '"><b>' + x.v + '</b><span>' + x.k + '</span></div>'; }).join('');
+    $('#knobLine').textContent = '一天接 ' + s.dailyCap + ' 条（每条约 ' + s.perMins + ' 分钟）· 说好' + DATA.dueLabel +
+      '交片 · 照片这一种 ≤' + DATA.knobsOut.capAvatar + ' 字（旧走法 ≤' + DATA.knobsOut.capVoice + ' 字）· 客户自己对着镜头念的那些不归这张台 · 料与片留 ' + DATA.knobsOut.keepDays + ' 天';
+  }
+
+  function matBlock(j) {
+    var u = j.fileUrls || {}, out = '';
+    if (j.photo) out += '<a href="' + u.photo + '" target="_blank"><img src="' + u.photo + '" alt="照片"></a><span class="sub">' + j.photo.name + ' · ' + sz(j.photo.size) + '</span>';
+    if (j.route === 'voice') {
+      if (u.track) out += '<span class="sub">一条音轨 ' + j.trackSecs + ' 秒</span><audio controls src="' + u.track + '"></audio><a class="btn sm" href="' + u.track + '" download>⬇ 原声</a>';
+      var got = u.segs || [], ns = [];
+      for (var i = 0; i < got.length; i++) if (got[i]) ns.push('<a class="btn sm" href="' + got[i] + '" download>第' + (i + 1) + '段</a>');
+      if (!u.track && ns.length) out += '<span class="sub">没合成（这台机器缺剪辑工具），各段单独下：</span>' + ns.join('');
+      else if (ns.length) out += '<span class="sp"></span><span class="sub">各段：</span>' + ns.slice(0, 3).join('') + (ns.length > 3 ? '<span class="sub">…共 ' + ns.length + ' 段</span>' : '');
+    }
+    return out ? '<div class="mats">' + out + '</div>' : '';
+  }
+
+  function actionRow(j) {
+    var b = [];
+    if (j.token && j.route === 'voice') b.push('<button class="btn sm" data-act="link" data-id="' + j.id + '">🔗 抄念稿页链接（发给客户）</button>');
+    if (j.canClaim) b.push('<button class="btn pri sm" data-act="claim" data-id="' + j.id + '">✋ 我接这单</button>');
+    if (j.state === 'making') {
+      b.push(j.hasOut ? '<span class="pill done">成片传上来了 ' + sz(j.outSize) + '</span>'
+                      : '<button class="btn sm" data-act="pick" data-id="' + j.id + '">🎬 传成片（剪映导出的文件）</button>');
+      if (j.hasOut) b.push('<button class="btn pri sm" data-act="done" data-id="' + j.id + '">✅ 交回客户机</button>');
+    }
+    if (['ready', 'making', 'await_mat', 'rejected'].indexOf(j.state) >= 0)
+      b.push('<button class="btn warn sm" data-act="rej" data-id="' + j.id + '">↩ 退回补料</button>');
+    return '<div class="jrow">' + b.join(' ') + '</div>';
+  }
+
+  function rejRow(j) {
+    var chips = (DATA.rejectWhy || []).map(function (w) { return '<button class="btn sm" data-why="' + w + '">' + w + '</button>'; }).join('');
+    return '<div class="rej" id="rej-' + j.id + '">' + chips +
+      '<input type="text" placeholder="或者自己写一句缺什么" style="width:190px;" data-in="' + j.id + '">' +
+      '<button class="btn pri sm" data-act="dosub" data-id="' + j.id + '">就这么退回</button>' +
+      '<button class="btn sm" data-act="rejc" data-id="' + j.id + '">算了</button></div>';
+  }
+
+  function card(j) {
+    return '<div class="card job st-' + j.state + '" style="margin-bottom:10px;box-shadow:none;">' +
+      '<div class="jrow"><h3>' + (j.title || '（没标题）') + '</h3>' +
+      '<span class="pill ' + pillCls(j.state) + '">' + j.stateLabel + '</span>' +
+      '<span class="pill">' + j.routeLabel + '</span>' +
+      '<span class="sp"></span><span class="sub">' + (j.accName || j.acc) + '</span></div>' +
+      '<div class="meta">' + hm(j.submittedAt) + ' 交的 · 已经等了 ' + dur(j.waitedMins) +
+      (j.workMins ? ' · 这单做了 ' + j.workMins + ' 分钟' : '') +
+      ' · 说好 ' + hm(j.dueAt) + ' 前交片' + (j.overdue ? ' <span class="late">（超时）</span>' : '') +
+      (j.lack ? ' · <b>' + j.lack + '</b>' : '') +
+      (j.segCount ? ' · 念了 ' + j.segGot + '/' + j.segCount + ' 段' : '') + '</div>' +
+      matBlock(j) +
+      '<details><summary>看口播稿全文</summary><div style="white-space:pre-wrap;padding:4px 2px;">' + (j.script || '') + '</div></details>' +
+      actionRow(j) + rejRow(j) +
+      '</div>';
+  }
+  function dayKey(ts) { var d = new Date(ts); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  var ORDER = { ready: 0, making: 1, rejected: 2, await_mat: 3, delivered: 4, taken: 5, canceled: 6 };
+  function byState(a, b) { return (ORDER[a.state] - ORDER[b.state]) || (b.submittedAt - a.submittedAt); }
+
+  function paintJobs() {
+    var today = dayKey(Date.now());
+    $('#jobs').innerHTML = DATA.jobs.filter(function (j) { return dayKey(j.submittedAt) === today; })
+      .sort(byState).map(card).join('') || '<div class="sub">今天还没有单子。</div>';
+
+    var open = DATA.jobs.filter(function (j) {
+      return dayKey(j.submittedAt) !== today && ['ready', 'making', 'rejected', 'await_mat'].indexOf(j.state) >= 0;
+    }).sort(function (a, b) { return (b.overdue - a.overdue) || (a.dueAt - b.dueAt); });
+    $('#jobs2').innerHTML = open.map(card).join('') || '<div class="sub">往前没有欠的单，清爽。</div>';
+    $('#owLine').textContent = open.length ? '欠 ' + open.length + ' 单' : '没有欠单';
+
+    var back = DATA.jobs.filter(function (j) {
+      return (j.state === 'delivered' || j.state === 'taken') && j.deliveredAt > Date.now() - 7 * 86400000;
+    }).sort(function (a, b) { return b.deliveredAt - a.deliveredAt; });
+    $('#jobs3').innerHTML = back.map(card).join('') || '<div class="sub">近 7 天没交回过片子。</div>';
+  }
+
+  function paintDays() {
+    $('#days tbody').innerHTML = (DATA.days || []).map(function (d) {
+      return '<tr><td>' + d.day + '</td><td>' + d.in + '</td><td>' + d.avatar + '</td><td>' + d.voice +
+        '</td><td>' + d.made + '</td><td>' + d.owing + '</td><td>' + (d.avgMins ? d.avgMins + ' 分钟' : '—') + '</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="sub">还没有记录</td></tr>';
+  }
+
+  function load() {
+    return api('/api/lip/jobs', {}).then(function (r) {
+      if (!r.ok) {
+        if (r.code === 403 || /口令/.test(r.error || '')) { $('#passCard').style.display = ''; $('#jobs').innerHTML = '<div class="sub">输口令才能看单子。</div>'; return; }
+        toast(r.error || '拿单子没成', true); return;
+      }
+      DATA = r; $('#passCard').style.display = 'none';
+      paintNotice(); paintKpis(); paintJobs(); paintDays();
+    }).catch(function (e) { toast('连不上云端这台：' + e.message, true); });
+  }
+
+  function uploadOut(id, file) {
+    if (file.size > 220 * 1048576) { toast('这个文件超过 220MB，压一下再传', true); return; }
+    toast('正在传成片…');
+    fetch('/api/lip/put?job=' + id + '&part=out&mime=' + encodeURIComponent(file.type || 'video/mp4') + '&name=' + encodeURIComponent(file.name),
+      { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream', 'x-admin-pass': localStorage.getItem(PASS_KEY) || '' }, body: file })
+      .then(function (r) { return r.json(); })
+      .then(function (out) {
+        if (!out.ok) { toast(out.error || '没传上来', true); return; }
+        toast('文件传好了，点「交回客户机」收尾');
+        load();
+      }).catch(function (e) { toast('传不上去：' + e.message, true); });
+  }
+
+  $('#jobs').addEventListener('click', function (ev) {
+    var el = ev.target.closest('[data-act]'); if (!el) return;
+    var act = el.dataset.act, id = el.dataset.id;
+    if (act === 'claim') api('/api/lip/claim', { id: id }).then(function (r) { r.ok ? (toast('接单了，去做片'), load()) : toast(r.error, true); });
+    else if (act === 'done') api('/api/lip/done', { id: id }).then(function (r) { r.ok ? (toast('交回了，客户机上到点位自己发'), load()) : toast(r.error, true); });
+    else if (act === 'pick') { curOutId = id; $('#outInput').click(); }
+    else if (act === 'rej') { var p = $('#rej-' + id); if (p) p.classList.toggle('on'); }
+    else if (act === 'rejc') { var q = $('#rej-' + id); if (q) q.classList.remove('on'); }
+    else if (act === 'link') {
+      var j = DATA.jobs.filter(function (x) { return x.id === id; })[0];
+      var url = location.origin + '/lip-record.html?job=' + id + '&t=' + (j && j.token);
+      (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast('念稿页链接抄好了，发给客户'); },
+        function () { prompt('复制这个链接发给客户：', url); });
+    }
+    else if (act === 'dosub') {
+      var box = $('#rej-' + id), inp = box && box.querySelector('input');
+      var why = (inp && inp.value.trim()) || '';
+      if (!why) { var c = box.querySelector('[data-why]'); why = c ? c.textContent : ''; }
+      api('/api/lip/reject', { id: id, why: why }).then(function (r) { r.ok ? (toast('退回了，客户那边会看到要补什么'), load()) : toast(r.error, true); });
+    }
+  });
+  $('#jobs').addEventListener('click', function (ev) {
+    var w = ev.target.closest('[data-why]'); if (!w) return;
+    var box = w.closest('.rej'), inp = box.querySelector('input');
+    inp.value = w.dataset.why;
+  });
+  $('#outInput').onchange = function () { var f = this.files && this.files[0]; if (f && curOutId) uploadOut(curOutId, f); this.value = ''; };
+  $('#copyBtn').onclick = function () {
+    if (!DATA) return;
+    var day = dayKey(Date.now());
+    var rows = DATA.jobs.filter(function (j) { return dayKey(j.submittedAt) === day && j.state !== 'canceled'; });
+    var txt = day + ' 口播工单明细（共 ' + rows.length + ' 单）\n' + rows.map(function (j) {
+      return hm(j.submittedAt) + ' | ' + (j.title || '') + ' | ' + (j.accName || j.acc) + ' | ' + j.routeLabel + ' | ' + j.stateLabel +
+        (j.lack ? '（' + j.lack + '）' : '') + ' | 等 ' + j.waitedMins + ' 分钟' + (j.workMins ? ' | 做 ' + j.workMins + ' 分钟' : '');
+    }).join('\n');
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(function () { toast('今天的明细抄好了，粘到笔记里'); },
+      function () { prompt('复制今天的明细：', txt); });
+  };
+  $('#refreshBtn').onclick = load;
+  $('#tabs').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button'); if (!b) return;
+    var all = document.querySelectorAll('#tabs button');
+    for (var i = 0; i < all.length; i++) all[i].className = all[i] === b ? 'on' : '';
+    ['p0', 'p1', 'p2'].forEach(function (p, k) { document.getElementById(p).style.display = k === Number(b.dataset.t) ? '' : 'none'; });
+  });
+  $('#passBtn').onclick = function () { localStorage.setItem(PASS_KEY, $('#passInput').value.trim()); load(); };
+
+  api('/api/lip/probe', {}).then(function (r) {
+    if (r && r.ok && r.env) { PROBE = r.env; if (DATA) paintNotice(); }
+  });
+  if (localStorage.getItem(PASS_KEY)) $('#passInput').value = localStorage.getItem(PASS_KEY);
+  load();
+  timer = setInterval(function () { if (!document.hidden) load(); }, 60000);
+})();
+</script>
+</body>
+</html>

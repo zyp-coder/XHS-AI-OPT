@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "小红书助手 · 执行器",
+  "version": "1.3.5",
+  "description": "装上它、登录后，网页上派的活（发笔记 / 获客 / AI客服 / 日常浏览）在你自己的浏览器里真跑——服务器只下单，不碰平台。",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "tabs",
+    "scripting",
+    "alarms",
+    "notifications",
+    "unlimitedStorage",
+    "windows",
+    "tabGroups",
+    "system.display"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://8.222.157.6/*",
+    "https://www.xiaohongshu.com/*",
+    "https://creator.xiaohongshu.com/*"
+  ],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "exec-boot.js"
+  },
+  "action": {
+    "default_popup": "panel.html",
+    "default_title": "小红书助手 · 执行器",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
