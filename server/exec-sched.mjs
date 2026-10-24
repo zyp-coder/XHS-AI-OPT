@@ -137,7 +137,7 @@ function npPubPlatsFor(form) {
 }
 
 export function createExecSched(ctx) {
-  const { store, persist, bookBagFor, placeOrder, report, online, sweepStale } = ctx;
+  const { store, persist, bookBagFor, placeOrder, report, online, sweepStale, platformPauseOf } = ctx;
 
   function ensure() {
     store.exec_sched = store.exec_sched || {};
@@ -204,6 +204,7 @@ export function createExecSched(ctx) {
     const switches = (bag.np_pub_switch && typeof bag.np_pub_switch === 'object') ? bag.np_pub_switch : {};
     const sentAll = (bag.np_pub_sent && typeof bag.np_pub_sent === 'object') ? bag.np_pub_sent : {};
     const led = (store.exec_sched.np[acc.id] = store.exec_sched.np[acc.id] || {});
+    const pause = platformPauseOf ? platformPauseOf(acc) : {};
     let dirty = false;
 
     for (const r of npRows(bag, new Date(now))) {
@@ -244,6 +245,7 @@ export function createExecSched(ctx) {
       const sentRec = (sentAll[r.id] && typeof sentAll[r.id] === 'object') ? sentAll[r.id] : {};
       const platforms = baseSel
         .filter((p) => switches[p] !== false)
+        .filter((p) => !(p === 'douyin' && pause[p]))   // 抖音格暂停发笔记：这一行原样等着，恢复后下一分钟接着发
         .filter((p) => !(sentRec[p] && sentRec[p].ok))
         .map((p) => ({
           platform: p,
@@ -264,6 +266,7 @@ export function createExecSched(ctx) {
         did.push(`[${acc.name}] ⏰ 发布到点派单：${note.title || r.id}（${platforms.map((x) => x.platform).join('+')}）`);
         return { placed: true, dirty: true };   // 一趟最多派一条：这条跑完（回执到）下一钩再派下一条
       }
+      if (res && res.paused) continue;   // 刚按下的暂停：这一行不记 done，恢复后照常到点发
       led[key] = { state: 'done', attempts: 0, at: now, why: (res && res.error) || '没派出去' };
       report(acc.id, `⏰ 排期没派出去（「${note.title || r.id}」）：${(res && res.error) || '未知原因'}`);
       did.push(`[${acc.name}] 发布派单失败：${(res && res.error) || ''}`);
@@ -306,6 +309,8 @@ export function createExecSched(ctx) {
 
     if (ch.status !== 'waiting') return false;
     if (store.exec_killed) return false;   // 熔断时通道已撤链；这里兜底不派
+    /* 老板暂停了小红书这头：链停在原地，不判失败、不刷日志；恢复后下一钩接着派 */
+    if (platformPauseOf && platformPauseOf(acc).xhs) return false;
     if (inQuiet(now)) {
       chainStop(acc.id, 'quiet', '到了静默期（21:00–09:00），这一串活先停；明早回工作台再点「搜索」接着跑');
       did.push(`[${acc.name}] ⏹ 搜索链停在静默期（${ch.kw || ''}）`);
@@ -355,6 +360,8 @@ export function createExecSched(ctx) {
     const qWin = qWinOn(bag.drain_scan_cfg && bag.drain_scan_cfg.queueAuto, now);
     const dbWin = dbWinOn(bag.daily_browse_config, now);
     if (!qWin && !dbWin) return false;
+    /* 老板暂停了小红书这头：自动跑这趟直接跳过，不动冷却/趟数，恢复后下一钩接上 */
+    if (platformPauseOf && platformPauseOf(acc).xhs) return false;
     /* 搜索链还没跑完：让它先走完这几类，别让后台队列把它撤掉 */
     const ch = (store.exec_chains || {})[acc.id];
     if (ch && (ch.status === 'waiting' || ch.status === 'running')) return false;

@@ -1378,6 +1378,7 @@ const execSched = createExecSched({
   report: execCh.api.report,
   online: execCh.api.online,
   sweepStale: execCh.api.sweepStale,   // v11：每钩顺带扫一遍"超时没回执的死单"
+  platformPauseOf: execCh.api.platformPauseOf,   // 分平台暂停：小红书这头暂停时不派获客
   stopChain: execCh.api.stopChain,     // 搜索链：静默/断线/失败时停手留原因（网页弹红条/橙条）
   pruneChains: execCh.api.pruneChains, // 搜索链：跑完/停手的留 3 天后清掉
 });
@@ -2775,6 +2776,23 @@ async function handleApi(path, body, req, res) {
        2026-10-15：带上配对号与「包发了没」（发放页两列） */
     const handsByAcc = {};
     for (const h of Object.values(store.exec_hands || {})) handsByAcc[h.accountId] = h;
+    /* 两格的「最近一单」：小红书格只看获客/日常浏览，抖音格只看带抖音的发笔记；历史单只读不改 */
+    const lastJob = {};
+    for (const c of Object.values(store.exec_cmds || {})) {
+      if (!c || !c.accountId) continue;
+      let p = '';
+      if (c.kind === 'acquire' || c.kind === 'daily_browse') p = 'xhs';
+      else if (c.kind === 'note_publish') {
+        const ps = (c.params && Array.isArray(c.params.platforms))
+          ? c.params.platforms.map((x) => String((x && x.platform) || x || ''))
+          : [String((c.params && c.params.platform) || 'xhs')];
+        if (ps.indexOf('douyin') >= 0) p = 'douyin';
+      }
+      if (!p) continue;
+      const at = c.doneAt || c.sentAt || c.createdAt || 0;
+      const bag = lastJob[c.accountId] = lastJob[c.accountId] || {};
+      if (!bag[p] || at > bag[p].at) bag[p] = { kind: c.kind, at, state: c.state || '', ok: c.ok !== false };
+    }
     const env = readEnv();
     const all = Object.values(store.accounts).map((a) => {
       const bag = store.books[a.id] || {};
@@ -2793,6 +2811,9 @@ async function handleApi(path, body, req, res) {
         /* 2026-10-23：发号名单分平台看认的号，错号在名单上直接红 */
         bindings: execCh.api.bindingsOf(a),
         bindState: execCh.api.bindStateOf(a),
+        /* 2026-10-25：两头各一个暂停开关＋各自主活最近一单（发放页两格） */
+        platformPause: execCh.api.platformPauseOf(a),
+        jobs: lastJob[a.id] || {},
         kind: demo ? 'demo' : 'real',
         demoKey: demo ? (a.demoKey || '') : '',
         demoLabel: demo ? (a.demoLabel || a.name || '') : '',
@@ -2881,6 +2902,21 @@ async function handleApi(path, body, req, res) {
     const label = execCh.api.bindLabel[platform];
     console.log(`[demo] 换绑${label}：${acc.name} 那一格已清${r.already ? '（本来就没绑）' : ''}${r.kicked ? `，在飞 ${r.kicked} 单标作废` : ''}`);
     return json(res, 200, { ok: true, accountId: acc.id, platform, kicked: r.kicked || 0, bindings: execCh.api.bindingsOf(acc) });
+  }
+  /* 分平台暂停（2026-10-25）：小红书格＝暂停获客＋日常浏览，抖音格＝暂停发笔记。
+     只挡以后的新单（含定时自动派），在飞的不动；演示号只读。 */
+  if (path === '/api/admin/platform-pause') {
+    if (!adminGate(req, res)) return;
+    const acc = adminAccountOf(body);
+    if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
+    if (acc.kind === 'demo') return json(res, 200, { ok: false, error: '演示号只逛不真发——不用暂停' });
+    const platform = String(body.platform || '');
+    const paused = body.paused === undefined ? true : !!body.paused;
+    const r = await execCh.api.setPlatformPause(acc, platform, paused, 'admin');
+    if (!r.ok) return json(res, 200, r);
+    const what = platform === 'xhs' ? '获客' : '发笔记';
+    console.log(`[demo] ${paused ? '暂停' : '恢复'}：${acc.name} ${execCh.api.bindLabel[platform]}${what}`);
+    return json(res, 200, { ok: true, accountId: acc.id, platform, paused, platformPause: r.platformPause });
   }
   /* 发放页「包发了没」：手工打勾 / 取消（老板自己的记账，不影响任何功能） */
   if (path === '/api/admin/pack-sent') {

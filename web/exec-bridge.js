@@ -503,6 +503,28 @@
     }
   }
 
+  /* 老板暂停（2026-10-25）：顶栏下一行灰字，不弹红、不挡操作；恢复后自己收掉 */
+  let pauseLine = null;
+  function paintPauseLine(pause) {
+    const ps = [];
+    if (pause && pause.xhs) ps.push('小红书这头：老板暂停了获客');
+    if (pause && pause.douyin) ps.push('抖音这头：老板暂停了发笔记');
+    if (!ps.length) {
+      if (pauseLine) { pauseLine.remove(); pauseLine = null; }
+      return;
+    }
+    if (!pauseLine || !document.body.contains(pauseLine)) {
+      const hdr = document.querySelector('.header');
+      if (!hdr || !hdr.parentNode) return;
+      pauseLine = document.createElement('div');
+      pauseLine.id = 'execPauseLine';
+      pauseLine.style.cssText = 'background:#f3f4f6;color:#6b7280;border-bottom:1px solid #e5e7eb;'
+        + 'font-size:12px;line-height:1.6;padding:5px 16px;font-family:inherit;';
+      hdr.parentNode.insertBefore(pauseLine, hdr.nextSibling);
+    }
+    pauseLine.textContent = ps.join('；') + '（恢复后自动接着派，正在跑的那一趟不受影响）';
+  }
+
   const MINI_CSS = 'border:1px solid var(--c-line-2);background:var(--c-surface);color:var(--c-ink-3);'
     + 'border-radius:var(--r-sm);height:28px;padding:0 8px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;';
 
@@ -615,6 +637,7 @@
       j = await r.json();
     } catch (_) { return; }
     if (!j || !j.ok) return;
+    paintPauseLine(j.pause);
     const orders = Array.isArray(j.orders) ? j.orders : [];
     /* 搜索链：服务器记下的「这一轮 + 后面还有哪几类 + 下一类什么时候派」。
        工作台那边拿它画顶行和后面几类；这里拿它的停手原因弹横幅。 */

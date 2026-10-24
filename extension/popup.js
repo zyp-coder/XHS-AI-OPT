@@ -16668,7 +16668,20 @@ let _npArShownIds = [];      // 这次画出来的那批 id（「全选本页」
 
 /** 索引用的小图：卖点配图现取那张，没有就按这条路占位（图文📝 / 视频🎬） */
 function npArThumb(n) {
-  const im = (n.thumb && n.thumb.kind === 'sell') ? (_npArImgs[n.thumb.ref] || '') : '';
+  let im = '';
+  const rows = npImgRowsOf(n) || [];
+  for (let i = 0; i < rows.length && !im; i++) {
+    const sh = rows[i].shots || {};
+    const ids = [].concat((sh.cv && sh.cv.imgs) || [], ...(sh.items || []).map(it => (it && it.imgs) || []));
+    const hit = ids.find(id => _npShotImgs[id] && _npShotImgs[id].thumb);
+    if (hit) im = String(_npShotImgs[hit].thumb || '');
+  }
+  if (!im && n.fCover && n.fCover.thumb) im = String(n.fCover.thumb);
+  if (!im && Array.isArray(n.fImgs)) {
+    const f = n.fImgs.find(x => x && x.thumb);
+    if (f) im = String(f.thumb);
+  }
+  if (!im && n.thumb && n.thumb.kind === 'sell') im = _npArImgs[n.thumb.ref] || '';
   if (im) return '<img src="' + npArAttr(im) + '" alt="" style="flex:none;width:42px;height:38px;object-fit:cover;border-radius:7px;border:1px solid #eee;">';
   return '<div style="flex:none;width:42px;height:38px;border-radius:7px;border:1px solid var(--line);background:#f7f8fa;display:flex;align-items:center;justify-content:center;font-size:17px;">' +
     (n.form === '视频' ? '🎬' : (n.form === '图文' ? '📝' : '📄')) + '</div>';
@@ -17387,6 +17400,7 @@ async function renderNoteArchive(container) {
   try { const d = await chrome.storage.local.get('note_plan'); plan = (d && d.note_plan) || null; } catch (_) {}
   // 缩略图引用现取：档案里只记了「哪条卖点」，配图去当前库里取
   _npArImgs = {};
+  await npShotImgIndex();
   let defMotif = '';
   try {
     const c = await readConfigPlain();

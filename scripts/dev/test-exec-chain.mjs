@@ -13,7 +13,8 @@ Date.now = () => clock;
 
 const store = {
   accounts: {
-    a1: { id: 'a1', name: '测试号', phone: '13800000000', tier: '全功能', pairCode: 'XHD-TEST' },
+    a1: { id: 'a1', name: '测试号', phone: '13800000000', tier: '全功能', pairCode: 'XHD-TEST',
+      bindings: { xhs: { uid: 'x1', displayId: 'xhs_1' } } },
   },
   sessions: { sess1: { accountId: 'a1', expiresAt: clock + 86400000 } },
 };
@@ -90,7 +91,7 @@ async function tick() {
 try {
   /* 0) 挂线 */
   const pair = await call('/api/exec/pair', {
-    code: 'XHD-TEST', label: '测试机', version: '1.3.2', caps: ['acquire', 'acquire:search'],
+    code: 'XHD-TEST', label: '测试机', version: '1.3.5', caps: ['acquire', 'acquire:search'],
   });
   assert.equal(pair.ok, true, pair.error);
   cred = { handId: pair.handId, token: pair.token };

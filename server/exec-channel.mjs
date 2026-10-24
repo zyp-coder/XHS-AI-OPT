@@ -237,6 +237,40 @@ export function createExecChannel(ctx) {
     return out;
   }
 
+  /* 分平台暂停（2026-10-25）：小红书这格管获客（搜词/盯账号/截流）＋日常浏览，抖音这格管发笔记。
+     只挡以后的新单，不打断正在跑的那一趟；要当场停用「停这一趟」。 */
+  function platformPauseOf(acc) {
+    const raw = (acc && acc.platform_pause) || {};
+    const out = {};
+    for (const p of Object.keys(BIND_LABEL)) {
+      const v = raw[p];
+      out[p] = v && typeof v === 'object' ? { at: Number(v.at) || 0, by: String(v.by || '') } : null;
+    }
+    return out;
+  }
+  /* 这一单被哪几头的暂停挡着：获客/日常浏览归小红书格的「暂停获客」；
+     发笔记只认抖音格的「暂停发笔记」（小红书格暂停获客不影响发笔记），别的活不挡 */
+  function pausedOf(acc, kind, params) {
+    const st = platformPauseOf(acc);
+    if (kind === 'acquire' || kind === 'daily_browse') return st.xhs ? ['xhs'] : [];
+    if (kind === 'note_publish') return platformsOf(kind, params).filter((p) => p === 'douyin' && st[p]);
+    return [];
+  }
+  function pauseMsg(kind, ps) {
+    const names = ps.map((p) => BIND_LABEL[p] || p).join('、');
+    return `老板暂停了${names}这头的${kind === 'note_publish' ? '发笔记' : '获客'}——等老板恢复再派`;
+  }
+  /* 老板在后台按暂停/恢复：状态存服务器，执行器离线下一次上线也照这个挡 */
+  async function setPlatformPause(acc, platform, paused, by) {
+    const p = String(platform || '');
+    if (!BIND_LABEL[p]) return { ok: false, error: '只认 xhs / douyin 两个平台' };
+    acc.platform_pause = platformPauseOf(acc);
+    acc.platform_pause[p] = paused ? { at: Date.now(), by: String(by || 'web') } : null;
+    log('WEB', `${paused ? '⏸ 暂停' : '▶ 恢复'}：${acc.name} ${BIND_LABEL[p]}${p === 'xhs' ? '获客' : '发笔记'}`);
+    await persist();
+    return { ok: true, platformPause: platformPauseOf(acc) };
+  }
+
   /* 认一个平台的号：空着＝绑上；同一个＝刷新显示；不同＝拒绝（换绑只能老板做）。
      返回 { ok, error?, binding?, same?, mismatch? } */
   function bindPlatform(acc, platform, raw) {
@@ -581,6 +615,23 @@ export function createExecChannel(ctx) {
     /* 档位闸（2026-10-16 起看的是公网那台那张表，含小灶与试用期，不再只比档位数） */
     const gate = canKind(acc, store, kind);
     if (!gate.ok) return { ok: false, error: gate.error };
+    /* 暂停闸（2026-10-25）：只挡以后的新单，在飞的不动。
+       发笔记按家算：把暂停的那家从这单里剔掉（恢复后只补没发成的），全暂停才不派。 */
+    if (kind === 'note_publish' && Array.isArray(params && params.platforms)) {
+      const paused = new Set(pausedOf(acc, kind, params));
+      if (paused.size) {
+        const keep = params.platforms.filter((x) => !paused.has(String((x && x.platform) || x || '')));
+        if (!keep.length) return { ok: false, paused: true, error: pauseMsg(kind, [...paused]) };
+        params = Object.assign({}, params, {
+          platforms: keep,
+          platform: String((keep[0] && keep[0].platform) || keep[0] || 'xhs'),
+        });
+        log('SRV', `⏸ 暂停跳过（${[...paused].map((p) => BIND_LABEL[p] || p).join('、')}）：发笔记 → ${acc.name}`);
+      }
+    } else {
+      const paused = pausedOf(acc, kind, params);
+      if (paused.length) return { ok: false, paused: true, error: pauseMsg(kind, paused) };
+    }
     /* 平台认号闸：这一单要用哪个平台的号，那个号必须绑在这个网页账号上（没绑/错号不派） */
     if (kind === 'note_publish' && Array.isArray(params && params.platforms)) {
       const ps = platformsOf(kind, params);
@@ -968,6 +1019,7 @@ export function createExecChannel(ctx) {
         hand: publicHand(h),
         bindings: bindingsOf(acc),   // 两个平台各绑的哪个号（没绑的＝null）
         bindState: bindStateOf(acc), // 最近一次开窗认号的结果：ok / mismatch / loggedout / unknown
+        pause: platformPauseOf(acc), // 老板按了两头的暂停没有：{xhs:{at}|null, douyin:{at}|null}
         orders: cmdsOf(acc.id),
         chain: publicChain(acc.id),   // 搜索链：这一轮 / 后面还有哪几类 / 下一类几点 / 停手原因
         reports: (store.exec_reports[acc.id] || []).slice(-REPORT_KEEP),   // 网页上那根实时进度
@@ -1081,6 +1133,10 @@ export function createExecChannel(ctx) {
       bindPlatform,
       clearBinding,
       bindLabel: BIND_LABEL,
+      /* 分平台暂停（2026-10-25）：后台读写，排期/下单共用同一份判断 */
+      platformPauseOf,
+      pausedOf,
+      setPlatformPause,
       checkCred,                  // 云端出片口认扩展发来的挂线凭据（handId+token）走这一份
       /* 搜索链：排期模块推进/清账用（失败停在链上，网页从 chain 读原因） */
       chainOf: publicChain,

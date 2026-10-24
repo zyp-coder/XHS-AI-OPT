@@ -293,6 +293,14 @@ def kb_pick_click(page, pick_i):
     cb.click()
 
 
+def kb_show_list(page):
+    """挑知识那一站进门三签（📚 按规划发 / 🔮 AI推荐 / 🗂 自己选）；有规划时默认落「按规划发」，
+    知识清单只在「🗂 自己选」里——要看 / 勾清单先切这一签（已在就再点一次，重画同签无害）。"""
+    tab = page.locator('#npWizBody .np-kbtab[data-t="self"]')
+    if tab.count():
+        tab.click()
+
+
 def is_done(page, name):
     """左栏节点有没有打勾：完成圈＝tab 上的 .done 类（2026-09-25 起不再往标签里塞「✓」，免得
     跟行首图标叠成两个）。注意当前节点不画 .done —— 要断言当前节点，先用 park_done 切走。"""
@@ -315,17 +323,6 @@ def wait_store(page, worker, expr, timeout=8000):
         waited += 100
     return False
 
-
-def note_tone(page, sec='lines'):
-    """进「发笔记 → 任务配置」并把页内横 tab 切到 sec 那一节（两签：📄 内容基调 / 🎨 出图风格）。
-    已经是 active 就不重点——重绘会打断正在编辑的那一格。"""
-    page.locator('#tabNotePublish').click()
-    page.locator('#tabNoteTaskCfg').click()
-    tab = page.locator('#ntCfgTabs [data-sec="%s"]' % sec)
-    expect(tab).to_be_visible()
-    if 'active' not in (tab.get_attribute('class') or ''):
-        tab.click()
-    return tab
 
 
 def note_plan(page):
@@ -1426,16 +1423,11 @@ def run():
             # 🧬 笔记规划整块搬去「发布台」页内签）：
             # 页内两个横 tab＝📄 内容基调（4 基调卡：铺垫/广告拖条＋字数）/
             # 🎨 出图风格（画面风格＋印记＋笔记分类＋配文版式 15 种，面板改了按 💾 才落盘）
-            page.locator('#tabNotePublish').click()   # 先看二级排序与默认落点（进了任务配置 active 就换人了）
+            page.locator('#tabNotePublish').click()   # 先看二级排序与默认落点
             order = [t.strip() for t in page.locator('#noteTabs .sub-tab .rail-tx').all_inner_texts()]
-            assert order == ['任务配置', '笔记档案', '发布台', '素材库', '复盘'], '发笔记二级＝任务配置排第一、发布台紧跟档案、出片台已不是二级项：' + str(order)
-            assert 'active' in (page.locator('#tabNoteArchive').get_attribute('class') or ''), '排第一 ≠ 默认落点——打开这一块仍落「笔记档案」'
-            note_tone(page)
-            expect(page.locator('#noteTaskCfgContent .page-hd .ph-t')).to_contain_text('任务配置')
-            assert [t.strip() for t in page.locator('#ntCfgTabs .nt-tab').all_inner_texts()] == \
-                ['📄 内容基调', '🎨 出图风格'], '两签的排法与名字（🧬 笔记规划已搬去「发布台」）'
-            expect(page.locator('#ntCfgBadge')).to_have_text('已保存')
-            check(page, '发笔记 → 任务配置＝两签（📄 内容基调 / 🎨 出图风格）；🧬 笔记规划不再在这——整块搬去了「发布台」页内签')
+            assert order == ['笔记档案', '发布台', '素材', '复盘'], '发笔记二级＝档案 / 发布台 / 素材 / 复盘（任务配置已撤：内容基调在写稿 ③、出图风格在写稿 ⑤ 就地展开）：' + str(order)
+            assert 'active' in (page.locator('#tabNoteArchive').get_attribute('class') or ''), '打开这一块落在「笔记档案」'
+            check(page, '发笔记二级＝笔记档案 / 发布台 / 素材 / 复盘；「任务配置」已撤——📄 内容基调在写稿 ③、🎨 出图风格在写稿 ⑤ 就地展开')
             # 🧬 签在「发笔记 → 发布台」：一段「怎么用发笔记」＋🗓 每周排法（一天可勾多种、空＝休）＋📌 阶段计划＋🧠 AI规划；真源＝config.product.weekPlan
             note_plan(page)
             expect(page.locator('#diagPersonaBox')).to_contain_text('怎么用发笔记')
@@ -1502,157 +1494,12 @@ def run():
             assert wait_store(page, worker, "Storage.getConfig().then(c => { const wp = (c.product || {}).weekPlan || {}; return (wp.sat || []).indexOf('知识') >= 0 && (wp.mon || []).indexOf('知识') >= 0 && (wp.tue || []).length === 0; })"), 'AI 排完要落到周排里'
             page.screenshot(path=str(out / 'plan-week-plan.png'), full_page=True)
             check(page, '🧬 🧠 AI规划（发布台页内签）：一发『排班师』把一周七天排好（只认知识/引流/案例），落周排后格子点亮；提示词带阶段与一句话人设')
-            # 📄 内容基调（两签第一张，设计源＝demo _diagLinesHtml）：一条基调一张卡——主行一根条拨「铺垫/广告」，
-            #   卡里 🖋 三档字数；写法折角点开只拨各自字数；广告占比跟账号阶段走（不烧 AI）
-            note_tone(page, 'lines')
-            expect(page.locator('#diagStyleResult')).to_contain_text('📄 内容基调 · 热点 / 热梗 / 情绪 / 感悟')
-            assert page.locator('#diagStyleResult .qhelp[data-tip*="全系统内容基调就 4 种"]').count() == 1, '口径收在问号气泡里'
-            assert page.locator('#diagStyleResult .ntToneFold').count() == 5, '五张卡（热点/热梗/情绪/感悟 + 知识·干货）各带一个「N 种写法」折角'
-            assert page.locator('#diagStyleResult .ntShapeDrag').count() == 5, '主行各一根条＝铺垫/广告'
-            assert page.locator('#diagStyleResult .ntShapeWords').count() == 15, '写法折角都收着：只剩五张卡各三档字数'
-            assert page.locator('#diagStyleResult .ntWeekChip').count() == 0, '一次只画选中的那一签'
-            for chip in ('🔥 热点', '😹 热梗', '💢 情绪', '🧭 感悟', '🧰 知识·干货'):
-                expect(page.locator('#diagStyleResult')).to_contain_text(chip)
-            expect(page.locator('#diagStyleResult')).to_contain_text('引流取料：🔥 热点')
-            expect(page.locator('#diagStyleResult')).to_contain_text('引流取料：😹 热梗')
-            expect(page.locator('#diagStyleResult')).to_contain_text('不占基调')
-            # 本阶段篇数＝冷启动配比 4/3/2/2/1（知识·干货 4 / 感悟 3 / 情绪 2 / 热梗 2 / 热点 1）
-            expect(page.locator('#diagStyleResult')).to_contain_text('本阶段 4 篇')
-            expect(page.locator('#diagStyleResult')).to_contain_text('本阶段 3 篇')
-            assert page.locator('#diagStyleResult .ntNum', has_text='本阶段 2 篇').count() == 2
-            expect(page.locator('#diagStyleResult')).to_contain_text('本阶段 1 篇')
-            # 冷启动话术「轻带一句」：每张卡初值＝铺垫 90% / 广告 10%；字数档按线（中/短）点亮
-            assert page.locator('#diagStyleResult [id="shb_t:howto"]').inner_text() == '90%'
-            assert page.locator('#diagStyleResult [id="shs_t:howto"]').inner_text() == '10%'
-            assert page.locator('#diagStyleResult .ntShapeReset').count() == 0, '没改过就不该有 ↺'
-            assert page.locator('#diagStyleResult .ntShapeWords[data-target="t:howto"][data-w="mid"].on').count() == 1
-            assert page.locator('#diagStyleResult .ntShapeWords[data-target="t:echo"][data-w="short"].on').count() == 1
-            expect(page.locator('#diagStyleResult')).to_contain_text('500-800 字')
-            expect(page.locator('#diagStyleResult')).to_contain_text('300-500 字')
-            expect(page.locator('#diagStyleResult')).to_contain_text('🎚 广告占比跟账号阶段走')
-            expect(page.locator('#diagStyleResult')).to_contain_text('这篇现在按「冷启动期」走「轻带一句」')
-            assert '调子' not in page.locator('#diagStyleResult').inner_text(), '📄 这一节通篇不该再出现「调子」'
-            check(page, '📄 内容基调＝一条基调一张卡（五张：热点/热梗/情绪/感悟 + 知识·干货不占基调）：本阶段篇数读冷启动配比、主行初值＝阶段话术「轻带一句」90/10、各卡自带 🖋 字数档')
-            # ✏️ 拖主行那根条：铺垫/广告两段联动（拖到 40 → 广告 60），松手才落 config.noteStyle.lines
-            page.locator('#diagStyleResult .ntShapeDrag[data-target="t:howto"]').evaluate(
-                "el => { el.value = 40; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); }")
-            assert page.locator('#diagStyleResult [id="shb_t:howto"]').inner_text() == '40%'
-            assert page.locator('#diagStyleResult [id="shs_t:howto"]').inner_text() == '60%'
-            assert wait_store(page, worker, "Storage.getConfig().then(c => { const l = ((c.noteStyle || {}).lines || {}).howto; return !!l && l.shape && l.shape.build === 40 && l.shape.sell === 60; })"), '拖完要落到 config.noteStyle.lines.howto'
-            got_line = worker.evaluate('async () => (await Storage.getConfig()).noteStyle')
-            assert got_line['lines']['howto'] == {'shape': {'build': 40, 'sell': 60}, 'words': 'mid'}, got_line
-            assert page.locator('#diagStyleResult .ntShapeReset').count() == 1, '这条线自己定过 → 主行出现 ↺'
-            check(page, '✏️ 主行拖条＝铺垫/广告两段联动（拖 40 → 广告 60），松手落 config.noteStyle.lines＝这条线的账号默认')
-            # ↺ 恢复默认＝这条线的覆盖整条删掉（回到跟阶段那套走），不是存个 0
-            page.locator('#diagStyleResult .ntShapeReset').click()
-            assert wait_store(page, worker, "Storage.getConfig().then(c => !(((c.noteStyle || {}).lines || {}).howto))"), '↺ 要把这条线的覆盖整条删掉'
-            back_ns = worker.evaluate('async () => (await Storage.getConfig()).noteStyle')
-            assert 'howto' not in (back_ns.get('lines') or {}), back_ns
-            assert page.locator('#diagStyleResult [id="shb_t:howto"]').inner_text() == '90%', '回到阶段话术的 90/10'
-            assert page.locator('#diagStyleResult .ntShapeReset').count() == 0
-            # 写法折角：点开「热梗」→ 四种写法各一行，行里只拨各自字数（配比跟所在那条线走）
-            page.locator('#diagStyleResult .ntToneFold[data-t="meme"]').click()
-            expect(page.locator('#diagStyleResult .ntToneFold[data-t="meme"]')).to_contain_text('▾ 4 种写法')
-            assert page.locator('#diagStyleResult .ntShapeWords[data-target="k:docform"]').count() == 3, '折角里这一种写法带三档字数'
-            assert page.locator('#diagStyleResult .ntShapeWords[data-target="k:docform"][data-w="short"].on').count() == 1, '没设过＝跟所在那条线（热梗线短档）'
-            page.locator('#diagStyleResult .ntShapeWords[data-target="k:docform"][data-w="long"]').click()
-            assert wait_store(page, worker, "Storage.getConfig().then(c => ((((c.noteStyle || {}).kinds || {}).docform || {}).words) === 'long')"), '这一种写法的字数要落 config.noteStyle.kinds'
-            got_kind = worker.evaluate('async () => (await Storage.getConfig()).noteStyle')
-            assert got_kind['kinds']['docform'] == {'words': 'long'}, got_kind
-            assert 'howto' not in (got_kind.get('lines') or {}), '改一种写法不该动那条线'
-            assert page.locator('#diagStyleResult .ntShapeWords[data-target="k:docform"][data-w="long"].on').count() == 1
-            page.locator('#diagStyleResult .ntShapeWords[data-target="k:docform"][data-w="short"]').click()   # 拨回热梗线的短档＝还原
-            assert wait_store(page, worker, "Storage.getConfig().then(c => ((((c.noteStyle || {}).kinds || {}).docform || {}).words) === 'short')")
-            page.locator('#diagStyleResult .ntToneFold[data-t="meme"]').click()   # 折角收回去
-            assert page.locator('#diagStyleResult .ntShapeWords').count() == 15
-            check(page, '✏️ 写法折角：点开一条基调看它底下几种写法，行里只拨各自 🖋 字数（没设过吃所在那条线），落 config.noteStyle.kinds')
-            # 整张表可折起来（默认展开）：收起只剩头，展开回来还在
-            page.locator('#diagLinesToggle').click()
-            assert page.locator('#diagStyleResult .ntToneFold').count() == 0, '点「收起」五张卡全折回去'
-            expect(page.locator('#diagStyleResult')).to_contain_text('📄 内容基调 · 热点 / 热梗 / 情绪 / 感悟')
-            page.locator('#diagLinesToggle').click()
-            expect(page.locator('#diagStyleResult')).to_contain_text('本阶段 4 篇')
-            page.screenshot(path=str(out / 'plan-tone-cards.png'), full_page=True)
-            # 🎨 出图风格 · 账号默认（两签第二张，设计源＝demo _diagLookDefaultHtml）：画面风格＋印记＋笔记分类＋配文版式；
-            #   面板上改的先进内存（徽标转「有没保存的改动」），按「💾 保存出图风格」才落 config.imgLook
-            note_tone(page, 'look')
-            expect(page.locator('#diagStyleResult')).to_contain_text('🎨 出图风格 · 账号默认')
-            expect(page.locator('#diagStyleResult')).to_contain_text('打底＝统一小红书那一挂（真人工作场景）')
-            assert page.locator('#diagStyleResult .ntMotifChip').count() == 3, '画面风格＝内置三颗小样'
-            expect(page.locator('#diagStyleResult .ntMotifChip[data-k="真人工作场景"]')).to_contain_text('✓ 在用')
-            expect(page.locator('#diagStyleResult')).to_contain_text('引流笔记不限风格')
-            assert page.locator('#diagStyleResult .ntMarkPick').count() == 2 and page.locator('#diagStyleResult .ntMarkUp').count() == 1, '印记三选：不印记 / 文字印记 / 传图'
-            assert page.locator('#diagStyleResult .ntClassifyPick').count() == 2, '🗂 笔记分类＝关 / 开两颗'
-            assert page.locator('#diagStyleResult .ntLayoutTile').count() == 15, '配文版式 15 种'
-            assert page.locator('#diagStyleResult [id="lpMarkHost"]').count() == 1, '一张 172×230 预览，印记层挂在它里面'
-            expect(page.locator('#diagStyleResult')).to_contain_text('预览 · 大字说一句')
-            expect(page.locator('#diagStyleResult')).to_contain_text('版式定了配文引擎（说一次）')
-            assert page.locator('#diagStyleResult .ntShapeDrag').count() == 0, '一次只画选中的那一签'
-            check(page, '🎨 出图风格·账号默认＝画面风格三颗小样（在用那颗标 ✓、引流笔记不限风格）、印记三选、笔记分类开关、版式 15 种 + 一张预览')
-            # 面板上点一下＝进内存（徽标「有没保存的改动」），没按 💾 之前盘上不该动
-            page.locator('#diagStyleResult .ntMotifChip[data-k="方案页"]').click()
-            expect(page.locator('#diagStyleResult .ntMotifChip[data-k="方案页"]')).to_contain_text('✓ 在用')
-            expect(page.locator('#ntCfgBadge')).to_have_text('有没保存的改动')
-            assert worker.evaluate('async () => String(((await Storage.getConfig()).imgLook || {}).motif || "")') == '', '没按 💾 之前不许落盘'
-            # ＋ 自己加一种：空名与重名当场拦下；存下来只落 config.imgMotifs（名字 ≤16，配方在造图片那页补）
-            page.locator('#diagStyleResult .ntMotifAdd').first.click()
-            expect(page.locator('#diagStyleResult .ntMotifSave')).to_be_visible()
-            page.locator('#diagStyleResult .ntMotifSave').click()
-            expect(page.locator('#diagStyleResult')).to_contain_text('先给它起个名字')
-            page.locator('#diagStyleResult #ntMotifK').fill('方案页')
-            page.locator('#diagStyleResult .ntMotifSave').click()
-            expect(page.locator('#diagStyleResult')).to_contain_text('这一种内置里已经有了，换个名字')
-            page.locator('#diagStyleResult #ntMotifK').fill('门店实拍＋大字')
-            page.locator('#diagStyleResult .ntMotifSave').click()
-            assert wait_store(page, worker, "Storage.getConfig().then(c => (c.imgMotifs || []).some(m => m.k === '门店实拍＋大字'))"), '自加的画面风格当场落 config.imgMotifs'
-            expect(page.locator('#diagStyleResult .ntMotifChip[data-k="门店实拍＋大字"]')).to_contain_text('✓ 在用')
-            assert page.locator('#diagStyleResult .ntMotifChip').count() == 4
-            # 印记＝文字：行内输入当场刷预览的印记层（只刷 #lpMarkHost，不整页重画）
-            page.locator('#diagStyleResult .ntMarkPick[data-mode="text"]').click()
-            expect(page.locator('#diagStyleResult .ntMarkText')).to_be_visible()
-            page.locator('#diagStyleResult .ntMarkText').fill('张师傅 · 防水 10 年')
-            expect(page.locator('#diagStyleResult [id="lpMarkHost"]')).to_contain_text('张师傅 · 防水 10 年')
-            # 🗂 笔记分类＝开：预览上自动盖「知识」小标（跟印记互不占位）
-            page.locator('#diagStyleResult .ntClassifyPick[data-v="1"]').click()
-            expect(page.locator('#diagStyleResult [id="lpMarkHost"]')).to_contain_text('知识')
-            assert 'on' in (page.locator('#diagStyleResult .ntClassifyPick[data-v="1"]').get_attribute('class') or '')
-            # 配文版式挑「步骤清单」：预览与底注跟着换（配文引擎＝整段上屏）
-            page.locator('#diagStyleResult .ntLayoutTile[data-k="steps"]').click()
-            expect(page.locator('#diagStyleResult')).to_contain_text('预览 · 步骤清单')
-            expect(page.locator('#diagStyleResult')).to_contain_text('版式定了配文引擎（整段上屏）')
-            # 💾 一次落齐：画面风格 / 印记文字 / 笔记分类 / 版式 → config.imgLook，徽标回「已保存」
-            page.locator('#diagStyleResult .ntLookSave').click()
-            expect(page.locator('#diagStyleResult #ntLookMsg')).to_contain_text('已保存')
-            expect(page.locator('#ntCfgBadge')).to_have_text('已保存')
-            assert wait_store(page, worker, "Storage.getConfig().then(c => { const l = c.imgLook || {}; return l.motif === '门店实拍＋大字' && l.layout === 'steps' && l.cap === 'whole' && l.mark === 'text' && l.markText === '张师傅 · 防水 10 年' && l.classify === true; })"), '💾 一次落齐 config.imgLook'
-            # 切走再回：四样都从盘上读回
-            note_tone(page, 'lines')
-            note_tone(page, 'look')
-            expect(page.locator('#diagStyleResult .ntMotifChip[data-k="门店实拍＋大字"]')).to_contain_text('✓ 在用')
-            assert page.locator('#diagStyleResult .ntMarkText').input_value() == '张师傅 · 防水 10 年'
-            expect(page.locator('#diagStyleResult [id="lpMarkHost"]')).to_contain_text('知识')
-            expect(page.locator('#diagStyleResult')).to_contain_text('预览 · 步骤清单')
-            expect(page.locator('#ntCfgBadge')).to_have_text('已保存')
-            page.screenshot(path=str(out / 'plan-look-style.png'), full_page=True)
-            check(page, '🎨 面板改动＝先进内存（徽标转「有没保存的改动」）、💾 才落 config.imgLook；自加画面风格落 config.imgMotifs（空名/重名拦下）；文字印记、笔记分类、版式都当场刷预览；切走再回原样读回')
-            # ↺ 改回统一小红书：整块重置进内存（同样要 💾 才落盘）
-            page.locator('#diagStyleResult .ntLookClear').click()
-            expect(page.locator('#diagStyleResult .ntMotifChip[data-k="真人工作场景"]')).to_contain_text('✓ 在用')
-            expect(page.locator('#ntCfgBadge')).to_have_text('有没保存的改动')
-            assert worker.evaluate('async () => String(((await Storage.getConfig()).imgLook || {}).motif || "")') == '门店实拍＋大字', '↺ 也不许自动落盘'
-            page.locator('#diagStyleResult .ntLookSave').click()
-            expect(page.locator('#diagStyleResult #ntLookMsg')).to_contain_text('已保存')
-            assert wait_store(page, worker, "Storage.getConfig().then(c => { const l = c.imgLook || {}; return l.motif === '真人工作场景' && l.layout === 'big' && l.mark === 'none' && !l.classify && !l.markText; })"), '改回后 💾 落默认那一挂'
-            check(page, '🎨 ↺ 改回统一小红书＝面板整块重置（同样要 💾 才落盘），落回默认那一挂')
-            # 收口回显：🧬 的周排（＝AI 排好的那一周）与 📄 的本阶段篇数都还在；这一段除 AI规划外零 AI 调用
+            # 收口回显：🧬 的周排（＝AI 排好的那一周）切走再回还在；这一段除 AI规划外零 AI 调用
             note_plan(page)
             expect(page.locator('#diagPersonaBox')).to_contain_text('📚 知识 3 天 · 🔥 引流 1 天 · 休 3 天')
             assert page.locator('#diagPersonaBox .ntWeekChip.on').count() == 4
-            note_tone(page, 'lines')
-            expect(page.locator('#diagStyleResult')).to_contain_text('本阶段 4 篇')
-            assert page.locator('#diagStyleResult .ntShapeReset').count() == 0, '两处覆盖都 ↺ 回去了'
             assert len(STATE['requests']) == wk_ai + 1, '这一段除 AI规划外不该再烧 AI'
-            check(page, '📄/🎨（任务配置）＋🧬（发布台）切走再回都用盘上那份回显（周排＝AI 排好的那一周、基调＝本阶段篇数）；整段除 AI规划外零 AI 调用')
+            check(page, '🧬 发布台「笔记规划」切走再回用盘上那份回显（周排＝AI 排好的那一周）；整段除 AI规划外零 AI 调用')
             kb_ai = len(STATE['requests'])   # 知识库维护全程不调用AI，用当前次数做基线
             page.locator('#tabDiagnose').click()
             page.locator(go('kb')).click()
@@ -2145,6 +1992,10 @@ def run():
             before = len(STATE['requests'])
             page.locator('#diagQuizNext').click()
             expect(page.locator('#diagQuizNext')).to_be_enabled(timeout=30000)
+            # 素材备料是「同步完不等它、后台补发」的，按钮一恢复就数会漏——等这一发落地
+            t0 = time.time()
+            while time.time() - t0 < 20 and len(STATE['requests']) - before < 3:
+                page.wait_for_timeout(200)
             assert len(STATE['requests']) - before == 3, len(STATE['requests']) - before
             assert '素材备料的判定助手' in STATE['requests'][-1]['messages'][0]['content'], \
                 '问卷全部同步后顺手配素材那一发该排在最后'
@@ -2235,12 +2086,13 @@ def run():
             expect(page.locator('#diagPlanTypeCustom')).to_have_count(0)
             expect(page.locator('#diagPlanTypeNow')).to_have_count(0)   # 账号类型只在 ①，⑨ 不再重复展示
             expect(page.locator('#diagPlanBuild')).to_have_text('🔄 重新生成规划与评估')
-            # 2026-09-29：调子 / 人设三阶段表 / 五条线 × 写法 整块搬去「发笔记 → 任务配置」，这一页只剩排产与报告
+            # 2026-09-29：调子 / 人设三阶段表 / 五条线 × 写法 整块搬离这一页，只剩排产与报告
+            # 2026-10-21 搬回写稿：📄 内容基调在 ③、🎨 出图风格在 ⑤ 就地展开
             # 2026-10-01 五十二改：连「这一页只按…定下的基调排版」那行指路也整句撤掉（老板：这个提示不要了）
             assert page.locator('#diagStyleResult').count() == 0 and page.locator('#diagToneSummary').count() == 0, \
-                '规划页不该再摆基调内容（它们住在「发笔记 → 任务配置」）'
+                '规划页不该再摆基调内容（账号默认在写稿 ③/⑤ 就地展开）'
             expect(page.locator('#diagStepBody')).not_to_contain_text('定下的基调排版')
-            check(page, '规划＝只有排产表 + 报告：基调内容都在「发笔记 → 任务配置」，这一页连指路那行话也不摆')
+            check(page, '规划＝只有排产表 + 报告：基调内容在写稿 ③/⑤ 就地展开，这一页连指路那行话也不摆')
             # 标题下那段落说明整段撤（2026-09-25 二十九改）：别再摆「还没随问卷同步过…只更新规划与评估…」
             plan_txt = page.locator('#diagStepBody').inner_text()
             assert '还没随' not in plan_txt and '不动人设/卖点/知识库' not in plan_txt, plan_txt[:200]
@@ -2385,18 +2237,19 @@ def run():
                 page.locator('#fsClose').click()
             page.locator('#tabNotePublish').click()
             expect(page.locator('.npar-new')).to_be_visible()         # 一级项落在「笔记档案」（这一块的主页），新建笔记是它页顶那颗
-            # ✍️ 新建笔记＝六卡一页（2026-10-08 档案核心；2026-10-16 加了 🎭 IP玩法 一行成四方向）
-            #   副本现状：四方向（🎭 IP/📚 知识/🔥 引流/🎬 案例）× 各自最终效果＝1+4+2+1＝8 张卡，点哪张当场建篇
-            #   ⚠️ 公网已把 🎭 玩法并进 🔥 引流、又加了一行 🪟 门面（共 9 张卡）；那一步依赖副本还没有的
-            #      玩法池 / 门面 / 引流长文三块，副本先按四方向断言，等整块搬过来再对齐（2026-10-24）
+            # ✍️ 新建笔记＝四行卡一页（2026-10-24 副本重对齐后与主本同款；🎭 玩法已并进 🔥 引流，不再单列一行）：
+            #   🪟 门面（个人介绍 / 成交承接）＋ 📚 知识（4）＋ 🔥 引流（2）＋ 🎬 案例（1）＝9 张卡
+            #   ——门面是「主页缺不缺」，剩下三行是「今天发什么」；点哪张当场建篇
             page.locator('.npar-new').click()
             expect(page.locator('#dirModal.open')).to_be_visible()
             expect(page.locator('#dirBox')).to_contain_text('这一篇按哪个组合做？——点一张卡直接开工')
-            assert page.locator('#dirBox [data-direff]').count() == 8, '副本六卡一页：四方向 × 各自最终效果共 8 张卡'
-            for card_txt in ('🎭 IP玩法', '📚 知识', '🔥 引流', '🎬 案例', '思维导图图文', '字体动效视频', '真人口播', '长文笔记', '文案直出视频', '图文笔记', '案例成片'):
+            assert page.locator('#dirBox [data-direff]').count() == 9, '四行卡一页：门面 2 ＋ 知识 4 ＋ 引流 2 ＋ 案例 1 ＝ 9 张卡'
+            for card_txt in ('🪟 门面', '📚 知识', '🔥 引流', '🎬 案例', '个人介绍', '成交承接',
+                             '思维导图图文', '字体动效视频', '真人口播', '长文笔记', 'AI 图文笔记', '案例成片',
+                             '🎭 玩法不再单独一档'):
                 expect(page.locator('#dirBox')).to_contain_text(card_txt)
             expect(page.locator('#dirBox')).to_contain_text('✕ 先不建，回档案')
-            check(page, '「✍️ 新建笔记」＝副本六卡一页：四方向 × 最终效果共 8 张卡（含 🎭 IP玩法），点一张直接开工（卡面与 demo 一致）')
+            check(page, '「✍️ 新建笔记」＝四行 9 张卡（门面 2 / 知识 4 / 引流 2 / 案例 1；🎭 玩法并进引流不单列），点一张直接开工')
             page.locator('#dirBox [data-direff="k|图文"]').click()
             expect(page.locator('#npWizBody')).to_be_visible()
             dir_note = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
@@ -2404,15 +2257,23 @@ def run():
             check(page, '点「🧠 思维导图图文」卡：当场建一篇草稿进档案（dir=k · form=图文 · kOut=img），并进这条路的工作流')
             kb_rows = [e for e in send(page, 'getKnowledgeBase')['entries']
                        if e.get('isActive') is not False and (str(e.get('title') or '').strip() or str(e.get('content') or '').strip())]
-            expect(page.locator('.np-kbk')).to_have_count(len(kb_rows), timeout=15000)
+            # 挑知识那一站（2026-10-24 与主本同款）：进门三签＝📚 按规划发 / 🔮 AI推荐 / 🗂 自己选；
+            #   有规划时默认落「按规划发」——整张排产表摊开、下一篇标「← 下一篇该写它」；知识清单收在「🗂 自己选」里
+            expect(page.locator('#npWizBody .np-kbtab')).to_have_count(3, timeout=15000)
+            expect(page.locator('#npWizBody')).to_contain_text('📚 按规划发')
+            expect(page.locator('#npWizBody')).to_contain_text('怎样先体验')
+            expect(page.locator('#npWizBody')).to_contain_text('← 下一篇该写它')
+            assert page.locator('#npWizBody .np-plan-row-use').count() >= 1, '规划行该带「按这条写」'
+            check(page, '挑知识那一站进门落「📚 按规划发」：整张排产表摊开、下一篇标「← 下一篇该写它」、每行带「按这条写」（清单收在「🗂 自己选」）')
             # 🔮 提名卡（六十六改 #28）：一条「没写过、所在类最薄」的条目＋「就用这条」一键勾上；📌 阶段计划行报
-            #   当前阶段的知识发频与多发方面（与 发布台 · 🧬 读同一份 config.product.stagePlan）
+            #   当前阶段的知识发频与多发方面（与 发布台 · 🧬 读同一份 config.product.stagePlan）——这两样都在「🔮 AI推荐」签里
+            page.locator('#npWizBody .np-kbtab[data-t="ai"]').click()
             nom28 = page.evaluate('() => { const n = npKbNomOf(); return n ? { title: n.title, cat: n.cat } : null; }')
             assert nom28 and nom28['title'], '这几条知识里该有一条能被提名（没写过、所在类最薄）'
-            expect(page.locator('#npWizBody')).to_contain_text('🔮 AI 提名：「' + nom28['title'] + '」')
-            expect(page.locator('#npWizBody')).to_contain_text('「' + nom28['cat'] + '」')
-            expect(page.locator('#npWizBody')).to_contain_text('正补薄')
-            assert page.locator('#npWizBody .np-kb-nom').count() == 1
+            expect(page.locator('#npWizBody')).to_contain_text('🔮 AI 推荐：「' + nom28['title'] + '」')
+            expect(page.locator('#npWizBody')).to_contain_text('（属「' + nom28['cat'] + '」）')
+            expect(page.locator('#npWizBody')).to_contain_text('正该补薄')
+            expect(page.locator('#npWizBody .np-kb-nom')).to_have_count(1)
             plan28 = page.evaluate('''() => {
                 const pkey = (NP_STAGES.indexOf(_npWiz.stageKey) >= 0) ? _npWiz.stageKey : 'cold';
                 const kp = (_npWiz.stagePlan || {})[pkey] || npStagePlanDefaults(pkey);
@@ -2430,8 +2291,10 @@ def run():
             assert page.evaluate('() => _npWiz.kbNomUsed') is True
             assert page.locator('#npWizBody .np-kb-nom').count() == 0, '用过的提名卡要收起'
             expect(page.locator('#npWizBody')).to_contain_text('已挑（最多 3 条）：')
+            # ✕ 拿掉（在「🗂 自己选」签上拿，顺带把清单摆出来）：选择清空、勾选全放掉；提名卡不回巢
+            kb_show_list(page)
+            expect(page.locator('#npWizBody .np-kbk')).to_have_count(len(kb_rows), timeout=15000)
             assert page.locator('.np-kb-x').count() == 1
-            # ✕ 拿掉：选择清空、清单那格也放掉；提名卡不回巢
             page.locator('.np-kb-x').click()
             assert page.evaluate('() => _npWiz.chosenKb.length') == 0
             assert page.locator('#npWizBody .np-kbk:checked').count() == 0
@@ -2504,10 +2367,10 @@ def run():
             notes_cnt = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || []).length')
             assert notes_cnt == 1, '「先不建」不许建篇：' + str(notes_cnt)
             check(page, '六卡页脚记「上次建的：📚 知识 · 图文笔记。」；「✕ 先不建」不建篇、弹层收起')
-            # 🗂 档案列表（2026-10-10 老板拍板五点）：八列＝缩略图/篇目/方向/最终形式/内容/时间/状态/下一步——
+            # 🗂 档案列表（2026-10-10 老板拍板五点）：八列＝缩略图/篇目/分类/玩法/最终形式/内容/时间/状态/下一步——
             # 状态挪到行末（四色，可就地改）；操作列只剩一颗按钮：中间态＝「✏️ 编辑」（细粒度去向在 title）、走完＝「👀 预览」（本机存过片子的＝「🎬 成片预览」）
             row = page.locator('.npar-list .npar-row').nth(1)          # 第 0 行是表头
-            expect(row).to_contain_text('📚 知识')                     # 方向那一格＝六卡选的那条路
+            expect(row).to_contain_text('📚 知识')                     # 分类那一格＝六卡选的那条路
             expect(row).to_contain_text('图文笔记')                    # 最终形式那一格＝🖼 图文笔记（六卡那份叫法）
             expect(row).to_contain_text('等的不是时间')                # 内容那一格：① 挑完知识已直出稿（二十九改），铺的是正文开头
             assert row.locator('.npar-next').count() == 1, '操作列收成一颗按钮'
@@ -2515,11 +2378,11 @@ def run():
             assert row.locator('.npar-stsel').count() == 1, '状态＝行末那颗可就地改的下拉（四色）'
             assert page.locator('.npar-list .npar-edit, .npar-list .npar-task, .npar-list .npar-guide').count() == 0, '旧按钮要全撤'
             head = page.locator('.npar-list .npar-head').text_content()   # 用 text_content：窗口窄时 CSS 会隐藏「时间」列，inner_text 读不到
-            cols = ('篇目', '方向', '最终形式', '内容（正文开头 / 已出哪些料）', '时间', '状态', '下一步')
+            cols = ('篇目', '分类', '玩法', '最终形式', '内容（正文开头 / 已出哪些料）', '时间', '状态', '下一步')
             idxs = [head.find(c) for c in cols]
             assert all(i >= 0 for i in idxs), '表头缺列：%s' % head
-            assert idxs == sorted(idxs), '列序该是 方向→最终形式→内容→时间→状态→下一步（状态挪行末）：%s' % head
-            check(page, '档案列表＝方向＋最终形式＋一颗按钮（状态挪行末·四色可就地改）：中间态统一「✏️ 编辑」（去向在 title），旧按钮全撤')
+            assert idxs == sorted(idxs), '列序该是 分类→玩法→最终形式→内容→时间→状态→下一步（状态挪行末）：%s' % head
+            check(page, '档案列表＝分类＋玩法＋最终形式＋一颗按钮（状态挪行末·四色可就地改）：中间态统一「✏️ 编辑」（去向在 title），旧按钮全撤')
             # ▶️ 下一步＝状态机（2026-10-10 老板拍板后收成两态）：给每一档「做到哪了」造一篇，回档案看那颗按钮对不对——
             #   中间态一律「✏️ 编辑」＋细粒度去向/进度在 title；走完＝「👀 预览」（本机存过片子的叫「🎬 成片预览」）；已归档＝dim 的「— 已归档」
             now_ms = int(time.time() * 1000)
@@ -2527,7 +2390,7 @@ def run():
                 ('tm1', '矩阵·知识图文没导图', '✏️ 编辑', '导图工作区', {'dir': 'k', 'form': '图文', 'kOut': 'mind', 'voice': '样例稿子'}),
                 ('tm2', '矩阵·知识图文导图结构已有图未出', '✏️ 编辑', '导图工作区', {'dir': 'k', 'form': '图文', 'voice': '样例稿子', 'mind': {'md': '# 中心\n## 主干'}}),
                 ('tm2c', '矩阵·知识图文导图长图已出', '👀 预览', '导图长图已出', {'dir': 'k', 'form': '图文', 'voice': '样例稿子', 'imgDocs': [{'id': 'tm2c-mind', 'kind': 'mind', 'img': 'data:image/png;base64,AA'}]}),
-                ('tm3', '矩阵·图文还没进过出图', '✏️ 编辑', '接着出这套', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子'}),
+                ('tm3', '矩阵·图文还没进过出图', '✏️ 编辑', '接着出这一套', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子'}),
                 ('tm4', '矩阵·图文还缺三张', '✏️ 编辑', '还缺 3 张', {'dir': 'd', 'form': '图文', 'dOut': 'img', 'voice': '样例稿子', 'imgDocs': [{'id': 'td1', 'shots': {'total': 3}}]}),
                 ('tm5', '矩阵·视频没进字效', '✏️ 编辑', '进字效', {'dir': 'k', 'form': '视频', 'voice': '样例稿子'}),
                 ('tm6', '矩阵·视频有分幕没出片', '✏️ 编辑', '▶️ 出片', {'dir': 'k', 'form': '视频', 'voice': '样例稿子'}),
@@ -2535,11 +2398,12 @@ def run():
                 ('tm8', '矩阵·引流视频没拆段', '✏️ 编辑', '照讲到哪儿切到哪儿排成分镜', {'dir': 'd', 'form': '视频', 'voice': '样例稿子'}),
                 ('tm9', '矩阵·引流视频待拼片', '✏️ 编辑', '拼片配音', {'dir': 'd', 'form': '视频', 'voice': '样例稿子', 'dgen': {'segs': [{'text': '一句', 'done': True}]}}),
                 ('tm10', '矩阵·引流视频已拼好', '🎬 成片预览', '片已出', {'dir': 'd', 'form': '视频', 'voice': '样例稿子', 'dgen': {'segs': [{'text': '一句', 'done': True}]}}),
-                ('tm11', '矩阵·口播稿', '👀 预览', '口播稿已出', {'dir': 'k', 'form': '口播稿', 'voice': '样例口播稿'}),
+                ('tm11', '矩阵·口播稿还没选出口', '✏️ 编辑', '还差选出口', {'dir': 'k', 'form': '口播稿', 'voice': '样例口播稿'}),
+                ('tm11b', '矩阵·口播稿选了字效出口', '✨ 进字效出片', '进字效', {'dir': 'k', 'form': '口播稿', 'voice': '样例口播稿', 'fGate': 'film'}),
                 ('tm12', '矩阵·已发', '👀 预览', '发完了', {'status': '已发', 'dir': 'k', 'form': '图文', 'voice': '样例稿子'}),
                 ('tm13', '矩阵·已归档', None, '', {'status': '已归档', 'dir': 'k', 'form': '图文', 'voice': '样例稿子'}),
-                ('tm14', '矩阵·案例待做片', '✏️ 编辑', '丢素材', {'dir': 'c', 'form': '案例成片'}),
-                ('tm14b', '矩阵·案例剪了一半', '✏️ 编辑', '接着剪', {'dir': 'c', 'form': '案例成片',
+                ('tm14', '矩阵·案例待做片', '📚 去挑素材', '先去素材库挑几段', {'dir': 'c', 'form': '案例成片'}),
+                ('tm14b', '矩阵·案例剪了一半', '✏️ 编辑', '大组装', {'dir': 'c', 'form': '案例成片',
                     'asm': {'mats': [{'id': 'm1', 'name': '样例.mp4', 'dur': 10, 'segs': [{'a': 0, 'b': 50}]}]}}),
                 ('tm15', '矩阵·案例片已成', '🎬 成片预览', '成片已存', {'dir': 'c', 'form': '案例成片',
                     'asm': {'mats': [{'id': 'm1', 'name': '样例.mp4', 'dur': 10, 'segs': [{'a': 0, 'b': 50, 'done': True}]}],
@@ -2574,7 +2438,7 @@ def run():
                     expect(btn).to_have_text(lab)
                     tip = btn.get_attribute('title') or ''
                     assert tipkw in tip, '%s：title 该含「%s」，实际「%s」' % (mtitle, tipkw, tip)
-            check(page, '▶️ 下一步＝状态机十七档逐一走对（中间态一律「✏️ 编辑」：导图工作区 / 接着出这套·还缺 3 张 / 进字效·▶️ 出片 / 讲到哪儿切到哪儿排分镜·拼片配音 / 丢素材·接着剪；走完的预览分两档：「🎬 成片预览」（片已出 / 成片已存，点开能看片再下一遍）与「👀 预览」（导图长图已出 / 口播稿已出 / 发完了）；已归档＝dim「— 已归档」）')
+            check(page, '▶️ 下一步＝状态机十七档逐一走对（中间态一律「✏️ 编辑」：导图工作区 / 接着出这一套·还缺 3 张 / 进字效·▶️ 出片 / 讲到哪儿切到哪儿排分镜·拼片配音；口播稿先「还差选出口」、选了字效出口＝「✨ 进字效出片」；案例那条先「📚 去挑素材」、挑完「✏️ 编辑」去大组装；走完的预览分两档：「🎬 成片预览」（片已出 / 成片已存，点开能看片再下一遍）与「👀 预览」（导图长图已出 / 发完了）；已归档＝dim「— 已归档」）')
             # 清场：矩阵篇撤掉，回到「只有六卡那一篇」，接着走「下一步 → 写稿」
             worker.evaluate('''async (ids) => {
                 const d = await chrome.storage.local.get("np_notes");
@@ -2588,8 +2452,9 @@ def run():
             # 🧩 知识线三张卡各走通一遍（六卡建的 dir='k'：🧠 图文→导图长图 / ✨ 视频→进字效 / 🎙 口播稿→收稿回档案）
             def drive_ktalk(what):
                 # 二十九改撤站后：出过稿的篇重开会直落 ⑤（wip.step 收到 4）——先回 ① 再走
-                if page.locator('#npWizBody .np-kbk').count() == 0:
+                if page.evaluate('() => _npWiz && _npWiz.step') != 0:
                     page.locator('.np-wiz-prev').click()
+                kb_show_list(page)   # 进门落「📚 按规划发」，清单在「🗂 自己选」
                 expect(page.locator('.np-kbk')).to_have_count(len(kb_rows), timeout=15000)   # ①：等知识清单摆出来
                 cb_k = page.locator('.np-kbk[data-i="%d"]' % pick_k)   # 已挑过的（回开的篇）别再点——点了会把这条放掉
                 if not cb_k.is_checked():
@@ -2621,47 +2486,9 @@ def run():
             expect(page.locator('#npWizBody')).to_contain_text('改稿', timeout=10000)
             assert page.evaluate('() => _npWiz.step') == 4
             assert len(STATE['requests']) == req_prev, '成稿还在，回 ① 再过来不许重烧'
-            # ✏️ 换个写法重写（#22）：题与站都不动，这条线的写法轮下一格，就地在 ⑤ 重烧一版
-            rot = page.evaluate('''() => {
-                const now = npWritePickNow(_npWiz);
-                const t = NotePlan.typeOf(now.type);
-                const kinds = NotePlan.kindsOfType(t.key) || [];
-                const i = kinds.map(k => k.key).indexOf(now.kind);
-                const nx = kinds[(i + 1) % kinds.length];
-                return { from: String(now.kind || ''), tName: String(t.name || ''),
-                         next: String((nx || {}).key || ''), name: String((nx || {}).name || ''), step: _npWiz.step };
-            }''')
-            assert rot['next'] and rot['next'] != rot['from'], rot
-            req0 = len(STATE['requests'])
-            page.locator('#npKRewrite').click()
-            page.wait_for_function('() => _npWiz && _npWiz.write && _npWiz.write.kind === %s' % json.dumps(rot['next']), timeout=15000)
-            t0 = time.time()
-            while time.time() - t0 < 20 and len(STATE['requests']) == req0:
-                page.wait_for_timeout(200)
-            assert len(STATE['requests']) > req0, '换写法没重烧（一发 AI 都没烧）'
-            sys_new = next((r['messages'][0]['content'] for r in STATE['requests'][req0:]
-                            if '这一篇是「' in r['messages'][0]['content']), '')
-            assert '「' + rot['tName'] + ' · ' + rot['name'] + '」' in sys_new, \
-                '重烧那一发要按轮到的写法（%s · %s）写：%s' % (rot['tName'], rot['name'], sys_new[:160])
-            assert page.evaluate('() => _npWiz.step') == rot['step'], '换写法原地重烧，不许跳站'
-            assert '⑤ 改稿' in page.locator('#npWizBody').inner_text()
-            check(page, '知识线·✏️ 换个写法重写：题与站不动，写法轮下一格（%s → %s），就地在 ⑤ 重烧一版' % (rot['from'], rot['next']))
-            # 🎲 换个角度重写（二十九改）：撤站后 AI 自挑角度出稿，角度不对的出口——站不动，把上一版开头
-            #   喂给写手当"别再这么写"，就地在 ⑤ 重烧一版；喂过即清，不粘住之后的每次出稿
-            page.wait_for_function('() => !_npDraftBusy', timeout=15000)
-            req_g = len(STATE['requests'])
-            page.locator('#npKAngle').click()
-            t0 = time.time()
-            while time.time() - t0 < 20 and len(STATE['requests']) == req_g:
-                page.wait_for_timeout(200)
-            assert len(STATE['requests']) > req_g, '换角度没重烧（一发 AI 都没烧）'
-            sys_g = next((r['messages'][0]['content'] for r in STATE['requests'][req_g:]
-                          if '换一个角度重写' in r['messages'][0]['content']), '')
-            assert '闭水试验那 48 小时' in sys_g, \
-                '换角度那一发要把上一版开头带进 system 当"别再这么写"：%s' % sys_g[:160]
-            assert page.evaluate('() => _npWiz.step') == 4, '换角度原地重烧，不许跳站'
-            assert page.evaluate('() => String(_npWiz.kAvoidDraft || "")') == '', '上一版开头喂过一发就该清'
-            check(page, '知识线·🎲 换个角度重写：同一条知识换切入角度就地重烧（上一版开头进 system 当"别再这么写"、喂完即清）')
+            page.locator('.np-k-prev-go').click()   # 4 改稿 → 6 预览（这一版正文）：底栏那颗才是「出导图长图」
+            expect(page.locator('#npWizBody')).to_contain_text('🖼 图文（导图长图）', timeout=10000)
+            expect(page.locator('#npWizBody')).to_contain_text('下一站进导图工作区出这张长图')
             page.locator('.np-k-fin-img').click()
             # 🧠 导图工作区（三十六改）：进门种子先落档 → AI 自动出结构＝第 2 版（手改过的不再自动覆盖）；
             #   📄 正文卡摆着这篇正文（跟着正文改 MD）；✨ AI 再出＝第 3 版；跟 AI 说一句改＝第 4 版
@@ -2716,7 +2543,7 @@ def run():
             assert (n1.get('mind') or {}).get('ver') == 4 and (n1.get('mind') or {}).get('src') == 'ai' \
                 and str((n1.get('mind') or {}).get('sig') or ''), '导图落档要带 版号/src/正文指纹：%s' % n1.get('mind')
             assert '闭水试验那 48 小时' in str(n1.get('voice') or '')
-            check(page, '知识线·🧠 图文卡走通：① 挑知识（按类收堆·摊开再勾）→ 直出稿 → ⑤ 改稿（上一步 4→0 不落空站）→ 导图工作区（进门自动烧＝第 2 版、📄 正文卡摊着正文、AI 再出＝第 3 版、AI 改＝第 4 版）→ 竖式长图 1080 宽、高随内容（5 主干量高 >1440）：档案标「代发」+ imgDocs 认导图 + mind 留档（md/ver/src/sig）（下一步＝👀 预览）')
+            check(page, '知识线·🧠 图文卡走通：① 挑知识（按类收堆·摊开再勾）→ 直出稿 → ⑤ 改稿（上一步 4→0 不落空站）→ 👀 预览（图文·导图长图）→ 导图工作区（进门自动烧＝第 2 版、📄 正文卡摊着正文、AI 再出＝第 3 版、AI 改＝第 4 版）→ 竖式长图 1080 宽、高随内容（5 主干量高 >1440）：档案标「代发」+ imgDocs 认导图 + mind 留档（md/ver/src/sig）（下一步＝👀 预览）')
             # 卡2·✨ 视频：新建这一篇（kOut=film），走通到进字效（片台让开＝#filmGate 收起、外壳 #filmHead 亮出）
             page.locator('#tabNotePublish').click()
             page.locator('.npar-new').click()
@@ -2729,7 +2556,7 @@ def run():
             steps_k2 = page.locator('#npSteps').inner_text()
             for lab in ('挑知识', '改稿', '🎬 分幕', '发布'):
                 assert lab in steps_k2, f'知识线（视频）步骤条缺「{lab}」：{steps_k2}'
-            for lab in ('定话题', '人群', '挑稿', '自己拍发布', '🧠 出导图', '🎬 分幕'):
+            for lab in ('定话题', '人群', '挑稿', '自己拍发布', '🧠 出导图'):
                 assert lab not in steps_k2, f'知识线（视频）不该有「{lab}」：{steps_k2}'
             drive_ktalk('卡2 视频')
             page.locator('.np-k-fin-film').click()
@@ -2749,105 +2576,26 @@ def run():
             expect(page.locator('#npWizBody')).to_be_visible(timeout=15000)
             note3 = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
             assert note3 and note3['dir'] == 'k' and note3['kOut'] == 'voice' and note3['form'] == '口播稿' and note3['title'] == '（还没定稿）', note3
-            expect(page.locator('#npSteps')).to_contain_text('🎙 自己拍发布', timeout=15000)
+            expect(page.locator('#npSteps')).to_contain_text('👀 预览', timeout=15000)
             steps_k3 = page.locator('#npSteps').inner_text()
-            for lab in ('挑知识', '改稿定稿', '🎙 自己拍发布'):
+            for lab in ('挑知识', '改稿定稿', '👀 预览', '✓ 存好'):
                 assert lab in steps_k3, f'知识线（口播稿）步骤条缺「{lab}」：{steps_k3}'
             for lab in ('定话题', '人群', '挑稿', '🧠 出导图', '✨ 出片'):
                 assert lab not in steps_k3, f'知识线（口播稿）不该有「{lab}」：{steps_k3}'
             drive_ktalk('卡3 口播稿')
-            page.locator('.np-k-fin-voice').click()
+            # 🚪 定稿这一屏就是选出口那一屏（三选一卡）：点第一档「自己对着镜头念」→ 下一步进 👀 预览 → ✓ 存好回档案
+            expect(page.locator('#npWizBody .npf-gate')).to_have_count(3, timeout=10000)
+            page.locator('#npWizBody .npf-gate[data-g="talk"]').click()
+            assert page.evaluate('() => _npWiz.kGate') == 'talk'
+            page.locator('.np-k-prev-go').click()
+            expect(page.locator('#npWizBody')).to_contain_text('🎙 口播稿', timeout=10000)
+            page.locator('.np-k-prev-done').click()
             expect(page.locator('.npar-list')).to_be_visible(timeout=15000)
             n3 = worker.evaluate('async (id) => (((await chrome.storage.local.get("np_notes")).np_notes) || []).find(x => x && x.id === id) || null', note3['id'])
             assert n3 and n3['status'] == '代发' and n3['form'] == '口播稿' and n3['kOut'] == 'voice', n3
+            assert n3.get('fGate') == 'talk', n3.get('fGate')
             assert '闭水试验那 48 小时' in str(n3.get('voice') or '')
-            check(page, '知识线·🎙 口播稿卡走通：挑知识 → 直出稿 → 改稿定稿 → 「收好口播稿，回档案」：档案标「代发」+ form=口播稿 + 稿子进 voice')
-            # 🔥 引流行（六卡建 dir='d'）：③ 挑稿＝AI 照行业＋料池出 18 版（六类料每类 3 版）→ 挑一篇 → 改稿（转法硬约束）
-            #   → 出口「🎬 拆段出词」→ 写稿⑤站：AI 按重点拆 3 段（全 ✅ 拼片）→ 回档案（下一步＝🎬 成片预览）
-            worker.evaluate('''async (data) => {
-                const d = await chrome.storage.local.get("np_notes");
-                const list = (d.np_notes || []);
-                list.unshift(data.note);
-                await chrome.storage.local.set({ np_notes: list });
-            }''', {'note': {'id': 'drain-hist', 'title': '旧引流稿·屋顶渗水那篇', 'status': '已发', 'dir': 'd', 'dOut': 'img', 'form': '图文', 'voice': '', 'draft': '', 'titles': [], 'tags': [], 'updatedAt': now_ms}})
-            drain_before = len(STATE['requests'])
-            page.locator('#tabNotePublish').click()
-            page.locator('.npar-new').click()
-            expect(page.locator('#dirModal.open')).to_be_visible()
-            page.locator('#dirBox [data-direff="d|视频"]').click()
-            expect(page.locator('#npWizBody')).to_be_visible(timeout=15000)
-            dnote = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
-            assert dnote and dnote['dir'] == 'd' and dnote['dOut'] == 'film' and dnote['form'] == '视频' and dnote['title'] == '（还没定稿）', dnote
-            expect(page.locator('#npSteps')).to_contain_text('挑稿', timeout=15000)
-            steps_d = page.locator('#npSteps').inner_text()
-            for lab in ('挑稿', '改稿', '🎬 拆段出词', '拼片配音', '发布'):
-                assert lab in steps_d, f'引流线步骤条缺「{lab}」：{steps_d}'
-            for lab in ('挑知识', '人群', '🧠 出导图'):
-                assert lab not in steps_d, f'引流线步骤条不该有「{lab}」：{steps_d}'
-            # ③：出稿器分 3 批发（六类分 2 类一批）→ 18 台料稿摆出来；查重徽只挂与历史稿相近的那一版
-            expect(page.locator('#npWizBody .npPhone')).to_have_count(18, timeout=90000)
-            drain_reqs = [r for r in STATE['requests'][drain_before:] if '料 → 转 → 专业' in r['messages'][0]['content']]
-            assert len(drain_reqs) == 3, f'出稿器应发 3 批（六类分 2 类一批），实际 {len(drain_reqs)}'
-            sys0 = drain_reqs[0]['messages'][0]['content']
-            assert '通篇不带产品' in sys0 and '零承接' in sys0, '出稿提示词要压住「通篇不卖、零承接」'
-            u0 = drain_reqs[0]['messages'][1]['content']
-            assert '1. 🔥 热点' in u0 and '2. 😹 热梗' in u0, '第一批＝热点＋热梗'
-            u2 = drain_reqs[2]['messages'][1]['content']
-            assert '1. 🎯 被生活打了一下' in u2 and '2. 🏘 本地感悟' in u2, '最后一批排到「被生活打了一下＋本地感悟」'
-            assert '【已发过的选题清单' in u0 and '旧引流稿·屋顶渗水那篇' in u0, '出稿前要把历史引流稿的选题清单喂给 AI 规避'
-            expect(page.locator('#npWizBody .npPhoneScreen[style*="dashed"]')).to_have_count(1)
-            expect(page.locator('#npWizBody .npPhoneScreen[style*="dashed"]')).to_contain_text('⚠ 与')
-            # 挑一篇：这版记进档案（草稿）、正文当改稿底稿、转法那句进改稿当硬约束
-            pick0 = page.evaluate('''() => {
-                const b = document.querySelector('#npWizBody .np-drain-pick');
-                const di = parseInt(b.getAttribute('data-i'), 10);
-                const v = _npWiz.drainVariants[di];
-                return { di: di, cat: v.cat, title: v.title, line: v.line, turn: v.turn, body: v.body };
-            }''')
-            page.locator('#npWizBody .np-drain-pick').first.click()
-            expect(page.locator('#npWizBody')).to_contain_text('转法那句', timeout=10000)
-            dp = page.evaluate('() => ({ step: _npWiz.step, pick: _npWiz.drainPick, content: (_npWiz.draft || {}).content || "" })')
-            assert dp['step'] == 4 and dp['pick']['cat'] == pick0['cat'] and dp['pick']['title'] == pick0['title'] and dp['pick']['turn'] == pick0['turn'], dp
-            assert dp['content'] == pick0['body'], '挑中那版的正文要是改稿页的底稿'
-            assert pick0['turn'] in page.locator('#npWizBody').inner_text(), '转法那句要摆在改稿页当硬约束'
-            pl = page.evaluate('() => npRevisePayload(_npWiz, {})')
-            assert pl['talkKey'] == 'none' and pl['drainTurn'] == pick0['turn'] and pl['drainLine'] == pick0['line'], pl
-            assert pl['sellPoint'] == '' and pl['planItem'] is None and pl['topic'] == pick0['title'], pl
-            # 出口「🎬 拆段出词」→ 写稿⑤站：AI 按重点拆 3 段（重点卡＋每段贴豆包提示词），三段都 ⬆ 传回来才能拼片——
-            #   守门按钮常亮，没传齐点了弹提示（老板 2026-10-10：别摆禁用符号）
-            page.locator('.np-d-fin-film').click()
-            page.wait_for_function('() => _npWiz && _npWiz.step === 5 && _npWiz.dOut === "film"')
-            expect(page.locator('.np-dv-prompt')).to_have_count(3, timeout=30000)
-            expect(page.locator('.np-dv-asm')).to_be_enabled()
-            page.locator('.np-dv-asm').click()
-            expect(page.locator('#popToastBox')).to_contain_text('还有段没传回来')
-            assert page.evaluate('() => _npWiz.dgen.segs.every(s => !s.done)')
-            # 三段「豆包导出的片段」用 ffmpeg 现造（真 mp4、时长有限——拼片那步要读得到 duration），一段一格传回来
-            ff_d = shutil.which('ffmpeg')
-            assert ff_d, '自检需要 ffmpeg 造片段（拼片链路要真 mp4）'
-            for i, col in enumerate(('0x123A2B', '0x2B1A3A', '0x3A2B1A')):
-                segf = out / ('dvseg%d.mp4' % (i + 1))
-                subprocess.run([ff_d, '-y', '-f', 'lavfi', '-i', 'color=c=%s:s=320x568:d=0.9:r=24' % col,
-                                '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', str(segf)],
-                               check=True, capture_output=True)
-                page.locator('.np-dv-file[data-i="%d"]' % i).set_input_files(str(segf))
-                page.wait_for_function('() => _npWiz.dgen.segs[%d].done' % i)
-            # 配音走 Edge 免费口子——这里桩掉（不联网，走无声容忍），只验真录真存的落档
-            page.evaluate('() => { EdgeTTS.synth = async () => { throw new Error("自检：配音桩"); }; }')
-            page.locator('.np-dv-asm').click()
-            # 拼片（真录一遍）→ 回档案：这篇标「代发」、排一行「文案直出视频」的片、下一步＝🎬 成片预览
-            expect(page.locator('.npar-list')).to_be_visible(timeout=120000)
-            nd = worker.evaluate('async (id) => (((await chrome.storage.local.get("np_notes")).np_notes) || []).find(x => x && x.id === id) || null', dnote['id'])
-            assert nd and nd['status'] == '代发' and nd['form'] == '视频' and nd['title'] == pick0['title'], nd
-            assert nd['filmDocs'] and nd['filmDocs'][0]['kind'] == '文案直出视频', nd.get('filmDocs')  # 三十一改落档名＝文案直出视频（gen:true）
-            assert nd['dgen'] and len(nd['dgen']['segs']) == 3 and all(c.get('done') for c in nd['dgen']['segs']), nd.get('dgen')
-            assert pick0['body'] in str(nd.get('voice') or ''), '定稿时正文要编进 voice'
-            fd = worker.evaluate('async (id) => (((await chrome.storage.local.get("xhsFilmDocs")).xhsFilmDocs) || {})[id] || null', dnote['id'])
-            assert fd and fd['script'] == pick0['body'], fd
-            row_d = page.locator('.npar-list .npar-row', has_text=pick0['title'])
-            expect(row_d).to_have_count(1, timeout=15000)
-            expect(row_d.locator('.npar-next')).to_have_text('🎬 成片预览')
-            check(page, '引流行·🎬 视频卡走通：六卡建篇 → ③ 挑稿（3 批 6 类×3 版＝18 台；查重两层：历史清单喂 AI＋撞相近挂 ⚠）→ 挑中进改稿（转法硬约束 + 话术「不提产品」）→「🎬 拆段出词」＝写稿⑤站按重点拆 3 段配提示词（三段都「⬆ 传回来」才能拼片，没传齐点了弹提示，不摆禁用符号）→ 档案标「代发」+ filmDocs 排「文案直出视频」（下一步＝🎬 成片预览）')
+            check(page, '知识线·🎙 口播稿卡走通：挑知识 → 直出稿 → 改稿定稿（这一屏带三选一出口卡：3 张）→ 选「自己对着镜头念」→ 👀 预览 → ✓ 存好回档案：档案标「代发」+ form=口播稿 + 稿子进 voice + fGate=talk')
             # 🖼 引流·图文卡：同一套挑稿页，改稿页出口换「🖋 拆分镜，标成「代发」」——不切页，
             #   原地进写稿 ⑤ 站「🖋 分镜确认」（三十改：造图片并进写稿流；提示词一张张复制去生成、图传回格子）
             page.locator('#tabNotePublish').click()
@@ -2865,24 +2613,25 @@ def run():
             assert page.locator('#noteOutputContent').is_hidden(), '三十改：改完稿不切去造图片页，原地进 ⑤'
             expect(page.locator('#popToastBox')).to_contain_text('标成「代发」', timeout=10000)
             steps_d2 = page.locator('#npSteps').inner_text()
-            for lab in ('挑稿', '改稿', '🖋 分镜确认', '👀 预览', '发布'):
+            for lab in ('出几版', '改稿', '🖋 分镜确认', '👀 预览', '发布'):
                 assert lab in steps_d2, f'图文线五站条缺「{lab}」：{steps_d2}'
             assert '断句' not in steps_d2, '断句站已整个去掉（分镜＝带重点的断句）'
             body5 = page.locator('#npWizBody').inner_text()
-            assert '生成前定一次' in body5 and '画面风格' in body5 and '配文方式' in body5, body5[:300]
-            assert page.locator('#npWizBody .np-dsh-gen').count() == 1, '还没切过＝摆「🧠 生成分镜」入口'
+            assert '生成前定一次' in body5 and '画面风格' in body5 and '分几张' in body5, body5[:300]
             nd2 = worker.evaluate('async (id) => (((await chrome.storage.local.get("np_notes")).np_notes) || []).find(x => x && x.id === id) || null', dnote2['id'])
             assert nd2 and nd2['status'] == '代发' and nd2['form'] == '图文' and nd2['dOut'] == 'img', nd2
-            # ⑤ 站生成分镜：走后台 genNoteShots 那一发（桩服务器照契约切 3 屏）——5 列表格铺开、落进档案 imgDocs
-            page.locator('#npWizBody .np-dsh-gen').click()
-            page.wait_for_function('() => document.querySelectorAll(".np-dsh-set").length === 9', timeout=30000)
-            assert page.locator('.np-dsh-prompt').count() == 3 and page.locator('.np-dsh-copy').count() == 3
+            # ⑤ 站进门自动切一版（600ms 后打 genNoteShots，只自动试一次，不用点）——等 3 屏 + 整组提示词落下来
+            page.wait_for_function('() => _npWiz && _npWiz.shots && (_npWiz.shots.items || []).length === 3', timeout=30000)
+            expect(page.locator('#npWizBody .np-dsh-cell')).to_have_count(3, timeout=15000)
+            expect(page.locator('#npWizBody .np-dsh-cvcell')).to_have_count(1)          # 封面也摆进传图区
+            expect(page.locator('#npWizBody .np-dsh-gcopy')).to_have_count(1)           # 整组提示词＝一套一条
+            expect(page.locator('#npWizBody')).to_contain_text('一套 3 张就这一条')
             assert page.evaluate('() => _npWiz.shots.items.map(x => x.role).join("/")') == '开场/展开/收束'
             nd2b = worker.evaluate('async (id) => (((await chrome.storage.local.get("np_notes")).np_notes) || []).find(x => x && x.id === id) || null', dnote2['id'])
             doc0 = ((nd2b or {}).get('imgDocs') or [None])[0] or {}
             items2b = ((doc0.get('shots') or {}).get('items')) or []
             assert nd2b and nd2b['status'] == '代发' and len(items2b) == 3, (nd2b or {}).get('imgDocs')
-            check(page, '引流行·🖼 图文卡走通：同一套 18 台挑稿 → 挑一篇 → 改稿 → 「🖋 拆分镜，标成「代发」」＝不切页、原地进写稿 ⑤「🖋 分镜确认」（点「🧠 生成分镜」切出 3 屏 → 5 列表格落档 imgDocs；断句站已去掉）')
+            check(page, '引流行·🖼 图文卡走通：同一套 18 台挑稿 → 挑一篇 → 改稿 → 「🖋 拆分镜，标成「代发」」＝不切页、原地进写稿 ⑤「🖋 分镜确认」（进门自动切出一版 3 屏、整组提示词一条＋三张空格＋封面格，落档 imgDocs；断句站已去掉）')
             # 🚶 老路放行：六卡之前的老笔记（dir='old'）点开＝原六步向导，一切照旧
             worker.evaluate('''async (data) => {
                 const d = await chrome.storage.local.get("np_notes");
@@ -2898,7 +2647,7 @@ def run():
             expect(page.locator('#npWizBody')).to_be_visible(timeout=15000)
             expect(page.locator('#npWizBody .np-spk').first).to_be_visible(timeout=15000)   # ① 的卖点拉回来（顺带把这一发等完，后面计数不受它干扰）
             # ④ 挑稿（四十五改）＝先用「🔀 内容类型（五条线）」换线，进页自动把这条线底下的几种写法各写一篇，点中哪篇挑哪篇；
-            #   📐 篇幅配比与 🖋 字数的账号默认挂在「发笔记 → 任务配置 → 内容基调」那几张卡上，这里只剩 🎚 广告占比 / 🖋 字数两个「就改这一条」的旋钮
+            #   📐 篇幅配比与 🖋 字数的账号默认挂在 ③ 挑稿页「📄 内容基调」那几张卡上，这里只剩 🎚 广告占比 / 🖋 字数两个「就改这一条」的旋钮
             stepbar = page.locator('#npSteps').inner_text()
             for lab in ('卖点', '人群', '话题', '挑稿', '改稿', '发稿'):
                 assert lab in stepbar, f'六步条缺「{lab}」：{stepbar}'
@@ -2924,7 +2673,7 @@ def run():
                 assert page.locator('#npWizBody .npPhone', has_text=_kn).count() == 1, f'每种写法各出一篇：{_kn}'
             expect(page.locator('#npWizBody')).to_contain_text('● 情绪')   # 当前那条线点亮（AI 按题判的那条）
             expect(page.locator('#npWizBody')).to_contain_text('配比 90/10')   # 这条线没被账号默认单独定过 → 按话术档「轻带一句」切 90/10
-            expect(page.locator('#npWizBody')).to_contain_text('字数 300-500 字')  # 情绪线建议短档（任务配置那张表里没改过它）
+            expect(page.locator('#npWizBody')).to_contain_text('字数 300-500 字')  # 情绪线建议短档（③ 内容基调那张表里没改过它）
             assert page.locator('#npWizBody .npWriteRestore').count() == 0, '跟底子一致＝没换过，不给「回默认」'
             assert '调子' not in page.locator('#npWizBody').inner_text(), '调子已退市：④ 通篇不该再出现「调子」'
             # 常驻的重新生成入口＝页脚那颗「🔀 重写这批」（换线 / 刚改过口径 / 上一批不满意都点它）
@@ -2945,23 +2694,23 @@ def run():
             assert '只有写法在变' in var_sys and '每篇都要能独立发出去' in var_sys, var_sys[:800]
             assert '每篇字数控制在 300-500' in var_sys, '字数档跟着这条线／这种写法走'
             assert '按这档的中值收口' in var_sys, '分批之后要写明别每篇顶上限（否则一批写不动、被截断）'
-            assert '卖货话术比例＝轻带一句' in var_sys, '话术比例跟账号默认（任务配置那一档）'
+            assert '卖货话术比例＝轻带一句' in var_sys, '话术比例跟账号默认（③ 内容基调那一档）'
             assert '"variants"' in var_sys, '输出契约：一次回一批'
             assert '【本次选题】先别急着发笔记' in var_user, var_user[:400]
             assert '【本条线底下的写法：一种一篇】' in var_user and 'kind=hidden' in var_user and 'kind=quote' in var_user, var_user[:600]
             expect(page.locator('#npWizBody')).to_contain_text('样稿·替你说出口')   # 卡片副标＝这篇的标题（一种写法一篇）
             check(page, '📄 发笔记 ④ 挑稿：🔀 内容类型五条线都能切 + 页脚常驻「🔀 重写这批」；进页自动把这条线底下的几种写法各出一篇（并排摆成几台手机）（短档 5 篇一批、长档 2 篇一批；提示词钉死「同题＋只有写法在变＋线节拍＋📐 配比＋🖋 字数＋按中值收口」，调子已退市）')
-            # 🎚 这一条：一行摘要 + 折起来的「就改这一条」（📐 配比在这里只读预览，改它要去「发笔记 → 任务配置」那张表）
+            # 🎚 这一条：一行摘要 + 折起来的「就改这一条」（📐 配比在这里只读预览，改它要去 ③ 挑稿页「📄 内容基调」那几张卡）
             assert page.locator('#npWizBody .npStyleTalk').count() == 0 and page.locator('#npWizBody .npStyleWords').count() == 0, '旋钮折着呢：没展开不该铺出话术档/字数档'
             expect(page.locator('#npWizBody')).to_contain_text('🎚 这一条')
             expect(page.locator('#npWizBody')).to_contain_text('配比 90/10 · 广告占比 轻带一句 · 字数 300-500 字')
-            assert page.locator('#npWizBody .qhelp[data-tip*="账号默认在「发笔记 → 任务配置 → 内容基调」那几张卡上改"]').count() == 1, '那句指路收在问号气泡里，不铺成长句'
+            assert page.locator('#npWizBody .qhelp[data-tip*="账号默认在 ③ 挑稿页「📄 内容基调」"]').count() == 1, '那句指路收在问号气泡里，不铺成长句'
             page.locator('#npWizBody .npStyleToggle').click()
             expect(page.locator('#npWizBody .npStyleToggle')).to_contain_text('收起', timeout=10000)
             assert page.locator('#npWizBody .npStyleTalk').count() == 4, '展开后四档卖货话术比例都在'
             assert page.locator('#npWizBody .npStyleWords').count() == 3, '展开后三档字数都在'
             expect(page.locator('#npWizBody')).to_contain_text('📐 篇幅配比')          # 只读预览条（跟着话术比例与字数重切）
-            expect(page.locator('#npWizBody')).to_contain_text('（铺垫 / 广告 各占多少字，账号默认在「发笔记 → 任务配置 → 内容基调」）')
+            expect(page.locator('#npWizBody')).to_contain_text('（铺垫 / 广告 各占多少字，账号默认在 ③ 挑稿页「📄 内容基调」）')
             expect(page.locator('#npWizBody')).to_contain_text('当前：轻带一句（约占正文 1 成）（跟账号阶段建议的「轻带一句」）')
             expect(page.locator('#npWizBody')).to_contain_text('当前：短（300-500 字）（跟这条线／写法建议的）')
             assert page.locator('#npWizBody .npStyleRestore').count() == 0, '没改过就不该有「回到跟账号默认」'
@@ -2972,7 +2721,7 @@ def run():
             assert worker.evaluate('async () => (((await Storage.getConfig()).noteStyle || {}).sellTalk)') in (None, 'light'), '④ 里改话术比例不许写账号默认（新三签 UI 不再单独存 sellTalk，缺省即轻带一句）'
             page.locator('#npWizBody .npStyleWords[data-words="long"]').click()
             assert page.evaluate('() => _npWiz.noteStyle.words') == 'long'
-            assert worker.evaluate('async () => !((await Storage.getConfig()).noteStyle || {}).words') is True, '④ 里改字数不许写账号默认（账号字数挂在任务配置那张表的这条线／这个写法上）'
+            assert worker.evaluate('async () => !((await Storage.getConfig()).noteStyle || {}).words') is True, '④ 里改字数不许写账号默认（账号字数挂在 ③ 内容基调那张表的这条线／这个写法上）'
             expect(page.locator('#npWizBody')).to_contain_text('配比 100/0')      # 「不提产品」把广告段归 0，整篇全给铺垫
             expect(page.locator('#npWizBody')).to_contain_text('（这条改过）')
             expect(page.locator('#npWizBody')).to_contain_text('↺ 这两个回到跟账号默认')
@@ -3059,6 +2808,7 @@ def run():
             page.screenshot(path=str(out / 'notepublish-style-step.png'), full_page=True)
             # 回到 ①（后面还要在 ① 的素材清单上点勾）
             page.evaluate('''() => { _npWiz.step = 0; return npWizRender(document.getElementById('notePublishContent')); }''')
+            kb_show_list(page)
             expect(page.locator('#npWizBody .np-kbk')).to_have_count(len(kb_rows), timeout=10000)   # ① 清单摆出来（三十六改：按类收着，只认数不认可见）
             # ⑨ 规划接进发笔记：③ 选话题那一步要能摆出「📚 按规划发」的下一篇
             assert page.evaluate('''() => {
@@ -3102,7 +2852,7 @@ def run():
             assert '铺垫 ≈ 90%（约 1040 字）' in draft_system, '配比里的字数估算跟着字数档走（长档中值 1150）：' + draft_system[:600]
             assert '本条产品篇幅按「轻带一句」走（约占正文 10%）' in draft_system, '没有账号默认覆盖时按话术档改口'
             assert '这一类的戒条（违反＝写错了这一类）' in draft_system, '成稿要带上这一类的戒条'
-            assert '字数：这篇写 800-1500 字（长档' in draft_system, '成稿要按字数档写（没设过＝任务配置那张表里这条线/这个写法建议的）'
+            assert '字数：这篇写 800-1500 字（长档' in draft_system, '成稿要按字数档写（没设过＝③ 内容基调里这条线/这个写法建议的）'
             (ROOT / 'tmp').mkdir(exist_ok=True)
             (ROOT / 'tmp' / 'tone-system.txt').write_text(draft_system, encoding='utf-8')
             check(page, '发笔记按规划写稿：撤掉档位闸门（都卖），成稿带类型/具体写法/这一类要干嘛 + 这一类的节拍、📐 篇幅配比与 🖋 字数（调子已退市）')
@@ -3134,7 +2884,7 @@ def run():
             draft_short = STATE['requests'][-1]['messages'][0]['content']
             assert '字数：这篇写 300-500 字（短档' in draft_short, draft_short[:400]
             assert '铺垫 ≈ 90%（约 360 字）' in draft_short, '配比里的字数估算要跟着字数档走：' + draft_short[:600]
-            assert worker.evaluate('async () => !((await Storage.getConfig()).noteStyle || {}).words') is True, '这条的字数不许动账号默认（账号字数挂在任务配置那张表的这条线／这个写法上）'
+            assert worker.evaluate('async () => !((await Storage.getConfig()).noteStyle || {}).words') is True, '这条的字数不许动账号默认（账号字数挂在 ③ 内容基调里这条线／这个写法上）'
             check(page, '🖋 字数随 payload 进成稿提示词：写到短档，配比里的字数估算跟着变，账号默认不动')
             # 话题那一发同样按这条的话术比例与五条线出选题
             send(page, 'aiGenerateTopics', {'noteStyle': {'sellTalk': 'none'}, 'sellPoints': [{'point': '体验工具'}], 'people': [{'name': '准备提前还房贷的上班族'}], 'kbList': []})
@@ -3171,14 +2921,24 @@ def run():
             assert '【知识库参考】' in draft_ref and '上架前的三段式盘点清单' in draft_ref, draft_ref
             assert '客服话术口径与退款说明' not in draft_ref, '成稿的【知识库参考】只能用它点选的素材'
             check(page, '成稿：【知识库参考】用①里点选的素材（整条喂进去），没勾的不进提示词')
-            # ═══ 🎬 案例流全链路（2026-10-08 #7）：六卡建篇 → ① 进料·剪切·定义 → ② 大组装 → 真出片 → 存回档案 ═══
+            # ═══ 🎬 案例流全链路：六卡建篇（新建案例先落素材库挑段）→ 视频生成台 ① 进料·剪切·定义 → ② 大组装 → 真出片 → 存回档案 ═══
             page.locator('#tabNotePublish').click()
             page.locator('.npar-new').click()
             expect(page.locator('#dirModal.open')).to_be_visible()
             page.locator('#dirBox [data-direff="c|案例成片"]').click()
-            expect(page.locator('#noteCaseContent')).to_be_visible(timeout=15000)
+            # 2026-10-24：新建案例不再直接进视频生成台，先去素材库挑段（库里没有备好的段时只弹一句提示，留在素材库）
+            expect(page.locator('#noteAssetsContent')).to_be_visible(timeout=15000)
             case_note = worker.evaluate('async () => (((await chrome.storage.local.get("np_notes")).np_notes) || [])[0] || null')
             assert case_note and case_note['dir'] == 'c' and case_note['form'] == '案例成片' and case_note['asm'] in (None, {}), case_note
+            # 下面这一段验的是视频生成台里「自己带素材进料 → 大组装 → 出片 → 存回档案」那条工作台；
+            # 从素材库挑段的入口另在 📚 素材库那一节验，这里直接打开这一篇的工作台
+            page.evaluate('''async (id) => {
+                const l = (await chrome.storage.local.get('np_notes')).np_notes || [];
+                const n = l.find(x => x && String(x.id) === String(id)) || l[0];
+                _npLibCtx = null;
+                switchMainTab('noteCase', n);
+            }''', case_note['id'])
+            expect(page.locator('#noteCaseContent')).to_be_visible(timeout=15000)
             # ① 进来就按知识库蒸环节轴（mock 照【知识库标题】清单挑真标题回）
             page.wait_for_function('() => _npCase && _npCase.stages.length >= 2 && !_npCase.stageBusy', timeout=25000)
             assert page.evaluate('() => _npCase.stages.map(s => s.name)') == ['🚪 进场看现场', '💧 闭水试验', '✅ 验收交付']
@@ -3601,7 +3361,7 @@ def run():
                 await chrome.storage.local.set({ [NP_NOTES_KEY]: list, note_queue: {} });
             }''', [ap['n1'], ap['n2'], ap['n3']])
             page.evaluate('''async (prev) => { await npWeekPlanSave(prev); }''', wp_ap_prev)
-            # ═══════ 📚 #9 素材库＝集合（镜像 demo v41 十五改）═══════════════════════
+            # ═══════ 📚 #9 素材库：新库（平铺）＋ 旧集合两签（收在「🗄 旧数据」）═══════════════
             # 案例流定义完段就自动入库：验「剪段入库|篇id」集合、段 ref 指回本篇素材、存档定名后集合跟着改名
             auto_col = page.evaluate('''async (caseId) => {
                 const cols = await npCollectionsRead();
@@ -3639,15 +3399,21 @@ def run():
             }''')
             assert seed9['nSegs'] >= 2 and seed9['nImgs'] >= 1, seed9
             # 集合墙：计数现算（案例剪段那个集合也在），一行一集＝名字＋来源 chip＋计数/待补充＋说明
-            page.locator('#tabNoteAssets').click()
+            # 素材库进门＝新库（段平铺 + 8 颗标签 + 文件夹下拉）；旧集合那两签收在「🗄 旧数据」里，这里两段都看一眼
+            page.evaluate("() => switchMainTab('noteAssets')")
             expect(page.locator('#noteAssetsContent')).to_be_visible(timeout=15000)
+            expect(page.locator('#noteAssetsContent')).to_contain_text('📚 素材库', timeout=10000)
+            expect(page.locator('#noteAssetsContent #nplLibQ')).to_be_visible(timeout=10000)
+            expect(page.locator('#noteAssetsContent #nplLibTags')).to_be_visible(timeout=10000)
+            page.locator('#noteAssetsContent [data-npl="legacy"]').click()
+            expect(page.locator('#noteAssetsContent #npasQ')).to_be_visible(timeout=15000)
             expect(page.locator('#noteAssetsContent')).to_contain_text('📚 素材库')
             expect(page.locator('#noteAssetsContent')).to_contain_text(
                 f"{seed9['nCols']} 个集合 · {seed9['nSegs']} 段视频 · {seed9['nImgs']} 张图")
             expect(page.locator('#noteAssetsContent .npas-gen')).to_have_text('🧺 AI 整理素材')
             expect(page.locator('#noteAssetsContent .npas-new-open')).to_have_text('➕ 新建集合')
-            rowA = page.locator('#noteAssetsContent .npas-col-open', has_text='缺口卖点X')
-            rowB = page.locator('#noteAssetsContent .npas-col-open', has_text='缺口知识X')
+            rowA = page.locator('#noteAssetsContent .npas-row', has_text='缺口卖点X')
+            rowB = page.locator('#noteAssetsContent .npas-row', has_text='缺口知识X')
             expect(rowA).to_have_count(1, timeout=10000)
             expect(rowA).to_contain_text('卖点「缺口卖点X」')
             expect(rowA).to_contain_text('0 段视频 · 1 张图')
@@ -3672,12 +3438,12 @@ def run():
             expect(page.locator('#noteAssetsContent')).to_be_visible(timeout=15000)
             expect(page.locator('#noteAssetsContent .npas-focus')).to_have_count(1, timeout=10000)
             expect(page.locator('#noteAssetsContent')).to_contain_text('还缺料的 1 个集合在下面（红框）')
-            assert page.locator('#noteAssetsContent .npas-col-open.npas-focus', has_text='缺口卖点X').count() == 0, '有 1 张图的集合不算缺口，不该被红框'
+            assert page.locator('#noteAssetsContent .npas-row.npas-focus', has_text='缺口卖点X').count() == 0, '有 1 张图的集合不算缺口，不该被红框'
             page.screenshot(path=str(out / 'notepublish-assets-wall.png'), full_page=True)
-            check(page, '📚 素材库「🗂 集合配置」签：一行一集（用/停用开关＋名字＋来源 chip＋归类 chip＋「N 段视频 · N 张图」/「🖼 待补充 · 还没料」＋AI 理由）；搜集合名/说明/来源/类名一起搜；档案「⚠ 还缺 N 项」点击＝跳这一签红框高亮缺料集合')
+            check(page, '🗄 旧数据 →「🗂 集合配置」签：一行一集（用/停用开关＋名字＋来源 chip＋归类 chip＋「N 段视频 · N 张图」/「🖼 待补充 · 还没料」＋AI 理由）；搜集合名/说明/来源/类名一起搜；档案「⚠ 还缺 N 项」点击＝跳这一签红框高亮缺料集合')
             # 签 B（素材内容）：空集合＝amber 空态；非手工集合不出「🔗 关联」，也没连播卡
             expect(rowB).to_be_visible(timeout=10000)
-            rowB.click()
+            rowB.locator('.npas-col-open').click()
             expect(page.locator('#noteAssetsContent .npas-tabback')).to_have_text('‹ 回集合配置', timeout=10000)
             expect(page.locator('#noteAssetsContent')).to_contain_text('🕐 这一集还没料')
             expect(page.locator('#noteAssetsContent .npas-up')).to_have_text('📁 传本机图')
@@ -3687,7 +3453,7 @@ def run():
             page.locator('#noteAssetsContent .npas-tabback').click()
             expect(rowA).to_be_visible(timeout=10000)
             # 有图的集合：图墙出「🖼 只有图 · 还没剪」＋缩略图；× 删条＝回到空态
-            rowA.click()
+            rowA.locator('.npas-col-open').click()
             expect(page.locator('#noteAssetsContent .npas-item-del')).to_have_count(1, timeout=10000)
             expect(page.locator('#noteAssetsContent')).to_contain_text('🖼 只有图 · 还没剪')
             assert page.locator('#noteAssetsContent img[src^="data:image/"]').count() >= 1, '缩略图要显示出来'
@@ -3700,7 +3466,7 @@ def run():
             page.locator('#noteAssetsContent .npas-tabback').click()
             expect(rowB).to_be_visible(timeout=10000)
             # ✕ 删集合＝原生 confirm；删完回墙，这个集合没了
-            rowB.click()
+            rowB.locator('.npas-col-open').click()
             expect(page.locator('#noteAssetsContent .npas-col-del')).to_be_visible(timeout=10000)
             def on_dlg9(d):
                 assert d.type == 'confirm', d.type
@@ -3720,7 +3486,7 @@ def run():
                 return { col: cols.some(c => c && c.id === 'col9-kb'), clip: clips.some(c => c && c.col === 'col9-kb') };
             }""")
             assert not gone9['col'] and not gone9['clip'], '删集合要把这一集和里面的素材记录一起摘掉：%s' % gone9
-            check(page, '📚 素材内容签：‹ 回集合配置 / 📁 传本机图 / ✕ 删集合（原生 confirm，连里面的素材记录一起删）；空集合＝「🕐 这一集还没料」；纯图条＝「🖼 只有图 · 还没剪」＋ × 删条；非手工集合不出「🔗 关联」')
+            check(page, '🗄 旧数据 →「🎞 素材内容」签：‹ 回集合配置 / 📁 传本机图 / ✕ 删集合（原生 confirm，连里面的素材记录一起删）；空集合＝「🕐 这一集还没料」；纯图条＝「🖼 只有图 · 还没剪」＋ × 删条；非手工集合不出「🔗 关联」')
             # 清场：种的两个集合与那篇撤掉
             cleaned = page.evaluate('''async () => {
                 const p = window.__np9prev || null;
@@ -3879,12 +3645,12 @@ def run():
             expect(page.locator('#dirModal.open')).to_be_visible(timeout=10000)
             page.locator('#dirBox [data-direff="k|图文"]').click()
             expect(page.locator('#npWizBody')).to_be_visible(timeout=15000)
-            expect(page.locator('#npWizBody')).to_contain_text('📚 这篇讲哪条知识', timeout=15000)   # ① 摆出来（三十六改：清单默认收着，别等可见的勾选框）
+            expect(page.locator('#npWizBody .np-kbtab')).to_have_count(3, timeout=15000)   # ① 三签：按规划发 / AI推荐 / 自己选
             expect(page.locator('#npWizBody')).to_contain_text('📚 按规划发', timeout=25000)
-            expect(page.locator('#npWizBody')).to_contain_text('下一篇该发：')
             expect(page.locator('#npWizBody')).to_contain_text('1. 没写过的知识X')
+            expect(page.locator('#npWizBody')).to_contain_text('← 下一篇该写它')
             expect(page.locator('#npWizBody')).to_contain_text('知识·干货')   # meta＝typeOf('howto').name（emoji 在字段里，不拼进字符串）
-            check(page, '📚 写文案 ① 挑知识：「📚 按规划发」把刚排进本周的条目摆成「下一篇该发：1. 没写过的知识X（知识·干货）」（二十九改：卡从撤掉的「定话题」站挪来）')
+            check(page, '📚 写文案 ① 挑知识：「📚 按规划发」签把刚排进本周的条目摆进排产表——1. 没写过的知识X（知识·干货），标「← 下一篇该写它」')
             # 清场：知识（replace 还快照）/已发篇/stats/排产表全数还原（只留早前用例的档）
             clean10 = page.evaluate('''async () => {
                 const p = window.__np10prev; window.__np10prev = null;

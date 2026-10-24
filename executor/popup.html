@@ -1345,7 +1345,7 @@
     .npar-list { border: 1px solid var(--c-line, #eceef0); border-radius: 10px; background: #fff; overflow: hidden; }
     .npar-row {
       display: grid; align-items: center; gap: 8px;
-      grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto;
+      grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px 152px;
       padding: 5px 10px; border-bottom: 1px solid var(--c-line, #eceef0);
     }
     .npar-row:last-child { border-bottom: 0; }
@@ -1389,30 +1389,30 @@
     .npar-gap { flex: none; max-width: 190px; overflow: hidden; text-overflow: ellipsis; border: 1px solid #f3d3a3; background: #fff8ef; color: #b45309; border-radius: 8px; font-size: 10.5px; padding: 2px 7px; cursor: pointer; line-height: 1.5; }
     .npar-out { font-size: var(--fs-xs, 11px); color: var(--c-ink-3, #8b95a3); margin-top: 2px; }
     @media (max-width: 1180px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px 152px; }
       .npar-col-time { display: none !important; }
     }
     @media (max-width: 980px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px 152px; }
       .npar-col-form { display: none !important; }
     }
     @media (max-width: 860px) {
-      .npar-row { grid-template-columns: 44px minmax(110px, 1fr) 64px 58px 74px auto; }
+      .npar-row { grid-template-columns: 44px minmax(110px, 1fr) 64px 58px 74px 152px; }
       .npar-col-peek { display: none !important; }
     }
     /* ☑️ 批量多选（2026-10-10 老板口述）：开了批量，行首多一列勾选框——四套断点模板各加一格 26px */
-    .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px auto; }
+    .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 88px 74px 152px; }
     .npar-col-sel { display: flex; align-items: center; justify-content: center; overflow: visible; }
     .npar-col-sel input { width: 14px; height: 14px; accent-color: var(--c-brand); cursor: pointer; margin: 0; }
     .npar-row.npar-sel, .npar-row.npar-sel:hover { background: var(--c-brand-soft, #fdf2f2); }
     @media (max-width: 1180px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(96px, .8fr) minmax(110px, 1.2fr) 74px 152px; }
     }
     @media (max-width: 980px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1.1fr) 64px 58px minmax(110px, 1.2fr) 74px 152px; }
     }
     @media (max-width: 860px) {
-      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1fr) 64px 58px 74px auto; }
+      .npar-list.npar-batch .npar-row { grid-template-columns: 26px 44px minmax(110px, 1fr) 64px 58px 74px 152px; }
     }
 
     /* ✍️ 新建笔记：六卡一页＝三个方向 × 各自最终效果，点一张卡直接开工（镜像 demo dirPageHtml）。
