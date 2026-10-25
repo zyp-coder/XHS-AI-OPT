@@ -488,7 +488,8 @@ def run(ctx):
     assert page.evaluate('() => npImgLand(npS())') == 'preview', '点了「不出封面」，老档就落在 ⑤ 预览'
     goto_tab('look')
     assert page.locator('#npLookBox .np-motif').count() == 4, '① 那一档摊开＝三颗短名单＋跟账号默认（六十六改收口，四类轴已撤下这一排）'
-    assert page.locator('#npLookBox .np-capd').count() == 4, '配文方式四档跟流派摆在同一档'
+    assert page.locator('#npLookBox .np-born').count() == 9, '📷 画面形式＝八颗＋跟账号默认'
+    assert page.locator('#npLookBox .np-capd').count() == 0, '配文方式四档已退市（图上那句走 ④ 的 ★）'
     goto_tab('cut')
     s = st()
     assert len(s['order']) == 7 and len(s['pool']) == 7, '老档摊开照样本地列行号（不烧 AI、也不替人绑）：%s' % len(s['order'])
