@@ -8,7 +8,8 @@
  *   客户拿到的就是这一份；干活从网页上下单，档位在服务器侧判定。
  *
  * 用法（在项目根目录执行）：
- *   node build.js full --licensee "张三公司"      # 包进门默认＝全功能（真表在服务器侧）
+ *   node build.js fullplat --licensee "张三公司"  # 包进门默认＝全平台（真表在服务器侧）
+ *   node build.js full --licensee "李四"          # 包进门默认＝全功能（只做小红书）
  *   node build.js comment --licensee "李四"       # 包进门默认＝基础
  *   node build.js comment-multi --licensee "王五" # 包进门默认＝升级
  *   node build.js pro                            # 自用版（全功能、零等待，自用）
@@ -47,18 +48,26 @@ const PRESETS = {
   pro: {
     label: '自用版',
     validDays: 0,
-    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true },
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true, multiPlatform: true },
     keywordMax: KEYWORD_MAX_UNLIMITED, price: 0, noDelay: true,
   },
 
-  // ── 对外销售的三档（按月收费：默认有效期 30 天，打包时可用 --days 覆盖）──
-  // ③ 全功能版：② + 线索（通知 / 私信 + 获客清单 + 客服话术）；定价 539/月
+  // ── 对外销售的四档（按月收费：默认有效期 30 天，打包时可用 --days 覆盖）──
+  // ④ 全平台版：③ + 抖音 / 视频号（发笔记能发这两家 + 抖音获客）；定价 699/月
+  fullplat: {
+    label: '全平台版',
+    validDays: 30,
+    price: 699,
+    keywordMax: KEYWORD_MAX_UNLIMITED,
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true, multiPlatform: true },
+  },
+  // ③ 全功能版：② + 线索（通知 / 私信 + 获客清单 + 客服话术）；定价 539/月（只做小红书）
   full: {
     label: '全功能版',
     validDays: 30,
     price: 539,
     keywordMax: KEYWORD_MAX_UNLIMITED,
-    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true },
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: true, notePublish: true, dailyBrowse: true, videoFilm: true, multiPlatform: false },
   },
   // ① 基础版：共有 + 发笔记（AI 写笔记稿 / 素材库 / 笔记档案 / 字效编辑器）；无获客、无线索；定价 239/月
   comment: {
@@ -66,7 +75,7 @@ const PRESETS = {
     validDays: 30,
     price: 239,
     keywordMax: KEYWORD_MAX_UNLIMITED,
-    features: { batchSend: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: true, dailyBrowse: false, videoFilm: true },
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: false, prospectList: false, notePublish: true, dailyBrowse: false, videoFilm: true, multiPlatform: false },
   },
   // ② 升级版：① + 获客（一键灌水/笔记列表/关键词维护）；无线索；定价 399/月
   // 日常浏览随获客走（② 起开）；照旧不列入对外功能清单：物料与说明书都不写这条
@@ -75,7 +84,7 @@ const PRESETS = {
     validDays: 30,
     price: 399,
     keywordMax: KEYWORD_MAX_UNLIMITED,
-    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: true, dailyBrowse: true, videoFilm: true },
+    features: { batchSend: true, tenant: true, knowledge: true, autoWater: true, prospectList: false, notePublish: true, dailyBrowse: true, videoFilm: true, multiPlatform: false },
   },
 };
 
@@ -97,7 +106,7 @@ function parseArgs(argv) {
 
 function usageAndExit(msg) {
   if (msg) console.error('\n❌ ' + msg);
-  console.error('\n用法: node build.js <full|comment|comment-multi|pro> [--licensee "客户名"] [--days N] [--xhs-id "小红书号"] [--xhs-name "昵称"] [--out 目录]\n');
+  console.error('\n用法: node build.js <fullplat|full|comment|comment-multi|pro> [--licensee "客户名"] [--days N] [--xhs-id "小红书号"] [--xhs-name "昵称"] [--out 目录]\n');
   process.exit(1);
 }
 
@@ -183,6 +192,7 @@ function featureLines(cfg) {
   if (f.autoWater) out.push('获客（一键灌水 + 笔记列表；关键词维护：自动找词、搜笔记 · 关键词不限量）');
   if (f.prospectList) out.push('线索（通知 / 私信 + 获客清单）');
   if (f.notePublish) out.push('发笔记（AI 写笔记稿 + 素材库 / 笔记档案' + (f.videoFilm ? '；字效编辑器：口播稿配成竖版视频，带配音' : '') + '）');
+  if (f.multiPlatform) out.push('抖音 / 视频号（发笔记能发这两家 + 抖音获客）');
   // 日常浏览：随获客 ② 起开通，但按老板口径不列入对外功能清单（物料/说明书都不写），故这里有意不生成条目
   return out;
 }
@@ -235,6 +245,8 @@ ${edgeTip}
   4) 之后在网页上点「发 / 开始」，这只手就去干活；网页右下角能看到它的状态
   不用填任何 AI Key：写稿、出图、出片都在网页上，这边只是手。
   别关浏览器——关了不干活（服务器上的单会排队，回来接着干）。
+  重启电脑不用管：装的时候已经设好「开机自启」，重启后它会自己把浏览器打开、自己挂上。
+  扩展显示「已停用」或变灰：双击包里的「一键修复.bat」，把浏览器关掉再双击一次就好。
 
 （提示：请按真人节奏使用，因操作过猛导致的账号风险需自行承担）
 ================================================
@@ -297,9 +309,11 @@ ${edgeTip}
       <li>之后在网页上点「发 / 开始」，这只手就去干活；网页右下角能看到它的状态。</li>
       <li style="color:#888">※ 不用填任何 AI Key：写稿、出图、出片都在网页上，这边只是手。</li>
       <li style="color:#888">※ 别关浏览器——关了不干活（服务器上的单会排队，回来接着干）。</li>
+      <li style="color:#888">※ 重启电脑不用管：装的时候已经设好「开机自启」，重启后它会自己打开浏览器、自己挂上。</li>
     </ol>
   </div>
 
+  <div class="tip">🔧 扩展显示「已停用」或变灰？把浏览器完全关掉，双击包里的「一键修复.bat」——不用重装、不用重新登录，配对号也不会掉。</div>
   <div class="tip">⚠️ 请按真人节奏使用；因操作过猛导致的账号风险需自行承担。</div>
   <div class="foot">技术支持 / 续期：＿＿＿＿＿＿＿＿</div>
 </div></body></html>
@@ -321,7 +335,7 @@ function zipDir(srcDir, zipPath) {
 /* 包里的 .bat 必须 GBK+CRLF（cmd 的解析要求）——转的是暂存副本，源文件保持 UTF-8。
    PS5.1 里 [char]13+[char]10 是加法（不是字符串拼接）——必须先 [string] 转型。 */
 function fixBatsToGbk(dir) {
-  const ps = '$d=$env:BUILD_BAT_DIR; Get-ChildItem -Path $d -Filter *.bat | ForEach-Object { '
+  const ps = '$d=$env:BUILD_BAT_DIR; Get-ChildItem -Path $d -File | Where-Object { $_.Extension -eq \'.bat\' -or $_.Extension -eq \'.vbs\' } | ForEach-Object { '
     + '$c=[IO.File]::ReadAllText($_.FullName,[Text.Encoding]::UTF8); '
     + '$c=$c.Replace([string][char]13+[string][char]10,[string][char]10).Replace([string][char]10,[string][char]13+[string][char]10); '
     + '[IO.File]::WriteAllText($_.FullName,$c,[Text.Encoding]::GetEncoding(936)) }';
@@ -420,6 +434,8 @@ function main() {
   // 1) 按允许清单铺包（产品页 / 字体 / 备份件 / 开发件从源头就不进暂存区）
   const staged = handGate.copyAllowed(SRC, stageDir);
   if (staged.skipped.length) console.log('  闸门外没进包：' + staged.skipped.join('、'));
+  const patched = handGate.patchHandPages(stageDir);
+  if (patched.length) console.log('  点开就是「找不到文件」的入口已摘掉：' + patched.join('、'));
   fixBatsToGbk(stageDir);
 
   // 2) 档位不再写进包：executor/lib/edition.js 是空壳，真表在服务器派单时拦

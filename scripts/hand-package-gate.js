@@ -26,6 +26,7 @@ const ROOT = path.resolve(__dirname, '..');
 const ALLOW_FILES = new Set([
   'manifest.json',
   'exec-boot.js', 'exec-core.js', 'exec-shell.js', 'exec-workwin.js', 'exec-acct-check.js',
+  'exec-douyin.js',          // 抖音获客（搜词/捞作品/读评论）：只看看记记，不评论不私信
   'work-boot.js', 'work-idle.html',
   'hand-mode.js', 'hand-cover.js',
   'boot-pack.js',            // 首屏分包装载器（扩展页禁内联脚本，从 popup.html 里拎出来的）
@@ -35,6 +36,10 @@ const ALLOW_FILES = new Set([
   'ui.css', 'theme.js',
   'panel.html', 'panel.js',
   'Edge-防禁用.bat', '装机-看这里.txt',
+  'repair.ps1', 'repair.bat', '一键修复.bat', 'boot-start.vbs',   // 自检修复＋开机自启（2026-10-29）
+  '装机教程.html',                     // 与网页同一份图文教程（离线也能看）
+  '装我.bat', '更新.bat', '卸载.bat',   // 按客户出包时带的三个双击脚本（通用包里没有）
+  'prefill.json',                      // 按客户出包时带的预填（服务器地址＋配对号）
   '使用说明.txt', '使用说明.html',   // build.js 打给客户的那两份
 ]);
 const ALLOW_DIRS = new Set(['icons', 'lib']);
@@ -68,7 +73,10 @@ const ALLOW_LIB = new Set([
   'auto-water.js', 'crypto-box.js', 'daily-browse.js', 'data-privacy.js',
   'default-prompts.js', 'delay-presets.js', 'edition.js',
   'icons.js', 'knowledge-search.js', 'license-guard.js', 'note-architecture.js',
-  'note-plan.js', 'note-tags.js', 'platforms.js', 'prompt-renderer.js',
+  'note-plan.js', 'note-tags.js', 'note-trend.js', 'kb-file.js', 'platforms.js', 'prompt-renderer.js',
+  /* 首屏分包装载器按需补下载的两页（boot-pack.js 的 diag / state 两包）：
+     漏进白名单＝客户包里没有这两份，点开诊断/线索页会 404 */
+  'pg-diag.js', 'pg-state.js',
   'pub-adapt.js', 'pub-shadow-hook.js', 'scenario-drain.js', 'storage.js',
   'tenant.js', 'utils.js', 'visual-motif.js',
 ]);
@@ -143,8 +151,10 @@ function check(dir) {
   /* 必需件 + 挡页补丁 */
   const NEED = [
     'manifest.json', 'exec-boot.js', 'exec-core.js', 'exec-shell.js', 'exec-workwin.js',
+    'exec-douyin.js',
     'work-idle.html', 'hand-mode.js', 'hand-cover.js', 'popup.html', 'video.html',
     'panel.html', 'icons', 'lib',
+    'repair.ps1', 'repair.bat', '一键修复.bat', 'boot-start.vbs',
   ];
   for (const n of NEED) if (!fs.existsSync(path.join(dir, n))) errors.push(`缺必需件：${n}`);
 
@@ -166,6 +176,19 @@ function check(dir) {
     const h = fs.readFileSync(p, 'utf8');
     if (!h.includes('hand-mode.js')) errors.push(page + ' 没挂 hand-mode.js（手工打开会直接进产品界面）');
     if (page === 'popup.html' && !h.includes('work-boot.js')) errors.push('popup.html 没挂 work-boot.js（执行器起不来机器人）');
+  }
+
+  /* 页面里指向本地文件的引用必须真的在包里——否则客户一点就是「找不到文件」 */
+  for (const page of ['popup.html', 'video.html', 'panel.html', 'work-idle.html']) {
+    const p = path.join(dir, page);
+    if (!fs.existsSync(p)) continue;
+    for (const m of fs.readFileSync(p, 'utf8').matchAll(/(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
+      const ref = m[1].trim();
+      if (!ref || ref.startsWith('#') || /^(https?:|data:|mailto:|javascript:|\/\/)/i.test(ref)) continue;
+      const rel = ref.split(/[?#]/)[0].replace(/^\.\//, '');
+      if (!rel) continue;
+      if (!fs.existsSync(path.join(dir, rel))) errors.push(`${page} 指向包外的「${ref}」——客户点了就是「找不到文件」`);
+    }
   }
 
   /* 内核必须是主本的逐字节副本 */
@@ -285,6 +308,34 @@ function copyAllowed(src, dest) {
   return { copied, skipped };
 }
 
+/* 出包后收拾页面：产品界面里指向「不随包发」的入口、以及包里没有的脚本，
+   留在包里客户一点就是「找不到文件」——出包时从包里那份摘掉（源目录不动）。 */
+function patchHandPages(dir) {
+  const removed = [];
+  const popup = path.join(dir, 'popup.html');
+  if (!fs.existsSync(popup)) return removed;
+  let h = fs.readFileSync(popup, 'utf8');
+  const before = h;
+
+  /* ❓ 新手引导：guide.html 是产品页（闸门不随包发），入口一并摘掉 */
+  h = h.replace(/[ \t]*<a\b[^>]*\bid=["']hdrGuideLink["'][^>]*>[\s\S]*?<\/a>[ \t]*(\r?\n)?/gi, () => {
+    if (!removed.includes('❓ 新手引导→guide.html')) removed.push('❓ 新手引导→guide.html');
+    return '\n';
+  });
+
+  /* 包里没有的本地脚本，脚本标签一并摘掉（留空行，不改行号） */
+  h = h.replace(/[ \t]*<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/script>[ \t]*(\r?\n)?/gi, (m, src) => {
+    if (/^([a-z]+:)?\/\//i.test(src)) return m;
+    const rel = src.split(/[?#]/)[0].replace(/^\.\//, '');
+    if (!rel || fs.existsSync(path.join(dir, rel))) return m;
+    removed.push('脚本 ' + rel);
+    return '\n';
+  });
+
+  if (h !== before) fs.writeFileSync(popup, h);
+  return removed;
+}
+
 function printReport(r, dir) {
   console.log(`\n📦 执行器包闸门：${dir}`);
   console.log(`   文件 ${r.stats.files} 个 · ${r.stats.bytesHuman || '0 MB'}`);
@@ -307,7 +358,7 @@ function printReport(r, dir) {
   }
 }
 
-module.exports = { check, printReport, copyAllowed, ALLOW_FILES, ALLOW_DIRS, ALLOW_LIB, STUB_LIBS };
+module.exports = { check, printReport, copyAllowed, patchHandPages, ALLOW_FILES, ALLOW_DIRS, ALLOW_LIB, STUB_LIBS };
 
 if (require.main === module) {
   const dir = path.resolve(process.argv[2] || path.join(ROOT, 'executor'));
