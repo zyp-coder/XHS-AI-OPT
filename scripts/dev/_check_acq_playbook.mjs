@@ -137,7 +137,7 @@ ok(/只回复两个字：跳过/.test(g('SCENARIO_DRAIN').find(s => s.scenario =
 /* 招生帖：固定词先挡；普通家长帖不误挡 */
 ok(g('drainLooksSolicit({ noteTitle: "春季招生开始啦", noteContent: "" })') === true, '招生帖固定词能挡住');
 ok(g('drainLooksSolicit({ noteTitle: "周末带娃去哪", noteContent: "求推荐" })') === false, '普通家长帖不误挡');
-ok(/drainLooksSolicit\(data\)/.test(src), '评论生成前会先过固定词这道闸');
+ok(/drainLooksSolicit\(\s*data\s*,/.test(src), '评论生成前先读这个号的获客配置、再过固定词这道闸（词表能按行业补）');
 
 const dp = read('web/lib/default-prompts.js');
 ok(/\{playbook_rule\}/.test(dp) && /\{store_rule\}/.test(dp), '私信提示词带 {playbook_rule} 与 {store_rule}');
@@ -208,8 +208,12 @@ ok(g('drainTalkBlock(drainPbTalkNorm({ steps: { who: "w", open: "o", lead: "l", 
   if (f === 'web/lib/scenario-drain.js') {
     ok(/talkBlock\s*=\s*drainTalkBlock\(/.test(s) && /sysPrompt \+= .*talkBlock/.test(s), f + '：评论生成带上玩法话术');
     ok(/data-talkline/.test(s) && /data-talkedit/.test(s) && /data-talksave/.test(s), f + '：话术摆在排班行里、可就地改');
-    ok(/class="pbp-table"/.test(s) && /colspan="5"/.test(s) && /data-pbstore="\$\{s\}\|/.test(s), f + '：排班是一张五列表，提店口径收进「改」的展开块');
-    ok(/<th>玩法<\/th><th>周几跑（点一下切换）<\/th><th>评论策略（怎么说话）<\/th><th>出词策略（找词按这句）<\/th><th>今天<\/th>/.test(s), f + '：排班五列的表头按老板定的顺序');
+    ok(/class="pbp-table"/.test(s) && /colspan="11"/.test(s) && /data-pbpop=/.test(s) && !/data-pbstore=/.test(s),
+      f + '：排班是一张十一列表，评论策略一格一项、点开就地选（提店不再挤在展开块里）');
+    ok(/<th>玩法<\/th><th>周几跑<\/th><th>评论动作<\/th><th>引导<\/th><th>提店<\/th><th>开口<\/th><th>长短<\/th><th>每篇回几人<\/th><th>收进清单<\/th><th>话术<\/th><th>出词策略（找词按这句）<\/th>/.test(s),
+      f + '：十一列的表头按老板定的顺序');
+    ok(/function drainStrategyRule\(/.test(s) && /function drainGuideByPlan\(/.test(s) && /drainStrategyRule\(scanCfg/.test(s),
+      f + '：八项策略拼成一段，笔记评论也按它出（②回评论区用同一段）');
     ok(/data-wrbox=/.test(s) && /data-wredit=/.test(s) && /data-writext=/.test(s) && /data-wrsave=/.test(s), f + '：出词策略摆在排班行里、点「改」就地写');
     ok(/<th>玩法<\/th><th>关键词<\/th><th>找词<\/th><th>每天挑几个<\/th>/.test(s), f + '：关键词表把「每天挑几个」从排班挪过来、找词在末列');
     ok(/data-kwsel=/.test(s) && /data-kwbatchdel=/.test(s) && /sxPoolBatchDel/.test(s), f + '：两颗批量钮（这一行移出 / 全部词删除）');
@@ -238,7 +242,7 @@ ok(/同城本业/.test(g('drainAiKeywordRule("local", "杭州", "")')), '留空�
 ok(g('drainPbWordRuleNorm("' + '词'.repeat(200) + '")').length === 160, '出词策略最长 160 字（太长的提示词 AI 自己会砍）');
 
 ['executor/exec-core.js', 'extension/background.js', 'server/bg/background.js', 'web/download/_proto/exec-core.js'].forEach(f => {
-  ok(/drainPbPlan\(await drainGetScanCfg\(\), playbook\) \|\| \{\}\)\.wordRule/.test(read(f)), f + '：找词先领这个玩法自己写的出词策略');
+  ok(/drainPbPlan\(.*playbook.*\)\s*\|\|\s*\{\}\)\.wordRule/.test(read(f)) && /drainAiKeywordRule\(playbook, city, ownRule/.test(read(f)), f + '：找词先领这个玩法自己写的出词策略');
 });
 
 /* ── 11.5 名字对得上：排班行叫「评论策略」，底下那块讲节奏的叫「评论节奏」 ── */
@@ -251,14 +255,19 @@ ok(!/📖 评论策略/.test(src) && !/📖 评论策略/.test(read('web/popup.h
      包层组＝executor/lib、extension/lib、web/download/_proto/lib（逐字节相同，出客户包＋执行器自测读这份）。
    两组内容相同，只比「空行放在哪」差几行（另一会话铺母版/删函数留下的排版残留）。
    「整轮卡死替机器人记欠账」＝包里的活代码（`work-boot.js` 的看门狗调它），16:42 已补进公网后台、16:43:50 重启上岗，不再是未上线残留。
-   只剩一行注释级差异：公网后台那句还是旧页名「诊断&配置」、包里已是「账号规划」——注释客户看不见，不值一趟重启。 */
+   只剩一行注释级差异：公网后台那句还是旧页名「诊断&配置」、包里已是「账号规划」——注释客户看不见，不值一趟重启。
+   ⚠ 11-04 新登记的未上线段：行业口径包（drainPackOf / drainPbCopy / drainPbTip / drainSolicitWords）只铺在网页后端那一组。
+      包层三份（执行器／自测副本／客户母版）本轮不跟——执行器只动手不生成，跟一次要重出母版＋升执行器版本，等下次发版一并走；
+      读不到包的那两份继续用系统里那套现文案，所以客户机一字不变。 */
 const WEB_TIER = ['web/lib/scenario-drain.js', 'server/bg/lib/scenario-drain.js'];
 const PACK_TIER = ['executor/lib/scenario-drain.js', 'extension/lib/scenario-drain.js', 'web/download/_proto/lib/scenario-drain.js'];
 /* 两组之间只差「空行放在哪」——另一会话铺母版/删函数时留下的排版残留；比对只看非空行序列 */
 const contentLines = (s) => s.split('\n').filter(l => l.trim() !== '');
 ok(new Set(WEB_TIER.map(md5)).size === 1, '网页后端组两份逐字节一致（web／server-bg）');
 ok(new Set(PACK_TIER.map(md5)).size === 1, '包层组三份逐字节一致（executor／extension／_proto）');
-ok(contentLines(read(PACK_TIER[0])).join('\n') === contentLines(read(WEB_TIER[0])).join('\n'), '两组内容一致（只差空行排版）');
+ok(WEB_TIER.every(f => /function drainPackOf/.test(read(f))), '网页后端组两份都带行业口径包');
+ok(PACK_TIER.every(f => !/drainPackOf/.test(read(f))), '包层三份还没跟行业口径包（本轮登记的未上线段，下次发版一起跟）');
+/* 两组的内容比对从 11-04 起改成上面这对「有没有这套新函数」的闸：包层跟上进包时，那条「还没跟」会红，改这条登记即可 */
 ok([...WEB_TIER, ...PACK_TIER].every(f => /drainQueueHoldRunning/.test(read(f))), '记欠账函数六份齐全（公网后台 16:43 已上岗）');
 ok(/drainQueueHoldRunning/.test(read('executor/work-boot.js')), '看门狗仍调它（卡住自动记欠账在客户机上生效）');
 const awMain = md5('web/auto-water-app.js');
