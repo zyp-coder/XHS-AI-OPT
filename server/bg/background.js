@@ -2093,10 +2093,16 @@ async function handleAiGenKeywords(data) {
   // 按玩法出词（2026-11-02）：一次只出一个玩法，口径在 drainAiKeywordRule 里
   const playbook = String((data && data.playbook) || '').trim();
   const city = String((config.myCity && config.myCity.city) || '').trim();
-  /* 老板在「玩法排班 → 出词策略」里自己写过一句就优先用那句（2026-11-04）；没写才用内置口径 */
+  /* 老板在「玩法排班 → 出词策略」里自己写过一句就优先用那句（2026-11-04）；没写才看这个号的行业口径包，再没有才用内置口径 */
   let ownRule = '';
-  try { if (playbook && typeof drainPbPlan === 'function') ownRule = String((drainPbPlan(await drainGetScanCfg(), playbook) || {}).wordRule || ''); } catch (_) {}
-  const pbRule = (playbook && typeof drainAiKeywordRule === 'function') ? drainAiKeywordRule(playbook, city, ownRule) : '';
+  let scanCfg = null;
+  try {
+    if (playbook && typeof drainGetScanCfg === 'function') {
+      scanCfg = await drainGetScanCfg();
+      ownRule = String((drainPbPlan(scanCfg, playbook) || {}).wordRule || '');
+    }
+  } catch (_) {}
+  const pbRule = (playbook && typeof drainAiKeywordRule === 'function') ? drainAiKeywordRule(playbook, city, ownRule, scanCfg) : '';
   if (pbRule) system.push('5. ' + pbRule);
   system.push((pbRule ? '6' : '5') + '. 只输出严格 JSON，不要用代码块，结构必须是：{"keywords":["词1","词2",...]}，共 ' + need + ' 个。');
   const systemText = system.join('\n');
@@ -3794,13 +3800,14 @@ async function handleGenerateDm(data) {
   const srcScenario = (person.source && person.source.scenario) || 'latest';
   let talkBlock = '';
   try {
-    if (typeof drainPlaybookDmRule === 'function') context.playbook_rule = drainPlaybookDmRule(srcScenario);
     const st = await chrome.storage.local.get('drain_scan_cfg');
     const scanCfg = (typeof _drainNormalizeScanCfg === 'function')
       ? _drainNormalizeScanCfg(st['drain_scan_cfg'] || {})
       : (st['drain_scan_cfg'] || {});
+    // 开口角度也要读这个号的行业口径包，所以排在读配置之后（2026-11-04）
+    if (typeof drainPlaybookDmRule === 'function') context.playbook_rule = drainPlaybookDmRule(srcScenario, scanCfg);
     if (typeof drainStoreRule === 'function' && typeof drainPbPlan === 'function') {
-      context.store_rule = drainStoreRule(drainPbPlan(scanCfg, srcScenario).store);
+      context.store_rule = drainStoreRule(drainPbPlan(scanCfg, srcScenario).store, scanCfg);
     }
     // 这个玩法配好的那段话：当参考带进私信，不逐字照抄
     if (typeof drainPbTalkOf === 'function' && typeof drainTalkBlock === 'function') {
@@ -10203,9 +10210,20 @@ async function aiGenerateDrainTalkBg(data) {
   /* 2026-11-02：话术按玩法各一份，生成时也按这个玩法换角度（六套共用 drainPbTalkHint） */
   const pbId = (typeof drainScenarioId === 'function') ? drainScenarioId((data && data.scenario) || 'latest') : 'latest';
   const pbDef = (typeof drainScenarioDef === 'function') ? drainScenarioDef(pbId) : null;
-  const pbHint = (typeof drainPbTalkHint === 'function') ? drainPbTalkHint(pbId) : '';
+  let pbHint = '';
   let pbStore = 'none';
-  try { if (typeof drainPbPlan === 'function') pbStore = drainPbPlan(await drainGetScanCfg(), pbId).store; } catch (_) {}
+  let pbDesc = (pbDef && String(pbDef.desc || '')) || '';
+  let talkCfg = null;
+  try {
+    talkCfg = (typeof drainGetScanCfg === 'function') ? await drainGetScanCfg() : null;
+    /* 2026-11-04：这个号铺过底子就按它自己那份行业口径写（打法说明、玩法说明、提店口径都读包） */
+    if (typeof drainPbCopy === 'function') {
+      pbHint = drainPbCopy(talkCfg, pbId, 'hint');
+      pbDesc = drainPbCopy(talkCfg, pbId, 'desc') || pbDesc;
+    }
+    if (!pbHint && typeof drainPbTalkHint === 'function') pbHint = drainPbTalkHint(pbId, talkCfg);
+    if (typeof drainPbPlan === 'function') pbStore = drainPbPlan(talkCfg, pbId).store;
+  } catch (_) {}
   if (!persona && !bio && !card) {
     throw new Error('还没填人设：先去「账号规划 → 基础配置」写一句「用一句话介绍你自己」，话术才按这个人写');
   }
@@ -10213,14 +10231,16 @@ async function aiGenerateDrainTalkBg(data) {
     '你在帮一个小红书 / 抖音商家配「获客话术」：他在别人笔记的评论区里搭话，把有需求的人引到自己主页或私信。',
     '★ 第一原则：只照【这个账号的人设】写。人设里的身份、城市、说话方式、想接的客户、不接谁，都要落到每一句话上。',
     '★ 禁止通用模板：不许出现「专业团队」「欢迎咨询」「免费报价」「私信我了解更多」这类谁都能说的话；不许硬广、不许贬低同行。',
-    pbDef ? '★ 这次只写「' + pbDef.icon + ' ' + pbDef.label + '」这个玩法的话术：' + String(pbDef.desc || '') : '',
+    pbDef ? '★ 这次只写「' + pbDef.icon + ' ' + pbDef.label + '」这个玩法的话术：' + pbDesc : '',
     pbHint ? '这个玩法的打法：' + pbHint : '',
-    (typeof drainStoreRule === 'function') ? drainStoreRule(pbStore) : '',
+    (typeof drainStoreRule === 'function') ? drainStoreRule(pbStore, talkCfg) : '',
     '★ 只写「一小段话」，2~3 句、口语、短（整段 60~160 字），把这三件事说清：',
     '① 什么算商机：对方说了什么 / 问到什么，就值得跟；',
     '② 怎么评论：在评论下接一句，还是一个字都不评论、只私信（按这个玩法的打法来）；',
     '③ 提不提店名：不提 / 只说身份 / 对方问起再报店名（按上面的提店口径来，公开评论一律不主动报店名）。',
-    pbId === 'local' ? '这个玩法里，同行 / 机构的招生帖只收人、不留评论。' : '',
+    pbId === 'local' ? ((typeof drainPackOf === 'function' && drainPackOf(talkCfg))
+      ? '这个玩法里，同行揽客的帖子只收人、不留评论。'
+      : '这个玩法里，同行 / 机构的招生帖只收人、不留评论。') : '',
     '平台合规：不写"保证""最便宜""包治"这类绝对化说法；效果话带"因人而异"。',
     instruction ? '★ 这一次是「按我说的改」：在【现有话术】的基础上，只按【这次的要求】改；没提到的部分尽量保留，别整段换掉。' : '',
     (lastText && !instruction) ? '这是「再写一版」：换一种说法，别复用上一版的句子。' : '',

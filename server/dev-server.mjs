@@ -1972,7 +1972,28 @@ async function seedDemoIndustry(d, foundation) {
     const rKb = await bg.dispatch({ action: 'aiKbSave', data: { entries: f.kb } });
     if (!rKb || !rKb.ok) throw new Error((rKb && rKb.error) || 'aiKbSave 失败');
     store.books[d.id].note_plan = buildPlan(f, now);
+    /* 获客玩法的行业口径（2026-11-04）：这套底子带包就写进这个号自己的获客配置 */
+    if (f.drainPack) await seedDrainPack(d.id, f.drainPack);
   });
+}
+
+/* 把行业口径包写进这个号的获客配置，并把那六段话术显式换成包里那句。
+   必须显式覆盖：默认话术只在这个号第一次读到配置时铺一遍（talkSeed 闸），之后改代码救不了已经铺过的号。 */
+async function seedDrainPack(accId, pack) {
+  const r = await bg.dispatch({ action: 'drainGetScanCfg' });
+  if (!r || !r.ok) throw new Error((r && r.error) || '读获客配置失败');
+  const cfg = r.cfg || {};
+  const at = Date.now();
+  const pbTalk = Object.assign({}, cfg.pbTalk || {});
+  ['latest', 'top', 'local', 'pain', 'cross', 'highv'].forEach((s) => {
+    const text = String((((pack.pb || {})[s] || {}).talk) || '').trim();
+    if (text) pbTalk[s] = { text, persona: '', at };
+  });
+  cfg.pbPack = pack;
+  cfg.pbTalk = pbTalk;
+  const w = await bg.dispatch({ action: 'drainSaveScanCfg', data: { cfg } });
+  if (!w || !w.ok) throw new Error((w && w.error) || '获客行业口径没写进去');
+  return Object.keys(pbTalk).length;
 }
 
 /* 后台「按行业铺底子」：把一套写好的行业底子整份灌给一个真号（人设 / 卖点 / 知识库 / 排产）。

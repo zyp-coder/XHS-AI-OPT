@@ -428,6 +428,18 @@ const DRAIN_PB_DEFAULT = {
   highv: { days: [2, 4], perDay: 1, store: 'none' },
 };
 const DRAIN_PB_STORE = { none: '不提', identity: '只提身份', store: '可报店名' };
+/* ── 评论策略八项（2026-11-04）：每个玩法一套，「笔记下面评一句」和「回评论区那句」共用同一套 ──
+   mode=这篇笔记做几件事 / guide=想让对方下一步做什么（auto＝沿用账号资料那句承接）/ entry=怎么开口 /
+   len=说几句 / cap=一篇最多回几个人 / collect=找到的人进不进清单；store 沿用上面三档。 */
+const DRAIN_PB_MODE = { note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' };
+const DRAIN_PB_GUIDE = { auto: '跟账号资料', none: '不引导', dm: '私信我', home: '看主页', visit: '到店' };
+const DRAIN_PB_ENTRY = { follow: '顺着他说', judge: '给一条判断', ask: '反问一句', story: '补一条经验', light: '轻接一句' };
+const DRAIN_PB_LEN = { one: '一句', two: '两句', three: '三句以内' };
+/* 六个玩法＋老 rival 的默认值：没配过的号读出来跟现在一样（rival 本来就是只收人） */
+const DRAIN_PB_MODE_DEFAULT = { rival: 'people' };
+const DRAIN_PB_ENTRY_DEFAULT = { top: 'light', pain: 'judge', local: 'judge' };
+const DRAIN_PB_LEN_DEFAULT = { top: 'one' };
+const DRAIN_PB_CAP_DEFAULT = 3;
 const DRAIN_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];   // 周一到周日（显示顺序）
 /* 出词策略最长 160 字：这段要整句塞进 AI 找词的提示词，太长的提示词会被 AI 自己砍掉 */
 function drainPbWordRuleNorm(raw) {
@@ -440,11 +452,20 @@ function drainPbPlanNorm(raw, scenario) {
     ? Array.from(new Set(o.days.map(Number).filter(x => Number.isFinite(x) && x >= 0 && x <= 6))).sort((a, b) => a - b)
     : d.days.slice();
   const per = parseInt(o.perDay, 10);
+  const capN = parseInt(o.cap, 10);
+  const mode = DRAIN_PB_MODE[o.mode] ? o.mode : (DRAIN_PB_MODE_DEFAULT[scenario] || 'both');
   return {
     days,
     perDay: (Number.isFinite(per) && per >= 1) ? Math.min(20, per) : d.perDay,
     store: DRAIN_PB_STORE[o.store] ? o.store : d.store,
     wordRule: drainPbWordRuleNorm(o.wordRule),
+    mode,
+    guide: DRAIN_PB_GUIDE[o.guide] ? o.guide : 'auto',
+    entry: DRAIN_PB_ENTRY[o.entry] ? o.entry : (DRAIN_PB_ENTRY_DEFAULT[scenario] || 'follow'),
+    len: DRAIN_PB_LEN[o.len] ? o.len : (DRAIN_PB_LEN_DEFAULT[scenario] || 'two'),
+    cap: (Number.isFinite(capN) && capN >= 1) ? Math.min(5, capN) : DRAIN_PB_CAP_DEFAULT,
+    /* 只收人＝清单是唯一产出，强制开 */
+    collect: mode === 'people' ? true : (o.collect === false ? false : true),
   };
 }
 function drainPbPlan(cfg, scenario) {
@@ -517,6 +538,33 @@ const DRAIN_TALK_DEFAULT = {
 const DRAIN_TALK_DEFAULT_STORE = {
   latest: 'identity', top: 'none', local: 'store', pain: 'store', cross: 'identity', highv: 'identity',
 };
+/* ── 📦 行业口径包（2026-11-04）：这六套玩法文案原本写死在本文件（全是亲子口吻），铺哪个行业读到的都是同一句。
+   现在改成：行业底子里带一份包 → 铺底子时写进这个号的获客配置 cfg.pbPack → 生成时先读包。
+   包是可选的：读不到就回落本文那套现文案，所以别的行业号、老客户机一字不变。
+   包形状 { label, solicit:[词…], storeRules:{none,identity,store}, pb:{ 玩法:{ tag, desc, pbTip, hint, talk, dm, wordRule, system, user } } } */
+function drainPackOf(cfg) {
+  const p = (cfg || {}).pbPack;
+  return (p && typeof p === 'object' && !Array.isArray(p)) ? p : null;
+}
+/* 包里某玩法的一句文案；没有就返回空串，由调用处回落到内置那句 */
+function drainPbCopy(cfg, id, field) {
+  const one = (((drainPackOf(cfg) || {}).pb || {})[drainScenarioId(id)] || {});
+  return String(one[field] || '').trim();
+}
+/* 这份包是卖什么的（排班卡标题那行）；没包返回空串，调用处自己藏掉 */
+function drainPackLabel(cfg) {
+  return String(((drainPackOf(cfg) || {}).label) || '').trim();
+}
+/* 某一玩法的「跑法」一句话（列表 hover、六类怎么评）：包里的 pbTip 优先 */
+function drainPbTip(id, cfg) {
+  return drainPbCopy(cfg, id, 'pbTip') || (DRAIN_PLAYBOOK[drainScenarioId(id)] || {}).tip || '';
+}
+/* 「这种帖子不留言」的词表：内置那套 ＋ 包里补的（同行揽客在各行业叫法不一样） */
+function drainSolicitWords(cfg) {
+  const extra = (drainPackOf(cfg) || {}).solicit;
+  if (!Array.isArray(extra)) return DRAIN_SOLICIT_WORDS;
+  return DRAIN_SOLICIT_WORDS.concat(extra.map(x => String(x || '').trim()).filter(Boolean));
+}
 /* 哪一行的话术编辑块是展开的（整页重绘后还留着，比如点了周几） */
 let _drainTalkOpen = null;
 /* 老 v8 的四步＋示范 → 拼成三行；只在读老数据时用 */
@@ -555,6 +603,50 @@ function drainTalkBlock(t) {
   return '【这个玩法的话术（当参考，按对方的原话自然说，别逐字照抄）】\n' + String(t.text).trim().slice(0, 1200);
 }
 
+/* 这一玩法的评论策略正文（2026-11-04）：①②两条评论逐字共用；提店那句由两边各按原路给，这里不重复。
+   guide=auto 时不写引导行（沿用账号资料里那句，跟以前一样）。 */
+function drainStrategyRule(cfg, scenario) {
+  const p = drainPbPlan(cfg, scenario);
+  const L = [];
+  if (p.mode === 'note') L.push('这篇笔记只做一件事：在笔记下面评一句，评论区里谁接话都不回。');
+  else if (p.mode === 'reply') L.push('这篇笔记不在下面露面：一条一级评论都不发，只回评论区里已经接话的人。');
+  else if (p.mode === 'people') L.push('这一趟只收人：公开评论区一个字都不发，只把有商机的人收进清单，等对方来私信。');
+  else L.push('这篇笔记要做两件事：笔记下面评一句，评论区里谁接话就回谁。');
+  if (p.mode !== 'people') {
+    L.push('怎么开口：' + ({
+      follow: '先接住对方那句话，表示有同感，再往下说。',
+      judge: '直接给一个内行判断，别绕弯。',
+      ask: '用一个对方好接的问题开口。',
+      story: '用自己碰到过的一个具体例子开口。',
+      light: '只回一两个词、一句话，不展开。',
+    })[p.entry]);
+    L.push('说多长：' + ({
+      one: '一句就够了（大约 15~25 字）。',
+      two: '两句（大约 25~45 字）。',
+      three: '三句以内（大约 45~80 字）。',
+    })[p.len]);
+  }
+  if (p.guide !== 'auto') L.push('引导：' + ({
+    none: '一句引导都不许有，讲完就收：别让人私信、别让人看主页、也别说到店。',
+    dm: '最多一句「拿不准就私信我」这种站内话。',
+    home: '最多一句「细节在我主页 / 置顶那篇」这种站内话。',
+    visit: '评论里一律不写门店名和地址；只有对方私信追问时，才说可以来店里。',
+  })[p.guide]);
+  if (p.mode === 'both' || p.mode === 'reply') L.push('这一篇最多回 ' + p.cap + ' 个人，到数就停，剩下的只收进清单。');
+  L.push('禁区：不贬低同行、不点名别家；不承诺效果（涨多少粉、来多少人、几天见效）；评论里不写价格、不留微信电话、不发链接。');
+  return L.join('\n');
+}
+/* 引导那句：配了明确档位就用它替换账号资料里那句；auto 返回空串＝不动 */
+function drainGuideByPlan(cfg, scenario) {
+  const p = drainPbPlan(cfg, scenario);
+  if (p.guide === 'auto') return '';
+  return ({
+    none: '这次不引导：讲完就收，别让人私信、别让人看主页、也别说到店。',
+    dm: '拿不准就私信我（站内私信，不出现站外联系方式）。',
+    home: '细节在我主页 / 置顶那篇。',
+    visit: '评论里不提门店和地址；只有对方私信追问时，才说可以来店里。',
+  })[p.guide] || '';
+}
 /* 同一篇笔记两步共用一段评论策略（2026-11-04）：「在笔记下面评一句」走 drainComment、本来就带这个玩法的
    提店口径和话术；「回评论区那句」走商机挖掘那条提示词，它不知道自己是哪个玩法捞出来的，
    这里按这一趟的玩法把同一段补进去。手动扫描（没有玩法）返回空串＝维持原样。 */
@@ -565,12 +657,16 @@ async function drainReplyStrategyBlock(scenario) {
   try { cfg = await drainGetScanCfg(); } catch (_) { return ''; }
   const talk = drainTalkBlock(drainPbTalkOf(cfg, id));
   return '\n\n【这一趟的评论策略（跟「在笔记下面评一句」用的是同一段）】\n'
-    + drainStoreRule(drainPbPlan(cfg, id).store) + '\n'
+    + drainStoreRule(drainPbPlan(cfg, id).store, cfg) + '\n'
+    + drainStrategyRule(cfg, id) + '\n'
     + (talk || '（这个玩法还没写话术：按人设自然接话，公开评论不主动报店名、不报价、不留联系方式）');
 }
 
-/* 给 AI 写这份话术的一句话玩法说明（2026-11-02）：按玩法换角度，六套共用 */
-function drainPbTalkHint(id) {
+/* 给 AI 写这份话术的一句话玩法说明（2026-11-02）：按玩法换角度，六套共用。
+   2026-11-04：先读这个号自己的行业口径包（cfg.pbPack.pb[id].hint），没包才用下面这套亲子口径。 */
+function drainPbTalkHint(id, cfg) {
+  const own = drainPbCopy(cfg, id, 'hint');
+  if (own) return own;
   return {
     latest: '本地泛搜索：找还没想过报班的本地家长。第一句说本地带娃的实情，不提课程和价格。',
     top: 'TOP搜索：写全国热评长期占位。只给内行判断，不导流。',
@@ -979,9 +1075,11 @@ function _drainNormalizeScanCfg(raw) {
   if (Number(cfg.talkSeed || 0) < DRAIN_TALK_V) {
     const at = Date.now();
     DRAIN_PB_ORDER.forEach(s => {
-      if (!DRAIN_TALK_DEFAULT[s]) return;
+      /* 2026-11-04：这个号带行业口径包时，第一次铺的话术用包里那句，不用下面那套亲子默认 */
+      const text = drainPbCopy(cfg, s, 'talk') || DRAIN_TALK_DEFAULT[s];
+      if (!text) return;
       nextPb[s].store = DRAIN_TALK_DEFAULT_STORE[s] || nextPb[s].store;
-      nextTalk[s] = { text: DRAIN_TALK_DEFAULT[s], persona: '', at, v: DRAIN_TALK_V };
+      nextTalk[s] = { text: text, persona: '', at, v: DRAIN_TALK_V };
     });
     cfg.talkSeed = DRAIN_TALK_V;
   } else {
@@ -1778,12 +1876,12 @@ function _stratRunTxt(run) {
   return run.mode === 'each' ? '每轮都跑' : '每 ' + (run.hours || DRAIN_MODE_HOURS_DEFAULT) + ' 小时';
 }
 /* 这一类的动作描述：由跑法表的 send/find 派生（跑法改了这段必须跟着变，别再手写一份） */
-function _stratActTxt(s, pb, growth) {
+function _stratActTxt(s, pb, growth, cfg) {
   if (pb.send === 'none') return '只在评论区找有商机的人收进获客清单、去私信跟进——绝不评论、不惊动对方';
   const head = (s === 'highv') ? '在头部博主的笔记下' : '对笔记';
   let t;
   if (s === 'latest') t = '点赞一轮涨够 ' + growth + ' 就' + head + '发一条露脸评论抢前排';
-  else if (s === 'local') t = '以本地人身份' + head + '评一条；同行/机构的招生帖不留言、只收人';
+  else if (s === 'local') t = '以本地人身份' + head + '评一条；' + (drainPackOf(cfg) ? '同行揽客的帖子不留言、只收人' : '同行/机构的招生帖不留言、只收人');
   else if (s === 'cross') t = '以跨行业关联的角度' + head + '评一条';
   else t = head + '发一条露脸评论';
   if (pb.send === 'both') t += '，同时回评论区里搭话 / 追问的人';
@@ -1829,7 +1927,7 @@ function _stratTypeRows(cfg, growth) {
     return '<tr class="' + (isOn ? '' : 'off') + '">' +
       '<td class="s-h">' + _drainQTxt(name) + '</td>' +
       '<td class="s-n">' + _drainQTxt(status) + '</td>' +
-      '<td class="s-t">' + _drainQTxt(_stratActTxt(s, pb, growth)) + '</td></tr>';
+      '<td class="s-t">' + _drainQTxt(_stratActTxt(s, pb, growth, cfg)) + '</td></tr>';
   });
   return { rows: rows.join(''), live };
 }
@@ -2589,7 +2687,7 @@ async function renderScenarioDrain(container, mode) {
   if (_drainNotesChanged) chrome.storage.onChanged.removeListener(_drainNotesChanged);
   const _sel = (id) => container.querySelector('#' + id);
   let notes = await drainLoad();
-  const st = { scenario: 'all', showDead: true, busyGrab: false, growthDelta: 50 };
+  const st = { scenario: 'all', showDead: true, busyGrab: false, growthDelta: 50, cfg: null };
   const scanLabel = isCfg ? '🔍 按这套扫一轮' : '🔍 扫描一轮';
 
   container.innerHTML = `
@@ -2628,7 +2726,7 @@ async function renderScenarioDrain(container, mode) {
       .sx-ico:hover{border-color:var(--c-brand);color:var(--c-brand-text);}
       .sx-ico-del:hover{border-color:#d32f2f;color:#d32f2f;}
       /* 🎯 玩法排班（2026-11-04）：一张五列表——玩法 / 周几跑 / 评论策略 / 出词策略 / 今天 */
-      .pbp-table{width:100%;min-width:860px;border-collapse:collapse;table-layout:fixed;}
+      .pbp-table{width:100%;min-width:1120px;border-collapse:collapse;table-layout:fixed;}
       .pbp-table th{background:#f8fafc;color:#6b7280;font-size:10.5px;font-weight:700;text-align:left;padding:7px 10px;border-bottom:1px solid #eef0f3;white-space:nowrap;}
       .pbp-table td{padding:7px 10px;border-bottom:1px dashed #eef0f3;vertical-align:top;}
       .pbp-table tbody tr:hover td{background:#fcfdfe;}
@@ -2655,6 +2753,27 @@ async function renderScenarioDrain(container, mode) {
       .pbp-cnt.plain{color:#9ca3af;background:#f8fafc;border-color:var(--line,#eceef0);}
       .pbp-wordcell .pbp-sub2{display:block;font-size:10px;color:#9ca3af;margin-top:3px;}
       .pbp-percell .pbp-tag{white-space:nowrap;}
+      /* 🎛 评论策略十一列（2026-11-04 老板定）：一格一项，点开就地选，不再挤在一格里 */
+      .pbp-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid #e5e7eb;background:#fff;border-radius:20px;padding:2px 9px;font:inherit;font-size:11px;line-height:1.7;color:#374151;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .pbp-chip:hover{border-color:var(--c-brand-line);background:var(--c-brand-soft);}
+      .pbp-chip .cv{font-weight:700;color:var(--c-brand-ink);}
+      .pbp-chip.seloff{color:#9ca3af;background:#f8fafc;border-color:#eceef0;}
+      .pbp-chip.seloff .cv{color:#9ca3af;font-weight:500;}
+      .pbp-chip.warn{color:#b45309;border-color:#fed7aa;background:#fff7ed;}
+      .pbp-pop{position:fixed;z-index:99999;background:#fff;border:1px solid #e5e7eb;border-radius:11px;box-shadow:0 12px 32px rgba(16,24,40,.16);padding:9px 10px;min-width:140px;max-width:300px;}
+      .pbp-pop-h{font-size:10.5px;line-height:1.6;color:#8a8f99;margin:0 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .pbp-popopts{display:flex;flex-wrap:wrap;gap:5px;}
+      .pbp-popopt{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:4px 9px;font:inherit;font-size:11.5px;color:#374151;cursor:pointer;}
+      .pbp-popopt:hover{border-color:var(--c-brand-line);background:var(--c-brand-soft);}
+      .pbp-popopt.on{border-color:var(--c-brand-line);background:var(--c-brand-soft2);color:var(--c-brand-ink);font-weight:700;}
+      .pbp-popdays{display:flex;gap:4px;}
+      .pbp-popday{width:30px;height:28px;border:1px solid #e5e7eb;background:#fff;border-radius:7px;font:inherit;font-size:12px;color:#6b7280;cursor:pointer;padding:0;}
+      .pbp-popday.on{background:var(--c-brand-soft2);border-color:var(--c-brand-line);color:var(--c-brand-ink);font-weight:800;}
+      .pbp-popquick{display:flex;gap:4px;margin-top:7px;flex-wrap:wrap;}
+      .pbp-popquick button{border:0;background:#f3f4f6;border-radius:6px;font:inherit;font-size:10.5px;color:#4b5563;padding:2px 7px;cursor:pointer;}
+      .pbp-popquick button:hover{background:var(--c-brand-soft);}
+      .pbp-popfoot{display:flex;gap:6px;align-items:center;margin-top:8px;padding-top:7px;border-top:1px solid #f1f3f6;}
+      .pbp-popmsg{flex:1;font-size:10.5px;color:#9ca3af;}
       .pbp-todaycell .pbp-tag{border-radius:20px;padding:0 8px;border:1px solid #eceef0;background:#f6f8fa;color:#6b7280;display:inline-block;line-height:1.8;}
       .pbp-todaycell .pbp-tag.on{background:#ecfdf5;border-color:#a7f3d0;color:#047857;}
       .pbp-todaycell .pbp-tag.off{background:#fff7ed;border-color:#fed7aa;color:#9a3412;}
@@ -2875,8 +2994,11 @@ async function renderScenarioDrain(container, mode) {
     /* 网页版的 drainGetScanCfg 是转发给服务器的，回来的可能还是没归一的老配置（v6 的词没有 types）；
        不先归一，底下的「未挂玩法」会拿原始词去算，把明明挂着玩法的词也列出来 */
     const cfg = _drainNormalizeScanCfg((r && r.ok && r.cfg) || {});
+    st.cfg = cfg;
     const panel = _sel('sxScanCfgPanel');
     if (!panel) return;
+    /* 重绘时把上一轮没关的格子弹窗收掉（它们是挂在 body 上的，不跟着 panel.innerHTML 走） */
+    document.querySelectorAll('.pbp-pop').forEach(el => el.remove());
     // 这一页现在只剩「跑什么 / 推广目标」两张卡（日常浏览搬去队列页那个 ▾ 弹窗了）
     if (_cfgSec !== 'run' && _cfgSec !== 'goal') _cfgSec = 'run';
     const sec = _cfgSec;
@@ -2983,7 +3105,7 @@ async function renderScenarioDrain(container, mode) {
               <span class="kwp-name">${escHtml(def.label)}</span>
               ${running ? '<span class="kwp-today">今天跑</span>' : ''}
             </div>
-            <div class="kwp-tag">${escHtml(def.tag || '')}</div>
+            <div class="kwp-tag">${escHtml(drainPbCopy(cfg, s, 'tag') || def.tag || '')}</div>
             <span class="kwp-cnt"><b>${ws.length}</b> 个词${offN ? ' · ' + offN + ' 停用' : ''}</span>
             ${rivalNote}
           </div>
@@ -2997,7 +3119,7 @@ async function renderScenarioDrain(container, mode) {
           ${kwpCandHtml(s)}
         </td>
         <td class="kwp-findcell">
-          <button type="button" class="btn btn-sm" data-kwai="${s}" title="${escAttr('按「' + def.label + '」的出词策略找一批词（上面排班表第四列那句），勾完只进这个玩法')}">✨ 找词</button>
+          <button type="button" class="btn btn-sm" data-kwai="${s}" title="${escAttr('按「' + def.label + '」的出词策略找一批词（上面「玩法配置」最后一列那句），勾完只进这个玩法')}">✨ 找词</button>
           ${s === 'cross' ? '<button type="button" class="btn btn-sm" data-kwtopic="cross" title="从话题采集池挑：挑进来只挂「同城异业」">🏷 话题</button>' : ''}
           <button type="button" class="btn btn-sm kwp-batchdel" data-kwbatchdel="${s}"${selN ? '' : ' disabled'} title="${escAttr('把前面勾上的词一起从「' + def.label + '」移出（词还在词池，别的玩法照跑）')}">🗑 批量移出${selN ? '（' + selN + '）' : ''}</button>
         </td>
@@ -3100,55 +3222,76 @@ async function renderScenarioDrain(container, mode) {
     const pbStoreTip = '评论 / 私信里怎么提店：不提＝只聊事；只提身份＝说自己是做这行的；可报店名＝对方问起可以报名字。公开评论区一律不许主动报店名，这条写死在评论策略里。';
     /* 出词策略那一格显示的那句：自己写的优先，没写就是内置那句（后面挂个「内置」小标） */
     const wrTxHtml = (s, custom) => {
-      const full = String(custom || '').trim() || drainAiKeywordRule(s, cfg.city);
+      const full = String(custom || '').trim() || drainAiKeywordRule(s, cfg.city, '', cfg);
       return `<span class="tx" title="${escAttr(full)}"><span>${escHtml(full)}</span>${custom ? '<span class="pbp-wrsrc own">自己写的</span>' : '<span class="pbp-wrsrc">内置</span>'}</span>`;
+    };
+    /* 评论策略各格的短名（一格一项，老板 2026-11-04 定：全部摊成一列一列，不再挤在一格里） */
+    const pbModeShort = { note: '只评笔记', both: '评＋回评', reply: '只回评', people: '只收人' };
+    const pbGuideShort = { auto: '跟资料', none: '不引导', dm: '私信', home: '主页', visit: '到店' };
+    const pbStoreShort = { none: '不提', identity: '说身份', store: '问起才报' };
+    const pbEntryShort = { follow: '顺他说', judge: '给判断', ask: '反问', story: '补经验', light: '轻接' };
+    const pbLenShort = { one: '一句', two: '两句', three: '三句' };
+    /* 周几压成一句：不跑 / 每天 / 工作日 / 周末 / 一、三、五 */
+    const pbDayLabel = (days) => {
+      const d = (days || []).slice().sort((a, b) => a - b);
+      if (!d.length) return '这周不跑';
+      if (d.length === 7) return '每天';
+      if (d.length === 5 && [1, 2, 3, 4, 5].every(x => d.indexOf(x) >= 0)) return '工作日';
+      if (d.length === 2 && d.indexOf(0) >= 0 && d.indexOf(6) >= 0) return '周末';
+      return d.map(x => WK_SHORT[x]).join('、');
+    };
+    const pbChipHtml = (s, kind, label, o) => {
+      o = o || {};
+      return `<button type="button" class="pbp-chip${o.dim ? ' seloff' : ''}${o.warn ? ' warn' : ''}" data-pbpop="${s}|${kind}" title="${escAttr(o.tip || '')}"><span class="cv">${escHtml(label)}</span></button>`;
     };
     const pbRow = (s) => {
       const def = drainScenarioDef(s);
       const p = drainPbPlan(cfg, s);
-      const runs = p.days.length > 0;
       const acctN = pbAcctN(s);
       const rivalAcctN = (s === 'local') ? (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === 'rival').length : 0;
       const t = drainPbTalkOf(cfg, s);
-      const talkText = (t && String(t.text || '').trim()) || DRAIN_TALK_DEFAULT[s] || '';
+      const talkText = (t && String(t.text || '').trim()) || drainPbCopy(cfg, s, 'talk') || DRAIN_TALK_DEFAULT[s] || '';
       const tOpen = _drainTalkOpen === s;
       const aiOff = personaText ? '' : ' disabled title="先到「账号规划 → 基础配置」填一句介绍，才能按人设写这句"';
       /* 出词策略：自己写过就用那句，没写显示内置那句（灰、标「内置口径」），点「改」就地写 */
       const noWord = s === 'highv';
-      const wrBuiltin = noWord ? '' : drainAiKeywordRule(s, cfg.city);
+      const wrBuiltin = noWord ? '' : drainAiKeywordRule(s, cfg.city, '', cfg);
       const wrOwn = p.wordRule;
       const cadOff = !!(run[s] && run[s].mode === 'off');
+      const people = p.mode === 'people';
+      const noReply = people || p.mode === 'note';
+      const dimTip = people ? '这个玩法配的是「只收人」：这一格不生效' : '';
+      const capTip = people ? '只收人：不回评论区，这格不生效'
+        : (p.mode === 'note' ? '只评笔记：不回评论区，这格不生效'
+          : '一篇笔记里最多回几个评论区的人；到数就停，剩下的只收进清单');
       return `<tr class="pbp-tr">
-        <td class="pbp-name" title="${escAttr((def.desc || def.label) + (rivalAcctN ? '（含盯的 ' + rivalAcctN + ' 个竞对号）' : ''))}">${def.icon} ${escHtml(def.label)}${s === 'highv' ? `<span class="pbp-sub">不出词${acctN ? ' · 盯 ' + acctN + ' 个号' : ''}</span>` : ''}</td>
-        <td><span class="pbp-days">${DRAIN_WEEK_ORDER.map(d => {
-          const on = p.days.indexOf(d) >= 0;
-          return `<button type="button" class="pbp-day${on ? ' on' : ''}${d === todayWd ? ' today' : ''}" data-pbday="${s}|${d}" title="${escAttr(WK_LABELS[d] + (d === todayWd ? '（今天）' : '') + '：' + (on ? '跑' : '不跑') + '，点一下切换')}">${WK_SHORT[d]}</button>`;
-        }).join('')}</span></td>
-        <td class="pbp-talkcell">
-          <div class="pbp-talkline">
-            <span>💬</span>
-            <span class="tx"><span data-talkline="${s}">${escHtml(talkText)}</span></span>
-            <button type="button" class="pbp-talkedit" data-talkedit="${s}">${tOpen ? '收起' : '改'}</button>
-          </div>
-        </td>
+        <td class="pbp-name" title="${escAttr((drainPbCopy(cfg, s, 'desc') || def.desc || def.label) + (rivalAcctN ? '（含盯的 ' + rivalAcctN + ' 个竞对号）' : ''))}">${def.icon} ${escHtml(def.label)}${s === 'highv' ? `<span class="pbp-sub">不出词${acctN ? ' · 盯 ' + acctN + ' 个号' : ''}</span>` : ''}</td>
+        <td>${pbChipHtml(s, 'days', cadOff ? '已停用 · 点恢复' : pbDayLabel(p.days), {
+          warn: cadOff,
+          tip: cadOff ? '老设置里这个玩法被定成「不跑」，点一下恢复默认节奏' : '点开选周几跑：一天可多选，也能一次套「每天 / 工作日 / 周末」',
+        })}</td>
+        <td>${pbChipHtml(s, 'mode', pbModeShort[p.mode], { tip: '评论动作：这篇笔记做几件事（只评笔记 / 评＋回评 / 只回评 / 只收人）' })}</td>
+        <td>${pbChipHtml(s, 'guide', pbGuideShort[p.guide], { dim: people, tip: dimTip || '引导：想让对方下一步做什么（跟资料＝用账号资料里那句承接）' })}</td>
+        <td>${pbChipHtml(s, 'store', pbStoreShort[p.store], { dim: people, tip: dimTip || pbStoreTip })}</td>
+        <td>${pbChipHtml(s, 'entry', pbEntryShort[p.entry], { dim: people, tip: dimTip || '进场：这条评论怎么开口' })}</td>
+        <td>${pbChipHtml(s, 'len', pbLenShort[p.len], { dim: people, tip: dimTip || '评论长短：一条评论说几句' })}</td>
+        <td>${noReply
+          ? `<span class="pbp-dash" title="${escAttr(capTip)}">—</span>`
+          : pbChipHtml(s, 'cap', p.cap + ' 人', { tip: capTip })}</td>
+        <td>${people
+          ? '<span class="pbp-chip seloff" title="只收人：清单是唯一产出，必须收"><span class="cv">收 · 必开</span></span>'
+          : pbChipHtml(s, 'collect', p.collect === false ? '不收' : '收', { dim: p.collect === false, tip: '收不收人：找到的人进不进「获客清单 · 待触达」' })}</td>
+        <td class="pbp-talkcell"><button type="button" class="pbp-talkedit" data-talkedit="${s}" title="${escAttr(talkText)}">${tOpen ? '收起' : '📄 改'}</button></td>
         <td class="pbp-wrcell">${noWord
           ? '<span class="pbp-dash">不出词</span>'
           : `<div class="pbp-wrline">
               <span data-wrbox="${s}">${wrTxHtml(s, wrOwn)}</span>
               <button type="button" class="pbp-talkedit" data-wredit="${s}">${tOpen ? '收起' : '改'}</button>
             </div>`}</td>
-        <td class="pbp-todaycell">${cadOff
-          ? `<button type="button" class="pbp-tag off" data-pbcadoff="${s}" title="老设置里这个玩法被定成「不跑」（那一列已经撤了，点这颗恢复）">已停用 · 点这恢复</button>`
-          : `<span class="pbp-tag ${runs ? (drainPbOnDay(cfg, s, now) ? 'on' : '') : 'off'}">${runs ? (drainPbOnDay(cfg, s, now) ? '今天跑' : '今天不跑') : '这周不跑'}</span>`}</td>
       </tr>
-      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="5"><div class="pbp-teditbox">
-        <div class="hint">评论策略三句话：什么算商机 / 怎么评论 / 提不提店名。直接改，也可以说一句让 AI 改。</div>
+      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="11"><div class="pbp-teditbox">
+        <div class="hint">这里只改「话术那段」：怎么算商机、怎么说话。评论动作、引导、提店、开口、长短、每篇回几个人，都按上面那几列走——「笔记下面评一句」和「回评论区那句」共用这一套。</div>
         <textarea data-talktext="${s}" rows="4">${escHtml(talkText)}</textarea>
-        <div class="storerow">
-          <span>评论里提店：</span>
-          <span class="pbp-storepills">${Object.keys(DRAIN_PB_STORE).map(k => `<button type="button" data-pbstore="${s}|${k}" class="${p.store === k ? 'on' : ''}" title="${escAttr(pbStoreTip)}">${DRAIN_PB_STORE[k]}</button>`).join('')}</span>
-          <span class="pbp-storenote">（公开评论一律不主动报店名）</span>
-        </div>
         <div class="airow">
           <span class="k">让 AI 改</span>
           <input data-talkask="${s}" placeholder="不填＝按账号人设整段重写；填了＝按这句话改"${personaText ? '' : ' disabled'}>
@@ -3205,7 +3348,7 @@ async function renderScenarioDrain(container, mode) {
     const pbHtml = `
       <details class="cfgcard" open style="margin-bottom:10px;">
         <summary class="cfgcard-h">
-          <span class="cfgcard-t">🎯 玩法排班</span>
+          <span class="cfgcard-t">🎯 玩法配置</span>
           <span class="cfgcard-s">${pbToday.length ? '今天跑 ' + pbToday.length + ' 个玩法' : '今天不跑'}</span>
           <span class="cfgcard-x">${pbToday.length
             ? pbToday.map(s => drainScenarioDef(s).icon + drainScenarioDef(s).label).join(' · ')
@@ -3213,13 +3356,13 @@ async function renderScenarioDrain(container, mode) {
           <span class="cfgcard-chev">▾</span>
         </summary>
         <div class="cfgcard-b">
-          <div class="sx-hint" style="margin:2px 0 6px;">周几排在第二列：点哪天就跑哪天。评论策略在第三列，出词策略在第四列，都点「改」就地改。「每天挑几个词」搬到下面「📚 关键词」那张表里。
+          <div class="sx-hint" style="margin:2px 0 6px;">一格一项，点格子就地选：周几跑、评论动作、引导、提店、开口、长短、每篇回几人、收不收人。话术和出词策略点「改」就地写。「每天挑几个词」搬到下面「📚 关键词」那张表里。
             <span class="qhelp" tabindex="0" data-tip="一个词可以同时挂几个玩法（在下面词池里勾）。同一玩法里，词按词池顺序轮着来：今天挑前 N 个，下次排上就接着往下挑，几天转完一圈。手插和欠账不受排班限制。">?</span>
           </div>
           <div class="pbp-scroll">
             <table class="pbp-table">
-              <colgroup><col style="width:116px;"><col style="width:214px;"><col><col style="width:230px;"><col style="width:98px;"></colgroup>
-              <thead><tr><th>玩法</th><th>周几跑（点一下切换）</th><th>评论策略（怎么说话）</th><th>出词策略（找词按这句）</th><th>今天</th></tr></thead>
+              <colgroup><col style="width:116px;"><col style="width:96px;"><col style="width:92px;"><col style="width:74px;"><col style="width:92px;"><col style="width:80px;"><col style="width:62px;"><col style="width:86px;"><col style="width:80px;"><col style="width:58px;"><col></colgroup>
+              <thead><tr><th>玩法</th><th>周几跑</th><th>评论动作</th><th>引导</th><th>提店</th><th>开口</th><th>长短</th><th>每篇回几人</th><th>收进清单</th><th>话术</th><th>出词策略（找词按这句）</th></tr></thead>
               <tbody>${DRAIN_PB_ORDER.map(pbRow).join('')}</tbody>
             </table>
           </div>
@@ -3245,7 +3388,7 @@ async function renderScenarioDrain(container, mode) {
         </table>
       </div>
       ${kwpAllWords()}
-      <div class="sx-hint" style="margin:7px 0 0;">跑哪天、评论怎么说、找词按哪句，在上面「🎯 玩法排班」里按玩法排；这里只管「这个玩法底下有哪些词」和「每天挑几个」。玩法排上、今天又轮到 → 才进工作台那条队列；想整个停掉一个玩法，回上面把周几全部取消勾选。</div>
+      <div class="sx-hint" style="margin:7px 0 0;">跑哪天、评论怎么说、找词按哪句，在上面「🎯 玩法配置」里按玩法排；这里只管「这个玩法底下有哪些词」和「每天挑几个」。玩法排上、今天又轮到 → 才进工作台那条队列；想整个停掉一个玩法，回上面把周几全部取消勾选。</div>
     `;
     /* 队列页＝配置台：顶上那两行灰字（正在跑指路 + 今天/明天排几次）2026-11-04 老板撤了；
        改完的回音还在——每存一次，右上角报一句「今天 N 次搜索（N 个词）」（save 里那段）。 */
@@ -3255,7 +3398,8 @@ async function renderScenarioDrain(container, mode) {
       ${pbWeekHtml()}
     `;
 
-    /* 🎯 玩法排班：周几开关 / 每天几个词 / 提店口径，改哪一条就存哪一条 */
+    /* 🎯 玩法配置：周几跑 / 评论动作 / 引导 / 提店 / 开口 / 长短 / 每篇回几人 / 收进清单，
+       改哪一格就存哪一格（存完整页重绘，展开块按 _drainTalkOpen 自己回来） */
     const pbSave = async (s, patch, msg) => {
       const nextPb = Object.assign({}, cfg.pbPlan || {});
       nextPb[s] = drainPbPlanNorm(Object.assign({}, drainPbPlan(cfg, s), patch), s);
@@ -3264,46 +3408,147 @@ async function renderScenarioDrain(container, mode) {
         drainToast('没存上：' + ((r && r.error) || '服务器没回话'), 'warn');
         return false;
       }
+      cfg.pbPlan = nextPb;
       if (msg) drainToast(msg);
       return true;
     };
-    panel.querySelectorAll('[data-pbday]').forEach(b => b.onclick = () => {
-      const p = b.getAttribute('data-pbday').split('|');
-      const s = p[0], d = Number(p[1]);
-      const cur = drainPbPlan(cfg, s);
-      const days = cur.days.slice();
-      const i = days.indexOf(d);
-      if (i >= 0) days.splice(i, 1); else days.push(d);
-      days.sort((a, b) => a - b);
+    /* ── 十一列：点格子就地弹一层选项（fixed 定位，不被表格的横向滚动裁掉） ── */
+    let _pbPopEl = null;
+    const pbClosePop = () => {
+      /* 整页重绘时旧闭包里的 _pbPopEl 已经不是这一个了：按名字把它们全收掉，别留在页面外面 */
+      document.querySelectorAll('.pbp-pop').forEach(el => el.remove());
+      _pbPopEl = null;
+      document.removeEventListener('mousedown', pbPopOutside, true);
+      document.removeEventListener('keydown', pbPopKey, true);
+    };
+    function pbPopOutside(ev) {
+      if (!_pbPopEl) return;
+      if (_pbPopEl.contains(ev.target)) return;
+      if (ev.target && ev.target.closest && ev.target.closest('[data-pbpop]')) return;
+      pbClosePop();
+    }
+    function pbPopKey(ev) { if (ev.key === 'Escape') pbClosePop(); }
+    const pbPopOpen = (anchor, s, kind) => {
+      pbClosePop();
       const def = drainScenarioDef(s);
-      pbSave(s, { days }, `${def.icon}${def.label}：` + (days.length ? days.map(x => WK_LABELS[x]).join('、') : '这周不跑'));
-    });
+      const p = drainPbPlan(cfg, s);
+      const people = p.mode === 'people';
+      const TITLE = {
+        days: '周几跑（可多选）', mode: '评论动作：这篇笔记做几件事', guide: '引导：想让对方下一步做什么',
+        store: '提店：评论里提到什么程度', entry: '进场：这条评论怎么开口', len: '评论长短',
+        cap: '每篇最多回几个人', collect: '收不收人',
+      };
+      const OPT = { mode: DRAIN_PB_MODE, guide: DRAIN_PB_GUIDE, store: DRAIN_PB_STORE, entry: DRAIN_PB_ENTRY, len: DRAIN_PB_LEN };
+      let body = '';
+      if (kind === 'days') {
+        const cur = p.days.slice();
+        body = `<div class="pbp-popdays">${DRAIN_WEEK_ORDER.map(d => `<button type="button" class="pbp-popday${cur.indexOf(d) >= 0 ? ' on' : ''}" data-popday="${d}">${WK_SHORT[d]}</button>`).join('')}</div>
+          <div class="pbp-popquick"><button type="button" data-popset="12345">工作日</button><button type="button" data-popset="06">周末</button><button type="button" data-popset="all">每天</button><button type="button" data-popset="none">清空</button></div>
+          <div class="pbp-popfoot"><span class="pbp-popmsg">改完点「存下」</span><button type="button" class="btn btn-sm btn-primary" data-popok="1">存下</button></div>`;
+      } else if (kind === 'cap') {
+        body = `<div class="pbp-popopts">${[1, 2, 3, 4, 5].map(n => `<button type="button" class="pbp-popopt${p.cap === n ? ' on' : ''}" data-popval="${n}">${n} 人</button>`).join('')}</div>`;
+      } else if (kind === 'collect') {
+        body = `<div class="pbp-popopts"><button type="button" class="pbp-popopt${p.collect !== false ? ' on' : ''}" data-popval="1">收进清单</button><button type="button" class="pbp-popopt${p.collect === false ? ' on' : ''}" data-popval="0">不收，只评</button></div>`;
+      } else {
+        const map = OPT[kind] || {};
+        body = `<div class="pbp-popopts">${Object.keys(map).map(k => `<button type="button" class="pbp-popopt${p[kind] === k ? ' on' : ''}" data-popval="${k}" title="${escAttr(map[k])}">${escHtml(map[k])}</button>`).join('')}</div>`;
+      }
+      const el = document.createElement('div');
+      el.className = 'pbp-pop';
+      el.innerHTML = `<div class="pbp-pop-h">${escHtml(def.icon + ' ' + def.label + ' · ' + (TITLE[kind] || ''))}</div>${body}`;
+      document.body.appendChild(el);
+      _pbPopEl = el;
+      const r = anchor.getBoundingClientRect();
+      const w = el.offsetWidth, h = el.offsetHeight;
+      const left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+      let top = r.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+      el.style.left = left + 'px';
+      el.style.top = top + 'px';
+
+      if (kind === 'days') {
+        let cur = p.days.slice();
+        const paint = () => {
+          el.querySelectorAll('[data-popday]').forEach(b => b.classList.toggle('on', cur.indexOf(Number(b.getAttribute('data-popday'))) >= 0));
+          const msg = el.querySelector('.pbp-popmsg');
+          if (msg) msg.textContent = pbDayLabel(cur);
+        };
+        el.querySelectorAll('[data-popday]').forEach(b => b.onclick = () => {
+          const d = Number(b.getAttribute('data-popday'));
+          const i = cur.indexOf(d);
+          if (i >= 0) cur.splice(i, 1); else cur.push(d);
+          cur.sort((a, b2) => a - b2);
+          paint();
+        });
+        el.querySelectorAll('[data-popset]').forEach(b => b.onclick = () => {
+          const k = b.getAttribute('data-popset');
+          cur = k === 'none' ? [] : k === 'all' ? [0, 1, 2, 3, 4, 5, 6] : k === '06' ? [0, 6] : k.split('').map(Number);
+          paint();
+        });
+        el.querySelector('[data-popok]').onclick = async () => {
+          const days = cur.slice();
+          pbClosePop();
+          await pbSave(s, { days }, `${def.icon}${def.label}：` + (days.length ? days.map(x => WK_LABELS[x]).join('、') : '这周不跑'));
+        };
+      } else {
+        const apply = (v) => {
+          if (kind === 'collect') return pbSave(s, { collect: v === '1' }, `${def.icon}${def.label}：` + (v === '1' ? '找到的人收进获客清单' : '不收人，只评'));
+          if (kind === 'cap') return pbSave(s, { cap: Number(v) }, `${def.icon}${def.label}：每篇最多回 ${v} 个人`);
+          const txt = (OPT[kind] || {})[v] || v;
+          return pbSave(s, { [kind]: v }, `${def.icon}${def.label}：` + txt);
+        };
+        el.querySelectorAll('[data-popval]').forEach(b => b.onclick = () => {
+          const v = b.getAttribute('data-popval');
+          pbClosePop();
+          apply(v);
+        });
+        if (people && kind !== 'mode') {
+          const msg = document.createElement('div');
+          msg.className = 'pbp-pop-h';
+          msg.style.margin = '6px 0 0';
+          msg.textContent = '这个玩法配的是「只收人」，这格改了也不生效';
+          el.appendChild(msg);
+        }
+      }
+      setTimeout(() => {
+        document.addEventListener('mousedown', pbPopOutside, true);
+        document.addEventListener('keydown', pbPopKey, true);
+      }, 0);
+    };
+    /* 一处的点击委托：格子弹窗、话术/出词展开都走这里（整页重绘后不用重新绑）
+       用 onclick 赋值而不是 addEventListener：panel 一直是同一个元素，
+       addEventListener 每次重绘都会叠一层，点一下弹好几个。 */
+    panel.onclick = (ev) => {
+      const t = ev.target;
+      if (!t || !t.closest) return;
+      const popBtn = t.closest('[data-pbpop]');
+      if (popBtn) {
+        ev.preventDefault();
+        const kv = String(popBtn.getAttribute('data-pbpop') || '').split('|');
+        const s = kv[0], kind = kv[1];
+        if (!s || !kind) return;
+        /* 「已停用」老状态：点一下先恢复节奏，不再弹选择 */
+        if (kind === 'days' && run[s] && run[s].mode === 'off') {
+          const nextRun = Object.assign({}, cfg.typeRun || DRAIN_TYPE_RUN_DEFAULT);
+          nextRun[s] = _drainRunNorm(DRAIN_TYPE_RUN_DEFAULT[s] || { mode: 'each' });
+          save({ typeRun: nextRun });
+          drainToast(drainScenarioDef(s).icon + drainScenarioDef(s).label + '：已恢复默认节奏');
+          return;
+        }
+        pbPopOpen(popBtn, s, kind);
+        return;
+      }
+      const tk = t.closest('[data-talkedit],[data-talkclose]');
+      if (tk) { ev.preventDefault(); talkToggle(tk.getAttribute('data-talkedit') || tk.getAttribute('data-talkclose')); return; }
+      const wr = t.closest('[data-wredit]');
+      if (wr) { ev.preventDefault(); talkToggle(wr.getAttribute('data-wredit'), 'wr'); }
+    };
     panel.querySelectorAll('[data-pbper]').forEach(inp => inp.onchange = () => {
       const s = inp.getAttribute('data-pbper');
       const n = Math.max(1, Math.min(20, parseInt(inp.value, 10) || 1));
       inp.value = n;
       const def = drainScenarioDef(s);
       pbSave(s, { perDay: n }, `${def.icon}${def.label}：每个排上的日子挑 ${n} 个词`);
-    });
-    /* 提店口径（2026-11-03）：并进「改」展开块里，点一下存一下；不整页重绘，免得正在改的话术被刷掉 */
-    panel.querySelectorAll('[data-pbstore]').forEach(btn => btn.onclick = async () => {
-      const kv = btn.getAttribute('data-pbstore').split('|');
-      const s = kv[0], k = kv[1];
-      const def = drainScenarioDef(s);
-      const nextPb = Object.assign({}, cfg.pbPlan || {});
-      nextPb[s] = drainPbPlanNorm(Object.assign({}, drainPbPlan(cfg, s), { store: k }), s);
-      const r = await chrome.runtime.sendMessage({ action: 'drainSaveScanCfg', cfg: Object.assign({}, cfg, { pbPlan: nextPb }) });
-      if (!r || r.ok === false) { drainToast('没存上：' + ((r && r.error) || '服务器没回话'), 'warn'); return; }
-      cfg.pbPlan = nextPb;
-      panel.querySelectorAll(`[data-pbstore^="${s}|"]`).forEach(b => b.classList.toggle('on', b.getAttribute('data-pbstore') === s + '|' + k));
-      drainToast(`${def.icon}${def.label}：评论里「${DRAIN_PB_STORE[k]}」`);
-    });
-    /* 排班行「今天」列的老停用标记：点一下把这个玩法的节奏恢复成默认（那一列的入口 2026-11-04 撤了） */
-    panel.querySelectorAll('[data-pbcadoff]').forEach(b => b.onclick = () => {
-      const s = b.getAttribute('data-pbcadoff');
-      const nextRun = Object.assign({}, cfg.typeRun || DRAIN_TYPE_RUN_DEFAULT);
-      nextRun[s] = _drainRunNorm(DRAIN_TYPE_RUN_DEFAULT[s] || { mode: 'each' });
-      save({ typeRun: nextRun });
     });
 
     /* 出词策略（2026-11-04 老板加）：写在排班行右边那一格，存进 pbPlan[玩法].wordRule；
@@ -3312,7 +3557,6 @@ async function renderScenarioDrain(container, mode) {
       const el = panel.querySelector('[data-wrmsg="' + s + '"]');
       if (el) { el.className = 'wrmsg' + (cls ? ' ' + cls : ''); el.textContent = txt || ''; }
     };
-    panel.querySelectorAll('[data-wredit]').forEach(b => b.onclick = () => talkToggle(b.getAttribute('data-wredit'), 'wr'));
     panel.querySelectorAll('[data-wrreset]').forEach(b => b.onclick = () => {
       const ta = panel.querySelector('[data-writext="' + b.getAttribute('data-wrreset') + '"]');
       if (ta) ta.value = '';
@@ -3409,10 +3653,12 @@ async function renderScenarioDrain(container, mode) {
       if (!box) return;
       const open = !box.classList.contains('open');
       panel.querySelectorAll('.pbp-tedit.open').forEach(el => el.classList.remove('open'));
-      panel.querySelectorAll('[data-talkedit],[data-wredit]').forEach(b => { b.textContent = '改'; });
+      panel.querySelectorAll('[data-talkedit]').forEach(b => { b.textContent = '📄 改'; });
+      panel.querySelectorAll('[data-wredit]').forEach(b => { b.textContent = '改'; });
       if (open) {
         box.classList.add('open');
-        panel.querySelectorAll(`[data-talkedit="${s}"],[data-wredit="${s}"]`).forEach(b => { b.textContent = '收起'; });
+        panel.querySelectorAll(`[data-talkedit="${s}"]`).forEach(b => { b.textContent = '收起'; });
+        panel.querySelectorAll(`[data-wredit="${s}"]`).forEach(b => { b.textContent = '收起'; });
         _drainTalkOpen = s;
         const ta = _talkEl(s, from === 'wr' ? 'data-writext' : 'data-talktext');
         if (ta) ta.focus();
@@ -3420,9 +3666,6 @@ async function renderScenarioDrain(container, mode) {
         _drainTalkOpen = null;
       }
     };
-    panel.querySelectorAll('[data-talkedit],[data-talkclose]').forEach(b => b.onclick = () => {
-      talkToggle(b.getAttribute('data-talkedit') || b.getAttribute('data-talkclose'));
-    });
     panel.querySelectorAll('[data-talksave]').forEach(b => b.onclick = async () => {
       const s = b.getAttribute('data-talksave');
       const ta = _talkEl(s, 'data-talktext');
@@ -3440,7 +3683,7 @@ async function renderScenarioDrain(container, mode) {
     panel.querySelectorAll('[data-talkreset]').forEach(b => b.onclick = () => {
       const s = b.getAttribute('data-talkreset');
       const ta = _talkEl(s, 'data-talktext');
-      if (ta) ta.value = DRAIN_TALK_DEFAULT[s] || '';
+      if (ta) ta.value = drainPbCopy(st.cfg, s, 'talk') || DRAIN_TALK_DEFAULT[s] || '';
       talkMsg(s, '已恢复成这一段默认，点保存才算存下。');
     });
     panel.querySelectorAll('[data-talkai]').forEach(b => b.onclick = () => {
@@ -3806,6 +4049,7 @@ async function renderScenarioDrain(container, mode) {
     if (!box) return;
     let cfg = null;
     try { cfg = await drainGetScanCfg(); } catch (_) {}
+    st.cfg = cfg;   // 顺带存一份：列表 hover 那句「跑法」要按这个号的行业口径包出
     if (!cfg) { box.innerHTML = ''; return; }
     const pool = (cfg.keywords || []);
     const onN = pool.filter(e => e.on !== false).length;
@@ -3886,7 +4130,6 @@ async function renderScenarioDrain(container, mode) {
     if (!lst.length) { _sel('sxList').innerHTML = '<div class="sx-empty">列表为空<br/>在「🎯 获客」里打开/分析笔记会自动入列，也可以点上方「🔍 扫描一轮」按关键词×类型扫一批，或「＋ 加笔记」手动加。</div>'; return; }
     const rowOf = (n) => {
       const s = drainScenarioDef(n.scenario);
-      const pb = drainPlaybookOf(n.scenario);
       const dead = !!n.dead;
       // 作废（搜过一轮标题+作者都定位不到）：直接盖住判定标签，别再显示「去评论」误导
       const j = dead ? { verdict: '⛔ 已作废', tone: 'purple' } : drainJudge(n.scenario, n.signals || {}, { growthDelta: st.growthDelta });
@@ -3904,7 +4147,7 @@ async function renderScenarioDrain(container, mode) {
             <select class="sx-chip-sel" data-scenario="${n.id}" style="max-width:62px;" title="笔记类型（决定评论/维护方式）：${escAttr(s.label)}">
               ${SCENARIO_DRAIN.map(d => `<option value="${d.scenario}" ${d.scenario === drainScenarioId(n.scenario) ? 'selected' : ''}>${d.icon} ${DRAIN_TYPE_SHORT[d.scenario] || d.label}</option>`).join('')}
             </select>
-            <div class="sx-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="跑法：${escAttr(pb.tip)}">${escHtml(drainPlaybookLabel(n.scenario))}</div>
+            <div class="sx-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="跑法：${escAttr(drainPbTip(n.scenario, st.cfg))}">${escHtml(drainPlaybookLabel(n.scenario))}</div>
           </td>
           <td class="sx-col-note">
             <a data-act="open" data-id="${n.id}" href="${escAttr(n.url || ('https://www.xiaohongshu.com/explore/' + (n.noteId || '')))}" title="在工作台打开这篇（搜标题末尾减3字 → 按作者名定位 → 点开）：${escAttr(n.title || '(无标题)')}">${escHtml(n.title || '(无标题)')}</a>
@@ -4631,11 +4874,14 @@ async function handleDrainSaveReplenishCfg(data) { const repl = await drainSaveR
 /* =====================================================================
  * background 侧：真正调 AI 生成某场景评论（onMessage 'drainComment'）
  * ===================================================================== */
-/* AI 找词按玩法出（2026-11-02）：每个玩法一套口径，别拿一套词喂所有玩法 */
-function drainAiKeywordRule(scenario, city, customRule) {
-  /* 老板在「玩法排班 → 出词策略」里自己写过一句就用人家那句（2026-11-04）；没写才走下面这套内置口径 */
+/* AI 找词按玩法出（2026-11-02）：每个玩法一套口径，别拿一套词喂所有玩法。
+   2026-11-04 三层：老板在排班卡里自己写的那句 > 这个号的行业口径包 > 下面这套内置（亲子口径）。 */
+function drainAiKeywordRule(scenario, city, customRule, cfg) {
+  /* 老板在「玩法排班 → 出词策略」里自己写过一句就用人家那句；没写才看包里有没有本行那句 */
   const own = String(customRule || '').trim();
   if (own) return own;
+  const fromPack = drainPbCopy(cfg, scenario, 'wordRule');
+  if (fromPack) return fromPack;
   const c = String(city || '').trim() || '（城市没填：先用「本地城市」占位）';
   switch (drainScenarioId(scenario)) {
     case 'latest':
@@ -4654,16 +4900,22 @@ function drainAiKeywordRule(scenario, city, customRule) {
   return '';
 }
 
-/* 提店口径（2026-11-02）：每个玩法在排班卡里选「不提 / 只提身份 / 可报店名」。
+/* 提店口径（2026-11-02 定，2026-11-04 补：包里那句优先）：每个玩法在排班卡里选「不提 / 只提身份 / 可报店名」。
    公开评论区永远不许主动报店名——「可报店名」也只到「对方问起才报」为止。 */
-function drainStoreRule(store) {
-  if (store === 'identity') return '【提店口径】可以在句尾自然带一句「我是做这行的 / 我就是教这个的」，让本地人知道你的身份；但绝不报店名、机构名、地址、价格、联系方式。';
-  if (store === 'store') return '【提店口径】对方明确问起「哪家 / 在哪 / 多少钱」时才可以报店名；不主动报，不写价格、不写联系方式、不发链接。';
+function drainStoreRule(store, cfg) {
+  const key = (store === 'identity' || store === 'store') ? store : 'none';
+  const own = String((((drainPackOf(cfg) || {}).storeRules) || {})[key] || '').trim();
+  if (own) return own;
+  if (key === 'identity') return '【提店口径】可以在句尾自然带一句「我是做这行的 / 我就是教这个的」，让本地人知道你的身份；但绝不报店名、机构名、地址、价格、联系方式。';
+  if (key === 'store') return '【提店口径】对方明确问起「哪家 / 在哪 / 多少钱」时才可以报店名；不主动报，不写价格、不写联系方式、不发链接。';
   return '【提店口径】一个字都不提自己做什么、在哪、什么店：只像一个懂行的本地人说话。';
 }
 
-/* 私信按玩法开口（2026-11-02）：同一句私信模板，来源玩法不同，开口角度也不同 */
-function drainPlaybookDmRule(id) {
+/* 私信按玩法开口（2026-11-02）：同一句私信模板，来源玩法不同，开口角度也不同。
+   2026-11-04：先读这个号的行业口径包（pb[id].dm），没包才用下面这套亲子口径。 */
+function drainPlaybookDmRule(id, cfg) {
+  const own = drainPbCopy(cfg, id, 'dm');
+  if (own) return own;
   const key = drainScenarioId(id);
   return {
     latest: '来源＝本地泛搜索：对方是在同城带娃笔记下留言的本地家长。开场聊本地带娃的实情，别报价、别发链接。',
@@ -4672,7 +4924,7 @@ function drainPlaybookDmRule(id) {
     pain: '来源＝咨询帖：对方在求助或避雷。先正面回答他问的那件事，再给价值；不推销、不趁机贬低同行。',
     cross: '来源＝同城异业：对方是在别家行业笔记下留言的本地家长。从孩子那个具体困扰切进来，别暴露职业。',
     rival: '来源＝同行/竞对：对方是在竞品评论区看到的精准顾客。绝不提「在某某笔记看到你」，用自己踩过的坑破冰。',
-    highv: '来源＝大V：对方是在头部博主评论区留言的人。用「赞同＋本行视角」承接，别像截流。',
+    highv: '来源＝大V：对方是在头部博主评论区留言的人。用「赞同＋本行视角」承接，别让人觉得你是在捞人。',
   }[key] || '来源不明的线索：只按对方评论原话自然接话，别猜场景。';
 }
 
@@ -4719,38 +4971,60 @@ function drainResolveGuide(config) {
 /* 同城本业合并同行后（2026-11-02）：同行/机构在招生卖课的帖子不留言，只收评论区里的人。
    固定词先挡一道、省一次 AI；没挡住的交给提示词里的 AI 再判——两边都判「能评」才评。 */
 const DRAIN_SOLICIT_WORDS = ['招生', '开班', '名额有限', '课程顾问', '体验课', '预约试听', '报名咨询', '扫码加', '私信咨询'];
-function drainLooksSolicit(data) {
+function drainLooksSolicit(data, cfg) {
   const blob = [data && data.noteTitle, data && data.noteContent, data && data.noteAuthor].join(' ');
-  return DRAIN_SOLICIT_WORDS.some(w => blob.indexOf(w) >= 0);
+  return drainSolicitWords(cfg).some(w => blob.indexOf(w) >= 0);
 }
 
 async function handleDrainComment(data) {
   const sc = (SCENARIO_DRAIN || []).find(s => s.scenario === (data && data.scenario));
   if (!sc) throw new Error('未知截流场景: ' + (data && data.scenario));
-  if (drainScenarioId(data && data.scenario) === 'local' && drainLooksSolicit(data)) {
-    return { ok: true, skip: true, comment: '', scenario: data.scenario, reason: '同行/机构招生帖：只收人、不留言' };
-  }
   const config = await Storage.getConfig();
+  let store = (data && data.store) || '';
+  let talkBlock = '';
+  let scanCfg = null;
+  let stratRule = '';
+  let plan = null;
+  try {
+    scanCfg = await drainGetScanCfg();
+    plan = drainPbPlan(scanCfg, data.scenario);
+    if (!store) store = plan.store;
+    // 这个玩法配好的那段话：当参考带进评论，不逐字照抄
+    talkBlock = drainTalkBlock(drainPbTalkOf(scanCfg, data.scenario));
+    stratRule = drainStrategyRule(scanCfg, data.scenario);
+  } catch (_) {}
+  /* 配成「只回评论区 / 只收人」的玩法不在笔记下面露面（2026-11-04） */
+  if (plan && (plan.mode === 'reply' || plan.mode === 'people')) {
+    return {
+      ok: true, skip: true, comment: '', scenario: data.scenario,
+      reason: '这个玩法配的是「' + DRAIN_PB_MODE[plan.mode] + '」：不在笔记下面评',
+    };
+  }
+  /* 同行/揽客帖这道闸挪到读完配置之后：判「像不像揽客」的词表要按这个号的行业口径包补（2026-11-04） */
+  if (drainScenarioId(data && data.scenario) === 'local' && drainLooksSolicit(data, scanCfg)) {
+    return {
+      ok: true, skip: true, comment: '', scenario: data.scenario,
+      reason: drainPackOf(scanCfg) ? '同行在揽客的帖子：只收人、不留言' : '同行/机构招生帖：只收人、不留言',
+    };
+  }
   const aiCfg = Object.assign({}, config.ai || {}, { maxTokens: 900 });
   if (!aiCfg.apiKey && !aiCfg.fallbackApiKey) throw new Error('尚未配置 AI（请在设置里填 API Key）');
   const product = (config.product && config.product.name) || '本产品';
-  const guide = drainResolveGuide(config);
-  let store = (data && data.store) || '';
-  let talkBlock = '';
-  try {
-    const scanCfg = await drainGetScanCfg();
-    if (!store) store = drainPbPlan(scanCfg, data.scenario).store;
-    // 这个玩法配好的那段话：当参考带进评论，不逐字照抄
-    talkBlock = drainTalkBlock(drainPbTalkOf(scanCfg, data.scenario), data.scenario);
-  } catch (_) {}
+  /* 引导那句：玩法上配了明确档位就用它，配「跟账号资料」才用账号资料那句 */
+  const guide = drainGuideByPlan(scanCfg, data.scenario) || drainResolveGuide(config);
   const payload = Object.assign({}, data, {
     product, guide,
-    storeRule: drainStoreRule(store),
+    storeRule: drainStoreRule(store, scanCfg),
     personaBlock: drainPersonaBlock(config),
   });
-  let sysPrompt = _fillSentiment(sc.system, payload);
+  /* 提示词本体也先读包：包里写了这个玩法的 system/user 就用包里那句，没写才用内置那套 */
+  const sysBuiltin = drainPbCopy(scanCfg, data.scenario, 'system') || sc.system;
+  const userBuiltin = drainPbCopy(scanCfg, data.scenario, 'user') || sc.user;
+  let sysPrompt = _fillSentiment(sysBuiltin, payload);
+  /* 顺序跟「回评论区那句」对齐：提店（已在 payload.storeRule）→ 策略 → 话术 */
+  if (stratRule) sysPrompt += '\n\n【这一趟的评论策略（跟「回评论区那句」用的是同一段）】\n' + stratRule;
   if (talkBlock) sysPrompt += '\n\n' + talkBlock;
-  const r = await AiClient.chatCompletion(aiCfg, sysPrompt, _fillSentiment(sc.user, payload));
+  const r = await AiClient.chatCompletion(aiCfg, sysPrompt, _fillSentiment(userBuiltin, payload));
   let text = String((r && r.content) || '').trim();
   text = text.replace(/^(```(?:json|text)?|"""|''')/, '').replace(/(```|"""|''')$/, '').trim();
   text = text.replace(/^["']|["']$/g, '').trim();
