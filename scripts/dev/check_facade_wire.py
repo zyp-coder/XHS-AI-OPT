@@ -3,7 +3,7 @@
 # 这一支只看四件事：
 #   ① 档案那行「下一步」状态机认门面篇：没稿→编辑进门面流；有稿没出口→选出口；封面没定→还差封面（⑤ 那一站）；齐了（talk）→还没录给「拿逐句录的链接」、录完给成片预览（2026-10-19 三档改版后的口径）（永不指回写稿/出图/出片那几条线）
 #   ② 门面篇标「代发」不会被自动抓进每周格子，toast 是指去「🆕 写好等排期」自己挑位子；引流篇照旧能排上
-#   ③ 规划页旧「📌 置顶 / 门面」那块撤了，换成两篇的要求说明（段名摊开＋缺哪篇的指路＋不占格子＋案例那句）
+#   ③ 门面那条横幅（11-04 现行位置＝「复盘 → 📋 选题盘点」顶上）：缺的那格点名「还缺」＋给「✍️ 去建这一篇」；两篇齐了才说「不进每周排法」；置顶状态一颗一色；提纲段名还在数据里。退市契约＝旧「规划页」那块（_diagFacadeHtml／diagRenderPlan／diagStepPlan）与「📌 置顶 / 门面」那串彻底没了，代码 2026-11-04 已删净
 #   ④ 「✏️ 编辑」按下去真落在门面那条流上（台上状态切到 facade、页面容器是写稿那一格）
 # 本机：node 起一台只用临时账本的服务器（DEMO_DATA_DIR 指 tmp/，绝不碰 server/data/），AI 出口拨到小桩。
 # 用法：python3 -X utf8 scripts/dev/check_facade_wire.py
@@ -53,14 +53,9 @@ class Stub(BaseHTTPRequestHandler):
 JS = r'''async () => {
   const miss = [];
   ['npArNext', 'npArGoNext', 'npAutoPlaceNote', 'npDirNewNote', 'npNotesAll', 'npArchiveCoerce',
-    'npFacadeSave', 'switchMainTab'].forEach(k => { if (typeof window[k] !== 'function') miss.push(k); });
-  // 规划页那块的实现被拆到「点开那一页才下载」的小包里（首屏提速），先把它要过来再说
-  if (typeof _diagFacadeHtml !== 'function' || typeof diagRenderPlan !== 'function') {
-    const P = window.__wbPacks && window.__wbPacks['diag'];
-    if (P && typeof P.go === 'function') { await P.go(); }
-  }
-  if (typeof _diagFacadeHtml !== 'function') miss.push('_diagFacadeHtml(规划页小包没下载上)');
+    'npFacadeSave', 'npFacadeBar', 'switchMainTab'].forEach(k => { if (typeof window[k] !== 'function') miss.push(k); });
   if (typeof FACADE_OUTLINE === 'undefined') miss.push('FACADE_OUTLINE');
+  if (typeof npFacadeOf !== 'function') miss.push('npFacadeOf');
   if (miss.length) return { err: '页面里没有 ' + miss.join(' / '), url: location.href };
 
   const r = {};

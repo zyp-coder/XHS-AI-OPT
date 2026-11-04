@@ -44,6 +44,10 @@ function editionSummary() {
     tier: _edGrant ? (_edGrant.tier || '') : '',
     draftOnly: !!(_edGrant && _edGrant.draftOnly),
     onTrial: !!(_edGrant && _edGrant.onTrial),
+    trialTier: _edGrant ? (_edGrant.trialTier || '') : '',
+    trialUntil: _edGrant ? (_edGrant.trialUntil || 0) : 0,
+    trialDays: _edGrant ? (_edGrant.trialDays || 0) : 0,
+    trialExpired: !!(_edGrant && _edGrant.trialExpired),
     grantAt: _edGrant ? (_edGrant.at || 0) : 0,
     expired: false,
   };

@@ -4,11 +4,11 @@
    要用到已拆出去的那页，走 popup.js 里的 wbGate('包名', 干活的函数)——文件到了再画。 */
 (function () {
   var FILES = {
-    huoke: ['lib/scenario-drain.js', 'auto-water-app.js', 'auto-bot.js'],
+    huoke: ['lib/scenario-drain.js', 'exec-douyin.js', 'auto-water-app.js', 'auto-bot.js'],
     diag: ['lib/pg-diag.js'],
     state: ['lib/pg-state.js']
   };
-  var LABEL = { diag: '诊断&配置', state: '线索列表' };
+  var LABEL = { diag: '账号规划', state: '线索列表' };
   var packs = {};
   function makePack(name) {
     var p = { files: FILES[name], done: [], failed: false, started: false, chain: null };
@@ -58,7 +58,7 @@
     'lib/platforms.js', 'lib/visual-motif.js', 'lib/asset-kinds.js', 'lib/note-plan.js', 'lib/account-guard.js',
     'lib/video/tts-edge.js', 'lib/video/voices.js', 'lib/edition-source.js', 'popup.js', 'lib/daily-browse.js',
     'dropdown-ui.js',
-    'lib/scenario-drain.js', 'auto-water-app.js', 'auto-bot.js'];
+    'lib/scenario-drain.js', 'exec-douyin.js', 'auto-water-app.js', 'auto-bot.js'];
   var t0 = Date.now();
   var timer = setInterval(tick, 200);
   function tick() {

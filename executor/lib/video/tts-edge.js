@@ -253,6 +253,30 @@
     });
   }
 
+  /* ── 豆包音色（2026-11-03）：声音在服务器上合成，这边只递一句文字、收一段 mp3。
+     App ID / Access Token 不进浏览器；扣字数的账也在服务器上。念不成把原因原样抛回去，
+     由 audio.js 决定换回免费声音。 */
+  async function doubao(text, opts) {
+    const o = opts || {};
+    const r = await chrome.runtime.sendMessage({
+      action: 'ttsVoice',
+      data: { text: String(text || ''), voice: o.voice, rate: o.rate },
+    });
+    if (!r || !r.ok) {
+      const e = new Error((r && r.error) || '豆包配音没成');
+      e.code = (r && r.code) || 'tts-failed';
+      e.quota = r && r.quota;
+      throw e;
+    }
+    const bin = atob(String(r.audio || ''));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    if (!out.length) throw new Error('豆包配音没回音频');
+    return out;
+  }
+
+  g.DoubaoTTS = { synth: doubao };
+
   g.EdgeTTS = { synth, gec, isEdge, VOICES: [
     ['zh-CN-XiaoxiaoNeural', '晓晓'], ['zh-CN-XiaoyiNeural', '晓伊'], ['zh-CN-YunxiNeural', '云希'],
     ['zh-CN-YunyangNeural', '云扬'], ['zh-CN-YunjianNeural', '云健'],

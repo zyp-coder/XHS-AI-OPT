@@ -27,7 +27,7 @@ const GUILOG = path.join(ROOT, '打包日志-gui.txt');
 const ENV = path.join(ROOT, 'server', '.env');
 /* 档位真源在公网那台（2026-10-16 收口）：包里这张只是进门默认，
    所以打完包要把「这位客户落在哪档」顺手同步到那台机器上——省得两边对不上。 */
-const TIER_OF = { full: '全功能', 'comment-multi': '升级', comment: '基础' };
+const TIER_OF = { fullplat: '全平台', full: '全功能', 'comment-multi': '升级', comment: '基础' };
 /* 公网口令只读本机 server/.env（这文件不进 Git），不写进仓库、也不回显在页面上 */
 function adminPass() {
   try {
@@ -73,6 +73,7 @@ const PAGE = `<!DOCTYPE html>
    <div class="field">
      <label>版本档位 <span class="tip">（包里进门默认；真表在公网那台，改档不用重打包）</span></label>
 <select name="type">
+       <option value="fullplat">全平台版（全功能 + 抖音/视频号 · ¥699/月）</option>
        <option value="full">全功能版（发笔记 + 获客 + 线索 · ¥539/月）</option>
        <option value="comment-multi">升级版（发笔记 + 获客 · ¥399/月）</option>
        <option value="comment">基础版（发笔记 · ¥239/月）</option>

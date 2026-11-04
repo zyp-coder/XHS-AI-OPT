@@ -210,8 +210,29 @@ const NPA_XHS_UPLOAD = function (args) {
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const name = k.split('|')[1] || 'file';
-      const mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
-      dt.items.add(new File([arr], name, { type: mime }));
+      /* 认真身，别信名字：出图那套内容是 JPEG、名字却被叫成 .png，照扩展名递过去平台静默不收
+         （2026-10-29 实踩：小红书缩略图 0/4、编辑器不出，等满 8 分钟）。只看头几个字节定：
+         JPEG FFD8FF / PNG 89504E47 / GIF / WEBP / MP4·MOV(ftyp)。 */
+      const real = (() => {
+        const u = arr;
+        if (u.length >= 12) {
+          if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'image/jpeg';
+          if (u[0] === 0x89 && u[1] === 0x50 && u[2] === 0x4E && u[3] === 0x47) return 'image/png';
+          if (u[0] === 0x47 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x38) return 'image/gif';
+          if (u[0] === 0x52 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x46 && u[8] === 0x57 && u[9] === 0x45 && u[10] === 0x42 && u[11] === 0x50) return 'image/webp';
+          if (u[4] === 0x66 && u[5] === 0x74 && u[6] === 0x79 && u[7] === 0x70) {
+            return /qt/i.test(String.fromCharCode(u[8], u[9], u[10], u[11])) ? 'video/quicktime' : 'video/mp4';
+          }
+        }
+        return '';
+      })();
+      let mime = real;
+      if (isVideo ? !/^video\//.test(mime) : !/^image\//.test(mime)) {
+        mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
+      }
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'video/quicktime': '.mov' })[mime] || '';
+      const fname = !ext ? name : (/\.[a-z0-9]{2,5}$/i.test(name) ? name.replace(/\.[a-z0-9]{2,5}$/i, ext) : name + ext);
+      dt.items.add(new File([arr], fname, { type: mime }));
       delete buf[k];
     }
     if (!dt.files.length) return { ok: false, msg: '文件分片没攒齐：' + missed.join(',') };
@@ -238,6 +259,26 @@ const NPA_XHS_FILL = function (args) {
   const { title, body, tags } = args;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  /* 小红书标题硬上限 20 字：超了页面拦「标题最多输入20字哦~」，发布按钮点了没反应。
+     优先收在标点/右引号后（保住前半句钩子），断点太靠前或没有才硬切。 */
+  const clip20 = (s) => {
+    const str = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (str.length <= 20) return str;
+    let units;
+    try { units = [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(str)].map(x => x.segment); }
+    catch (_) { units = Array.from(str); }
+    let out = '', cut = 0;
+    for (const u of units) {
+      if ((out + u).length > 20) break;
+      out += u;
+      if (/[。！？；：，、…—|·\s”’」』）】]/.test(u)) cut = out.length;
+    }
+    if (cut < 10) cut = out.length;
+    let head = out.slice(0, cut).replace(/[\s，、：；…—|·]+$/, '').trim();
+    const o = (head.match(/[“‘「『]/g) || []).length, c = (head.match(/[”’」』]/g) || []).length;
+    if (o > c) head = head.replace(/^[“‘「『]\s*/, '');
+    return head || out;
+  };
   /* 拟真点击（约定见文件头 5）；内联是注入约束决定的，别外提成公共函数 */
   const humanClick = async (el) => {
     const r = el.getBoundingClientRect();
@@ -278,7 +319,7 @@ const NPA_XHS_FILL = function (args) {
       await humanClick(ti);
       await sleep(400 + Math.random() * 800);   // 点进停一拍（四十三改）
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      setter.call(ti, String(title || ''));
+      setter.call(ti, clip20(title));
       ti.dispatchEvent(new Event('input', { bubbles: true }));
       ti.dispatchEvent(new Event('change', { bubbles: true }));
       await sleep(500 + Math.random() * 1000);  // 落完停一拍再挪去正文（四十三改）
@@ -358,6 +399,25 @@ const NPA_XHS_LONG = function (args) {
   const { title, body, tags } = args;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  /* 小红书标题硬上限 20 字（长文模式同限）：超了页面拦「标题最多输入20字哦~」 */
+  const clip20 = (s) => {
+    const str = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (str.length <= 20) return str;
+    let units;
+    try { units = [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(str)].map(x => x.segment); }
+    catch (_) { units = Array.from(str); }
+    let out = '', cut = 0;
+    for (const u of units) {
+      if ((out + u).length > 20) break;
+      out += u;
+      if (/[。！？；：，、…—|·\s”’」』）】]/.test(u)) cut = out.length;
+    }
+    if (cut < 10) cut = out.length;
+    let head = out.slice(0, cut).replace(/[\s，、：；…—|·]+$/, '').trim();
+    const o = (head.match(/[“‘「『]/g) || []).length, c = (head.match(/[”’」』]/g) || []).length;
+    if (o > c) head = head.replace(/^[“‘「『]\s*/, '');
+    return head || out;
+  };
   const humanClick = async (el) => {
     const r = el.getBoundingClientRect();
     const tx = r.x + r.width / 2 + (r.width > 8 ? Math.random() * 4 - 2 : 0);
@@ -417,7 +477,7 @@ const NPA_XHS_LONG = function (args) {
     if (ti) {
       await humanClick(ti); await sleep(400 + Math.random() * 700);
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      setter.call(ti, String(title || ''));
+      setter.call(ti, clip20(title));
       ti.dispatchEvent(new Event('input', { bubbles: true }));
       ti.dispatchEvent(new Event('change', { bubbles: true }));
     } else warn.push('标题框没找到');
@@ -471,6 +531,28 @@ const NPA_DY_LONG = function (args) {
 /** 找（并可点）发布按钮。dry=true 只回报在不在、点的位置，不点。
     发布按钮封在 <xhs-publish-btn> 的 closed shadow 里——先靠 lib/pub-shadow-hook.js 开壳
     （window.__npaShadowRoots），这里把 document + 所有能到的 open shadow 都翻一遍。 */
+/** 小红书填字后自查：标题框 / 正文编辑器里现在有没有字（填字注入超时后，先看是不是其实已经填上了） */
+const NPA_XHS_FILL_STATE = function () {
+  const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  let ti = null;
+  try { ti = [...document.querySelectorAll('input')].find(i => /标题/.test(i.placeholder || '') && vis(i)) || null; } catch (e) {}
+  let ed = null;
+  try {
+    const eds = [...document.querySelectorAll('.tiptap.ProseMirror, [contenteditable="true"]')].filter(e => {
+      if (!vis(e)) return false;
+      const r = e.getBoundingClientRect();
+      return r.width > 200 && r.height > 40;
+    });
+    eds.sort((a, b) => b.getBoundingClientRect().width - a.getBoundingClientRect().width);
+    ed = eds[0] || null;
+  } catch (e) {}
+  return {
+    title: ti ? String(ti.value || '') : '',
+    body: ed ? String(ed.innerText || '') : '',
+    found: !!(ti || ed),
+  };
+};
+
 const NPA_XHS_SEND = function (args) {
   const dry = !!(args && args.dry);
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -510,6 +592,7 @@ const NPA_XHS_SEND = function (args) {
   };
   const usable = (b) => {
     if (!b) return false;
+    if (b.isConnected === false) return false;              // 旧节点被 React 换掉了：别对着空气点
     if (b.disabled) return false;
     if (b.getAttribute('aria-disabled') === 'true') return false;
     if (/disabled/i.test(String(b.className || ''))) return false;
@@ -548,11 +631,66 @@ const NPA_XHS_SEND = function (args) {
     b.dispatchEvent(ev(MouseEvent, 'click', tx, ty, { button: 0, buttons: 0, detail: 1 }));
     window.__npaMouse = { x: tx, y: ty };
   };
+  /* 页面上此刻能读到的提示原话（弹框 / toast / 红字）——失败时原样带回回执，别再只报「没成」 */
+  const pageHints = () => {
+    const out = [];
+    const seen = new Set();
+    const take = (t) => {
+      const s = String(t || '').replace(/\s+/g, ' ').trim();
+      if (!s || s.length < 2) return;
+      if (seen.has(s)) return;
+      seen.add(s); out.push(s.slice(0, 120));
+    };
+    let boxes = [];
+    try { boxes = document.querySelectorAll('[role="dialog"], [class*="modal"], [class*="dialog"], [class*="toast"], [class*="message"], [class*="notice"]'); } catch (e) {}
+    let n = 0;
+    for (const el of boxes) {
+      if (n >= 5) break;
+      if (!vis(el)) continue;
+      const t = (el.innerText || '').trim();
+      if (t) { take(t); n++; }
+    }
+    return out;
+  };
+  /* 点完「发布」若弹出一道要再确认的框：只认框里带「发布」、按钮是「确认/继续/发布」这类；
+     带「违规/风险/失败/修改」字样的框一律不点，只把原话留着报回去 */
+  const findConfirm = () => {
+    const roots = [document];
+    (window.__npaShadowRoots || []).forEach(r => { if (r && roots.indexOf(r) < 0) roots.push(r); });
+    const picked = [];
+    for (const root of roots) {
+      let boxes = [];
+      try { boxes = root.querySelectorAll('[role="dialog"], [class*="modal"], [class*="dialog"]'); } catch (e) { continue; }
+      for (const box of boxes) {
+        if (!vis(box)) continue;
+        const r = box.getBoundingClientRect();
+        if (r.width > window.innerWidth * 0.95 || r.height > window.innerHeight * 0.95) continue;   // 整页外壳不算弹框
+        let pos = '';
+        try { pos = getComputedStyle(box).position; } catch (e) {}
+        if (pos !== 'fixed' && pos !== 'absolute') continue;                                          // 弹框都是浮层
+        const t = String(box.innerText || '');
+        if (!t || t.length > 300 || !/发布/.test(t)) continue;
+        if (/违规|风险|失败|错误|修改|请重新/.test(t)) continue;
+        let els = [];
+        try { els = box.querySelectorAll('button,div,span,a'); } catch (e) { continue; }
+        for (const e of els) {
+          const s = (e.innerText || '').replace(/\s+/g, '');
+          if (['确认发布', '继续发布', '发布', '确定发布', '立即发布', '确认', '继续'].indexOf(s) < 0) continue;
+          if (e.children.length > 2) continue;
+          if (!vis(e)) continue;
+          picked.push(e);
+        }
+      }
+    }
+    if (!picked.length) return null;
+    picked.sort((a, b) => (b.tagName === 'BUTTON' ? 1 : 0) - (a.tagName === 'BUTTON' ? 1 : 0));
+    return picked[0];
+  };
   const checkDone = () => {
     if (!/publish\/publish/.test(location.href)) return { ok: true, sent: true, url: location.href };
     const t = (document.body ? document.body.innerText : '');
     if (/发布成功/.test(t.slice(0, 3000))) return { ok: true, sent: true, url: location.href };
-    if (/发布失败|请勿提交|错误/.test(t.slice(0, 3000))) return { ok: false, msg: '页面报发布失败' };
+    if (/发布失败|请勿提交|错误/.test(t.slice(0, 3000))) return { ok: false, msg: '页面报发布失败', state: { hint: pageHints().join('；'), url: location.href } };
     return null;
   };
 
@@ -569,11 +707,30 @@ const NPA_XHS_SEND = function (args) {
     const floorMs = 60000 + Math.random() * 30000;
     const past = performance.now();
     if (past < floorMs) await sleep(Math.min(floorMs - past, 95000));
-    /* 图还在传/校验时「发布」是禁用态，点了白点——等它亮（≤60s），等不到也照点（下面还有重点击兜底） */
-    for (let w = 0; w < 60 && !usable(btn); w++) { await sleep(1000); if (w % 5 === 4) btn = findBtn() || btn; }
-    /* 点击 + 观察 ×4 轮：一轮 15 秒没动静就重扫按钮再点（React 可能已替换元素） */
+    /* 图还在传/校验时「发布」是禁用态，点了白点——等到它真亮再点（最多 3 分钟）；
+       一直不亮就停手，把页面上当时的提示原话带回去，别灰着也点。 */
+    let waited = 0;
+    while (!usable(btn) && waited < 180) {
+      await sleep(1000); waited++;
+      if (waited % 5 === 0) btn = findBtn() || btn;
+    }
+    if (!usable(btn)) {
+      return { ok: false, msg: '发布按钮一直是灰的（等了 3 分钟）', state: { hint: pageHints().join('；'), url: location.href } };
+    }
+    /* 点击 + 观察 ×4 轮：一轮 15 秒没动静就重扫按钮再点（React 可能已替换元素）
+       中途弹「确认发布/继续」这类框就顺手点掉；带违规/风险字样的框不碰，只记原话 */
+    let lastHint = '';
     for (let attempt = 0; attempt < 4; attempt++) {
       btn = findBtn() || btn;
+      /* 上一轮点完按钮可能又变灰（平台回到校验）——这一轮也别盲点 */
+      if (!usable(btn)) {
+        let w2 = 0;
+        while (!usable(btn) && w2 < 60) {
+          await sleep(1000); w2++;
+          if (w2 % 5 === 0) btn = findBtn() || btn;
+        }
+        if (!usable(btn)) break;
+      }
       if (!window.__npaMouse) window.__npaMouse = { x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight };
       /* 发布前凑近按钮旁挪几步再定住一拍（四十三改）：别「填完即发、直奔按钮」 */
       const preN = 3 + Math.floor(Math.random() * 3);
@@ -592,6 +749,7 @@ const NPA_XHS_SEND = function (args) {
       }
       await sleep(1000 + Math.random() * 2000);   // 定住一拍再按（四十三改）
       await humanClick(btn);
+      let confirms = 0;
       for (let i = 0; i < 15; i++) {
         await sleep(1000);
         const d = checkDone();
@@ -599,9 +757,18 @@ const NPA_XHS_SEND = function (args) {
           if (d.sent) await sleep(2000 + Math.random() * 3000);   // 发完定住看两眼再走（四十三改）
           return d;
         }
+        const cb = findConfirm();
+        if (cb && cb !== btn && confirms < 3) {
+          confirms++;
+          await humanClick(cb);
+          await sleep(1200);
+          continue;
+        }
+        const hs = pageHints();
+        if (hs.length) lastHint = hs[0];
       }
     }
-    return { ok: false, msg: '点了发布但一直在原地（重点了 4 轮）' };
+    return { ok: false, msg: '点了发布但页面一直在原地（重点了 4 轮）', state: { hint: lastHint || pageHints().join('；'), url: location.href } };
   })();
 };
 
@@ -712,8 +879,29 @@ const NPA_DY_UPLOAD = function (args) {
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const name = k.split('|')[1] || 'file';
-      const mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
-      dt.items.add(new File([arr], name, { type: mime }));
+      /* 认真身，别信名字：出图那套内容是 JPEG、名字却被叫成 .png，照扩展名递过去平台静默不收
+         （2026-10-29 实踩：小红书缩略图 0/4、编辑器不出，等满 8 分钟）。只看头几个字节定：
+         JPEG FFD8FF / PNG 89504E47 / GIF / WEBP / MP4·MOV(ftyp)。 */
+      const real = (() => {
+        const u = arr;
+        if (u.length >= 12) {
+          if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'image/jpeg';
+          if (u[0] === 0x89 && u[1] === 0x50 && u[2] === 0x4E && u[3] === 0x47) return 'image/png';
+          if (u[0] === 0x47 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x38) return 'image/gif';
+          if (u[0] === 0x52 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x46 && u[8] === 0x57 && u[9] === 0x45 && u[10] === 0x42 && u[11] === 0x50) return 'image/webp';
+          if (u[4] === 0x66 && u[5] === 0x74 && u[6] === 0x79 && u[7] === 0x70) {
+            return /qt/i.test(String.fromCharCode(u[8], u[9], u[10], u[11])) ? 'video/quicktime' : 'video/mp4';
+          }
+        }
+        return '';
+      })();
+      let mime = real;
+      if (isVideo ? !/^video\//.test(mime) : !/^image\//.test(mime)) {
+        mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
+      }
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'video/quicktime': '.mov' })[mime] || '';
+      const fname = !ext ? name : (/\.[a-z0-9]{2,5}$/i.test(name) ? name.replace(/\.[a-z0-9]{2,5}$/i, ext) : name + ext);
+      dt.items.add(new File([arr], fname, { type: mime }));
       delete buf[k];
     }
     if (!dt.files.length) return { ok: false, msg: '文件分片没攒齐' };

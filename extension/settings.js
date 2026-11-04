@@ -137,7 +137,7 @@ function deepMerge(base, over) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「诊断&配置 → 基础配置」；
+// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「账号规划 → 基础配置」；
 // 评论区承接 2026-09-25 又搬去「获客 → 任务配置 → 🎯 推广目标」），
 // 产品名称/卖点在诊断里维护，这里不再有任何入口与读写
 // ══════════════════════════════════════════════════════════════
@@ -607,7 +607,7 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 上限存 note_trend_config（与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）；排序/类型归「任务配置·关键词池」，
 // 搜索页不再勾「未看过」筛选（去重靠笔记池的冷却/复核）
 // ══════════════════════════════════════════════════════════════
-const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
+const NT_DEFAULT_CONFIG = { maxPerRound: 20, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
 const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
 // 「每轮最多处理」现在住在「⚙️ 高级配置」弹窗里：主页面那行「每轮处理」在弹窗关着时读这份缓存
 let _ntRoundCache = NT_DEFAULT_CONFIG.maxPerRound;
@@ -634,7 +634,7 @@ async function loadWaterFreq() {
 // ══════════════════════════════════════════════════════════════
 // 停留时间（delay_config：区间随机 min~max，单位毫秒，默认 = 技术下限：能跑通的最快值）
 // ══════════════════════════════════════════════════════════════
-const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0} };
+const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0}, noteGap: {min:5000,max:8000} };
 const DELAY_KEYS = Object.keys(DELAY_DEFAULT);
 
 // ═══ 拟人化挡位（0~5）：表在 lib/delay-presets.js（与弹窗顶部选择器同一张） ═══
@@ -777,12 +777,12 @@ function _presetLevel() {
   const n = (v === '' || v === undefined || v === null) ? NaN : Number(v);
   return _presetLevelFromTable(n) ? n : _closestPreset(_presetCfgFromInputs());
 }
-// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=条间）
+// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=上一篇→下一篇的间隔）
 function _estimateRoundSec(cfg, nr) {
   const sec = k => _mid(cfg[k]) / 1000;
   const per = sec('noteOpenBuffer') + sec('browseDwell') + sec('lazyLoadWait') + 3 + sec('typingCharDelay') + sec('preSendGap') + 0.7;
   const r = Math.max(1, Math.floor(nr || 10));
-  return per * r + sec('batchItemGap') * (r - 1);
+  return per * r + sec('noteGap') * (r - 1);
 }
 // 「每轮最多处理」在「⚙️ 高级配置」里：弹窗关着时读不到输入框，用 loadWaterFreq 缓存的那份
 function _roundPerValue() {

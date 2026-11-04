@@ -14,7 +14,7 @@ const NoteTrend = (function () {
 
   // 额度控制默认值（可在「🤖 拟人化与触达 → 💧 灌水频率与去重」调整）
   const DEFAULT_CONFIG = {
-    maxPerRound: 3,      // 每轮最多评论几篇
+    maxPerRound: 20,     // 每个词最多打开几篇（打开即算，没发出评论也算）
     maxPerNote: 2,       // 每篇笔记最多总评论次数
     cooldownHours: 24,   // 真正灌水过的同一篇笔记冷却时间（小时）
     checkedHours: 2,     // 只"扫过、没东西可发"的笔记冷却时间（小时）——更短，给它更多被再次评估的机会

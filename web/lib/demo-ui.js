@@ -4,7 +4,7 @@
  * 固定的 7 个公用演示号共用真实工作台：
  *   1) 顶栏右侧换成「🎭 演示号 · 某档｜退出演示」——点了退出登录、回账号页；
  *   2) 顶栏下面挂一条只读提示：人设 / 卖点 / 知识库 / 规划 / 问卷这些底子只读；
- *   3) 底子页面（诊断&配置、发布台→笔记规划）里，新增 / 编辑 / 删除 / 生成 / 导入
+ *   3) 底子页面（诊断&配置、发笔记→笔记规划）里，新增 / 编辑 / 删除 / 生成 / 导入
  *      这类入口当场拦下并提示「演示号只读，注册自己的号后可改」；
  *      查看 / 搜索 / 筛选 / 复制 / 导出 / 备份 / 刷新 照常可用。
  *   4) 获客·工作台那一屏本来要真扫小红书才有线上数据，演示号扫不到——
@@ -15,7 +15,7 @@
 (() => {
   'use strict';
   const RO_MSG = '演示号只读，注册自己的号后可改';
-  const FOUNDATION = '#diagnoseContent, #nqPanePlan';
+  const FOUNDATION = '#diagnoseContent, #notePlanContent';
   /* 获客 / AI客服里会写账本或碰平台的动作：演示号一律不跑，换成「开自己的号」引导。
      纯 AI 草拟（generateDm / optimizeDm / chatFollowReply / aiCsTouch）与所有读取动作照常放行。 */
   const REAL_ACTIONS = new Set([
@@ -96,7 +96,7 @@
     /* 有些按钮先在本机找页面 / 开标签，走不到 sendMessage——按固定 id 和文案在点击这一层拦住 */
     const REAL_BTN_IDS = new Set([
       'chatqStart', 'chatqSync', 'plNotifRefresh',
-      'botToggleBtn', 'qAddDailyBtn', 'btnSearch', 'refreshBtn',
+      'botToggleBtn', 'bqDailyBtn', 'sxKwAcct', 'sxKwDaily', 'btnSearch', 'refreshBtn',
     ]);
     document.addEventListener('click', (e) => {
       const t = e.target;
@@ -142,6 +142,11 @@
 
   function allowedControl(el) {
     if (!el) return true;
+    /* 规划页三行格＝操作不是底子：点一格改那天发什么、改几点发、开关自动配图，演示号都能动
+       （服务器那边 weekPlanGrid／weekPlanTime／planAutoImg 已从底子里摘出来，见 DEMO_CONFIG_KEEP） */
+    if (el.closest && el.closest('#notePlanContent .npp-matrix')) return true;
+    if (el.matches && el.matches('[data-npp="time"], [data-npp="autoimg"], [data-npp="open"], [data-npp="diag"]')) return true;
+    if (el.matches && el.matches('[data-npp="genplan"][data-mode="view"]')) return true;   // 只看排产表
     const tag = String(el.tagName || '').toUpperCase();
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
       if (OK_INPUT_IDS.has(el.id)) return true;

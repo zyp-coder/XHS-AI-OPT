@@ -25,7 +25,7 @@ const fs = require('fs');
 const readline = require('readline');
 
 const ROOT = __dirname;
-const TYPES = ['full', 'comment', 'comment-multi', 'pro'];
+const TYPES = ['fullplat', 'full', 'comment', 'comment-multi', 'pro'];
 const DEFAULT_DAYS = 7;
 const LOG_FILE = path.join(ROOT, '打包日志.txt');
 

@@ -119,6 +119,9 @@
       <button id="audition" class="ghost">🔊 试听这条</button>
       <span class="tiny" id="audinfo"></span>
     </div>
+    <div class="row">
+      <span class="tiny" id="vq"></span>
+    </div>
     <hr class="cfgsep">
     <div class="cfgh">🎨 风格</div>
     <div id="presets" class="chips"></div>
@@ -220,6 +223,7 @@
     sctab: 'lines',    // 分幕那栏里看哪一签：'lines'＝改字，'pic'＝配画面
     picKind: 'mix',    // 上次挑的垫法：'mix' 垫满屏（实拍／照片）／'card' 垫进卡；关掉「加画面」也记着
     shots: [],         // 「🖼 出图」那张画面表（进站递来）：切「垫进卡」时按它铺底图，不用重进这一篇
+    ip: null,          // 这一篇的 IP 角色小抄（画风/外形/定妆照 id）：缺料补画面一律照它画
     state: null,       // 递给外层那份小抄的备份（外层随时来问，不用等下一次动）
     onState: null,     // 外层那页挂上来的两只钮：小抄怎么收、出完片怎么回档案（单开一页不挂）
     onDone: null,
@@ -317,7 +321,7 @@
   /* 顶上那条工作流条：本台只剩一站（七十一改·老板「口播稿和分幕都能 AI 一步直达，那就并成一屏：
      左边口播稿、右边分幕就搞掂了」）——两站并成一站，条上写「🎬 分幕」，底栏没步进，只留「🎬 出片」。
      单开一页才在这里画；落在「发笔记」那一页里时这条由外层画（paintFlowBar 直接回）。 */
-  const FILM_STATIONS = [{ t: '🎬 分幕', s: '左稿右幕' }, { t: '发布', s: '去发布台', pub: true }];
+  const FILM_STATIONS = [{ t: '🎬 分幕', s: '左稿右幕' }, { t: '发布', s: '去档案发布', pub: true }];
   const FLOW_SUB = { '挑知识': '讲哪条', '改稿': '改到满意', '挑组合': '挑一组', '挑稿': '挑一篇' };
   const FILM_TIPS = {
     '🎬 分幕': '进来一路跑完：按正文调口播稿 → AI 提重点 → 按重点改出「出片稿」→ 切幕，中途不用点。左边那框＝现在用来出片的稿，想换个切法点「↻ 重新出一版」；右边一幕一句：念的就是框里的字，要分屏上行就在断开的地方打个 /（念的时候不念它），重点词是给屏幕上标红的。分幕文字不必跟正文逐字一样。',
@@ -334,7 +338,7 @@
     el.hidden = false;
     el.innerHTML = '<div class="wdots">' + sts.map((s, i) => {
       const done = i < cur, at = i === cur;
-      const tip = s.pub ? '先出片才到发布——这一页是单开的，回档案那一行点「下一步」才排得到发布台'
+      const tip = s.pub ? '先出片才到发布——这一页是单开的，回档案那一行点「下一步」，或成片齐了直接点行尾「🚀 发布」'
         : at ? '正在这一站：左边口播稿、右边分幕'
           : done ? '这一站已经走过了；单开一页没有工作流可回——在工作流里点这一篇才回得去' : '本台这一站';
       return '<span class="wst"><span class="wdot' + (at ? ' lit cur' : '') + '" title="' + esc(tip) + '">' + (i + 1) + '</span>' +
@@ -413,7 +417,7 @@
     return S.scenes.map(sc => ({
       label: sc.label, name: sc.name || '', text: sc.text, lines: (sc.lines || []).slice(),
       em: (sc.em || []).map(e => ({ l: e.l, t: e.t })), layout: sc.layout,
-      cardKey: sc.cardKey || '', tone: sc.tone || '',
+      cardKey: sc.cardKey || '', matKey: sc.matKey || '', tone: sc.tone || '',
       card: (sc.card && sc.card.src && sc.card.kind !== 'file')
         ? { src: sc.card.src, name: sc.card.name || '', kind: sc.card.kind, id: sc.card.id || '' } : null,
       // 混剪的料只留引用（一屏一单，库里那条 id＋仓 key；照片那张小图回库按 clipId 取，不往草稿里抄）
@@ -421,8 +425,11 @@
       mats: (sc.mats || []).map(m => ({
         clipId: m.clipId || '', kind: m.kind, name: m.name || '', tags: (m.tags || []).slice(),
         a: m.a || 0, b: m.b || 0, dur: m.dur || 0,
-        ref: m.kind === 'clip' ? (m.ref || '') : '',
+        // 实拍段存 ref；AI 补的那张也存（gen: 开头，回来自本机仓取原图）；本机传的图刷新要重选
+        ref: (m.kind === 'clip' || /^gen:/.test(String(m.ref || ''))) ? (m.ref || '') : '',
         src: /^data:/.test(String(m.src || '')) ? m.src : '',
+        thumb: m.kind === 'photo' ? String(m.thumb || '') : '',
+        gen: !!m.gen,
       })),
     }));
   }
@@ -484,14 +491,30 @@
       不然后面换了图、再出片画的还是上一版（拷贝是更早那次建的）。 */
   const tl = () => {
     const T = S.tl || estTimeline();
-    if (Array.isArray(T.scenes)) T.scenes.forEach((tc, i) => {
-      const sc = S.scenes[i];
-      if (!sc) return;
-      tc.card = sc.card; tc.cardImg = sc.cardImg; tc.cardImgOf = sc.cardImgOf;
-      tc.cardErr = sc.cardErr; tc.cardKey = sc.cardKey;
-      tc.mats = sc.mats; tc.tone = sc.tone;                         // 混剪的料与每一屏的调同理：以台子上这几幕为准
-      tc.matPlan = matPlan(sc, +(tc.end - tc.start).toFixed(2));    // 这一屏怎么排：按真秒数现算
-    });
+    if (Array.isArray(T.scenes)) {
+      T.scenes.forEach((tc, i) => {
+        const sc = S.scenes[i];
+        if (!sc) return;
+        tc.card = sc.card; tc.cardImg = sc.cardImg; tc.cardImgOf = sc.cardImgOf;
+        tc.cardErr = sc.cardErr; tc.cardKey = sc.cardKey;
+        tc.mats = sc.mats; tc.tone = sc.tone;                         // 混剪的料与每一屏的调同理：以台子上这几幕为准
+      });
+      /* 一段共用一份料：这一段的几幕排同一条料单，起止从这一段开头算（段里换句不重启画面） */
+      matRunsOf().forEach(run => {
+        const src = S.scenes.slice(run.from, run.to + 1).find(sc => sc && matsOf(sc).length) || S.scenes[run.from];
+        if (!src) return;
+        const runSec = +(T.scenes.slice(run.from, run.to + 1)
+          .reduce((a, tc) => a + Math.max(0, (tc.end || 0) - (tc.start || 0)), 0)).toFixed(2);
+        const plan = matPlanFor(matsOf(src), runSec);
+        const rStart = T.scenes[run.from] ? T.scenes[run.from].start : 0;
+        const rEnd = T.scenes[run.to] ? T.scenes[run.to].end : rStart;
+        for (let i = run.from; i <= run.to; i++) {
+          const tc = T.scenes[i];
+          if (!tc) continue;
+          tc.matPlan = plan; tc.matRunStart = rStart; tc.matRunEnd = rEnd;
+        }
+      });
+    }
     return T;
   };
   S.timeline = tl;                // 自检脚本要按当前时间轴逐帧验画面（没有真配音时给的是估算那条）
@@ -728,10 +751,16 @@
   /** 一张图落成「卡」：src 是要画的图，id 是素材库那条的 id（回来续档时按它认图） */
   const cardOf = a => ({ src: assetSrc(a), name: assetName(a), kind: a.kind, id: a.id });
 
-  /** 解码成位图：data:/blob: 直接读；http(s) 先 fetch（能跨站才行），不行再退回 <img crossorigin> */
+  /** 解码成位图：data:/blob: 直接读；http(s) 先 fetch（能跨站才行），不行再退回 <img crossorigin>
+      gen:xxx ＝ 缺料时 AI 补的那张，原图在本机仓里（不联网、服务器清了也不影响出片） */
   async function toBitmap(src) {
     const s = String(src || '').trim();
     if (!s) throw new Error('这条没有可画的图');
+    if (/^gen:/.test(s)) {
+      const b = await matBlob(s.replace(/^gen:/, ''));
+      if (!b) throw new Error('AI 补的这张在本机找不到了——重出一张');
+      return await createImageBitmap(b);
+    }
     try {
       const r = await fetch(s);
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -776,6 +805,7 @@
       const key = 'shot:' + String(r.rowId || ('row' + r.no));
       Scenes.fromScript(String(r.text || '')).forEach(sc => {
         sc.cardKey = key;                                // 同一行＝同一段底图
+        sc.matKey = key;                                 // 混剪也按同一行分一段
         out.push(sc);
       });
     });
@@ -835,6 +865,16 @@
       rq.onerror = () => rej(rq.error);
     });
   }
+  /** 缺料时 AI 补的那张原图：直接写进本机仓（key 见 aiPicKey），服务器那边清了也不影响出片 */
+  async function matPut(key, blob) {
+    if (!key || !blob) throw new Error('没图可存');
+    const db = await matDb();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(MAT_STORE, 'readwrite');
+      tx.objectStore(MAT_STORE).put({ key: key, blob: blob, at: Date.now() });
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  }
   async function libRead(key) {
     try {
       const d = await chrome.storage.local.get(key);
@@ -872,7 +912,10 @@
       name: String(c.name || c.src || '素材').slice(0, 24),
       tags: (Array.isArray(c.tags) ? c.tags : []).slice(0, 4),
       a, b, dur: photo ? 0 : Math.max(1, +(b - a).toFixed(2)),
-      ref: photo ? String(c.thumb || '') : matRefOf(c),
+      // 缺料时 AI 补的那张带 genKey：出片按仓里的原图读，不拿库里 ≤160px 的小图
+      ref: photo ? (c.genKey ? ('gen:' + c.genKey) : String(c.thumb || '')) : matRefOf(c),
+      thumb: photo ? String(c.thumb || '') : '',
+      gen: !!(photo && c.genKey),
       src: '',
     };
   }
@@ -880,6 +923,116 @@
     (m.kind === 'clip' ? ('（' + m.dur + 's）') : '');
   const matsOf = sc => (Array.isArray(sc.mats) ? sc.mats : []).filter(Boolean);
   const matFailOf = sc => !matsOf(sc).length && !!sc.matFail;   // 真配不到：没料，且 AI 那趟也没找到能垫的
+  /* 画面分组（11-03）：连着同一个 matKey 的几幕＝一段，一段共用一份料（讲几句话画面不换）。
+     没打 matKey 的老草稿＝一屏一段，跟原来一样；想改成按段就点「🔀 按内容分段」。 */
+  function matRunsOf() {
+    const out = [];
+    S.scenes.forEach((sc, i) => {
+      const k = sc.matKey || ('#' + i);
+      const last = out[out.length - 1];
+      if (last && last.key === k) { last.to = i; return; }
+      out.push({ key: k, from: i, to: i });
+    });
+    return out;
+  }
+  const matRunOf = i => matRunsOf().find(r => i >= r.from && i <= r.to) || { key: '#' + i, from: i, to: i };
+  const matRunText = run => S.scenes.slice(run.from, run.to + 1)
+    .map(sc => String(sc.text || '').trim()).filter(Boolean).join('，');
+  function matRunSec(run) {
+    let sec = 0;
+    for (let i = run.from; i <= run.to; i++) sec += sceneSec(i);
+    return +sec.toFixed(2);
+  }
+  /** 一段的料只挂一份：几幕拿同一个数组，改一处就是整段改 */
+  function setRunMats(i, list) {
+    const r = matRunOf(i);
+    for (let k = r.from; k <= r.to; k++) S.scenes[k].mats = list;
+  }
+  function setRunTone(i, tone) {
+    const r = matRunOf(i);
+    for (let k = r.from; k <= r.to; k++) S.scenes[k].tone = tone;
+  }
+  /** 按内容分段的落点：一句像「另起一件事」的开头就切在那儿，不像就等分。返回 [{from,to}] */
+  const GROUP_HEAD = /^(所以|因此|但是|不过|其实|还有|另外|接下来|然后|最后|第一|第二|第三|第四|首先|其次|再说|总结|总之|这时候|关键是|重点是|记住|你看|比如|举个例子|话说回来|反过来)/;
+  function autoMatGroups() {
+    const n = S.scenes.length;
+    if (n < 6) return S.scenes.map((_, i) => ({ from: i, to: i }));   // 短稿一屏一张就挺好，不硬凑段
+    const want = Math.max(3, Math.min(7, Math.round(n / 3)));
+    const cuts = [0];
+    for (let k = 1; k < want; k++) {
+      const min = cuts[cuts.length - 1] + 2;
+      const max = n - (want - k) * 2;
+      if (min > max) break;
+      let at = Math.round(n * k / want);
+      at = Math.min(Math.max(at, min), Math.max(min, max));
+      let best = at;
+      for (let d = 1; d <= 2; d++) {                       // 就近两幕里找一句像新一段开头的
+        const hit = [at - d, at + d].find(c => c >= min && c <= max && GROUP_HEAD.test(String((S.scenes[c] || {}).text || '')));
+        if (hit !== undefined) { best = hit; break; }
+      }
+      cuts.push(best);
+    }
+    cuts.push(n);
+    const groups = [];
+    for (let k = 0; k < cuts.length - 1; k++) {
+      const from = cuts[k], to = cuts[k + 1] - 1;
+      if (to >= from) groups.push({ from, to });
+    }
+    return groups;
+  }
+  /** 新排的幕直接按内容分好段（不动料，只打记号）；老草稿恢复不走这里，保证老片原样 */
+  function setAutoMatKeys() {
+    const groups = autoMatGroups();
+    if (groups.length === S.scenes.length) return 0;               // 一屏一段，不用打记号
+    groups.forEach((g, k) => {
+      const key = 'g' + (k + 1);
+      for (let i = g.from; i <= g.to; i++) S.scenes[i].matKey = key;
+    });
+    return groups.length;
+  }
+  /** 按内容分段＋每段只留第一张：老片点一下就从一屏一张缩成一段一张；能撤回 */
+  function regroupMats() {
+    const groups = autoMatGroups();
+    if (!groups.length) return 0;
+    if (groups.length === S.scenes.length) {
+      setMatTip('这篇不到 6 句，一屏一张就挺好，不用分段');
+      return 0;
+    }
+    const had = S.scenes.some(sc => matsOf(sc).length);
+    if (had && !confirm('把画面按内容分成 ' + groups.length + ' 段、每段只用一份料？\n' +
+      '多出来的画面先收起来，点「↩ 撤回重排」能还原。')) return -1;
+    S._matUndo = S.scenes.map(sc => ({
+      mats: matsOf(sc).map(m => Object.assign({}, m)),
+      matKey: sc.matKey || '', matFail: !!sc.matFail,
+    }));
+    groups.forEach((g, k) => {
+      const key = 'g' + (k + 1);
+      const lead = S.scenes[g.from];
+      const keep = matsOf(lead).slice(0, 1);
+      for (let i = g.from; i <= g.to; i++) {
+        S.scenes[i].matKey = key;
+        S.scenes[i].mats = keep;
+        S.scenes[i].matFail = false; S.scenes[i].aiErr = '';
+      }
+    });
+    renderScenes(); drawScene(curScene); persist();
+    paintMixBar(); renderMatList();
+    setMatTip('分好 ' + groups.length + ' 段，一段一份料' + (had ? '——不要就点「↩ 撤回重排」' : ''));
+    return groups.length;
+  }
+  function undoSegroup() {
+    if (!Array.isArray(S._matUndo)) return false;
+    S._matUndo.forEach((u, i) => {
+      const sc = S.scenes[i];
+      if (!sc) return;
+      sc.mats = u.mats; sc.matKey = u.matKey; sc.matFail = u.matFail;
+    });
+    S._matUndo = null;
+    renderScenes(); drawScene(curScene); persist();
+    paintMixBar(); renderMatList();
+    setMatTip('重排撤回了，画面回到原来的样子');
+    return true;
+  }
   const TONE_NAME = { low: '咚', high: '啵', flat: '轻一下' };   // 字弹出来那一下响什么：坑→咚／好处→啵／平常→轻一下
   const MIN_TAIL = 2;    // 最后一节短过这个数就是碎尾——画面闪一秒就走，宁可摊掉
   const MAX_LOOP = 3;    // 一节从头再播最多补这么多秒，缺口更大就报「还差几秒」让人补段或把这句改短
@@ -887,8 +1040,7 @@
   /** 这一屏的料单排成怎么播：按原片里的先后 → 超出这一屏秒数的截掉 → 碎尾摊掉 → 还差就让最后一节从头再播。
       回 { list:[{m,from,to,play,loop}], short, cut, dropped, photo }，from/to 是这一屏里的第几秒起、第几秒止。
       全是现算的（不入库）：配音真秒数一变就得重排。 */
-  function matPlan(sc, sec) {
-    const mats = matsOf(sc);
+  function matPlanFor(mats, sec) {
     if (!mats.length || !(sec > 0)) return { list: [], short: 0, cut: 0, dropped: 0 };
     const ph = mats.find(m => m.kind === 'photo');
     if (ph) {
@@ -914,13 +1066,18 @@
     let short = 0;
     if (gap > 0.5 && list.length) {
       const last = list[list.length - 1];
-      const loop = +Math.min(gap, last.m.generic ? gap : MAX_LOOP).toFixed(2);   // 通用垫的那节不限 3 秒：垫满这一屏
+      /* 通用垫：一片到底，不受 3 秒封顶；真挑的料不够长，末节最多再补 3 秒，
+         多了就报「还差几秒」让人补段——别拿同一段来回绕个没完 */
+      const cap = last.m.generic ? gap : MAX_LOOP;
+      const loop = +Math.min(gap, cap).toFixed(2);
       last.loop = loop;
       last.to = +(last.from + last.play + loop).toFixed(2);
       short = +(gap - loop).toFixed(2);
     } else if (gap > 0.5) short = gap;
     return { list, short, cut, dropped };
   }
+  /** 单屏视角（自检／老调用沿用）：这一屏自己的料按这一屏的秒数排 */
+  const matPlan = (sc, sec) => matPlanFor(matsOf(sc), sec);
   /** 这一屏这一节眼下多少秒（有真配音用真的，没有按字数估） */
   function sceneSec(i) {
     const T = S.tl && S.tl.scenes && S.tl.scenes[i];
@@ -933,6 +1090,23 @@
      同时只留两只（眼下这一屏＋下一屏），播过去就放掉——原片大，播放器开多了这台电脑吃不消。 */
   const _matVids = new Map();          // ref → { el, url }
   let _matCur = -1;                    // 眼下播到第几屏（决定哪几只播放器还要留着）
+  let _matSegKey = '';                 // 眼下这一节的记号（换节／绕回都算换）
+  let _matLastWant = null;             // 上一帧要播到原片的哪一秒（看是不是绕回去了）
+  let _matLastSrc = null;              // 上一帧真画出来的那只视频／照片
+  let _matHold = null;                 // 换节那一下先垫的上一帧，等新的一帧解码好
+  /** 把眼下这一帧抄到小画布上（换节时垫一下用，别黑那几帧） */
+  function matSnap(src) {
+    try {
+      const sw = src.videoWidth || src.width || 0, sh = src.videoHeight || src.height || 0;
+      if (!sw || !sh) return null;
+      const k = Math.min(1, 640 / sw);
+      const cv = document.createElement('canvas');
+      cv.width = Math.max(1, Math.round(sw * k));
+      cv.height = Math.max(1, Math.round(sh * k));
+      cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+      return cv;
+    } catch (_) { return null; }
+  }
   function matKeep(i) {
     const s = new Set();
     [i, i + 1].forEach(k => matsOf(S.scenes[k] || {}).forEach(m => { if (m.kind === 'clip' && m.ref) s.add(m.ref); }));
@@ -1027,7 +1201,8 @@
       }
     }
   }
-  /** 边播边录：这一屏此刻播到哪一节，那一节的画面贴上去、段播到该播的那一刀。
+  /** 边播边录：此刻播到这一段哪一节，那一节的画面贴上去、段播到该播的那一刀。
+      一段共用一份料：段里换句不重启画面，时间从这一段开头连续算。
       节放完还有话没念完＝最后一节从头再播（正着，不倒放），最多补 3 秒。 */
   function matSync(t, T) {
     if (S.cfg.frame !== 'mix') return;
@@ -1039,17 +1214,23 @@
       const plan = s.matPlan;
       if (!plan || !plan.list || !plan.list.length) break;
       cur = s; ci = i;
-      const off = t - s.start;
+      const off = t - (s.matRunStart === undefined ? s.start : s.matRunStart);
       seg = plan.list.find(x => off >= x.from && off < x.to) || plan.list[plan.list.length - 1];
       break;
     }
-    if (ci !== _matCur) _matCur = ci;                     // 换屏了：新播放器开起来时按这个放掉播过去的
-    _matVids.forEach(v => { try { v.el.pause(); } catch (_) {} });
+    if (ci !== _matCur) {                                 // 换段／换屏：只停那些这一屏不再用的播放器，眼下这只别停
+      _matCur = ci;
+      const keep = matKeep(ci);
+      _matVids.forEach((v, ref) => { if (!keep.has(ref)) { try { v.el.pause(); } catch (_) {} } });
+    }
     if (!cur || !seg) { list.forEach(s => { s.matImg = null; s.matRun = null; }); return; }
     const m = seg.m;
-    cur.matRun = { start: cur.start + seg.from, end: cur.start + seg.to };
+    const base = cur.matRunStart === undefined ? cur.start : cur.matRunStart;
+    cur.matRun = { start: base + seg.from, end: base + seg.to };
     if (m.kind === 'photo') {
       cur.matImg = m.img || null;
+      if (cur.matImg) _matLastSrc = cur.matImg;
+      _matHold = null;
       const want = String(m.src || m.ref || '');
       if (!m.img && want && !m.imgLoading) {
         m.imgLoading = toBitmap(want).then(b => { m.img = b; m.imgOf = want; }, () => {}).then(() => { m.imgLoading = null; });
@@ -1065,11 +1246,32 @@
     cur.matImg = v;
     const a = Number(m.a) || 0, b = Number(m.b) || (a + (Number(m.dur) || 3));
     const span = Math.max(.2, b - a);
-    let off2 = (t - cur.start) - seg.from;
+    let off2 = (t - base) - seg.from;
     if (off2 > seg.play) off2 = seg.play + ((off2 - seg.play) % span);   // 回环这一段：从头再播
     const want = Math.min(b, a + Math.max(0, off2));
+    /* 硬切不黑一下：换到另一节（或从头再播绕回来）那一下，新的那一帧往往还没解码好，
+       先把上一帧抄下来垫几十毫秒；新的一帧一好就顶上去。 */
+    const key = ci + ':' + seg.from + ':' + (m.clipId || m.ref || '');
+    const wrapped = _matLastWant !== null && want < _matLastWant - .25;
+    const changed = key !== _matSegKey || wrapped;
+    _matSegKey = key;
+    _matLastWant = want;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (changed && (Math.abs((v.currentTime || 0) - want) > .25 || v.readyState < 2) && _matLastSrc) {
+      const snap = matSnap(_matLastSrc);
+      _matHold = snap ? { img: snap, until: now + 400 } : null;
+    }
     if (v.paused) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
     if (Math.abs((v.currentTime || 0) - want) > 0.32) { try { v.currentTime = want; } catch (_) {} }
+    const pending = _matHold && now < _matHold.until
+      && (Math.abs((v.currentTime || 0) - want) > .12 || v.readyState < 2);
+    if (pending) {
+      cur.matImg = _matHold.img;
+    } else {
+      _matHold = null;
+      cur.matImg = v;
+      _matLastSrc = v;
+    }
   }
   function paintFilmFrame(c, t, T, st) {
     matSync(t, T);
@@ -1130,8 +1332,8 @@
       (has ? '' : '（这篇没有画面表——先回「🖼 出图」出一版，或者全走纯色卡）') +
       (bad ? '；' + bad + ' 张读不进来（出片时按纯色卡）' : '') + '</span></div>';
   }
-  /** 画面这一签底下的逐屏一单：加了实拍就一屏一条料，加了卡就一屏一张底 */
-  let _matOnlyFail = false;                              // 「3A」只盯配不到的那几屏，别在长单子里翻
+  /** 画面这一签底下的逐段一单：加了实拍就一段一条料（一段几句共用），加了卡就一屏一张底 */
+  let _matOnlyFail = false;                              // 「3A」只盯配不到的那几段，别在长单子里翻
   function renderMatList() {
     const box = $('matList');
     if (!box) return;
@@ -1139,14 +1341,21 @@
     box.hidden = !kind;
     if (!kind) { box.innerHTML = ''; return; }
     if (!S.scenes.length) { box.innerHTML = '<div class="empty">还没有分幕——先回「分幕」那一栏出一版，再回来配画面。</div>'; return; }
-    const idxs = S.scenes.map((_, i) => i).filter(i => !_matOnlyFail || matFailOf(S.scenes[i]));
-    if (!idxs.length) { box.innerHTML = '<div class="empty">没有配不到画面的屏了——点上面的「看全部」回到整单。</div>'; return; }
-    box.innerHTML = idxs.map(i => {
-      const sc = S.scenes[i];
-      return '<div class="matline' + (i === curScene ? ' on' : '') + '" data-msc="' + i + '">' +
-        '<div class="mh"><span class="no">' + esc(sc.label || (i + 1)) + '</span>' +
-        '<span class="mtxt">' + esc(String(sc.text || '').slice(0, 22)) + '</span></div>' +
-        (kind === 'mix' ? matRowHtml(sc, i) : cardRowHtml(sc)) +
+    /* 混剪按「段」列：一段＝连着几幕共用一份料；垫进卡还是按幕（一张卡一幕） */
+    const rows = kind === 'mix'
+      ? matRunsOf().map(r => ({ i: r.from, from: r.from, to: r.to }))
+      : S.scenes.map((_, i) => ({ i, from: i, to: i }));
+    const idxs = rows.filter(r => !_matOnlyFail || matFailOf(S.scenes[r.i]));
+    if (!idxs.length) { box.innerHTML = '<div class="empty">没有配不到画面的段了——点上面的「看全部」回到整单。</div>'; return; }
+    box.innerHTML = idxs.map(r => {
+      const sc = S.scenes[r.i];
+      const last = S.scenes[r.to] || sc;
+      const name = r.to > r.from ? (esc(sc.label || (r.from + 1)) + '–' + esc(last.label || (r.to + 1))) : esc(sc.label || (r.from + 1));
+      const txt = r.to > r.from ? matRunText({ from: r.from, to: r.to }) : String(sc.text || '');
+      return '<div class="matline' + (r.i <= curScene && curScene <= r.to ? ' on' : '') + '" data-msc="' + r.i + '">' +
+        '<div class="mh"><span class="no">' + name + '</span>' +
+        '<span class="mtxt">' + esc(txt.slice(0, 30)) + '</span></div>' +
+        (kind === 'mix' ? matRowHtml(sc, r.i) : cardRowHtml(sc)) +
       '</div>';
     }).join('');
     const at = el => Number(el.closest('[data-msc]').getAttribute('data-msc'));
@@ -1157,17 +1366,25 @@
       };
     });
     box.querySelectorAll('[data-mat]').forEach(b => b.onclick = ev => { ev.stopPropagation(); matOpenPick(at(b)); });
+    box.querySelectorAll('[data-aigen]').forEach(b => b.onclick = ev => {
+      ev.stopPropagation(); aiPicFill([Number(b.getAttribute('data-aigen'))]);
+    });
+    box.querySelectorAll('[data-aipick]').forEach(b => b.onclick = ev => {
+      ev.stopPropagation(); aiPicPick(Number(b.getAttribute('data-aipick')));
+    });
     box.querySelectorAll('[data-seg]').forEach(b => b.onclick = ev => {
       ev.stopPropagation();
-      const i = at(b), s = S.scenes[i];
-      const seg = (matPlan(s, sceneSec(i)).list[Number(b.dataset.seg)] || {}).m;
-      if (seg) s.mats = matsOf(s).filter(m => m !== seg);
+      const i = at(b), s = S.scenes[i], run = matRunOf(i);
+      const seg = (matPlanFor(matsOf(s), matRunSec(run)).list[Number(b.dataset.seg)] || {}).m;
+      if (seg) setRunMats(i, matsOf(s).filter(m => m !== seg));
       renderScenes(); drawScene(i); persist();
+      paintMixBar(); renderMatList();
     });
     box.querySelectorAll('[data-tone]').forEach(b => b.onclick = ev => {
       ev.stopPropagation();
       const i = at(b), s = S.scenes[i];
-      s.tone = s.tone === 'low' ? 'high' : s.tone === 'high' ? 'flat' : 'low';
+      const next = s.tone === 'low' ? 'high' : s.tone === 'high' ? 'flat' : 'low';
+      if (S.cfg.frame === 'mix') setRunTone(i, next); else s.tone = next;
       renderMatList(); drawScene(i); persist();
     });
   }
@@ -1178,23 +1395,37 @@
       ? ('🖼 ' + esc(sc.card.name || '素材') + (sc.cardErr ? '（读不进来）' : ''))
       : '纯色卡（没有底图）';
     return '<div class="matrow"><span class="tiny">底图</span><span class="segs"><span class="mseg">' + name + '</span></span>' +
-      '<span class="tiny">字响</span><button type="button" class="ghost tone" data-tone title="这一屏重点字弹出来那一下响什么音，点一下换一档">' + esc(tone) + '</button></div>';
+      '<span class="tiny">字响</span><button type="button" class="ghost tone" data-tone title="这一段重点字弹出来那一下响什么音，点一下换一档">' + esc(tone) + '</button></div>';
   }
 
   /* ---------- 混剪那一栏：缺料点名 ＋ 料不够长点名 ＋ AI 先配一版 ＋ 补照片原图 ---------- */
   const mixOn = () => S.cfg.frame === 'mix';
+  /** 每份料被几段用了：>1 就是复用，列表里标黄提醒 */
+  function matUseCount() {
+    const use = {};
+    matRunsOf().forEach(r => {
+      matsOf(S.scenes[r.from]).forEach(m => {
+        const id = String(m.clipId || m.ref || '');
+        if (id) use[id] = (use[id] || 0) + 1;
+      });
+    });
+    return use;
+  }
   function matCount() {
-    const total = S.scenes.length;
-    let has = 0, thumb = 0, short = 0, gen = 0, fail = 0;
-    S.scenes.forEach((sc, i) => {
+    const runs = matRunsOf();
+    const use = matUseCount();
+    let has = 0, thumb = 0, short = 0, gen = 0, fail = 0, reuse = 0;
+    runs.forEach(r => {
+      const sc = S.scenes[r.from];
       const mats = matsOf(sc);
       if (!mats.length) { if (matFailOf(sc)) fail++; return; }
       has++;
       if (mats.some(m => m.generic)) gen++;
-      if (mats.some(m => m.kind === 'photo' && m.ref && !m.src)) thumb++;
-      if (matPlan(sc, sceneSec(i)).short > 0.5) short++;
+      if (mats.some(m => m.kind === 'photo' && m.ref && !m.src && !m.gen)) thumb++;
+      if (mats.some(m => (use[String(m.clipId || m.ref || '')] || 0) > 1)) reuse++;
+      if (matPlanFor(mats, matRunSec(r)).short > 0.5) short++;
     });
-    return { total, has, miss: total - has, thumb, short, gen, fail };
+    return { total: runs.length, has, miss: runs.length - has, thumb, short, gen, fail, reuse };
   }
   function paintMixBar() {
     const bar = $('mixBar');
@@ -1203,21 +1434,36 @@
     bar.hidden = false;
     const c = matCount();
     if (!c.fail) _matOnlyFail = false;
+    const pi = aiPicScope();
+    const redoAll = !c.miss && pi.ai.length && pi.ai.length === c.total;   // 一段不缺、又全是 AI 图：给「一起重出」
     bar.innerHTML =
-      `<div class="row"><span class="tiny">画面：${c.has}／${c.total} 屏有料` +
-      (c.gen ? `（其中 ${c.gen} 屏是拿现成的段／照片垫的）` : '') +
-      (c.fail ? '' : (c.miss ? `，还差 ${c.miss} 屏（那几屏只有大字）` : '')) +
-      (c.short ? `；${c.short} 屏料不够长（再补一段，或把那句改短）` : '') +
+      `<div class="row"><span class="tiny">画面：${c.has}／${c.total} 段有料` +
+      (c.gen ? `（其中 ${c.gen} 段是拿现成的段／照片垫的）` : '') +
+      (c.reuse ? `；${c.reuse} 段复用（尽量别挨着）` : '') +
+      (c.fail ? '' : (c.miss ? `，还差 ${c.miss} 段（那几段只有大字）` : '')) +
+      (c.short ? `；${c.short} 段料不够长（再补一段，或把这段改短）` : '') +
       (c.thumb ? `；${c.thumb} 张还是库里的小图` : '') + '</span>' +
-      (c.fail ? `<span class="tiny miss">${c.fail} 屏真配不到（红字那几屏，得你挑）</span>` : '') + '</div>' +
+      (c.fail ? `<span class="tiny miss">${c.fail} 段真配不到（红字那几段，得你挑）</span>` : '') + '</div>' +
       '<div class="row">' +
+        (_aiPicBusy
+          ? '<button id="matAiPic" class="primary" type="button" disabled>🖼 正在出画面…</button>'
+          : (c.miss
+            ? '<button id="matAiPic" class="primary" type="button" title="没画面的段一起出完，一段一张，照 IP 的画风，扣出图张数">🖼 一起补画面：还缺 ' + c.miss + ' 段</button>'
+            : (redoAll
+              ? '<button id="matAiPic" class="primary" type="button" title="把这几段的 AI 图照 IP 的画风一起重出一遍（扣出图张数）">↻ 一起重出画面：' + pi.ai.length + ' 段 AI 图</button>'
+              : ''))) +
         '<button id="matAuto" class="ghost" type="button">✨ AI 先配一版</button>' +
+        '<button id="matGroup" class="ghost" type="button" title="按内容把这几幕分成 5~7 段，一段只用一份画面；多出来的画面先收起来，能撤回">🔀 按内容分段</button>' +
+        (S._matUndo ? '<button id="matUndo" class="ghost" type="button">↩ 撤回重排</button>' : '') +
         '<button id="matOrigin" class="ghost" type="button">🖼 补照片原图</button>' +
         (c.fail ? `<button id="matOnlyFail" class="ghost${_matOnlyFail ? ' on' : ''}" type="button">` +
-          (_matOnlyFail ? `看全部 ${c.total} 屏` : `只看配不到的 ${c.fail} 屏`) + '</button>' : '') +
+          (_matOnlyFail ? `看全部 ${c.total} 段` : `只看配不到的 ${c.fail} 段`) + '</button>' : '') +
         '<span class="tiny" id="matTip"></span>' +
       '</div>';
     $('matAuto').onclick = matAutoPick;
+    $('matGroup').onclick = regroupMats;
+    if ($('matUndo')) $('matUndo').onclick = undoSegroup;
+    if ($('matAiPic')) $('matAiPic').onclick = () => (matCount().miss ? aiPicFill() : aiPicRedo());
     $('matOrigin').onclick = matAskOriginals;
     if (c.fail) $('matOnlyFail').onclick = () => { _matOnlyFail = !_matOnlyFail; paintMixBar(); renderMatList(); };
   }
@@ -1226,16 +1472,21 @@
     const t = $('matTip');
     if (t) t.textContent = msg;
   }
-  /** AI 先配一版：拿这句稿子的字去撞段的名字／标签／说明（本机对文字，不发图去问 AI）。
-      四档往下退：①字对得上的（至少 2 个字）一段不重复用 → ②只对上一个字的 → ③拿这一版里
-      已经用过的段／照片垫上（能垫满这一屏，不图对得准） → ④实在没有才标红留给人工。 */
+  /** AI 先配一版：拿这一段的字去撞段的名字／标签／说明（本机对文字，不发图去问 AI）。
+      一段只用一份料，按顺序往下退：①字对得上、且这一版还没用过的 → ②只对上一个字、没用过的
+      → ③没用过、字对不上也先垫上（宁可不对，也别重复） → ④实在不够才复用（隔一段以上，列表标黄）。 */
   async function matAutoPick() {
     if (!S.scenes.length) return;
     setMatTip('在对素材库…');
     const lib = await matLib(true);
-    if (!lib.segs.length) { setMatTip('素材库里还没有切好的段或照片——先去「✂ 切片台」切几段'); return; }
-    const used = {};
-    S.scenes.forEach(sc => matsOf(sc).forEach(m => { if (m.clipId) used[String(m.clipId)] = true; }));
+    const runs = matRunsOf();
+    if (!lib.segs.length) { paintMixBar(); setMatTip('素材库里还没有切好的段或照片——点上面那颗「🖼 一起补画面」，让 AI 把没画面的 ' + runs.length + ' 段一起出静图垫上；或先去「✂ 切片台」切几段'); return; }
+    const used = {}, lastUse = {};
+    runs.forEach((r, ri) => matsOf(S.scenes[r.from]).forEach(m => {
+      const id = String(m.clipId || '');
+      if (!id) return;
+      used[id] = true; lastUse[id] = ri;
+    }));
     const score = (c, txt) => {
       const hay = String(c.name || '') + (c.tags || []).join('') + String(c.desc || '');
       let s = 0;
@@ -1243,64 +1494,85 @@
       if (_matFolder && String(c.col || '') === _matFolder) s += 1;
       return s;
     };
-    /** 通用垫：先拿这一版里已经上屏的段（长的排前面），没有段就照片，再没有才从库里拿最长的 */
-    const genericPick = () => {
+    const usedMats = () => {
       const seen = new Set(), pool = [];
       S.scenes.forEach(sc => matsOf(sc).forEach(m => {
         const id = String(m.clipId || '');
         if (!id || !m.ref || seen.has(id)) return;
         seen.add(id); pool.push(m);
       }));
-      const clip = pool.filter(m => m.kind === 'clip').sort((a, b) => (b.dur || 0) - (a.dur || 0))[0];
-      if (clip) return Object.assign({}, clip, { generic: true, vid: null, img: null, imgOf: '', imgLoading: null, ok: undefined, src: '' });
-      const ph = pool.find(m => m.kind === 'photo');
-      if (ph) return Object.assign({}, ph, { generic: true, vid: null, img: null, imgOf: '', imgLoading: null, ok: undefined, src: '' });
-      const libClip = lib.segs.filter(c => c.id && !c.imgOnly).sort((a, b) => (Number(b.dur) || 0) - (Number(a.dur) || 0))[0];
-      if (libClip) { used[String(libClip.id)] = true; return Object.assign(matOf(libClip), { generic: true }); }
-      const libPh = lib.segs.find(c => c.id && c.imgOnly);
-      if (libPh) { used[String(libPh.id)] = true; return Object.assign(matOf(libPh), { generic: true }); }
-      return null;
+      return pool;
     };
-    let n = 0, genN = 0, shortN = 0, failN = 0;
-    S.scenes.forEach((sc, i) => {
-      if (matsOf(sc).length) { sc.matFail = false; return; }
-      const sec = sceneSec(i);
-      const txt = String(sc.text || '') + String(sc.name || '');
-      const pick = min => {
-        const cands = lib.segs
-          .filter(c => c.id && !used[String(c.id)])
-          .map(c => ({ c, s: score(c, txt) }))
-          .filter(x => x.s >= min)
-          .sort((a, b) => b.s - a.s);
-        if (!cands.length) return null;
-        if (cands[0].c.imgOnly) {                     // 照片屏不拼：一屏就一张
-          used[String(cands[0].c.id)] = true;
-          return [matOf(cands[0].c)];
+    let n = 0, reuseN = 0, shortN = 0, failN = 0;
+    runs.forEach((r, ri) => {
+      const lead = S.scenes[r.from];
+      if (!lead) return;
+      if (matsOf(lead).length) { lead.matFail = false; return; }
+      const sec = matRunSec(r);
+      const txt = matRunText(r) + String(lead.name || '');
+      const cands = lib.segs.filter(c => c.id).map(c => ({ c, s: score(c, txt) }));
+      const byScore = (a, b) => (b.s - a.s) || ((Number(b.c.dur) || 0) - (Number(a.c.dur) || 0));
+      const fresh = cands.filter(x => !used[String(x.c.id)]).sort(byScore);
+      /* 一段一份料是常态：照片一张就垫满整段，段够长也一样。
+         手头的段比这一段短才往后再接几段，免得一屏只播两秒、剩下全靠从头再播。
+         挑的顺序仍是「撞字多的 → 只撞上一个字 → 拿没用过的垫」，都不够才复用。 */
+      let list = null, reuse = false, generic = false;
+      let pool = fresh.filter(x => x.s >= 2);
+      if (!pool.length) pool = fresh.filter(x => x.s >= 1);
+      if (!pool.length) { pool = fresh; generic = true; }
+      if (pool.length) {
+        const head = pool.slice().sort(byScore)[0];
+        if (head.c.imgOnly) list = [matOf(head.c)];            // 照片屏不拼：一屏就一张
+        else {
+          list = [];
+          let acc = 0;
+          for (const x of pool.slice().sort(byScore)) {
+            if (x.c.imgOnly) continue;
+            const m = matOf(x.c);
+            if (generic) m.generic = true;                     // 字一个都对不上，只是拿它把这一段垫满
+            list.push(m);
+            acc += Number(m.dur) || 0;
+            if (acc >= sec - 0.3) break;
+          }
         }
-        const list = []; let acc = 0;
-        for (const x of cands) {
-          if (x.c.imgOnly) continue;
-          const m = matOf(x.c);
-          list.push(m); used[String(x.c.id)] = true; acc += m.dur;
-          if (acc >= sec - 0.3) break;
+      }
+      if (!list || !list.length) {
+        /* 真不够才复用：优先拿「上回用得最早」的那份，尽量隔开 */
+        const reusePool = usedMats().map(src => ({ src, last: lastUse[String(src.clipId)] === undefined ? -9 : lastUse[String(src.clipId)] }))
+          .sort((a, b) => a.last - b.last);
+        const pick = reusePool.find(x => ri - x.last >= 2) || reusePool[0];
+        if (pick) {
+          list = [Object.assign({}, pick.src, { vid: null, img: null, imgOf: '', imgLoading: null, ok: undefined, loading: null, src: '', reuse: true })];
+          reuse = true;
+        } else {
+          const libClip = lib.segs.filter(c => c.id && !c.imgOnly).sort((a, b) => (Number(b.dur) || 0) - (Number(a.dur) || 0))[0];
+          const libPh = lib.segs.find(c => c.id && c.imgOnly);
+          if (libClip) list = [matOf(libClip)];
+          else if (libPh) list = [matOf(libPh)];
         }
-        return list.length ? list : null;
-      };
-      let list = pick(2), generic = false;
-      if (!list) list = pick(1);
-      if (!list) { const g = genericPick(); if (g) { list = [g]; generic = true; } }
-      if (!list) { sc.matFail = true; failN++; return; }
-      sc.matFail = false;
-      sc.mats = list;
+      }
+      if (!list || !list.length) {
+        lead.matFail = true;
+        for (let i = r.from; i <= r.to; i++) S.scenes[i].matFail = true;
+        failN++;
+        return;
+      }
+      list.forEach(m => {
+        m.reuse = reuse;
+        const mid = String(m.clipId || '');
+        if (mid) { used[mid] = true; lastUse[mid] = ri; }
+      });
+      setRunMats(r.from, list);
+      for (let i = r.from; i <= r.to; i++) { S.scenes[i].matFail = false; S.scenes[i].aiErr = ''; }
       n++;
-      if (generic) genN++;
-      else if (matPlan(sc, sec).short > 0.5) shortN++;
+      if (reuse) reuseN++;
+      else if (matPlanFor(list, sec).short > 0.5) shortN++;
     });
     renderScenes(); drawScene(curScene); persist();
     const bits = [];
-    if (n) bits.push('配上 ' + n + ' 屏' + (genN ? '（其中 ' + genN + ' 屏是拿现成的段／照片垫的，对得没那么准）' : ''));
-    if (shortN) bits.push('另有 ' + shortN + ' 屏料不够长——点那一屏「＋加一节」补');
-    if (failN) bits.push(failN + ' 屏实在配不到，已红字标出，点「只看配不到的」自己挑');
+    if (n) bits.push('配上 ' + n + ' 段' + (reuseN ? '（其中 ' + reuseN + ' 段是素材不够、复用别人的，列表里标了黄）' : ''));
+    if (shortN) bits.push('另有 ' + shortN + ' 段料不够长——点那一段「＋加一节」补，或把这段改短');
+    if (failN) bits.push(failN + ' 段实在配不到，已红字标出，点「只看配不到的」自己挑');
     setMatTip(bits.length ? bits.join('；')
       : (S.scenes.some(x => matsOf(x).length) ? '该配的都配上了' : '没配上——素材库里还没有能垫的画面'));
   }
@@ -1334,44 +1606,307 @@
     inp.click();
   }
 
-  /** 这一屏此刻还缺什么：没料／料不够长／照片还是小图——「＋加一节」旁边那行字就说这个 */
+  /* ══════════ 缺料补图（2026-10-31）：素材库撞完还剩空屏，点一下让 AI 一屏出一张静图垫上 ══════════
+     规矩（老板圈定）：有素材库就用素材库，只有真配不到的屏才出；只补缺的，不重出；一屏一张；
+     跟「🖼 一键出图」共用同一本张数账（服务器先扣，失败退回）；出的图进素材库「AI 补的画面」，
+     原图同时存本机仓（gen:），服务器清理不影响出片。出的是静图，不是会动的实拍段。 */
+  const AI_PIC_FOLDER = 'AI 补的画面';
+  let _aiPicBusy = false;
+  const aiPicKey = i => 'genfig:' + (S.noteId || 'single') + ':' + i;
+  /* 🎭 IP 小抄：进站时外层递来一份；没递（单开一页 / 老入口）就现读账号资料。
+     10-31 起缺料补画面一律照 IP 画：画风、人物、背景、道具都用同一种画法，不许出现真人写实。 */
+  const FILM_IP_STYLES = {
+    anime: { t: '日系二次元', brief: '日系二次元动漫风格，赛璐璐上色、干净细线、大眼睛、柔和渐变阴影' },
+    chibi: { t: '2D Q版漫画', brief: '2D Q 版漫画风格，两到三头身的大头小身子、圆润可爱、粗描边、明快平涂色彩、干净简单的背景' },
+    comic: { t: '美式漫画', brief: '美式复古漫画风格，粗黑描边、半调网点阴影、红蓝米黄有限色板' },
+    toy3d: { t: '3D 玩具公仔', brief: '3D 搪胶玩具公仔质感，圆润无棱角、光滑塑料材质、明亮柔光' },
+    clay: { t: '粘土定格', brief: '粘土定格动画风格，手工捏制、表面带指纹凹凸、暖黄柔光微缩场景' },
+    flat: { t: '扁平矢量', brief: '扁平矢量插画风格，纯几何色块、无描边、蓝橙配色' },
+    guochao: { t: '国潮插画', brief: '国潮插画风格，朱红墨绿金配色、金线勾边、祥云回纹装饰' },
+    watercolor: { t: '水彩绘本', brief: '水彩绘本风格，透明晕染、颜料边缘自然扩散、纸纹可见' },
+    sketch: { t: '素描风格', brief: '铅笔素描风格，单色松动排线、纸面颗粒感、速写本手绘' },
+    pixel: { t: '像素风', brief: '8-bit 像素风格，方块构成、16 色、复古游戏画面' },
+    papercut: { t: '剪纸拼贴', brief: '剪纸拼贴风格，多层彩色卡纸叠加、硬边投影、手工质感' },
+  };
+  function filmIpPack(c) {
+    if (!c || typeof c !== 'object') return null;
+    const alias = { real: 'anime', film: 'anime', water: 'watercolor', toon3d: 'toy3d', toon2d: 'comic' };
+    const k0 = String(c.style || '') || 'anime';
+    const k = FILM_IP_STYLES[alias[k0] || k0] ? (alias[k0] || k0) : 'anime';
+    const sty = FILM_IP_STYLES[k];
+    const bits = [c.name, c.role, c.age, c.hair, c.body].filter(Boolean).join('，');
+    const h = (Array.isArray(c.hammers) ? c.hammers : []).filter(Boolean);
+    // 外形听角色卡上那段话（和发笔记同一口径）；只写了字段的老角色才拼字段
+    const desc = String(c.desc || '').trim().replace(/[。．.！!？?；;，,]+$/, '');
+    const line = desc
+      ? desc.slice(0, 300) + (!h.length ? '' : (h.some(x => desc.indexOf(x) < 0) ? '；固定不变：' + h.join('、') : '；以上外形和标志物固定不变'))
+      : (bits + (c.cloth ? '，穿' + c.cloth : '') + (h.length ? '；固定不变：' + h.join('、') : '')).trim();
+    return {
+      id: String(c.id || ''), name: String(c.name || ''), line: line,
+      style: k, styleLabel: sty.t, brief: sty.brief,
+      refs: (Array.isArray(c.portraits) ? c.portraits : []).map(p => p && p.id).filter(Boolean).slice(0, 3),
+    };
+  }
+  let _fipTried = '';
+  async function ensureFilmIp() {
+    if (S.ip && S.ip.line) return S.ip;
+    const id = String(S.noteId || '');
+    if (_fipTried === id && S.ip) return S.ip;
+    _fipTried = id;
+    try {
+      const d = await chrome.storage.local.get(['config', 'np_notes']);
+      const ip = (d.config && d.config.ipChars) || {};
+      const list = Array.isArray(ip.list) ? ip.list : [];
+      const notes = Array.isArray(d.np_notes) ? d.np_notes : [];
+      let charId = '';
+      for (let j = 0; j < notes.length; j++) {
+        const nt = notes[j]; if (!nt) continue;
+        const nid = String(nt.id || '');
+        if (nid === id || nid === ('film:' + id) || ('film:' + nid) === id) {
+          charId = String((nt.shots && nt.shots.charId) || ''); break;
+        }
+      }
+      const c = list.find(x => x && x.id === charId) || list.find(x => x && x.id === ip.mainId) || list[0];
+      S.ip = filmIpPack(c);
+      return S.ip;
+    } catch (_) { return S.ip; }
+  }
+  /** 这一屏的画面描述：按这一屏的字来写，钉死「照 IP 画、整张统一画风、不要字」 */
+  function aiPicPrompt(sc) { return aiPicPromptText(String(sc.text || '')); }
+  /** 一段一张：把这一段几句放在一起给 AI，出一张能盖住整段意思的画面 */
+  function aiPicPromptText(txt) {
+    const t = String(txt || '').replace(/\s+/g, '').replace(/[\/｜|]/g, '，');
+    const ip = S.ip || {};
+    const label = ip.styleLabel || FILM_IP_STYLES.anime.t;
+    const brief = ip.brief || FILM_IP_STYLES.anime.brief;
+    const who = String(ip.line || '').trim();
+    return '竖版 9:16 的一张画面（' + label + '），是画出来的，不是真人照片、不是实拍照片。\n' +
+      '画风：' + brief + '；整张图统一用这一种画法，人物、背景、道具都按画的处理，不许混进真实皮肤和布料质感。\n' +
+      (who ? '主角（整张就这一个人，脸、发型、衣服、标志物不变）：' + who + '。\n' : '') +
+      '画面内容：' + t + '。\n' +
+      '要求：主体清楚，画面里最多一个人；画面里不要出现任何文字、数字、水印、边框、拼图、多格。';
+  }
+  /** 素材库里那张小图（≤160px）：只给列表看，出片不用它 */
+  async function aiPicThumb(blob) {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const k = Math.min(1, 160 / Math.max(bmp.width || 1, bmp.height || 1));
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', .72);
+    } catch (_) { return ''; }
+  }
+  /** 进素材库：自动落一个「AI 补的画面」文件夹；条目带 genKey，出片按仓里的原图取 */
+  async function aiPicLibPut(o) {
+    const id = 'clip' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      const cols = await libRead('np_collections');
+      let folder = cols.find(c => c && c.folder && String(c.name || '') === AI_PIC_FOLDER);
+      if (!folder) {
+        folder = { id: 'col' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: AI_PIC_FOLDER,
+          brief: '缺料时 AI 补的画面，一篇一屏一张', consent: false, status: '在用', folder: true, noVision: false, at: Date.now() };
+        cols.unshift(folder);
+        await store.set('np_collections', cols);
+      }
+      const clips = await libRead('np_clips');
+      const entry = { id: id, imgOnly: true, col: folder.id, src: o.name, stage: '', kb: null, vo: '', tags: [],
+        fo: [], thumb: o.thumb || '', w: o.w || 0, h: o.h || 0, ref: '', genKey: o.key, at: Date.now() };
+      clips.unshift(entry);
+      await store.set('np_clips', clips);
+      _matLib = null;                    // 下次挑画面能看到这张
+      _matList = [];
+      return entry;
+    } catch (_) {
+      return { id: id, name: o.name, col: '', thumb: o.thumb || '' };
+    }
+  }
+  /** 出一张：扣一张额度 → 图下载回本机 → 原图进仓 → 素材库落一条 → 这一段的几幕都改成照片 */
+  async function aiPicOne(i) {
+    const sc = S.scenes[i];
+    if (!sc) return { ok: false, error: '没有这一段' };
+    const run = matRunOf(i);
+    const txt = run.to > run.from ? matRunText(run) : String(sc.text || '');
+    if (!String(txt || '').trim()) return { ok: false, error: '这一段没有字，不知道该画什么' };
+    await ensureFilmIp();                       // 一律照 IP 画：没递小抄就现读账号资料
+    let r = null;
+    try {
+      r = await chrome.runtime.sendMessage({ action: 'genNoteImage',
+        data: { prompt: aiPicPromptText(txt), size: '竖屏 9:16', kind: 'shot', refs: ((S.ip && S.ip.refs) || []) } });
+    } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
+    if (!r || r.ok === false || (!r.url && (r.error || r.code))) {
+      let msg = String((r && r.error) || '没出成');
+      if (/未知 action/.test(msg)) msg = '这个版本（扩展里）还没接出图接口——打开网页版再出';
+      return { ok: false, error: msg, code: String((r && r.code) || '') };
+    }
+    const url = String(r.url || '');
+    if (!url) return { ok: false, error: '接口没回图' };
+    let blob = null;
+    try {
+      const fr = await fetch(url);
+      if (!fr.ok) throw new Error('HTTP ' + fr.status);
+      blob = await fr.blob();
+    } catch (e) { return { ok: false, error: '图下载失败：' + ((e && e.message) || e) }; }
+    const key = aiPicKey(run.from);
+    try { await matPut(key, blob); } catch (e) { return { ok: false, error: '原图没存进本机：' + ((e && e.message) || e) }; }
+    const thumb = await aiPicThumb(blob);
+    const old = matsOf(sc).find(m => m.gen && m.clipId);
+    if (old && old.clipId) {                      // 重出：素材库那条换掉，别越攒越多
+      try {
+        const clips = await libRead('np_clips');
+        const k = clips.findIndex(c => c && c.id === old.clipId);
+        if (k >= 0) { clips.splice(k, 1); await store.set('np_clips', clips); _matLib = null; }
+      } catch (_) {}
+    }
+    const label = run.to > run.from
+      ? ((sc.label || (run.from + 1)) + '–' + ((S.scenes[run.to] || {}).label || (run.to + 1)))
+      : (sc.label || (run.from + 1));
+    const name = 'AI 补的画面 · ' + label;
+    const entry = await aiPicLibPut({ key: key, thumb: thumb, name: name });
+    setRunMats(run.from, [{ clipId: entry.id, kind: 'photo', name: name, tags: [],
+      a: 0, b: 0, dur: 0, ref: 'gen:' + key, thumb: thumb, gen: true, src: '' }]);
+    for (let k = run.from; k <= run.to; k++) { S.scenes[k].matFail = false; S.scenes[k].aiErr = ''; }
+    return { ok: true, quota: r };
+  }
+  /** 批量补：只补没有料的段，一段一张，一张一张来（好停、好记账） */
+  async function aiPicFill(only) {
+    if (_aiPicBusy) return;
+    /* 不点名＝补所有空段；点名某一段「↻ 重出一段」时按那一段来（那一段本来就有料，不能按空段筛） */
+    const idxs = (Array.isArray(only) ? only : matRunsOf().filter(r => !matsOf(S.scenes[r.from]).length).map(r => r.from))
+      .map(i => (S.scenes[i] ? matRunOf(i).from : -1))
+      .filter((i, k, a) => i >= 0 && S.scenes[i] && a.indexOf(i) === k);
+    if (!idxs.length) { setMatTip('没有缺画面的段了'); return; }
+    await ensureFilmIp();                        // 一律照 IP 的画风出，不出现真人写实
+    _aiPicBusy = true;
+    paintMixBar();
+    let okN = 0, failN = 0, firstErr = '', q = null;
+    try {
+      for (let k = 0; k < idxs.length; k++) {
+        setMatTip('AI 出图 ' + (k + 1) + '/' + idxs.length + '…');
+        const btn = $('matAiPic');
+        if (btn) btn.textContent = '🖼 正在出 ' + (k + 1) + '/' + idxs.length + '…';
+        const r = await aiPicOne(idxs[k]);
+        if (r.ok) { okN++; if (r.quota) q = r.quota; }
+        else {
+          failN++;
+          if (!firstErr) firstErr = r.error;
+          if (r.code === 'quota' || r.code === 'day-cap' || r.code === 'no-key') {   // 硬停：剩下的不试了，但也写清为什么
+            setRunFail(idxs[k], r.error);
+            firstErr = r.error;
+            idxs.slice(k + 1).forEach(j => setRunFail(j, r.error));
+            break;
+          }
+          setRunFail(idxs[k], r.error);
+        }
+        renderScenes(); drawScene(curScene); persist();
+      }
+    } finally {
+      _aiPicBusy = false;
+    }
+    try { await prepMats(); } catch (_) {}
+    paintMixBar(); renderMatList(); drawScene(curScene); persist();
+    const bits = [];
+    if (okN) bits.push('AI 出好 ' + okN + ' 张' + (q && Number(q.max) ? '（本月出图 ' + q.used + '/' + q.max + '）' : ''));
+    if (failN) bits.push(failN + ' 张没出成' + (firstErr ? '：' + firstErr : ''));
+    setMatTip(bits.join('；') || '没出成');
+  }
+  function setRunFail(i, msg) {
+    const r = matRunOf(i);
+    for (let k = r.from; k <= r.to; k++) if (S.scenes[k]) S.scenes[k].aiErr = msg;
+  }
+  /** 这一段自己传一张：盖掉整段，不扣额度；跟「补照片原图」一样只在这台电脑上用 */
+  function aiPicPick(i) {
+    const sc = S.scenes[i];
+    if (!sc) return;
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'image/*';
+    inp.onchange = () => {
+      const f = (inp.files || [])[0];
+      if (!f) return;
+      matsOf(sc).forEach(m => { if (m.src) { try { URL.revokeObjectURL(m.src); } catch (_) {} } });
+      setRunMats(i, [{ clipId: '', kind: 'photo', name: String(f.name || '本机选的图').slice(0, 24), tags: [],
+        a: 0, b: 0, dur: 0, ref: '', src: URL.createObjectURL(f), gen: false }]);
+      const run = matRunOf(i);
+      for (let k = run.from; k <= run.to; k++) { S.scenes[k].matFail = false; S.scenes[k].aiErr = ''; }
+      renderScenes(); drawScene(curScene); persist();
+      paintMixBar(); renderMatList();
+      setMatTip('这一段换成你选的图了（只在这台电脑上用，刷新要重选）');
+    };
+    inp.click();
+  }
+
+  /** 一起出画面：还缺的补上；一段不缺、又全是 AI 图时，一起重出一版（先问一句要花几张） */
+  function aiPicRedo() {
+    const idxs = aiPicScope().ai.filter(i => String(matRunText(matRunOf(i)) || '').trim());
+    if (!idxs.length) { setMatTip('没有能重出的 AI 段'); return; }
+    if (!confirm('把这 ' + idxs.length + ' 段的 AI 图一起重出一遍？\n会扣 ' + idxs.length + ' 张出图额度，原来那几张会被换掉。')) return;
+    aiPicFill(idxs);
+  }
+  /** 现在这台子上的画面分两类：一段没料的（等着补）、一段就是一张 AI 图的（可以整批重出） */
+  function aiPicScope() {
+    const miss = [], ai = [];
+    matRunsOf().forEach(r => {
+      const ms = matsOf(S.scenes[r.from]);
+      if (!ms.length) miss.push(r.from);
+      else if (ms.length === 1 && ms[0].kind === 'photo' && ms[0].gen) ai.push(r.from);
+    });
+    return { miss: miss, ai: ai };
+  }
+
+  /** 这一段此刻还缺什么：没料／料不够长／照片还是小图——「＋加一节」旁边那行字就说这个 */
   function matNote(sc, sec) {
     const mats = matsOf(sc);
-    if (!mats.length) return matFailOf(sc) ? '' : '这一屏只有大字';
-    const p = matPlan(sc, sec);
-    if (p.photo) return mats.some(m => m.ref && !m.src) ? '照片屏不拼（这张还是库里的小图，出片前补原图）' : '照片屏不拼：一屏就一张';
-    if (p.short > 0.5) return '还差 ' + p.short + 's——再补一段，或把这句改短';
+    if (!mats.length) return matFailOf(sc) ? '' : '这一段只有大字';
+    const p = matPlanFor(mats, sec);
+    if (p.photo) return mats.some(m => m.ref && !m.src && !m.gen) ? '照片屏不拼（这张还是库里的小图，出片前补原图）' : '照片屏不拼：一段就一张';
+    if (p.short > 0.5) return '还差 ' + p.short + 's——再补一段，或把这段改短';
     let t = '够 ' + sec.toFixed(1) + 's ✓';
     if (p.list.length && p.list[p.list.length - 1].loop) t += '（末节从头再播 ' + p.list[p.list.length - 1].loop + 's）';
     if (p.cut) t += '（有段被话截短 ' + p.cut + 's）';
     return t;
   }
-  /** 分幕栏那一行：这一屏拼的几节，加一节，够不够长，字弹出来响什么音 */
+  /** 分幕栏那一行：这一段拼的几节，加一节，够不够长，字弹出来响什么音 */
   function matRowHtml(sc, i) {
-    const sec = sceneSec(i);
+    const run = matRunOf(i);
+    const sec = matRunSec(run);
     const mats = matsOf(sc);
-    const p = matPlan(sc, sec);
+    const p = matPlanFor(mats, sec);
+    const use = matUseCount();
+    const aiOne = mats.length === 1 && mats[0].kind === 'photo' && mats[0].gen;   // 这一段是 AI 补的那张
     const chips = p.list.map((x, k) =>
       `<span class="mseg">${esc(matLabel(x.m))}<b>${x.play.toFixed(1)}s</b>` +
       (x.m.generic ? '<i class="gen">通用</i>' : '') +
+      (x.m.reuse || (use[String(x.m.clipId || x.m.ref || '')] || 0) > 1 ? '<i class="reuse">复用</i>' : '') +
+      (x.m.gen ? '<i class="gen">AI</i>' : '') +
       (x.loop ? `<i class="loop">↻${x.loop}s</i>` : '') +
       `<button type="button" class="x" data-seg="${k}" title="把这一节挪出去">✕</button></span>`).join('<span class="arrow">→</span>') ||
       (matFailOf(sc)
         ? '<span class="tiny miss">配不到画面 · 需人工挑一节</span>'
-        : '<span class="tiny none">还没配画面</span>');
+        : (sc.aiErr
+          ? '<span class="tiny miss">AI 没出成：' + esc(sc.aiErr) + '</span>'
+          : '<span class="tiny none">还没配画面</span>'));
     const tone = TONE_NAME[sc.tone] || TONE_NAME.flat;
     return `<div class="matrow"><span class="tiny">画面</span><span class="segs">${chips}</span>` +
       (p.photo ? '' : '<button type="button" class="ghost addseg" data-mat>＋加一节</button>') +
+      (aiOne
+        ? '<button type="button" class="ghost aipic" data-aigen="' + i + '" title="这一段再出一张（扣 1 张出图额度）">↻ 重出一段</button>' +
+          '<button type="button" class="ghost aipic" data-aipick="' + i + '" title="从这台电脑选一张，盖掉这一段（不扣额度）">⬆ 传一张</button>'
+        : (!mats.length
+          ? '<button type="button" class="ghost aipic" data-aigen="' + i + '" title="只给这一段出一张静图（扣 1 张出图额度）">✨ 出一张</button>' +
+            '<button type="button" class="ghost aipic" data-aipick="' + i + '" title="从这台电脑选一张垫这一段（不扣额度）">⬆ 传一张</button>'
+          : '')) +
       `<span class="tiny fit${(!p.photo && p.short > 0.5) ? ' warn' : ''}">${esc(matNote(sc, sec))}</span>` +
-      `<span class="tiny">字响</span><button type="button" class="ghost tone" data-tone title="这一屏重点字弹出来那一下响什么音，点一下换一档">${esc(tone)}</button></div>`;
+      `<span class="tiny">字响</span><button type="button" class="ghost tone" data-tone title="这一段重点字弹出来那一下响什么音，点一下换一档">${esc(tone)}</button></div>`;
   }
   /* ---------- 挑画面那一层 ---------- */
   let _matFor = 0, _matFolder = '';
   async function matOpenPick(i) {
     _matFor = i;
-    const sc = S.scenes[i];
-    $('matFor').textContent = '第 ' + (sc.label || (i + 1)) + ' 屏：' + String(sc.text || '').slice(0, 18) +
-      '（' + sceneSec(i).toFixed(1) + 's，点一格加进来）';
+    const run = matRunOf(i);
+    const sc = S.scenes[i], last = S.scenes[run.to] || sc;
+    const span = run.to > run.from ? ((sc.label || (run.from + 1)) + '–' + (last.label || (run.to + 1))) : (sc.label || (i + 1));
+    $('matFor').textContent = '第 ' + span + ' 段：' + matRunText(run).slice(0, 18) +
+      '（' + matRunSec(run).toFixed(1) + 's，点一格加进来）';
     const lib = await matLib(true);
     const sel = $('matFolder');
     sel.innerHTML = '<option value="">全部文件夹</option>' +
@@ -1408,7 +1943,7 @@
     grid.innerHTML = list.map((c, ix) => {
       const m = matOf(c);
       const vids = lib.videos[String(c.videoId)];
-      const pic = m.kind === 'clip' ? ((vids && vids.poster) || '') : (m.ref || '');
+      const pic = m.kind === 'clip' ? ((vids && vids.poster) || '') : (m.thumb || m.ref || '');
       return `<button type="button" class="matcell${on.has(String(m.clipId)) ? ' on' : ''}" data-i="${ix}">
         <span class="matth">${pic ? `<img src="${esc(pic)}" alt="">` : (m.kind === 'clip' ? '🎞' : '🖼')}</span>
         <b>${esc(m.name)}</b>
@@ -1421,15 +1956,17 @@
         const sc = S.scenes[_matFor];
         if (!sc || !c) return;
         const id = String(c.id || '');
-        sc.mats = matsOf(sc);
-        if (sc.mats.some(m => String(m.clipId) === id)) { $('matMask').hidden = true; renderScenes(); return; }   // 这一节已经在屏上了
+        const cur = matsOf(sc);
+        if (cur.some(m => String(m.clipId) === id)) { $('matMask').hidden = true; renderScenes(); return; }   // 这一节已经在这一段上了
         const m = matOf(c);
-        const onlyOne = m.kind === 'photo' || sc.mats.some(x => x.kind === 'photo');   // 照片屏不拼：换成这一张，别的挪出去
-        sc.mats.forEach(x => { if (onlyOne && x.src) { try { URL.revokeObjectURL(x.src); } catch (_) {} } });
-        sc.mats = onlyOne ? [m] : sc.mats.concat([m]);
-        sc.matFail = false;
+        const onlyOne = m.kind === 'photo' || cur.some(x => x.kind === 'photo');   // 照片不拼：换成这一张，别的挪出去
+        cur.forEach(x => { if (onlyOne && x.src) { try { URL.revokeObjectURL(x.src); } catch (_) {} } });
+        setRunMats(_matFor, onlyOne ? [m] : cur.concat([m]));
+        const run = matRunOf(_matFor);
+        for (let k = run.from; k <= run.to; k++) { S.scenes[k].matFail = false; S.scenes[k].aiErr = ''; }
         $('matMask').hidden = true;
         renderScenes(); drawScene(_matFor); persist();
+        paintMixBar(); renderMatList();
         prepMats().then(() => drawScene(_matFor)).catch(() => {});
       };
     });
@@ -1438,6 +1975,37 @@
   $('matMask').addEventListener('click', ev => { if (ev.target === $('matMask')) $('matMask').hidden = true; });
 
   /* ---------- 音色（住在 ⚙ 弹窗里） ---------- */
+  /* 配音额度：豆包那四条按字数扣（服务器记账），免费那五条不扣。
+     进页面问一次服务器「配没配好 / 本月还剩多少字」；没配好就照旧用免费声音。 */
+  const voiceState = { ready: false, info: null, loaded: false };
+  let voicePinned = false;                       // 这篇已经选过声音（存过默认 / 草稿里带过）就不自动换
+  async function paintVoiceQuota(force) {
+    const el = $('vq');
+    if (voiceState.loaded && !force) { paintVqText(); maybeDefaultVoice(); return; }
+    try {
+      const r = await chrome.runtime.sendMessage({ action: 'voiceQuota' });
+      if (r && r.ok) { voiceState.ready = !!r.ready; voiceState.info = r; voiceState.loaded = true; }
+    } catch (_) { /* 读不到额度不影响出片 */ }
+    paintVqText();
+    maybeDefaultVoice();
+  }
+  function paintVqText() {
+    const el = $('vq'); if (!el) return;
+    const r = voiceState.info;
+    if (!r) { el.textContent = '豆包配音：没读到额度，不影响用免费声音出片'; return; }
+    if (r.unlimited) el.textContent = '豆包配音：这台演示号不限字数';
+    else if (r.ready) el.textContent = `豆包配音：本月还剩 ${r.left} 字（共 ${r.max} 字）`;
+    else el.textContent = '豆包配音：服务器还没配凭据，先用下面标「免费」的声音';
+    el.title = '按念出去的字数扣：付费三档每月 2 万字，免费号 2000 字；换免费声音不扣。念失败的字数会退回。';
+  }
+  /* 服务器配好豆包、这篇又没选过声音：默认用推荐那条「刘飞 2.0」，省得客户自己找 */
+  function maybeDefaultVoice() {
+    if (!voiceState.ready || voicePinned) return;
+    if (S.voice !== 'zh-CN-XiaoxiaoNeural') return;
+    S.voice = 'zh_male_liufei_uranus_bigtts';
+    buildVoiceUI(); persist();
+  }
+
   function buildVoiceUI() {
     // 音色铺成一张表（音色 / 听感 / 适合）——标签挤一排看不出区别，点一行换音色
     const v = $('voices'); v.innerHTML = '';
@@ -1451,10 +2019,14 @@
       const c1 = document.createElement('td'); c1.className = 'vname';
       const b = document.createElement('b'); b.textContent = o.n; c1.appendChild(b);
       if (o.rec) { const rc = document.createElement('span'); rc.className = 'vrec'; rc.textContent = '推荐'; c1.appendChild(rc); }
+      const src = document.createElement('span');
+      src.className = 'vsrc ' + (o.k === 'doubao' ? 'vsrc-db' : 'vsrc-free');
+      src.textContent = o.k === 'doubao' ? '豆包' : '免费';
+      c1.appendChild(src);
       const c2 = document.createElement('td'); c2.textContent = o.d || '';
       const c3 = document.createElement('td'); c3.textContent = o.use || '';
       tr.appendChild(c1); tr.appendChild(c2); tr.appendChild(c3);
-      tr.onclick = () => { S.voice = o.v; S.tl = null; cache.key = ''; buildVoiceUI(); showEst(); paintFoot(); persist(); };
+      tr.onclick = () => { S.voice = o.v; voicePinned = true; S.tl = null; cache.key = ''; buildVoiceUI(); showEst(); paintFoot(); persist(); };
       v.appendChild(tr);
     });
     const r = $('rates'); r.innerHTML = '';
@@ -1488,12 +2060,17 @@
     const sr = want || await Voice.pickRate();          // 有 WebCodecs 就挑 AAC 编得动的；边播边录用现成的
     S.sr = sr;
     const k = voiceKey() + '||' + sr;
-    if (cache.key === k) return { parts: cache.parts, secs: cache.secs, hit: true };
-    const out = await Voice.speak(S.scenes, { voice: S.voice, rate: S.rate, sampleRate: sr, onProgress });
-    cache.key = k; cache.parts = out.parts; cache.secs = out.secs;
+    if (cache.key === k) return { parts: cache.parts, secs: cache.secs, hit: true, voice: S.voice };
+    const out = await Voice.speak(S.scenes, {
+      voice: S.voice, rate: S.rate, sampleRate: sr, onProgress,
+      onNote: m => { warn(m); if ($('audinfo')) $('audinfo').textContent = m; },
+    });
+    cache.key = out.fellBack ? '' : k;   // 换回免费声音念的音频不能当成豆包那份缓存
+    if (out.fellBack) { voiceState.ready = false; paintVqText(); }
+    cache.parts = out.parts; cache.secs = out.secs;
     S.tl = Voice.timeline(S.scenes, out.secs);
     showEst();
-    return { parts: out.parts, secs: out.secs, hit: false };
+    return { parts: out.parts, secs: out.secs, hit: false, voice: out.voice || S.voice };
   }
 
   let playing = null;
@@ -1504,7 +2081,7 @@
     $('audition').disabled = true;
     try {
       say('配音中…'); bar(0);
-      const { parts } = await speakAll((i, n) => { say(`配音 ${i}/${n}`); bar(i / n * 0.3); },
+      const { parts, voice } = await speakAll((i, n) => { say(`配音 ${i}/${n}`); bar(i / n * 0.3); },
         window.AudioEncoder ? undefined : { sampleRate: liveRate() });
       const T = tl();
       const total = Voice.pcm(parts, { gap: T.gap, head: T.head, dur: T.dur, sampleRate: S.sr });
@@ -1515,7 +2092,7 @@
       const src = ac.createBufferSource();
       src.buffer = buf; src.connect(ac.destination); src.start();
       playing = { src, ac };
-      $('audinfo').textContent = `正在放 ${T.dur.toFixed(1)}s（${VOICES.short(S.voice)} ${S.rate}）`;
+      $('audinfo').textContent = `正在放 ${T.dur.toFixed(1)}s（${VOICES.short(voice || S.voice)} ${S.rate}）`;
       src.onended = () => { $('audinfo').textContent = '放完了'; stopPlay(); };
       say('试听中…');
       bar(1);
@@ -1732,12 +2309,16 @@
   function ruleScenes(mark) {
     const t = String(S.script || '').trim();
     if (!t) return 0;
-    const wasCard = S.scenes.map(s => ({ card: s.card, key: s.cardKey || '' }));
+    const wasCard = S.scenes.map(s => ({ card: s.card, key: s.cardKey || '', matKey: s.matKey || '', txt: String(s.text || '') }));
     S.scenes = Scenes.fromScript(t);
     S.scenes.forEach((s, i) => {
       if (wasCard[i] && wasCard[i].card) s.card = wasCard[i].card;
       if (wasCard[i] && wasCard[i].key) s.cardKey = wasCard[i].key;
+      /* 分段记号只在这一句没变时沿用——换了一篇稿子，按位置照抄会把上一篇的段号带进来 */
+      if (wasCard[i] && wasCard[i].matKey && wasCard[i].txt === String(s.text || '')) s.matKey = wasCard[i].matKey;
     });
+    if (!S.scenes.some(s => s.matKey)) setAutoMatKeys();       // 新排的幕按内容分好段；沿用旧记号的不动
+    S._matUndo = null;
     S.tl = null; cache.key = ''; curScene = 0; S.outAt = 0;
     S.scRule = !!mark; S.fvEdited = false;
     renderScenes(); renderScriptSec(); drawScene(0); paintFoot();
@@ -1748,13 +2329,16 @@
 
   /** AI 切好的幕落到台子上：已配的底图按序保留 */
   function applyScenes(list) {
-    const wasCard = S.scenes.map(s => ({ card: s.card, key: s.cardKey || '' }));
+    const wasCard = S.scenes.map(s => ({ card: s.card, key: s.cardKey || '', matKey: s.matKey || '', txt: String(s.text || '') }));
     S.scenes = list.map((s, i) => {
       const sc = Object.assign({}, s);
       if (wasCard[i] && wasCard[i].card) sc.card = wasCard[i].card;
       if (wasCard[i] && wasCard[i].key) sc.cardKey = wasCard[i].key;
+      if (wasCard[i] && wasCard[i].matKey && wasCard[i].txt === String(sc.text || '')) sc.matKey = wasCard[i].matKey;
       return sc;
     });
+    if (!S.scenes.some(s => s.matKey)) setAutoMatKeys();       // 新排的幕按内容分好段；沿用旧记号的不动
+    S._matUndo = null;
     S.tl = null; cache.key = ''; curScene = 0; S.outAt = 0; S.fvEdited = false;
     renderScenes(); renderScriptSec(); drawScene(0); paintFoot();
     persist();
@@ -1851,6 +2435,28 @@
     return makeGo().finally(() => { _making = false; });
   }
 
+  /* ☀️ 无人值守出片（2026-10-30）：被顶栏「今天」拉进来时用——幕排好就自己出，出完回一句结果。
+     不抛错：失败也回 { ok:false, error }，由外层写进那颗弹窗（凌晨没人看着，别静默丢掉）。 */
+  S.autoFilm = async () => {
+    const wait = (ms) => new Promise(r => setTimeout(r, ms));
+    const t0 = Date.now();
+    const left = () => 10 * 60000 - (Date.now() - t0);
+    while (left() > 0) {                             // 等它把稿调完、幕切完
+      if (S.outAt) return { ok: true, outAt: S.outAt, already: true };
+      if (!S.busy && !S.genBusy && S.scenes.length) break;
+      await wait(3000);
+    }
+    if (S.outAt) return { ok: true, outAt: S.outAt, already: true };
+    if (!S.scenes.length) return { ok: false, error: '分镜没出来（AI 没切幕）' };
+    if (!String(S.script || S.body || '').trim()) return { ok: false, error: '没稿子' };
+    /* 没人看着：不下载一份到「下载」夹、也不弹成片预览（片子落本机仓 film:<篇> 就够了） */
+    S.unattended = true;
+    try { await make(); } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+    finally { S.unattended = false; }
+    for (let i = 0; i < 100 && !S.outAt; i++) { if (!S.busy) break; await wait(3000); }   // 台上正编着别人那条：等它
+    return S.outAt ? { ok: true, outAt: S.outAt } : { ok: false, error: '出片没成（看片台那句提示）' };
+  };
+
   async function makeGo() {
     if (!S.scenes.length) { warn(S.genBusy ? 'AI 还在切幕——等这一版跑完（' + (S.fvStage || '出片稿') + '）' : '还没分幕——点左边稿子上方那颗「✨ 出片稿 + 分幕」'); return; }
     /* 一点出片就整页封住：连「看执行器在不在家」那一小段也盖进来，别让人对着不动的页面猜。 */
@@ -1922,7 +2528,7 @@
     let liveAC = null;
     try {
       const notes = [];
-      if (!EdgeTTS.isEdge()) notes.push('这台浏览器不是 Edge，配音念不出来（微软这条免费口子认 Edge）。画面照样能出，配音得换 Edge 打开本页。');
+      if (!EdgeTTS.isEdge() && !voiceState.ready) notes.push('这台浏览器不是 Edge，免费配音念不出来（微软这条口子认 Edge）；配上豆包音色就不用管这句。');
       // 在弹窗里出片：切走这一页没事（实测照编），但关掉弹窗这条就断了——长片建议单开一页
       if (INLINE) notes.push('出片中别关掉这个弹窗——关了就断（在左栏切去写笔记没事，它照编）。片子长的话，点右上「在新标签页打开」单开一页慢慢编。');
       if (demo && !executorOnline) notes.push(mode === 'record'
@@ -1953,20 +2559,23 @@
         }
       }
 
-      if (S.cfg.frame === 'mix') {                         // 混剪：先把每一屏的料备齐（照片解图、段拿播放器），缺的点名
+      if (S.cfg.frame === 'mix') {                         // 混剪：先把每一段的料备齐（照片解图、段拿播放器），缺的点名
         say('备这一屏屏的画面…'); FR.step(0, '备这一屏屏的画面…'); bar(0.04);
         const bad = await prepMats();
-        const miss = S.scenes.filter(sc => !matsOf(sc).length).length;
-        const short = S.scenes.filter((sc, i) => matsOf(sc).length && matPlan(sc, sceneSec(i)).short > 0.5).length;
+        const runs = matRunsOf();
+        const miss = runs.filter(r => !matsOf(S.scenes[r.from]).length).length;
+        const short = runs.filter(r => matsOf(S.scenes[r.from]).length &&
+          matPlanFor(matsOf(S.scenes[r.from]), matRunSec(r)).short > 0.5).length;
+        const badRuns = [...new Set(bad.map(b => matRunOf(b.i).from + 1))];
         if (bad.length) {
-          notes.push('第 ' + bad.map(b => b.i + 1).join('、') + ' 屏的画面拿不到（' + bad[0].msg + '），这几屏只有大字。');
-          warn(notes.join(' ')); FR.notes('第 ' + bad.map(b => b.i + 1).join('、') + ' 屏的画面拿不到，这几屏只有大字。');
+          notes.push('第 ' + badRuns.join('、') + ' 段的画面拿不到（' + bad[0].msg + '），这几段只有大字。');
+          warn(notes.join(' ')); FR.notes('第 ' + badRuns.join('、') + ' 段的画面拿不到，这几段只有大字。');
         }
         if (miss) {
-          notes.push('还有 ' + miss + ' 屏没配画面，那几屏是深色纯大字。');
-          warn(notes.join(' ')); FR.notes('还有 ' + miss + ' 屏没配画面（深色纯大字）。');
+          notes.push('还有 ' + miss + ' 段没配画面，那几段是深色纯大字。');
+          warn(notes.join(' ')); FR.notes('还有 ' + miss + ' 段没配画面（深色纯大字）。');
         }
-        if (short) FR.notes('有 ' + short + ' 屏料不够长，末节从头再播补上（最多 3 秒）。');
+        if (short) FR.notes('有 ' + short + ' 段料不够长，末节从头再播补上（最多 3 秒）。');
         await matPreload();
       }
 
@@ -2030,16 +2639,16 @@
       if (!blob || !blob.size) throw new Error('没拿到成片');
       S.lastBlob = blob;
       S.lastName = `成片-${stamp()}.${ext}`;
-      Encoder.dl(blob, S.lastName);
+      if (!S.unattended) Encoder.dl(blob, S.lastName);   // 凌晨自己录：不往「下载」夹塞，片子只落本机仓
       S.outAt = Date.now();                     // 这篇出过片了：档案那行会标「🎬 已出片」
       await persistNow();
       paintHead();
       if (S.noteId) { try { await filmPut(S.noteId, blob); } catch (_) {} }   // 档案里能回放这条片子
-      say(`完成 ${(blob.size / 1048576).toFixed(1)}MB · ${T.dur.toFixed(1)}s · 已下载` +
+      say(`完成 ${(blob.size / 1048576).toFixed(1)}MB · ${T.dur.toFixed(1)}s` + (S.unattended ? '（已存本机）' : ' · 已下载') +
         (ext === 'webm' ? '（这台浏览器只能录 WebM，发小红书前可能要转 MP4）' : ''));
       bar(1);
-      FR.finish('出好了 · ' + (blob.size / 1048576).toFixed(1) + 'MB · ' + T.dur.toFixed(1) + ' 秒 · 已下载');
-      doneOpen(blob);
+      FR.finish('出好了 · ' + (blob.size / 1048576).toFixed(1) + 'MB · ' + T.dur.toFixed(1) + ' 秒' + (S.unattended ? ' · 已存本机' : ' · 已下载'));
+      if (!S.unattended) doneOpen(blob);
     } catch (e) {
       const msg = String((e && e.message) || e);
       if (/已停下|切走了/.test(msg)) { say('停了'); warn(msg); }
@@ -2099,14 +2708,16 @@
     const [cfgLine, voiceCfg, script, fontPack] = await Promise.all([
       store.get(KEY_STYLE), store.get(KEY_VOICE), store.get(KEY_SCRIPT), store.get(KEY_FONTPACK)]);
     if (cfgLine) S.cfg = Renderer.parseCfg(cfgLine);
-    if (voiceCfg) { S.voice = voiceCfg.voice || S.voice; S.rate = voiceCfg.rate || S.rate; }
+    if (voiceCfg) { S.voice = voiceCfg.voice || S.voice; S.rate = voiceCfg.rate || S.rate; voicePinned = true; }
     if (script) S.script = String(script);
     if (!Fonts.EAGER) S.fontPack = fontPack === 'bundled' ? 'bundled' : 'sys';   // 你这台浏览器上次选过谁
     buildStyleUI(); buildVoiceUI(); renderScriptSec(); renderScenes(); paintFoot();
     draw(0.45);                                   // 先画片头那一帧，页面不空着
-    if (!EdgeTTS.isEdge()) {
-      warn('建议用 Edge 打开本页：配音走微软给 Edge 的免费通道，换别的浏览器念不出声（画面不受影响）。');
-    }
+    paintVoiceQuota().then(() => {                // 顺手问一句还剩多少字（没配好就还是免费声音）
+      if (!EdgeTTS.isEdge() && !voiceState.ready) {
+        warn('建议用 Edge 打开本页：配音走微软给 Edge 的免费通道，换别的浏览器念不出声（画面不受影响）。');
+      }
+    });
     say('就绪');
   }
 
@@ -2162,6 +2773,7 @@
     const prevId = String(S.noteId || '');
     const s = String(o.script || '').trim();        // 这一篇已有的口播稿（没有＝空，等自动调）
     S.shots = Array.isArray(o.shots) ? o.shots : [];   // 画面表跟着这一篇走：垫进卡时按它铺底图
+    S.ip = (o.ip && typeof o.ip === 'object') ? o.ip : null;   // 🎭 缺料补画面照这个 IP 画；没递就开跑时现读
     applyFrame(o);                                  // 卡片／混剪这一路：画面旋钮跟着这一档的成片形式走
     S.flow = (Array.isArray(o.flow) ? o.flow : []).filter(x => x && String((x && x.t) || '').trim());   // 顶上那条工作流条：这一篇从哪几站走过来
     // 换片之前先把「上一行」那份没来得及落盘的改动存回它自己的 key（一行一份片：定时存攒着 600ms，换片会把 S.noteId 改掉）；
@@ -2169,7 +2781,7 @@
     if (prevId) await persistNow();
     if (!id) {
       if (prevId) { S.noteId = ''; dropOtherNoteCards(prevId, ''); }   // 从某一篇切回单开一页：别带着它那一份
-      S.body = ''; S.kind = ''; S.noteTitle = '';
+      S.body = ''; S.kind = ''; S.noteTitle = ''; S.ip = null;
       S.fvFrom = ''; S.fvPN = 0; S.fvPrev = ''; S.fvPicks = null; S.fvFail = false; S.scRule = false;
       S.peeking = false; S.prevPeek = false;
       S.meta = { style: '', sellPoint: '', people: [], platform: '' };
@@ -2205,7 +2817,7 @@
     if (doc) {
       // 稿子换了（在写稿里重出过一版 / 手改过）：旧分幕对不上新稿，稿与幕重来；画面与配音参数还是这篇的
       if (doc.cfg) S.cfg = Renderer.parseCfg(doc.cfg);
-      if (doc.voice) { S.voice = doc.voice; S.rate = doc.rate || S.rate; }
+      if (doc.voice) { S.voice = doc.voice; S.rate = doc.rate || S.rate; voicePinned = true; }
       applyFrame(o);
       buildStyleUI(); buildVoiceUI();
     }
@@ -2242,7 +2854,7 @@
   /** 把某一篇的草稿捡回来：正文 / 口播稿 / 分幕 / 底图编排 / 配音参数一起；本机选的底图不入库，那一张要重选 */
   function restoreDoc(doc, o) {
     if (doc.cfg) S.cfg = Renderer.parseCfg(doc.cfg);
-    if (doc.voice) { S.voice = doc.voice; S.rate = doc.rate || S.rate; }
+    if (doc.voice) { S.voice = doc.voice; S.rate = doc.rate || S.rate; voicePinned = true; }
     if (!S.body) S.body = String(doc.body || '').trim();
     S.script = String(doc.script || '');
     S.fvFrom = doc.fvFrom === 'body' ? 'body' : '';
@@ -2257,14 +2869,22 @@
     S.scenes = (doc.scenes || []).map(sc => ({
       label: sc.label, name: sc.name || '', text: String(sc.text || ''),
       lines: (sc.lines || []).slice(), em: (sc.em || []).map(e => ({ l: e.l, t: e.t })),
-      layout: sc.layout || 'center', cardKey: sc.cardKey || '',
+      layout: sc.layout || 'center', cardKey: sc.cardKey || '', matKey: sc.matKey || '',
       card: (sc.card && sc.card.src) ? Object.assign({}, sc.card) : null,
       tone: sc.tone || '',                                          // 这一屏的调（字响三档）；旧草稿没标就空着，出片时按词表补
       mats: (Array.isArray(sc.mats) ? sc.mats : (sc.mat ? [sc.mat] : []))   // 一屏一单（旧草稿只有一段＝迁移成一条）
         .map(m => Object.assign({}, m, { src: '' })),                     // 补选过的原图不入库，回来要重补一次
       estSec: Math.max(1.2, +(cn(sc.text) / 4.5).toFixed(2)),
     }));
+    /* 同一段的几幕在草稿里各存了一份引用，捡回来合成一份：图只解一次、改一处就是整段 */
+    const share = {};
+    S.scenes.forEach(sc => {
+      if (!sc.matKey) return;
+      if (!share[sc.matKey]) share[sc.matKey] = sc.mats;
+      else sc.mats = share[sc.matKey];
+    });
     S.tl = null; cache.key = ''; curScene = 0;
+    S._matUndo = null;                                          // 换了稿，上一版的重排撤回就不作数了
     S.outAt = Number(doc.outAt || 0) || 0;
     if (o && (o.frame === 'card' || o.frame === 'mix')) S.cfg.frame = o.frame;
     buildStyleUI(); buildVoiceUI(); renderScriptSec(); renderScenes(); drawScene(0); paintFoot(); paintHead();
@@ -2366,64 +2986,5 @@
   };
 
   S.ready = init().catch(() => {});     // 外层等这一发齐了再递稿子（别让它从存档读回来的那份盖掉刚递的）
-
-  /* [[HAND-AUTO-FILM]] */
-  /* ── 执行器派单出片（?auto=1&noteId=…）：不给人点，接上草稿就自己出片 ──
-     进不进得来由 hand-mode 的一次性通行证说了算（手工打开会被整页挡掉）；
-     草稿由 exec-shell 随单摆进本机 xhsFilmDocs[noteId]；这里只负责按那篇的幕出片，
-     出完用 film-round 回报（片长 / 大小 / 文件名 / 字体有没有下来）。片子自动下载、
-     留在本机，不回传服务器。 */
-  (function autoFilm() {
-    const q = new URLSearchParams(location.search || '');
-    if (q.get('auto') !== '1') return;
-    const noteId = String(q.get('noteId') || '');
-    let port = null;
-    try { port = chrome.runtime.connect({ name: 'film-round' }); } catch (_) {}
-    const post = (o) => { try { if (port) port.postMessage(o); } catch (_) {} };
-    try {
-      port.onMessage.addListener((m) => {
-        if (m && m.ev === 'stop') { try { S.busy = false; } catch (_) {} }   // 编码里看到 busy=false 会当场抛
-      });
-    } catch (_) {}
-    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-    const logTail = () => {
-      const st = $('st') ? String($('st').textContent || '') : '';
-      const wn = ($('warn') && !$('warn').hidden) ? String($('warn').textContent || '') : '';
-      return [st, wn].filter(Boolean).join(' · ').slice(-1500);
-    };
-    const fail = (msg) => post({ ev: 'done', ok: false, error: msg, logTail: logTail() });
-    const fontInfo = () => {
-      try { return (window.Fonts && typeof Fonts.status === 'function') ? Fonts.status() : null; } catch (_) { return null; }
-    };
-
-    (async () => {
-      /* 先等通行证验过：手工打开（没票/票用过）时 hand-mode 会挡页，这里一步都不跑 */
-      const wt0 = Date.now();
-      while (Date.now() - wt0 < 8000 && window.__XHS_HAND__ !== true && !window.__XHS_HAND_BLOCKED__) await sleep(100);
-      if (window.__XHS_HAND__ !== true) { try { port && port.disconnect(); } catch (_) {} return; }
-      post({ ev: 'hello', noteId });
-      await S.ready;
-      if (!noteId) return fail('没带 noteId');
-      S.loadNote({ id: noteId });
-      const t0 = Date.now();
-      while (Date.now() - t0 < 30000 && !S.scenes.length) await sleep(200);
-      if (!S.scenes.length) return fail('草稿没接上：这一篇没有可出的分幕');
-      post({ ev: 'start', noteId, scenes: S.scenes.length });
-      const baseline = S.lastBlob;
-      const outAt0 = Number(S.outAt) || 0;
-      await make();
-      const ok = (Number(S.outAt) || 0) > outAt0 || (S.lastBlob && S.lastBlob !== baseline);
-      if (!ok) return fail('出片没成：' + (logTail() || '没留下成片'));
-      post({
-        ev: 'done', ok: true, noteId,
-        dur: (S.tl && S.tl.dur) || 0,
-        size: S.lastBlob ? S.lastBlob.size : 0,
-        name: S.lastName || '',
-        fonts: fontInfo(),
-        logTail: logTail(),
-      });
-    })().catch((e) => fail((e && e.message) || String(e)));
-  })();
-  /* [[/HAND-AUTO-FILM]] */
 
 })();

@@ -246,7 +246,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dsh-') as profile, sync_playwr
         assert '【标题】散热垫换了七个' in user_tx, user_tx[:300]
         assert '【正文】\n' + DRAFT1 in user_tx, user_tx[:300]
         assert '【这篇算】知识 / 干货（宁少勿多约 4~6 条重点）' in user_tx, user_tx[:400]
-        assert '【转法那句】' + TURN in user_tx, user_tx[:400]
+        assert '【收尾那句】' + TURN in user_tx, user_tx[:400]
         assert calls(sw) == 1
         expect(page.locator('#popToastBox')).to_contain_text('切好了 4 张（AI 自己定的，知识 / 干货料型）')
         print('PASS ④: 自动那一发落 4 张——重点句照抄 / 角色兜底 / 主题截 12 字 / 整组提示词六块齐 / AI 契约对')

@@ -54,7 +54,19 @@ window.XhsEdition = (() => {
       tier: grant.tier || base.tier || '',
       draftOnly: !!grant.draftOnly,
       onTrial: !!grant.onTrial,
+      trialTier: grant.trialTier || '',
+      trialUntil: Number(grant.trialUntil) || 0,
+      trialDays: Number(grant.trialDays) || 0,
+      trialExpired: !!grant.trialExpired,
+      planTier: grant.planTier || '',
+      planPrice: Number(grant.planPrice) || 0,
+      paidUntil: Number(grant.paidUntil) || 0,
+      planDays: Number(grant.planDays) || 0,
+      planExpired: !!grant.planExpired,
     });
+    /* 天数按到期日现算一遍：服务器每 15 秒对一次账，断网时数字也别冻在领到的那天 */
+    if (ed.trialUntil && ed.onTrial) ed.trialDays = Math.max(0, Math.ceil((ed.trialUntil - Date.now()) / 86400000));
+    if (ed.paidUntil && !ed.planExpired) ed.planDays = Math.max(0, Math.ceil((ed.paidUntil - Date.now()) / 86400000));
     if (grant.label) ed.label = grant.label;
     return { ok: true, expired: !!(grant.expired || pkg.expired), noNetwork: false, edition: ed, remainingDays: null, checkedAt: Number(grant.at) || 0 };
   }
@@ -179,10 +191,27 @@ window.XhsEdition = (() => {
     ['tabProspect', 'tabLeadCfg', 'leadCfgContent', 'tabLeadTaskCfg', 'leadTaskCfgContent']
       .forEach((id) => { f.prospectList ? on(byId(id)) : off(byId(id)); });
 
-    /* 发笔记（① 起）：免费档只到写稿——发布台整页收掉 */
+    /* 发笔记（① 起）：免费档只到写稿——「笔记规划 / 工作台」两页收掉（档案照留）。
+       旧副本还是一片「发布台」（tabNoteQueue）：这份文件两边共用，哪个在就管哪个 */
     ['tabNotePublish', 'noteTabs'].forEach((id) => { f.notePublish ? on(byId(id)) : off(byId(id)); });
-    const pubDesk = byId('tabNoteQueue');
-    if (pubDesk) { (f.notePublish && !draftOnly) ? on(pubDesk) : off(pubDesk); }
+    [byId('tabNotePlan'), byId('tabNoteWork'), byId('tabNoteQueue')].forEach((el) => {
+      if (el) { (f.notePublish && !draftOnly) ? on(el) : off(el); }
+    });
+
+    /* 抖音 / 视频号（2026-10-29 老板定：只有「全平台版」开）：工作台那两个页签灰着；
+       点不点得动由 popup 那边拦并给一句「要全平台版」的提示。视频号那格本来就没接获客，只灰不开 */
+    const mpOn = !!f.multiPlatform;
+    document.querySelectorAll('[data-wbplat]').forEach((b) => {
+      const pk = b.getAttribute('data-wbplat');
+      if (pk === 'xhs') return;
+      if (mpOn) {
+        on(b, true);
+        if (pk === 'dy') { b.disabled = false; restoreText(b, 'title'); }
+      } else {
+        off(b, true);
+        if (pk === 'dy') { b.disabled = true; swapText(b, 'title', '抖音获客要「全平台版（699）」才开——前三档只做小红书'); }
+      }
+    });
 
     /* 字效编辑器（随发笔记给）：不开也不整页藏掉——片台里画一块「升级解锁」的说明，
        顶上工作流条照常显示；整页藏掉会让人点进「🎬 分幕」看到一块空白 */

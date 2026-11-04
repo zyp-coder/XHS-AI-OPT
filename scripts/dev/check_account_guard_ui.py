@@ -53,10 +53,10 @@ with tempfile.TemporaryDirectory(prefix='xhs-guard-') as profile, sync_playwrigh
             page.click('#firstSetupPanel #fsClose')
             page.wait_for_selector('#firstSetupPanel', state='detached')
 
-        # 弹窗顶栏 🛡 小标：首帧就该画出当前挡位（新 profile 默认「保守」）
+        # 弹窗顶栏 🛡 小标：首帧就该画出当前挡位（新 profile 默认「谨慎」，2026-10-30 从保守升上来）
         badge = wait_get(page, '() => { const el = document.getElementById("guardBadge"); return el && el.offsetParent !== null ? el.textContent : ""; }')
         assert badge.startswith('🛡'), '顶栏 🛡 小标没画出来: %r' % badge
-        assert '保守' in badge, '新 profile 挡位应为「保守」，实际 %r' % badge
+        assert '谨慎' in badge, '新 profile 挡位应为「谨慎」，实际 %r' % badge
         print('PASS 弹窗顶栏小标：%s' % badge)
 
         # 进设置 → 左栏二级点「账号安全」
@@ -75,15 +75,15 @@ with tempfile.TemporaryDirectory(prefix='xhs-guard-') as profile, sync_playwrigh
         assert fr.locator('#gdRecOpen').count() == 1 and fr.locator('.gd-tl').count() == 1, '体检卡按钮 / 静默时间轴缺失'
         print('PASS 账号安全页 5 块齐：挡位卡 %d / 额度墙 %d / 日签 %d' % (n_cards, n_wall, n_days))
 
-        # 点「谨慎」卡 → 落盘 + 回执
-        fr.locator('.gd-card[data-level="谨慎"]').click()
+        # 点「正常」卡 → 落盘 + 回执
+        fr.locator('.gd-card[data-level="正常"]').click()
         lv = wait_get(page, '() => chrome.storage.local.get("account_guard").then(d => (d.account_guard || {}).level || "")')
-        assert lv == '谨慎', '点卡后 account_guard.level 应为「谨慎」，实际 %r' % lv
-        print('PASS 挡位卡：点「谨慎」→ account_guard.level=谨慎')
+        assert lv == '正常', '点卡后 account_guard.level 应为「正常」，实际 %r' % lv
+        print('PASS 挡位卡：点「正常」→ account_guard.level=正常')
 
         # 弹窗顶栏小标应跟着换（storage.onChanged 订阅）
         badge2 = wait_get(page, '() => { const el = document.getElementById("guardBadge"); return el ? el.textContent : ""; }')
-        assert '谨慎' in badge2, '顶栏小标没跟到「谨慎」: %r' % badge2
+        assert '正常' in badge2, '顶栏小标没跟到「正常」: %r' % badge2
         print('PASS 顶栏小标跟随：%s' % badge2)
 
         # 点「周六」日签 → restDay=6
@@ -106,10 +106,10 @@ with tempfile.TemporaryDirectory(prefix='xhs-guard-') as profile, sync_playwrigh
         lv2 = page.evaluate('() => chrome.storage.local.get("account_guard").then(d => (d.account_guard || {}).level || "")')
         assert lv2 == '保守', '处罚后挡位应直落「保守」，实际 %r' % lv2
         rec = page.evaluate('() => chrome.storage.local.get("account_health").then(d => d.account_health[0])')
-        assert rec['kind'] == '处罚' and rec['before'] == '谨慎' and rec['after'] == '保守' and rec['floor'] is False, '体检记录字段不对: %s' % rec
+        assert rec['kind'] == '处罚' and rec['before'] == '正常' and rec['after'] == '保守' and rec['floor'] is False, '体检记录字段不对: %s' % rec
         fr.locator('.gd-rec').first.wait_for(timeout=5000)
         ra = fr.locator('.gd-rec').first.locator('.ra').inner_text()
-        assert '落到「保守」（原「谨慎」）' in ra, '历史行降挡说明不对: %r' % ra
+        assert '落到「保守」（原「正常」）' in ra, '历史行降挡说明不对: %r' % ra
         assert fr.locator('#gdRecModal').evaluate('el => getComputedStyle(el).display') == 'none', '保存后弹层没关'
         print('PASS 体检卡：记「处罚」→ 直落保守、历史 1 笔、弹层关闭')
 

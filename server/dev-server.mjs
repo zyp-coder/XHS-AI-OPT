@@ -59,14 +59,25 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { bootBackground, DEMO_KEY_MARKER } from './bg-env.mjs';
 import { createExecChannel } from './exec-channel.mjs';
 import { createExecSched } from './exec-sched.mjs';
+import { ensureSeatPackage } from './seat-pack.mjs';
 import { createFilmJobs } from './film/jobs.mjs';
 import { createLipJobs } from './lip/jobs.mjs';
-import { ensureTierStore, editionOf, normalizeAcc, setTierTable, tierNow, TIERS, KIND_KEYS } from './tier.mjs';
+import { ensureTierStore, editionOf, normalizeAcc, setTierTable, tierNow, startTrial, startPlan, renewPlan, planExpiredAt, TRIAL_DAYS, PAID_DAYS, TIERS, KIND_KEYS } from './tier.mjs';
 import {
   ensureAiStore, packSummary, grantPack, removePack, textQuotaInfo, textQuotaBlockedText,
   textQuotaTake, dhQuotaInfo, dhQuotaTake, imagePackTake, imagePackGiveBack,
 } from './ai-quota.mjs';
-import { DEMO_ACCOUNTS, DEMO_IDS, DEMO_BY_KEY, INDUSTRY_FOUNDATIONS, buildPlan, demoCatalog } from './demo-accounts.mjs';
+import { DEMO_ACCOUNTS, DEMO_IDS, DEMO_BY_KEY, INDUSTRY_FOUNDATIONS, buildPlan, demoCatalog, foundationCatalog } from './demo-accounts.mjs';
+import { ensureVoiceStore, voiceInfo, voiceTake, voiceGiveBack } from './voice-quota.mjs';
+import { DOUBAO_VOICES, ttsReady, isDoubaoVoice, synthDoubao } from './tts-doubao.mjs';
+import dns from 'node:dns';
+import net from 'node:net';
+
+/* 到方舟偶发握手超时（2026-11-03 实测）：DNS 会回 IPv6 地址，但这台机器没有 IPv6 出口，
+   Node 默认两栈一起试，会踩着死路一直等到超时——自动挑路 20 次挂 8 次，只走 IPv4 20 次全通。
+   这里钉死 IPv4 优先并关掉双栈自动挑选；换机器、换线路也不靠启动参数兜。 */
+dns.setDefaultResultOrder('ipv4first');
+try { net.setDefaultAutoSelectFamily(false); } catch (_) {}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = fileURLToPath(new URL('../web/', import.meta.url));
@@ -129,7 +140,9 @@ const META_KEYS = new Set(['accounts', 'sessions', 'books', 'signup_ips', 'demo_
   /* 2026-10-21 出图接口：按账号按张的额度账（试用 10 张一次性 / 正式每月 150 张） */
   'image_quota',
   /* 2026-10-21 AI 额度与算力包：文本/数字人的月度账（server/ai-quota.mjs 读写）＋算力包发放记录 */
-  'ai_quota', 'ai_packs']);
+  'ai_quota', 'ai_packs',
+  /* 2026-11-01 试用：给存量免费档号补 30 天的一次性标记 */
+  'trial_backfill_30d_at', 'paid_backfill_30d_at']);
 const BOOK_TEMPLATE = '__template__';
 const SESSION_DAYS = 30;
 const deepClone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
@@ -161,6 +174,7 @@ await ensureV5Shape();
  *   这张表是全系统「哪一档开哪几格」的唯一真源；客户端包里那张降为进门默认。 */
 ensureTierStore(store);
 ensureAiStore(store);
+ensureVoiceStore(store);
 await persist();
 
 /* ── v7 大图外置：账本里只留链接，原图落 data/blobs/ ──
@@ -201,6 +215,22 @@ async function getBlobFull(id) {
   if (!meta) return null;
   try { return { m: meta.m || 'application/octet-stream', name: meta.name || '', acc: meta.acc || '', buf: await readFile(join(BLOB_DIR, id)) }; }
   catch { return null; }
+}
+/* 参考图：把账本里的图（定妆照）读成 data URL 交给方舟。方舟抓不到我们的 /api/blob，
+   所以这里必须自己读文件；单张 ≤8MB，一次最多 3 张（Seedream 5 最多 10 张，留余量）。 */
+function blobDataUrl(id) {
+  try {
+    const s = String(id || '');
+    if (!BLOB_ID_RE.test(s)) return '';
+    const meta = store.blobs && store.blobs[s];
+    if (!meta) return '';
+    const p = join(BLOB_DIR, s);
+    const st = statSync(p);
+    if (!st || st.size > 8 * 1024 * 1024) return '';
+    const m = String(meta.m || 'image/jpeg');
+    if (!/^image\//.test(m)) return '';
+    return 'data:' + m + ';base64,' + readFileSync(p).toString('base64');
+  } catch { return ''; }
 }
 /** 递归把大图串换成链接（keyHint＝上一层的键名；同步——blob 落盘是一次性的小事） */
 function blobsOut(v, keyHint, accId) {
@@ -379,16 +409,17 @@ function publicAccount(acc) {
 function quotaOf(acc) {
   if (!acc) return null;
   const text = textQuotaInfo(store, acc, quotaUsed(acc.id));
+  const voice = voiceInfo(store, acc, Date.now());
   if (acc.kind === 'demo') {
     return {
       used: 0, max: 0, unlimited: true, monthly: false, mode: 'demo',
-      text, image: imageQuotaInfo(acc), dh: dhQuotaInfo(store, acc),
+      text, image: imageQuotaInfo(acc), dh: dhQuotaInfo(store, acc), voice,
       pack: packSummary(store, acc.id),
     };
   }
   return {
     used: text.used, max: text.max, monthly: text.monthly, mode: text.mode,
-    text, image: imageQuotaInfo(acc), dh: dhQuotaInfo(store, acc),
+    text, image: imageQuotaInfo(acc), dh: dhQuotaInfo(store, acc), voice,
     pack: packSummary(store, acc.id),
   };
 }
@@ -436,6 +467,14 @@ function readEnv() {
     key: process.env.DEMO_AI_KEY || f.AI_API_KEY || '',
     base: process.env.DEMO_AI_BASE || f.AI_API_BASE || '',
     model: process.env.DEMO_AI_MODEL || f.AI_MODEL || '',
+    /* 豆包配音（2026-11-03）：Key 只在这台服务器上换声音，客户浏览器拿不到。
+       新版控制台给 API Key（VOLC_TTS_API_KEY）；旧版给 App ID + Access Token，两套都认。
+       没配就照旧走微软免费声音，界面会标「服务器还没配」。 */
+    ttsApiKey: process.env.VOLC_TTS_API_KEY || f.VOLC_TTS_API_KEY || '',
+    ttsAppId: process.env.VOLC_TTS_APPID || f.VOLC_TTS_APPID || '',
+    ttsToken: process.env.VOLC_TTS_TOKEN || f.VOLC_TTS_TOKEN || '',
+    ttsCluster: process.env.VOLC_TTS_CLUSTER || f.VOLC_TTS_CLUSTER || 'volcano_tts',
+    ttsEndpoint: process.env.VOLC_TTS_ENDPOINT || f.VOLC_TTS_ENDPOINT || '',
     adminPass: process.env.DEMO_ADMIN_PASS || f.DEMO_ADMIN_PASS || '',
     quota: Number.isFinite(q) && q > 0 ? Math.floor(q) : 50,
     signupMax: Number.isFinite(sm) && sm > 0 ? Math.floor(sm) : 5,
@@ -537,6 +576,25 @@ function imageQuotaInfo(acc, env) {
     pack: pk,
   };
 }
+/* 角色定妆图（老板 2026-10-30 定）：「这种不常用的，默认给他用就好」——不限次数、不扣客户本人额度，
+   只计入全站当日总张数与账号总量（全站那道闸还留着，防的是整站被刷穿）。
+   老号 rec.charFree 里记的「前 3 张白送」不再看。 */
+function imageQuotaTakeChar(acc, charId) {
+  const env = readEnv();
+  if (!env.imgKey) return { ok: false, code: 'no-key', error: '出图 Key 还没配，先自己传图（配好后这里就能一键出图）' };
+  const q = (store.image_quota = store.image_quota || { day: '', used: 0, by: {} });
+  const day = budgetDay();
+  if (q.day !== day) { q.day = day; q.used = 0; }
+  if ((Number(q.used) || 0) >= env.imgDailyCap) {
+    return { ok: false, code: 'day-cap', error: `今天全站出图到上限了（${env.imgDailyCap} 张）——明天再来，或先自己传图` };
+  }
+  const rec = imageQuotaRec(acc.id);
+  rec.total = (Number(rec.total) || 0) + 1;
+  rec.lastAt = Date.now();
+  q.used = (Number(q.used) || 0) + 1;
+  acc.lastAt = Date.now();
+  return { ok: true, tok: { accId: acc.id, paid: false, month: rec.month, day, charShot: String(charId || '').slice(0, 64) || 'char' } };
+}
 /* 先扣一张：返回 {ok, tok} 才允许去调接口；任何原因没扣成都不发请求。
    付费档先扣当月 150 张、再扣算力包；免费号先扣算力包（会过期）、再扣试用那 10 张；演示号不限张数。 */
 function imageQuotaTake(acc) {
@@ -609,8 +667,17 @@ async function imageQuotaGiveBack(tok) {
     await persist();
     return;
   }
-  if (q.day === tok.day) q.used = Math.max(0, (Number(q.used) || 0) - 1);
   const rec = q.by && q.by[tok.accId];
+  if (tok.charFree || tok.charShot) {
+    if (q.day === tok.day) q.used = Math.max(0, (Number(q.used) || 0) - 1);
+    if (tok.charFree && rec && rec.charFree && rec.charFree[tok.charFree]) {
+      rec.charFree[tok.charFree] = Math.max(0, (Number(rec.charFree[tok.charFree]) || 0) - 1);
+    }
+    if (rec) rec.total = Math.max(0, (Number(rec.total) || 0) - 1);
+    await persist();
+    return;
+  }
+  if (q.day === tok.day) q.used = Math.max(0, (Number(q.used) || 0) - 1);
   if (rec && rec.month === tok.month) {
     if (tok.paid) rec.used = Math.max(0, (Number(rec.used) || 0) - 1);
     else rec.trialUsed = Math.max(0, (Number(rec.trialUsed) || 0) - 1);
@@ -624,21 +691,52 @@ function imageSizeOf(v) {
   const m = /(\d+)\s*[:：]\s*(\d+)/.exec(String(v || ''));
   return (m && IMG_SIZES[m[1] + ':' + m[2]]) || IMG_SIZES['3:4'];
 }
-/* 一次出图：扣额度 → 调方舟 → 下载原图 → 落 data/blobs → 回同源链接；失败退回额度 */
-async function genNoteImageOnce(acc, prompt, sizeHint) {
-  const take = imageQuotaTake(acc);
+/* 这台机器到方舟是跨境链路：实测 10-31、11-01 两次约两到三成请求在握手阶段直接超时
+   （curl 正常，Node fetch 偶发 ETIMEDOUT / fetch failed）。出图一次要几十秒，
+   一次抖动就退回额度太亏，所以连接级失败先自己重试三次；HTTP 报错（Key / 模型 / 审核）不重试。 */
+async function fetchImgWithRetry(url, init, ctl, tries) {
+  const n = tries || 3;
+  let last = null;
+  for (let i = 1; i <= n; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      last = e;
+      if (!e || e.name === 'AbortError') throw e;
+      const code = String((e.cause && e.cause.code) || '');
+      if (!/ETIMEDOUT|ECONNRESET|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|UND_ERR_CONNECT_TIMEOUT/.test(code)) throw e;
+      if (i < n) await new Promise((r) => setTimeout(r, 600 * i));
+    }
+  }
+  throw last;
+}
+/* 一次出图：扣额度 → 调方舟 → 下载原图 → 落 data/blobs → 回同源链接；失败退回额度
+   refs＝参考图（IP 角色定妆照）的 blob id；opts.charId 有值＝这趟是「角色定妆图」，
+   不限次数、不扣客户本人额度（仍计入全站当日张数）。 */
+async function genNoteImageOnce(acc, prompt, sizeHint, refs, opts) {
+  opts = opts || {};
+  const take = opts.charId ? imageQuotaTakeChar(acc, String(opts.charId).slice(0, 64)) : imageQuotaTake(acc);
   if (!take.ok) return take;
   const env = readEnv();
   const size = imageSizeOf(sizeHint);
+  const refImgs = (Array.isArray(refs) ? refs : []).map(blobDataUrl).filter(Boolean).slice(0, 3);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 180000);
   try {
-    const r = await fetch(env.imgBase + '/images/generations', {
+    /* 10-31 硬闸：出图全面禁真人写实。定妆照、图文配图、视频补画面全走这一条路，
+       在这里统一追加，客户机上的旧提示词也绕不过去。 */
+    const NO_REAL = '。整张图必须是画出来的（2D、3D、动漫、二次元、公仔、插画），不要真人照片、不要写实摄影、不要真实皮肤和布料质感；人物、背景、道具统一用同一种画法。';
+    const safePrompt = /不要真人照片|不许真人|禁真人/.test(prompt)
+      ? prompt
+      : (String(prompt).replace(/[。\s]+$/, '') + NO_REAL);
+    const reqBody = { model: env.imgModel, prompt: safePrompt, size, response_format: 'url', watermark: false };
+    if (refImgs.length) reqBody.image = refImgs;   // 定妆照当参考：同一张脸、同一组标志物
+    const r = await fetchImgWithRetry(env.imgBase + '/images/generations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.imgKey },
-      body: JSON.stringify({ model: env.imgModel, prompt, size, response_format: 'url', watermark: false }),
+      body: JSON.stringify(reqBody),
       signal: ctl.signal,
-    });
+    }, ctl, 3);
     const txt = await r.text();
     let j = null;
     try { j = JSON.parse(txt); } catch { /* 下面按错回 */ }
@@ -660,7 +758,19 @@ async function genNoteImageOnce(acc, prompt, sizeHint) {
     }
     if (!buf || !buf.length) throw new Error('接口没回图');
     if (buf.length > 30 * 1024 * 1024) throw new Error('出的图太大（超过 30MB）');
-    const id = putBlobBuf(buf, mime, 'gen-' + Date.now() + '.png', acc.id);
+    /* 名字和类型都按文件头认真身：接口回的可能就是 JPEG（b64 那条路以前一律当 png），
+       叫成 .png 会让发布端按扩展名认类型、递错给平台（2026-10-29 实踩） */
+    const _sniff = (b) => {
+      if (!b || b.length < 12) return '';
+      if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+      if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+      if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return 'image/gif';
+      if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+      return '';
+    };
+    mime = _sniff(buf) || mime;
+    const genExt = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif' })[String(mime).toLowerCase()] || '.png';
+    const id = putBlobBuf(buf, mime, 'gen-' + Date.now() + genExt, acc.id);
     if (!id) throw new Error('图没存下来');
     await persist();
     const q = imageQuotaInfo(acc, env);
@@ -684,7 +794,50 @@ async function runImageAction(name, body, req) {
   const prompt = String(data.prompt || '').trim();
   if (!prompt) return { ok: false, error: '提示词是空的——先把这一张的画面写出来' };
   if (prompt.length > 4000) return { ok: false, error: '提示词太长了（超过 4000 字）' };
-  return genNoteImageOnce(acc, prompt, data.size);
+  if (name === 'genCharImage') {
+    return genNoteImageOnce(acc, prompt, data.size, data.refs, { charId: String(data.charId || '') });
+  }
+  return genNoteImageOnce(acc, prompt, data.size, data.refs);
+}
+
+/* ── 豆包配音（2026-11-03 · 资料/画面分组-硬切-音色-确认单-20261103.md §7）──
+   客户浏览器递一句文字，这台服务器换真声；Key 不出服务器。
+   字数先扣再念（念失败退回）：付费三档每月 2 万字、免费号 2000 字、演示号不限。
+   服务器没配凭据 → 回 no-key，客户机自动换回微软免费声音，不让出片卡死。 */
+async function runVoiceAction(name, body, req) {
+  const acc = resolveAccount(req);
+  if (!acc) return { ok: false, error: '先领个号（或登录）就能用了', demo: 'need-account' };
+  const env = readEnv();
+  if (name === 'voiceQuota') return { ok: true, ready: ttsReady(env), voices: DOUBAO_VOICES, ...voiceInfo(store, acc, Date.now()) };
+  const data = (body && body.data) || {};
+  const text = String(data.text || '').trim();
+  const voice = String(data.voice || '');
+  if (!text) return { ok: false, error: '这一句是空的' };
+  if (text.length > 800) return { ok: false, error: '这一句太长了（最多 800 字）——先把它断成两幕' };
+  if (!isDoubaoVoice(voice)) return { ok: false, error: '这个音色不在豆包列表里' };
+  if (!ttsReady(env)) {
+    return {
+      ok: false, code: 'no-key',
+      error: '服务器还没配豆包语音的 Key——先用免费声音（晓晓这些）出片，配好后这里自动可用',
+    };
+  }
+  const chars = Array.from(text).length;
+  const take = voiceTake(store, acc, chars, Date.now());
+  if (!take.ok) return { ok: false, code: take.code, error: take.error, quota: take.info };
+  try {
+    const r = await synthDoubao(text, { voice, rate: data.rate, env, accId: acc.id });
+    await persist();
+    const info = voiceInfo(store, acc, Date.now());
+    const qTxt = info.unlimited ? '演示号不限' : `${info.used}/${info.max}`;
+    console.log(`[demo] 配音：${acc.name || acc.id} ${voice} ${chars} 字（${r.audio.length} 字节，${r.chunks} 块）；本月 ${qTxt}`);
+    return { ok: true, audio: r.audio.toString('base64'), mime: 'audio/mpeg', durationMs: r.durationMs, used: chars, quota: info };
+  } catch (e) {
+    voiceGiveBack(store, acc, chars, Date.now());
+    await persist();
+    const msg = String((e && e.message) || e);
+    console.log(`[demo] 配音失败（${chars} 字已退回）：${acc.name || acc.id} ${msg}`);
+    return { ok: false, code: 'tts-failed', error: '这次没念成（字数已退回）：' + msg, quota: voiceInfo(store, acc, Date.now()) };
+  }
 }
 
 /* ── 看图认内容（2026-10-22 · 素材库改版3）──
@@ -716,7 +869,20 @@ function visionJson(text) {
   if (a >= 0 && b > a) s = s.slice(a, b + 1);
   try { return JSON.parse(s); } catch (_) { return null; }
 }
+/* 网络/超时这一类失败是一次连着坏，隔几百毫秒再发基本就过去了；
+   Key 不对、没开通这种再发也是同样报错，当场把错抛回去。 */
 async function visionChatOnce(env, opts) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await visionChatOnceRaw(env, opts);
+    } catch (e) {
+      const code = visionErrInfo(e, env.visionModel).code;
+      if (attempt >= 3 || (code !== 'network' && code !== 'timeout')) throw e;
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
+}
+async function visionChatOnceRaw(env, opts) {
   const o = opts || {};
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), Math.max(15000, Number(o.timeout) || 90000));
@@ -767,26 +933,19 @@ async function visionProbe(force) {
     _visionProbe = { at: Date.now(), model: env.visionModel, keyReady: true, active: false, code: 'budget', error: '今天的服务器 AI 总预算用完了', hint: '明天再试，或到「设置 → AI 模型配置」填自己的 Key' };
     return _visionProbe;
   }
-  /* 这台机器的出口到北京接口是跨境链路，实测约 20 次有 1 次握手直接超时。
-     一次失败就定性「连不上」会把人白拦一场，所以连着试三次；只有网络这一类才重试，
-     Key 不对／模型没开通那种再试也是同样报错，当场定性走人。 */
+  /* 重试已经收在 visionChatOnce 里（网络/超时试三次），这里只探一次、如实定性。 */
   let lastErr = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      await visionChatOnce(env, {
-        system: '只回 OK 两个字母。',
-        text: '这是一张测试小图。如果你能看到图片，只回 OK。',
-        images: [{ url: VISION_TINY_PNG }],
-        maxTokens: 8, timeout: 30000,
-      });
-      _visionProbe = { at: Date.now(), model: env.visionModel, keyReady: true, active: true, code: '', error: '', hint: '' };
-      return _visionProbe;
-    } catch (e) {
-      lastErr = e;
-      const code = visionErrInfo(e, env.visionModel).code;
-      if (code !== 'network' && code !== 'timeout' && code !== 'vision-failed') break;
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * attempt));
-    }
+  try {
+    await visionChatOnce(env, {
+      system: '只回 OK 两个字母。',
+      text: '这是一张测试小图。如果你能看到图片，只回 OK。',
+      images: [{ url: VISION_TINY_PNG }],
+      maxTokens: 8, timeout: 30000,
+    });
+    _visionProbe = { at: Date.now(), model: env.visionModel, keyReady: true, active: true, code: '', error: '', hint: '' };
+    return _visionProbe;
+  } catch (e) {
+    lastErr = e;
   }
   const info = visionErrInfo(lastErr, env.visionModel);
   _visionProbe = { at: Date.now(), model: env.visionModel, keyReady: true, active: false, code: info.code, error: info.error, hint: info.hint };
@@ -1367,6 +1526,7 @@ const execCh = createExecChannel({
   bookBagFor,             // 进度/回执记到这口账号的账本里（网页读的是同一本）
   aiChat: (p) => aiChatOnce(p),
   getBlob: getBlobFull,   // v10：执行器取回托管素材（/api/exec/blob）
+  putBlobBuf,             // 2026-10-26：派单兜底——工单里还带 b64 的先转成素材编号（工单别扛大文件）
   authGate,               // v11：挂线口过密码试错闸（与网页登录同一本 IP 账）
 });
 
@@ -1418,6 +1578,8 @@ const WHITELIST = new Set([
   'aiNoteStyleAdvice', 'aiWeekPlan', 'aiDeepReport', 'aiSellPointBuild',
   'aiGenerateSellPoints', 'aiGeneratePeople', 'aiGenerateTopics', 'aiGenerateHotspots',
   'aiCategorizeKb', 'aiGenKeywords',
+  // 🗣 获客话术（2026-10-29）：按账号人设生成四步 + 一条示范评论（纯 AI，不碰平台）
+  'aiGenerateDrainTalk',
   // 多租户（产品列表）/ 整机备份
   'listTenants', 'switchTenant', 'createTenant', 'renameTenant', 'deleteTenant',
   'exportAllData', 'importAllData',
@@ -1427,13 +1589,17 @@ const WHITELIST = new Set([
   'reviseNote', 'suggestNoteCuts', 'regenNoteDescs', 'genNoteCover', 'genAssetNeeds',
   'genNoteShots', 'genIpStories', 'genIpDraft', 'genNoteLongform',
   // 🖼 出图接口（2026-10-21）：读本月/试用还剩几张 + 真出这一张（服务器持有方舟 Key，不经过后台副本）
-  'getImageQuota', 'genNoteImage',
+  'getImageQuota', 'genNoteImage', 'genCharImage',
+  // 🔊 配音接口（2026-11-03）：读本月还剩多少字 + 念这一句（豆包凭据只在服务器上）
+  'voiceQuota', 'ttsVoice',
+  // 🎭 IP 角色（2026-10-30）：AI 随机生成一个人设的文字描述 / 把一段话拆成角色字段（纯 AI，不碰平台）
+  'aiIpCharBuild', 'aiIpCharParse',
   // 🪟 门面笔记（2026-10-19）：主页置顶那两篇——照钉死提纲逐段填 / 只改那一句（纯 AI，不碰平台）
   'genFacadeNote', 'genFacadeSentence',
   'configAssetKinds',   // 素材库 18 类判类（AI 判「这类该不该有料」，纯 AI＋存储，不碰平台）
   'voiceRewrite', 'genNoteVoiceScript', 'genNoteDvSegs', 'genNoteFilmPicks', 'genNoteFilmScript',
   // 状态 / 配置类（纯存储；执行器动作不放行）
-  'getAutoWaterStatus', 'dailyBrowseStatus', 'npPubRearm',
+  'getAutoWaterStatus', 'dailyBrowseStatus', 'npPubRearm', 'npPlanPrep',   // 笔记规划备稿（纯 AI＋存储）
   'interactGuard', 'interactGuardLog',
   // 截流配置与数据融合（纯存储）
   'drainScenarios', 'drainGetScanCfg', 'drainSaveScanCfg', 'drainGetReplenishCfg',
@@ -1563,7 +1729,7 @@ async function seedDemoData() {
     const coverHook = '帮上千户配齐主材的建材店老板';
     const persona = {
       text: [
-        '我是在本地建材城开建材店的（示例账号），从送货小工做到自己开店用了 12 年，瓷砖、卫浴、五金辅料都经手过，前后帮上千户业主把装修主材配齐——老房翻新、新房全屋、单独换套卫浴，什么样的预算和坑都见过。',
+        '我是在本地建材城开建材店的，从送货小工做到自己开店用了 12 年，瓷砖、卫浴、五金辅料都经手过，前后帮上千户业主把装修主材配齐——老房翻新、新房全屋、单独换套卫浴，什么样的预算和坑都见过。',
         '我这人不爱吹参数，店里常年摆着料头让人上手摸：同样叫“全瓷砖”，吸水率、釉面、平整度差一点，上墙下地、厨卫阳台用起来就是两种结果。我不接只图便宜的单，也不承诺“绝对低价”——建材一分钱一分货，我的活是帮你把预算花在刀刃上。',
         '这个号就干一件事：把 12 年卖建材的门道和报价的实话写出来，帮准备装修的业主少花冤枉钱。买建材先来问一句，比完价再来也行。',
       ].join('\n\n'),
@@ -1685,13 +1851,13 @@ async function seedDemoData() {
 }
 await seedDemoData();
 
-/* ── 随便逛逛（2026-10-18）：8 个固定公用演示号 ──
- * 四个行业号（装修建材 / 母婴 / 教培 / 儿童体适能）＋ 四个建材档位体验号（免费/基础/升级/全功能）。
+/* ── 随便逛逛（2026-10-18）：9 个固定公用演示号 ──
+ * 四个行业号（装修建材 / 母婴 / 教培 / 儿童体适能）＋ 五个建材档位体验号（免费/基础/升级/全功能/全平台）。
  * 底子：建材直接复用账号模板里那套样例；母婴、教培、儿童体适能在克隆后整份换成人设/卖点/知识库/规划。
  * 规矩：只建一次（bag.demo_seed_v=1），之后访客怎么改都保留——不重置、不自动恢复、不清理。
  * 这些号不带 demo_preset（那是真实新号的「样例」标记，首次真实生成会被清掉）。 */
 const DEMO_RO_MSG = '演示号只读，注册自己的号后可改';
-const DEMO_CONFIG_KEEP = new Set(['weekPlan']);   // 排期是操作，不算底子
+const DEMO_CONFIG_KEEP = new Set(['weekPlan', 'weekPlanPlat', 'weekPlanGrid', 'weekPlanTime', 'planAutoImg']);   // 排期是操作，不算底子
 
 /* 演示号底子只读：动作层先拦一批，存储层再兜一道（规划/知识库是页面直接写 storage 的） */
 const DEMO_LOCKED_ACTIONS = new Set([
@@ -1809,6 +1975,23 @@ async function seedDemoIndustry(d, foundation) {
   });
 }
 
+/* 后台「按行业铺底子」：把一套写好的行业底子整份灌给一个真号（人设 / 卖点 / 知识库 / 排产）。
+   跟演示号开机铺底子走同一条链，只是对象换成真号；铺完摘掉建材店样例标记，
+   免得他第一次点「重新诊断」时样例清理把这套底子一起带走。 */
+async function seedFoundationToAccount(acc, key) {
+  const f = INDUSTRY_FOUNDATIONS[key];
+  if (!f) throw new Error('没有这套底子：' + key);
+  await seedDemoIndustry({ id: acc.id, key, name: acc.name }, f);
+  const bag = store.books[acc.id];
+  if (bag) {
+    delete bag.demo_preset;
+    bag.foundation_key = key;
+    bag.foundation_at = Date.now();
+  }
+  await persist();
+  return { sells: f.sellPoints.length, kb: f.kb.length, plan: f.plan.items.length };
+}
+
 async function seedDemoBook(d) {
   const cur = store.books[d.id];
   if (cur && cur.demo_seed_v === 1) return false;
@@ -1829,7 +2012,7 @@ async function seedDemoBook(d) {
   delete bag.demo_preset;   // 演示号不挂真实新号的样例标记
 
   if (d.group === 'tier') {
-    /* 四个档位体验号：和建材全功能号同一套底子，只差档位 */
+    /* 五个档位体验号：和建材全功能号同一套底子，只差档位 */
     putDemoBookFields(bag, d);
     await persist();
     console.log(`[demo] 演示号就位：${d.name}（底子＝装修建材全功能号）`);
@@ -2461,7 +2644,7 @@ async function ensureDemoAccounts() {
   }
   await persist();
   const order = ['demo_deco_full', 'demo_baby_full', 'demo_edu_full', 'demo_kidsport_full',
-    'demo_tier_free', 'demo_tier_basic', 'demo_tier_pro', 'demo_tier_full'];
+    'demo_tier_free', 'demo_tier_basic', 'demo_tier_pro', 'demo_tier_full', 'demo_tier_allplat'];
   for (const id of order) {
     const d = DEMO_ACCOUNTS.find((x) => x.id === id);
     if (!d) continue;
@@ -2472,6 +2655,55 @@ async function ensureDemoAccounts() {
   }
 }
 await ensureDemoAccounts();
+
+/* 试用期回填（2026-11-01 一次性）：以前注册的号当时没有自动开试用，这里补 30 天。
+   只补「非演示 + 还没开过试用 + 档位仍是免费」的号；示例/测试/自测这些内部号跳过，
+   已经买了正式档的号也不动（试用对他们没意义）。跑过就记标记，以后不再补。 */
+function backfillTrialsOnce() {
+  const KEY = 'trial_backfill_30d_at';
+  if (store[KEY]) return -1;
+  const SKIP = /示例|演示|测试|自测|本地|点验/;
+  let n = 0;
+  for (const acc of Object.values(store.accounts || {})) {
+    if (!acc || acc.kind === 'demo' || acc.noTrial) continue;
+    if (Number(acc.trialUntil) > 0) continue;
+    if (acc.tier && acc.tier !== '免费') continue;
+    if (SKIP.test(String(acc.name || ''))) continue;
+    startTrial(acc);
+    n++;
+    console.log(`[demo] 试用回填：${acc.name} 补 ${TRIAL_DAYS} 天（期内按「${acc.trialTier}」开）`);
+  }
+  store[KEY] = Date.now();
+  return n;
+}
+const _trialBackfilled = backfillTrialsOnce();
+if (_trialBackfilled >= 0) {
+  await persist();
+  console.log(`[demo] 试用回填完成：补了 ${_trialBackfilled} 个号（各 ${TRIAL_DAYS} 天）`);
+}
+
+/* 付费到期日回填（2026-11-02 一次性）：月费口径上线前开的付费号没有到期日，
+   统一从今天起算 30 天，给客户宽限、不会一上线就掉功能。演示号不动。跑过就记标记。 */
+function backfillPaidPlansOnce() {
+  const KEY = 'paid_backfill_30d_at';
+  if (store[KEY]) return -1;
+  let n = 0;
+  for (const acc of Object.values(store.accounts || {})) {
+    if (!acc || acc.kind === 'demo') continue;
+    if (!TIERS.includes(acc.tier) || acc.tier === '免费') continue;
+    if (Number(acc.paidUntil) > 0) continue;
+    startPlan(acc);
+    n++;
+    console.log(`[demo] 付费到期回填：${acc.name}（${acc.tier}）→ ${new Date(acc.paidUntil).toISOString().slice(0, 10)}`);
+  }
+  store[KEY] = Date.now();
+  return n;
+}
+const _paidBackfilled = backfillPaidPlansOnce();
+if (_paidBackfilled >= 0) {
+  await persist();
+  console.log(`[demo] 付费到期回填完成：补了 ${_paidBackfilled} 个号（各 ${PAID_DAYS} 天）`);
+}
 
 /* ── 第一次真实生成前，把演示样例清干净（免得 AI 出的人和样例混在一起）。
  *    v5 起按账号清：只动当前账号那本小账本，别人和模板的样例不动。
@@ -2502,9 +2734,14 @@ async function runAction(name, body, req) {
      （包里那张只是执行器从没领到过表时的进门默认）。没登录 / 还没配对号 → 只给共用的那三格。 */
   if (name === 'getEdition') return { ok: true, expired: false, noNetwork: false, remainingDays: null, edition: webEdition(resolveAccount(req)) };
   /* 出图接口不经过后台副本：Key 只在这台服务器上换，后台副本碰不到；服务器没配出图 Key 也照常回“没配” */
-  if (name === 'getImageQuota' || name === 'genNoteImage') {
+  if (name === 'getImageQuota' || name === 'genNoteImage' || name === 'genCharImage') {
     try { return await runImageAction(name, body, req); }
     catch (e) { return { ok: false, error: '[demo] 出图接口出错：' + e.message }; }
+  }
+  /* 配音接口同一条规矩：豆包凭据只在这台服务器上，后台副本碰不到 */
+  if (name === 'ttsVoice' || name === 'voiceQuota') {
+    try { return await runVoiceAction(name, body, req); }
+    catch (e) { return { ok: false, error: '[demo] 配音接口出错：' + e.message }; }
   }
   /* 看图认内容 / 案例正文也走这台上：小图只过路、不落盘；Key 不进客户浏览器 */
   if (name === 'npVisionStatus' || name === 'npVisionSegments' || name === 'npVisionLabel') {
@@ -2649,7 +2886,8 @@ async function handleApi(path, body, req, res) {
       return json(res, ok ? 200 : 403, ok ? { ok: true, env: filmJobs.api.envProbe() } : { ok: false, error: '口令不对' });
     }
     const a = { '/api/film/submit': filmJobs.api.submit, '/api/film/status': filmJobs.api.status,
-      '/api/film/mine': filmJobs.api.listMine, '/api/film/cancel': filmJobs.api.cancel }[path];
+      '/api/film/mine': filmJobs.api.listMine, '/api/film/cancel': filmJobs.api.cancel,
+      '/api/film/tts': filmJobs.api.tts }[path];
     if (!a) return json(res, 404, { ok: false, error: '没有这个出片接口' });
     try { return await json(res, 200, await a(body, req)); }
     catch (e) { return json(res, 500, { ok: false, error: e.message }); }
@@ -2723,11 +2961,13 @@ async function handleApi(path, body, req, res) {
       id: 'acc_' + randomBytes(6).toString('hex'),
       name, phone, pass: hashPass(password),
       createdAt: Date.now(), lastAt: Date.now(), lastIp: ip,
-      /* 档位三件套（2026-10-16 收口）：落在哪档 / 小灶加减 / 试用到期（0＝不过试用，要试用由老板在名单页点） */
+      /* 档位三件套（2026-10-16 收口）：落在哪档 / 小灶加减 / 试用到期。
+         2026-11-01 起新号注册即自动开 30 天试用（按全功能），到期落回免费档、不锁号。 */
       tier: '免费', perk: { on: [], off: [] }, trialUntil: 0, trialTier: '全功能',
       /* 平台认号（2026-10-23）：挂线时各认一次；空着＝这个平台还用不了 */
       bindings: { xhs: null, douyin: null },
     };
+    startTrial(acc);
     store.accounts[acc.id] = acc;
     store.books[acc.id] = deepClone(store.books[BOOK_TEMPLATE] || {}); // 新号自带建材店样例（从模板克隆）
     bumpSignup(ip);
@@ -2776,22 +3016,22 @@ async function handleApi(path, body, req, res) {
        2026-10-15：带上配对号与「包发了没」（发放页两列） */
     const handsByAcc = {};
     for (const h of Object.values(store.exec_hands || {})) handsByAcc[h.accountId] = h;
-    /* 两格的「最近一单」：小红书格只看获客/日常浏览，抖音格只看带抖音的发笔记；历史单只读不改 */
+    /* 各格的「最近一单」：小红书格只看获客/日常浏览，抖音格/视频号格只看发笔记；历史单只读不改 */
     const lastJob = {};
     for (const c of Object.values(store.exec_cmds || {})) {
       if (!c || !c.accountId) continue;
-      let p = '';
-      if (c.kind === 'acquire' || c.kind === 'daily_browse') p = 'xhs';
+      let ps = [];
+      if (c.kind === 'acquire' || c.kind === 'daily_browse') ps = ['xhs'];
       else if (c.kind === 'note_publish') {
-        const ps = (c.params && Array.isArray(c.params.platforms))
+        ps = (c.params && Array.isArray(c.params.platforms))
           ? c.params.platforms.map((x) => String((x && x.platform) || x || ''))
           : [String((c.params && c.params.platform) || 'xhs')];
-        if (ps.indexOf('douyin') >= 0) p = 'douyin';
+        ps = ps.filter((p) => p === 'douyin' || p === 'channels');
       }
-      if (!p) continue;
+      if (!ps.length) continue;
       const at = c.doneAt || c.sentAt || c.createdAt || 0;
       const bag = lastJob[c.accountId] = lastJob[c.accountId] || {};
-      if (!bag[p] || at > bag[p].at) bag[p] = { kind: c.kind, at, state: c.state || '', ok: c.ok !== false };
+      for (const p of ps) if (!bag[p] || at > bag[p].at) bag[p] = { kind: c.kind, at, state: c.state || '', ok: c.ok !== false };
     }
     const env = readEnv();
     const all = Object.values(store.accounts).map((a) => {
@@ -2822,6 +3062,7 @@ async function handleApi(path, body, req, res) {
         edition: editionOf(a, store),
         exec: h ? { online: (Date.now() - (h.lastSeen || 0)) < 35000, label: h.label || '', lastSeen: h.lastSeen || 0 } : null,
         hasSample: !!bag.demo_preset, bookKeys: Object.keys(bag).length,
+        foundationKey: bag.foundation_key || '',
         /* 2026-10-21：出图额度（试用/正式分开看）+ 老板视角的 ¥ 成本 */
         img: {
           mode: iq.mode, used: iq.used, max: iq.max, left: iq.left, packLeft: iq.packLeft, unlimited: !!iq.unlimited,
@@ -2860,10 +3101,18 @@ async function handleApi(path, body, req, res) {
   if (path === '/api/admin/set-tier') {
     if (!adminGate(req, res)) return;
     const tier = String(body.tier || '');
-    if (!['免费', '基础', '升级', '全功能'].includes(tier)) return json(res, 200, { ok: false, error: '档位不认识（免费/基础/升级/全功能）' });
+    if (!['免费', '基础', '升级', '全功能', '全平台'].includes(tier)) return json(res, 200, { ok: false, error: '档位不认识（免费/基础/升级/全功能/全平台）' });
     const acc = adminAccountOf(body);
     if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
     acc.tier = tier;
+    /* 2026-11-02 月费口径：开付费档＝从今天起 30 天（试用剩的作废）；同档位内换档不延长；
+       已过期的号再开＝重新从今天算。缩回免费＝收掉到期日。 */
+    if (tier === '免费') {
+      acc.paidUntil = 0;
+    } else {
+      acc.trialUntil = 0;
+      if (!Number(acc.paidUntil) || Number(acc.paidUntil) <= Date.now()) startPlan(acc);
+    }
     /* 配对号随档位走：开档（239 起）那一刻发码；缩回免费就把码收掉（旧码作废，执行器重挂不了） */
     if (tier === '免费') {
       if (acc.pairCode) { delete acc.pairCode; console.log(`[demo] 配对号收回：${acc.name}（缩回免费档）`); }
@@ -2873,6 +3122,11 @@ async function handleApi(path, body, req, res) {
     }
     await persist();
     console.log(`[demo] 改档位：${acc.name} → ${tier}`);
+    /* 开档即出包：专属包只认账号 id，这一下有码就能打。打不出来只记一笔，不影响开档。 */
+    if (tier !== '免费') {
+      const pk = await ensureSeatPackage(acc);
+      if (!pk.ok) console.log(`[seat] 开档后没出包（${pk.reason || pk.error}）：${acc.name}`);
+    }
     return json(res, 200, { ok: true, account: publicAccount(acc), tier, pairCode: acc.pairCode || '' });
   }
   /* 老板换配对号（发放页「换码」）：旧码当场作废＋把已挂的机器踢下线，客户用新码重挂 */
@@ -2886,16 +3140,19 @@ async function handleApi(path, body, req, res) {
     const kicked = await execCh.api.kick(acc.id, '作废：老板换了配对号，这台机器要用新码重挂');
     await persist();
     console.log(`[demo] 换配对号：${acc.name} ${old || '(还没码)'} → ${acc.pairCode}${kicked ? `（在飞 ${kicked} 单标作废）` : ''}`);
+    /* 包里的配对号跟着换：下次下载拿到的就是新码，不用再手动重打 */
+    const pk = await ensureSeatPackage(acc);
+    if (!pk.ok) console.log(`[seat] 换码后没重出包（${pk.reason || pk.error}）：${acc.name}`);
     return json(res, 200, { ok: true, accountId: acc.id, old, pairCode: acc.pairCode, kicked });
   }
   /* 老板换绑（2026-10-23）：按平台清一格——只清这个平台的号、只踢这台机器；
-     另一个平台的号一点不动。客户下次挂线只会把清掉的那一格重新认上。 */
+     另外两家一点不动。客户下次挂线只会把清掉的那一格重新认上。 */
   if (path === '/api/admin/rebind') {
     if (!adminGate(req, res)) return;
     const acc = adminAccountOf(body);
     if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
     const platform = String(body.platform || '');
-    if (!execCh.api.bindLabel[platform]) return json(res, 200, { ok: false, error: '只认 xhs / douyin 两个平台' });
+    if (!execCh.api.bindLabel[platform]) return json(res, 200, { ok: false, error: '只认 xhs / douyin / channels 三个平台' });
     const r = await execCh.api.clearBinding(acc, platform);
     if (!r.ok) return json(res, 200, r);
     await persist();
@@ -2903,7 +3160,7 @@ async function handleApi(path, body, req, res) {
     console.log(`[demo] 换绑${label}：${acc.name} 那一格已清${r.already ? '（本来就没绑）' : ''}${r.kicked ? `，在飞 ${r.kicked} 单标作废` : ''}`);
     return json(res, 200, { ok: true, accountId: acc.id, platform, kicked: r.kicked || 0, bindings: execCh.api.bindingsOf(acc) });
   }
-  /* 分平台暂停（2026-10-25）：小红书格＝暂停获客＋日常浏览，抖音格＝暂停发笔记。
+  /* 分平台暂停（2026-10-25）：小红书格＝暂停获客＋日常浏览，抖音格＝暂停发笔记＋抖音获客。
      只挡以后的新单（含定时自动派），在飞的不动；演示号只读。 */
   if (path === '/api/admin/platform-pause') {
     if (!adminGate(req, res)) return;
@@ -2914,8 +3171,8 @@ async function handleApi(path, body, req, res) {
     const paused = body.paused === undefined ? true : !!body.paused;
     const r = await execCh.api.setPlatformPause(acc, platform, paused, 'admin');
     if (!r.ok) return json(res, 200, r);
-    const what = platform === 'xhs' ? '获客' : '发笔记';
-    console.log(`[demo] ${paused ? '暂停' : '恢复'}：${acc.name} ${execCh.api.bindLabel[platform]}${what}`);
+    const what = (execCh.api.pauseWhat && execCh.api.pauseWhat[platform]) || '发笔记＋获客';
+    console.log(`[demo] ${paused ? '暂停' : '恢复'}：${acc.name} ${(((execCh.api.pauseLabel || execCh.api.bindLabel) || {})[platform]) || platform}${what}`);
     return json(res, 200, { ok: true, accountId: acc.id, platform, paused, platformPause: r.platformPause });
   }
   /* 发放页「包发了没」：手工打勾 / 取消（老板自己的记账，不影响任何功能） */
@@ -2979,6 +3236,59 @@ async function handleApi(path, body, req, res) {
     await persist();
     console.log(`[demo] 试用：${acc.name} ${days > 0 ? days + ' 天（按「' + acc.trialTier + '」开）' : '关掉（落回「' + acc.tier + '」）'}`);
     return json(res, 200, { ok: true, accountId: acc.id, trialUntil: acc.trialUntil, trialTier: acc.trialTier, edition: editionOf(acc, store) });
+  }
+  /* 月费续费（2026-11-02）：在现有到期日上顺延 30 天；已过期则从今天算 */
+  if (path === '/api/admin/renew') {
+    if (!adminGate(req, res)) return;
+    const acc = adminAccountOf(body);
+    if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
+    normalizeAcc(acc);
+    if (!TIERS.includes(acc.tier) || acc.tier === '免费') return json(res, 200, { ok: false, error: '还是免费档——先开档位再续' });
+    const days = Math.max(1, Math.min(365, Number(body.days) || PAID_DAYS));
+    renewPlan(acc, days);
+    await persist();
+    console.log(`[demo] 续费：${acc.name} +${days} 天 → ${new Date(acc.paidUntil).toISOString().slice(0, 10)}`);
+    return json(res, 200, { ok: true, accountId: acc.id, paidUntil: acc.paidUntil, days, edition: editionOf(acc, store) });
+  }
+  /* 改到期日（老板手填日期；传 0 ＝ 清掉到期日、这个号不再按月） */
+  if (path === '/api/admin/plan-date') {
+    if (!adminGate(req, res)) return;
+    const acc = adminAccountOf(body);
+    if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
+    normalizeAcc(acc);
+    const raw = body.until;
+    let until = 0;
+    if (raw === 0 || raw === '0' || raw === '') until = 0;
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(String(raw))) until = new Date(String(raw) + 'T23:59:59').getTime();
+    else until = Number(raw) || 0;
+    if (until && !Number.isFinite(until)) return json(res, 200, { ok: false, error: '日期看不懂（填 2026-12-02 这种）' });
+    acc.paidUntil = until;
+    await persist();
+    console.log(`[demo] 改到期日：${acc.name} → ${until ? new Date(until).toISOString().slice(0, 10) : '不过期'}`);
+    return json(res, 200, { ok: true, accountId: acc.id, paidUntil: acc.paidUntil, edition: editionOf(acc, store) });
+  }
+  /* 按行业铺底子（2026-11-04）：后台点一下，把写好的底子整份灌给一个真号。
+     真号的账本是从账号模板克隆来的、带建材店样例标记——第一次真跑 aiDiagnosisSync 会连底子一起清掉，
+     所以铺完当场把样例标记摘掉（清的动作只认 demo_preset，摘了就不会再动这套底子）。 */
+  if (path === '/api/admin/foundations') {
+    if (!adminGate(req, res)) return;
+    return json(res, 200, { ok: true, foundations: foundationCatalog() });
+  }
+  if (path === '/api/admin/seed-foundation') {
+    if (!adminGate(req, res)) return;
+    const acc = adminAccountOf(body);
+    if (!acc) return json(res, 200, { ok: false, error: '没这个号' });
+    if (acc.kind === 'demo') return json(res, 200, { ok: false, error: '演示号的底子开机自己铺，不用手铺' });
+    if (!bg) return json(res, 200, { ok: false, error: '后台副本没起来——稍后再试' });
+    const key = String((body && body.key) || '').trim();
+    if (!INDUSTRY_FOUNDATIONS[key]) return json(res, 200, { ok: false, error: '没有这套底子：' + (key || '（没选）') });
+    try {
+      const r = await seedFoundationToAccount(acc, key);
+      console.log(`[demo] 铺底子：「${acc.name}」← ${key}（卖点 ${r.sells} / 知识库 ${r.kb} / 排产 ${r.plan}）`);
+      return json(res, 200, { ok: true, accountId: acc.id, key, ...r });
+    } catch (e) {
+      return json(res, 200, { ok: false, error: e.message });
+    }
   }
   /* 档位表：不带 table＝读一眼；带 table＝改（只认已知档 × 已知格，改完全体跟着变，不用重打包） */
   if (path === '/api/admin/tier-table') {
@@ -3153,6 +3463,9 @@ createServer(async (req, res) => {
     /* 口播工单两页（2026-10-19）：/lip-read 客户一段段念（手机也开这个）；/lip-jobs 老板工单台 */
     if (p === '/lip-read' || p === '/lip-read/') p = '/lip-record.html';
     if (p === '/lip-jobs' || p === '/lip-jobs/') p = '/lip-admin.html';
+    /* 专属包：一账号一包，永远有。文件不在就现打（开档早就打了，这里兜住老账号和手滑删掉的） */
+    const seatM = /^\/download\/customers\/([A-Za-z0-9_-]{1,64})\.zip$/.exec(p);
+    if (seatM) await ensureSeatPackage(store.accounts && store.accounts[seatM[1]]);
     const fp = normalize(join(ROOT, p));
     if (!fp.startsWith(normalize(ROOT))) { res.writeHead(403); res.end('403'); return; }
     const st = await stat(fp);

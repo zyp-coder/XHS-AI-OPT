@@ -169,6 +169,11 @@ body.film-page { margin: 0; height: 100vh; overflow: hidden; background: var(--c
 #filmPane .vtab td.vname .vrec { margin-left: 5px; padding: 1px 6px; border-radius: var(--r-full);
   background: var(--c-brand-soft); color: var(--c-brand-ink); font-size: 10px; font-weight: 700; }
 #filmPane .vtab tr.vrow.on td.vname .vrec { background: var(--c-surface); }
+#filmPane .vtab td.vname .vsrc { margin-left: 5px; padding: 1px 6px; border-radius: var(--r-full);
+  font-size: 10px; font-weight: 700; vertical-align: 1px; }
+#filmPane .vtab td.vname .vsrc-db { background: var(--c-brand-soft2); color: var(--c-brand-ink); }
+#filmPane .vtab td.vname .vsrc-free { background: var(--c-bg-2); color: var(--c-ink-3); }
+#filmPane .vtab tr.vrow.on td.vname .vsrc { background: var(--c-surface); }
 #filmPane .vtab tr:last-child td { border-bottom: none; }
 
 #filmPane .scenes { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -222,6 +227,9 @@ body.film-page { margin: 0; height: 100vh; overflow: hidden; background: var(--c
 #filmPane .mixbar .row { margin-top: 4px; }
 #filmPane .mixbar .row:first-child { margin-top: 0; }
 #filmPane .mixbar button { padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }
+/* 一起出画面那颗是这一栏的主按钮：比旁边那些大一圈、实心，别让人一屏一屏去点 */
+#filmPane .mixbar button.primary { padding: 6px 14px; font-size: var(--fs-sm); font-weight: 700; }
+#filmPane .mixbar button.primary:hover:not(:disabled) { background: var(--c-brand-ink); border-color: var(--c-brand-ink); color: #fff; }
 #filmPane .matrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 #filmPane .matrow .tiny { flex: none; white-space: nowrap; }
 #filmPane .matrow button { flex: none; padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }
@@ -236,6 +244,8 @@ body.film-page { margin: 0; height: 100vh; overflow: hidden; background: var(--c
 #filmPane .mseg b { font: 600 10px/1.4 var(--font-num); color: var(--c-brand-ink); }
 #filmPane .mseg .loop { font: 600 10px/1.4 var(--font-num); color: var(--c-warn); }
 #filmPane .mseg .gen { font-style: normal; font: 600 10px/1.4 var(--font-num); color: var(--c-warn); }
+#filmPane .mseg .reuse { font-style: normal; font: 700 10px/1.4 var(--font-num); color: #8a4b00;
+  background: #ffe9a8; border-radius: 4px; padding: 0 3px; }
 #filmPane .matrow .miss, #filmPane .mixbar .miss { color: var(--c-danger, #b42318); font-weight: 700; }
 #filmPane .mixbar button.on { color: var(--c-danger, #b42318); border-color: currentColor; }
 #filmPane .mseg .x { border: none; background: none; padding: 0 2px; color: var(--c-ink-3);

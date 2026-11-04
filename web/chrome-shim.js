@@ -282,17 +282,28 @@
       log('素材已托管到服务器（' + list.length + ' 件）：' + id);
     } catch (e) { log('素材托管出错（不影响发，排期缺料会提示补齐）', e.message); }
   }
-  /* 这轮接进开关/并行的两家；视频号先不接（原来的发法照旧） */
-  const PUB_ROUND = ['xhs', 'douyin'];
+  /* 接进开关/并行的三家（视频号 2026-10-25 放开） */
+  const PUB_ROUND = ['xhs', 'douyin', 'channels'];
   function pubIsVideoForm(form) {
     const f = String(form || '');
     return f === '视频' || f === '案例成片' || f.indexOf('口播') >= 0 || f === '数字人';
   }
+  /* 抖音 / 视频号（2026-10-29）：只有「全平台版（699）」开——前三档这一边只排小红书 */
+  function pubMultiPlatOn() {
+    try {
+      if (typeof XhsEdition !== 'undefined' && typeof XhsEdition.has === 'function') return !!XhsEdition.has('multiPlatform');
+      if (typeof Edition !== 'undefined' && Edition.hasFeature) return !!Edition.hasFeature('multiPlatform');
+    } catch (_) {}
+    return true;
+  }
   function pubPlatsFor(form) {
+    let list;
     if (typeof Platforms !== 'undefined' && Platforms.pubChannelsFor) {
-      return Platforms.pubChannelsFor(pubIsVideoForm(form)).filter((p) => PUB_ROUND.indexOf(p) >= 0);
+      list = Platforms.pubChannelsFor(pubIsVideoForm(form)).filter((p) => PUB_ROUND.indexOf(p) >= 0);
+    } else {
+      list = PUB_ROUND.slice();
     }
-    return PUB_ROUND.slice();
+    return pubMultiPlatOn() ? list : list.filter((p) => p === 'xhs');
   }
   /** 这篇这次该发哪几家：每篇选好的（没过就按形式全发）∩ 本轮两家 ∩ 顶上总开关，再刨掉已经发成的家 */
   function pubSelFor(bag, id, form, key) {
@@ -307,6 +318,51 @@
     const sent = (bag.np_pub_sent && bag.np_pub_sent[id]) || {};
     const left = sel.filter((p) => !(sent[p] && sent[p].ok));
     return { sel: left, offAll: offAll, sentAll: sel.length > 0 && left.length === 0 };
+  }
+  /* 派单里的素材只带「服务器上的编号」（v7 · 2026-10-26）：
+     原来把整段视频转 b64 塞进工单——一条 36MB 的片变成 49MB 的派单，执行器那头直接卡死、
+     连「收到」都不回。现在素材照旧先托管到服务器，工单只带 blobId，执行器凭挂线凭据去取原件。
+     托管没存全时：小文件（≤8MB）退回老路 inline；大文件直接让人等十几秒再点（不硬塞）。 */
+  const ORDER_INLINE_MAX = 8 * 1024 * 1024;
+  function srvListMatches(list, packed) {
+    if (!Array.isArray(list) || list.length !== packed.length) return false;
+    return list.every((f, i) => {
+      const sz = Number(f && f.size) || 0;
+      const b = packed[i] && packed[i].blob;
+      return !!f && !!f.id && (!sz || !b || Number(b.size) === sz);
+    });
+  }
+  async function readSrvFiles(id) {
+    try {
+      const cur = (await srv.call('get', { keys: ['np_srv_files'] })).items || {};
+      const list = (cur.np_srv_files || {})[id];
+      return Array.isArray(list) ? list : [];
+    } catch (_) { return []; }
+  }
+  async function orderFilesFor(id, packed, prefix) {
+    /* 每件都带「本机存在哪个格子里」（localKey）：执行器一看这家电脑上网页那页就有，
+       直接从本机接过去，一个字节都不走网络；只有本机没有才回落到服务器取。 */
+    const pre = String(prefix || FILE_PREFIX);
+    const localKeyOf = (k) => pre + id + ':' + k;
+    let list = await readSrvFiles(id);
+    if (!srvListMatches(list, packed)) { await mirrorNoteFiles(id); list = await readSrvFiles(id); }
+    if (srvListMatches(list, packed)) {
+      return list.map((f, i) => ({
+        blobId: f.id,
+        localKey: localKeyOf(packed[i] && packed[i].i != null ? packed[i].i : i),
+        name: f.name || packed[i].blob.name || ('file' + i),
+        mime: f.mime || packed[i].blob.type || 'application/octet-stream',
+        size: Number(f.size) || packed[i].blob.size || 0,
+      }));
+    }
+    let total = 0;
+    for (const p of packed) total += (p.blob && p.blob.size) || 0;
+    if (total > ORDER_INLINE_MAX) return null;
+    const files = [];
+    for (const p of packed) {
+      try { files.push({ localKey: localKeyOf(p.i), name: p.blob.name || ('file' + p.i), mime: p.blob.type || 'application/octet-stream', b64: await blobToB64(p.blob) }); } catch (_) {}
+    }
+    return files;
   }
   async function orderNotePublish(data) {
     const id = String((data && data.id) || '').trim();
@@ -324,24 +380,42 @@
       ? Math.max(Number(meta.longN) || 0, Number(meta.longNeed) || 0, 1)
       : Math.max(Number(meta.n) || 0, Number(meta.need) || 0, 1)) : 0;
     if (!n) return { ok: false, error: '还缺料——点行里的「📁 交文件」把图/片交进来，再发' };
-    mirrorNoteFiles(id).catch(() => {});   // 补一次托管（交料那次没镜像上也兜住——fire-and-forget，不拦下单）
     let packed;
     try { packed = await idbStaged(id, n, isLong ? 'publong:' : FILE_PREFIX); } catch (_) { packed = []; }
     if (!packed.length) return { ok: false, error: '备料在浏览器里找不到了——重新交一次文件再发' };
-    const files = [];
-    for (const p of packed) {
-      try { files.push({ name: p.blob.name || ('file' + p.i), mime: p.blob.type || 'application/octet-stream', b64: await blobToB64(p.blob) }); } catch (_) {}
-    }
+    const files = await orderFilesFor(id, packed, isLong ? 'publong:' : FILE_PREFIX);   // 素材没托管上就现托管一次（不拿大文件硬塞工单）
+    if (!files) return { ok: false, error: '这条片太大了，素材还没托管到服务器——等十几秒再点一次发布' };
     if (!files.length) return { ok: false, error: '素材读不出来——重新交一次文件再发' };
     const explicit = String((data && data.platform) || '');   // 🔁 重试只补点名的这一家（不受总开关/已发账影响）
+    const want = Array.isArray(data && data.platforms) ? data.platforms.map((x) => String(x || '')).filter(Boolean) : [];   // 🚀 发布小窗勾中的家
     let sel;
     if (explicit) sel = [explicit];
+    else if (want.length) {
+      /* 只发勾中的家：这篇能发的 ∩ 顶上总开关开着 ∩ 还没发过 */
+      const can = pubPlatsFor(note.form);
+      const sw = (bag.np_pub_switch && typeof bag.np_pub_switch === 'object') ? bag.np_pub_switch : {};
+      const sent = (bag.np_pub_sent && bag.np_pub_sent[id]) || {};
+      const keep = want.filter((p) => can.indexOf(p) >= 0 && sw[p] !== false && !(sent[p] && sent[p].ok));
+      if (!keep.length) {
+        const banned = want.filter((p) => can.indexOf(p) < 0);
+        const done = want.filter((p) => sent[p] && sent[p].ok);
+        const off = want.filter((p) => sw[p] === false);
+        return { ok: false, error: (done.length === want.length)
+          ? '勾中的家都发过了——要重发某一家，去「📜 最近发过」点那一家的 🔁 重试'
+          : (off.length === want.length)
+            ? '勾中的家都被总开关点暗了——先在「🛠 工作台」顶上把要发的那家点亮'
+            : (banned.length === want.length)
+              ? '这篇发不了勾中的家——视频号只收视频；图文篇没有视频号'
+              : '勾中的家里没有能发的——先在顶上点亮，或去「📜 最近发过」补发已发过的家' };
+      }
+      sel = keep;
+    }
     else {
       const r = pubSelFor(bag, id, note.form, data && data.key);
       if (!r.sel.length) {
         return { ok: false, error: r.sentAll
           ? '这篇选中的家都发过了——要重发某一家，去「📜 最近发过」点那一家的 🔁 重试'
-          : '这篇选中的家都被总开关点暗了——先在发布队列顶上把要发的那家点亮' };
+          : '这篇选中的家都被总开关点暗了——先在「🛠 工作台」顶上把要发的那家点亮' };
       }
       sel = r.sel;
     }
@@ -354,7 +428,7 @@
     try {
       const r = await fetch('api/exec/order', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind: 'note_publish', params: { note: { id: id, form: note.form || '图文', title: note.title || '' }, platform: platforms[0].platform, platforms: platforms, files: files } }),
+        body: JSON.stringify({ kind: 'note_publish', params: { note: { id: id, form: note.form || '图文', title: note.title || '' }, platform: platforms[0].platform, platforms: platforms, files: files, manual: true } }),
       });
       j = await r.json();
     } catch (e) { return { ok: false, error: '下单没送到服务器：' + e.message }; }

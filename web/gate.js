@@ -138,6 +138,7 @@ window.XhsExecBar = (() => {
     { k: 'autoWater', t: '评论区获客', from: '升级 399' },
     { k: 'dailyBrowse', t: '日常浏览', from: '升级 399' },
     { k: 'prospectList', t: 'AI客服', from: '全功能 539' },
+    { k: 'multiPlatform', t: '抖音 / 视频号', from: '全平台 699' },
   ];
 
   const esc = (s) => String(s == null ? '' : s)
@@ -162,13 +163,19 @@ window.XhsExecBar = (() => {
     const ed = me.edition || {};
     return !!(me.tier && me.tier !== '免费') || !!(ed.label && ed.label !== '免费');
   };
-  /** 档位那一句给人看的写法：「基础 239」；试用中前面多两个字 */
+  /** 档位那一句给人看的写法：「基础 239」；试用中前面多两个字，带剩几天；付费号带本期剩几天 */
   function tierLabel(me) {
     const ed = (me && me.edition) || {};
     const nm = ed.label || me.tier || '';
     if (!nm) return '';
     const s = ed.price ? nm + ' ' + ed.price : nm + '版';
-    return (ed.onTrial ? '试用中 · ' : '') + s;
+    const trial = ed.onTrial
+      ? ('试用中' + (Number(ed.trialDays) > 0 ? ' · 剩 ' + Number(ed.trialDays) + ' 天' : '') + ' · ')
+      : '';
+    const plan = (!ed.onTrial && ed.paidUntil && !ed.planExpired && Number(ed.planDays) > 0)
+      ? ' · 剩 ' + Number(ed.planDays) + ' 天'
+      : '';
+    return trial + s + plan;
   }
   /** 装了才真干的那几件（这一档开着的格子；免费档「只到写稿」不算真发） */
   function openJobs(me) {
@@ -209,6 +216,48 @@ window.XhsExecBar = (() => {
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <a class="execbar-x" href="account.html" style="${BTN_BLUE}">开自己的号 →</a>
+          <button type="button" class="execbar-close" data-x="1" style="${X}" title="先关掉：记在你浏览器里，7 天后再浮一次">×</button>
+        </div></div>`;
+    }
+    if (me.edition && me.edition.planExpired) {
+      if (hidden(me)) return '';
+      const ed = me.edition;
+      const nm = ed.planTier || me.tier || '';
+      const price = Number(ed.planPrice) || 0;
+      return `<div class="execbar" style="${BAR}${TONE.warn}">
+        <div style="flex:1 1 320px;min-width:0;">
+          <b>本期到期了——现在落回免费档，写稿、出图、排计划照常用。</b><br>
+          要让发笔记真发出去、要用获客和线索，续上「${esc(nm)}」档${price ? '（' + price + '/月）' : ''}就恢复。
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <a class="execbar-x" href="guide.html#m4" style="${BTN_BLUE}">续费 / 找客服</a>
+          <button type="button" class="execbar-close" data-x="1" style="${X}" title="先关掉：记在你浏览器里，7 天后再浮一次">×</button>
+        </div></div>`;
+    }
+    if (me.edition && me.edition.trialExpired) {
+      if (hidden(me)) return '';
+      return `<div class="execbar" style="${BAR}${TONE.warn}">
+        <div style="flex:1 1 320px;min-width:0;">
+          <b>试用期到期了——现在落回免费档，写稿、出图、排计划照常用。</b><br>
+          要让发笔记真发出去、要用获客和线索，先开通档位（239 起）。
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <a class="execbar-x" href="guide.html#m4" style="${BTN_BLUE}">看档位 / 找客服开通</a>
+          <button type="button" class="execbar-close" data-x="1" style="${X}" title="先关掉：记在你浏览器里，7 天后再浮一次">×</button>
+        </div></div>`;
+    }
+    /* 付费号本月快到期（7 天内）提醒续费；刚挂上那一下先让绿条说话 */
+    const edNow = me.edition || {};
+    const planDays = Number(edNow.planDays) || 0;
+    if (edNow.paidUntil && !edNow.planExpired && planDays <= 7 && !(live && live.justPaired)) {
+      if (hidden(me)) return '';
+      return `<div class="execbar" style="${BAR}${TONE.warn}">
+        <div style="flex:1 1 320px;min-width:0;">
+          <b>「${esc(edNow.label || me.tier || '')}」本期还有 ${planDays} 天到期。</b><br>
+          到期没续会落回免费档——发笔记只到写稿、获客和线索停。续上就再顺延 30 天。
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <a class="execbar-x" href="guide.html#m4" style="${BTN_BLUE}">续费 / 找客服</a>
           <button type="button" class="execbar-close" data-x="1" style="${X}" title="先关掉：记在你浏览器里，7 天后再浮一次">×</button>
         </div></div>`;
     }

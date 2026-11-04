@@ -1,4 +1,4 @@
-/* B档·按需加载：🧭 诊断&配置：6 个节点（基础配置[产品名称+账号类型+抓主页+昵称/同城]→问卷→人设[含说话
+/* B档·按需加载：🧭 诊断&配置：6 个节点（基础配置[产品名称+账号类型+昵称/同城]→问卷→人设[含说话
    从 popup.js 拆出来，popup.html 末尾的加载器在你点开这一页时才下载。 */
 var DIAG_UNIFIED_QUESTIONS = DIAG_QUIZ.map(function (x) { return x.q; });
 // 把已存答案拆成「命中选项的」与「剩下的原文」——原样往返，用户自己在补充里打了分号也不会丢
@@ -56,11 +56,16 @@ async function renderDiagnosis(container) {
   container.innerHTML = [
     '<style>#diagBody .btn{min-height:34px;padding:7px 12px;font-size:12px;line-height:1.5;white-space:normal}#diagBody .btn-outline{background:#fff;color:var(--primary);border-color:#d8dee9}#diagBody .btn-outline:hover:not(:disabled){background:var(--primary-bg);border-color:var(--primary)}#diagBody button:disabled{opacity:.55;cursor:not-allowed}#diagBody input:not([type=checkbox]):not([type=file]),#diagBody textarea,#diagBody select{padding:8px 10px;border:1px solid #d8dee9;border-radius:8px;font-size:13px;line-height:1.6;background:#fff;color:#333}#diagBody textarea{resize:vertical}#diagBody input:focus-visible,#diagBody textarea:focus-visible,#diagBody button:focus-visible{outline:2px solid var(--primary);outline-offset:2px}#diagBody .diag-sync-line{font-size:12px;line-height:1.7;margin:6px 0;overflow-wrap:anywhere}#diagBody .dg-tabs{display:flex;gap:2px;border-bottom:1px solid var(--line,#eceef0)}#diagBody .dg-tab{border:0;background:none;padding:6px 12px;margin-bottom:-1px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;border-bottom:2px solid transparent}#diagBody .dg-tab:hover{color:#374151}#diagBody .dg-tab.active{color:var(--c-brand-text,var(--xhs-red));border-bottom-color:var(--c-brand,var(--xhs-red))}#diagBody .diag-kb-input-bad{border-color:#c62828 !important;background:#fff5f5 !important}#diagBody .diag-kb-input-bad:focus-visible{outline-color:#c62828}#diagBody .diag-kb-input-warn{border-color:#b45309 !important;background:#fff8e6 !important}#diagBody .diag-kb-input-warn:focus-visible{outline-color:#b45309}#diagBody .diag-kb-cnt{font-size:11px;color:#8a929e;margin:2px 2px 0;text-align:right}#diagBody .diag-kb-cnt.warn{color:#b45309}#diagBody .diag-kb-tip{font-size:11px;color:#8a929e;margin:2px 2px 6px;line-height:1.5}#diagBody .diag-kb-tip.warn{color:#b45309}</style>',
     '<div style="padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--c-surface),var(--c-brand-soft));">',
-    '  <div style="font-weight:700;font-size:15px;color:var(--ink);">账号规划 · 一份问卷同步账号资料<span class="qhelp" tabindex="0" data-tip="左栏是一条链：先在「基础配置」填产品名称、账号类型，抓一次主页；再去「问卷」答完提交一次，AI 就把人设、卖点、知识库、规划都生成并保存，这几页随时能查看与修改。顾客话术在「AI客服 → 任务配置」，内容基调 / 出图风格在写稿 ③ / ⑤ 就地展开，推广目标与评论区承接在「获客 → 任务配置」。">?</span></div>',
+    '  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">',
+    '    <span style="font-weight:700;font-size:15px;color:var(--ink);flex:1;min-width:160px;">账号规划 · 一份问卷同步账号资料<span class="qhelp" tabindex="0" data-tip="左栏是一条链：先在「基础配置」填产品名称、账号类型并保存；再去「问卷」答完提交一次，AI 就把人设、卖点、知识库都生成并保存，这几页随时能查看与修改。排产表在「发笔记 → 笔记规划」页。顾客话术在「AI客服 → 任务配置」，内容基调 / 出图风格在写稿 ③ / ⑤ 就地展开，推广目标与评论区承接在「获客 → 任务配置」。">?</span></span>',
+    '    <button type="button" id="diagGoNotePlan" class="btn btn-outline" style="margin:0;flex:none;" title="排产表、这周发什么、什么时候补下一批，都在「发笔记 → 笔记规划」">📒 去笔记规划</button>',
+    '  </div>',
     '</div>',
     '<div id="diagBody" style="padding:14px;font-size:13px;color:#333;">正在恢复账号诊断…</div>',
   ].join('');
   const body = container.querySelector('#diagBody');
+  const goPlan = container.querySelector('#diagGoNotePlan');
+  if (goPlan) goPlan.onclick = function () { if (typeof switchMainTab === 'function') switchMainTab('notePlan'); };
   try {
     if (!_diagState.busy) {
       const [cfg, stored] = await Promise.all([_diagGetCfg(), chrome.storage.local.get(['note_plan', 'deep_report'])]);
@@ -77,6 +82,7 @@ async function renderDiagnosis(container) {
         _diagState.loaded = true;
       }
       _diagState.diagnosis = diagnosis;
+      _diagState.baseSavedAt = _diagBaseSavedAtOf(cfg);
       _diagState.scriptStyle = cfg.scriptStyle || {};
       _diagState.persona = (cfg.persona && cfg.persona.text) || _diagState.persona;
       _diagState.notePlan = stored.note_plan || null;
@@ -89,18 +95,35 @@ async function renderDiagnosis(container) {
     body.querySelector('#diagLoadRetry').onclick = function () { renderDiagnosis(container); };
   }
 }
-/* 6 个节点的顺序与内部 id：按钮本体在 popup.html 的 #diagSubTabs 里（文案在那儿维护）。
-   界面上已不再显示 ①~⑨ 序号；说话风格并进了「人设」页的 tab，客服话术搬到「线索 → 任务配置」，内容基调搬到写稿 ③ */
-const DIAG_STEPS = [1, 2, 3, 4, 5, 6];
+/* 6 个节点的顺序与内部 id：按钮本体在 popup.html 的 #diagSubTabs 里（文案在那儿维护，顺序以那边为准）。
+   界面上已不再显示 ①~⑨ 序号；说话风格并进了「人设」页的 tab，客服话术搬到「线索 → 任务配置」，内容基调搬到写稿 ③
+   第 7 个「IP 角色」2026-10-30 从人设页的第三个横签拎出来单列：老板找不到，二级一眼看见才对；
+   原第 6 项「规划」同日撤掉（排产表搬到「发笔记 → 笔记规划」） */
+const DIAG_STEPS = [1, 2, 3, 7, 4, 5];
+/** 基础配置「保存过」的判据：新数据看 baseSavedAt；老数据没这个字段，填过任一格或以前抓过主页就算保存过 */
+function _diagBaseSavedAtOf(cfg) {
+  const c = cfg || {};
+  const at = Number(c.baseSavedAt || 0);
+  if (at) return at;
+  if (c.diagnosis && c.diagnosis.profile) return 1;
+  const p = c.product || {};
+  if ((Array.isArray(p.names) && p.names.length) || (p.name && p.name !== '我的产品')) return 1;
+  if ((c.myAccountNames || []).length) return 1;
+  if (c.myCity && (c.myCity.city || c.myCity.ipLocation)) return 1;
+  if (c.diagnosis && String(c.diagnosis.accountType || '').trim()) return 1;
+  return 0;
+}
 function _diagStepDone(t) {
   const results = (_diagState.diagnosis && _diagState.diagnosis.results) || {};
-  const result = results[{ 3: 'persona', 4: 'product', 5: 'knowledge', 6: 'plan' }[t]];
-  // 基础配置只要抓过主页就算完成；问卷提交过才算完成（还有没提交的改动就不打勾）；
-  // 人设/卖点/知识库按问卷同步的结果；规划含深度评估报告，报告没出就不打勾
-  if (t === 1) return !!_diagState.profile;
+  const result = results[{ 3: 'persona', 4: 'product', 5: 'knowledge' }[t]];
+  // 基础配置只要保存过就算完成；问卷提交过才算完成（还有没提交的改动就不打勾）；
+  // 人设/卖点/知识库按问卷同步的结果；IP 角色建过一个就打勾
+  // 规划这一项 2026-10-30 从本页撤掉（排产表搬到「发笔记 → 笔记规划」），完成圈不再跟着报告走
+  if (t === 1) return !!(_diagState.baseSavedAt || _diagState.profile);
   if (t === 2) return _diagQuizSubmitted() && !_diagState.quizDirty;
+  if (t === 7) return !!(typeof _npChars !== 'undefined' && _npChars && _npChars.list && _npChars.list.length);
   if (!result || result.status !== 'done' || _diagState.quizDirty) return false;
-  return t === 6 ? !!_diagState.report : true;
+  return true;
 }
 // 说话风格「设置过」的判据：识别过口吻（口吻档案/口癖词/样张，任一有值即算；字数栏有默认值，撑不起这个勾）
 function _diagStyleSet() {
@@ -125,7 +148,7 @@ function _diagPaintNav() {
   });
 }
 /* 节点号 → 画法：值即下面那几个 diagStep* 函数（函数声明会提升，写在这儿也能引用到） */
-const DIAG_VIEWS = { 1: diagStepBase, 2: diagStepQuiz, 3: diagStepPersona, 4: diagStepSell, 5: diagStepKb, 6: diagStepPlan };
+const DIAG_VIEWS = { 1: diagStepBase, 2: diagStepQuiz, 3: diagStepPersona, 4: diagStepSell, 5: diagStepKb, 7: diagStepIpChars };
 function diagGo(n, restoreView) {
   if (_diagState.busy && !restoreView) return;
   _diagStep = n;
@@ -138,7 +161,7 @@ function diagGo(n, restoreView) {
   if (typeof draw === 'function') draw(body);
 }
 
-/* ── 基础配置（产品名称 + 账号类型 + 昵称 + 同城 + 抓主页：账号与产品的基本盘）
+/* ── 基础配置（产品名称 + 账号类型 + 昵称 + 同城：账号与产品的基本盘）
       推广目标 & 评论区承接 2026-09-25 搬去「获客 → 任务配置 → 🎯 推广目标」（词池 / 盯人之后第三个 tab） ── */
 function diagStepBase(body) {
   if (!body) return;
@@ -146,7 +169,7 @@ function diagStepBase(body) {
     '#diagStepBody .diag-s1-msg{font-size:12px;color:#777;line-height:1.7;margin:6px 0;overflow-wrap:anywhere;white-space:pre-wrap}' +
     '#diagStepBody .diag-s1-sec{border-top:1px solid #eef1f6;margin-top:14px;padding-top:12px}' +
     '#diagStepBody .diag-s1-h{font-weight:700;font-size:13px;color:#333;margin-bottom:6px}' +
-    '#diagStepBody .diag-s1-sub{font-weight:400;color:#999;font-size:11px;margin-left:6px}' +
+    '#diagStepBody .diag-s1-sub{display:block;font-weight:400;color:#999;font-size:11px;margin-top:2px;line-height:1.5}' +
     '#diagStepBody .diag-s1-tip{font-size:11px;color:#999;margin-top:4px;line-height:1.6}' +
     '#diagStepBody .diag-s1-lab{font-size:12px;color:#333;margin:8px 0 4px}' +
     '#diagStepBody .diag-acct-chip{font-size:12px;padding:5px 10px;border:1px solid #dfe3ea;border-radius:14px;background:#f6f7f9;color:#555;cursor:pointer}' +
@@ -156,11 +179,11 @@ function diagStepBase(body) {
         '<button type="button" id="diagS1Save" class="btn btn-primary" style="margin:0;">💾 保存基础配置</button>') +
       '<div id="diagS1Msg" role="status" class="diag-s1-msg"></div>' +
       // 产品名称 & 小红书昵称并排（2026-09-25 三十一改）：都是「你是谁」这一格里的基本盘，一行两个省半屏
-      '<div class="diag-s1-sec" style="border-top:0;margin-top:6px;padding-top:0;"><div style="display:flex;gap:10px;flex-wrap:wrap;">' +
-      '<div style="flex:1 1 220px;min-width:0;"><div class="diag-s1-h">产品名称<span class="diag-s1-sub">每行一个：第一行＝主名，后面＝别名·留空＝「我的产品」</span></div>' +
-      '<textarea id="diagProdName" rows="2" placeholder="例：贷款计算器小程序／别名再占一行"></textarea></div>' +
-      '<div style="flex:1 1 220px;min-width:0;"><div class="diag-s1-h">我的小红书昵称<span class="diag-s1-sub">认「这条是不是我评过」</span></div>' +
-      '<textarea id="diagAccountNames" rows="2" placeholder="每行一个，可填多个（含曾用昵称）"></textarea></div>' +
+      '<div class="diag-s1-sec" style="border-top:0;margin-top:6px;padding-top:0;"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;">' +
+      '<div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;"><div class="diag-s1-h">产品名称<span class="diag-s1-sub">每行一个：第一行＝主名，后面＝别名·留空＝「我的产品」</span></div>' +
+      '<textarea id="diagProdName" rows="3" placeholder="例：贷款计算器小程序／别名再占一行" style="width:100%;box-sizing:border-box;flex:1;min-height:74px;"></textarea></div>' +
+      '<div style="flex:1 1 240px;min-width:0;display:flex;flex-direction:column;"><div class="diag-s1-h">我的小红书昵称<span class="diag-s1-sub">认「这条是不是我评过」</span></div>' +
+      '<textarea id="diagAccountNames" rows="3" placeholder="每行一个，可填多个（含曾用昵称）" style="width:100%;box-sizing:border-box;flex:1;min-height:74px;"></textarea></div>' +
       '</div></div>' +
       '<div class="diag-s1-sec"><div class="diag-s1-h">账号类型 <span class="qhelp" tabindex="0" data-tip="规划与评估按它写；不选＝AI 判断">?</span></div>' +
       '<div id="diagAcctChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' +
@@ -168,7 +191,7 @@ function diagStepBase(body) {
         return '<button type="button" class="diag-acct-chip" data-v="' + _dEsc(ty) + '">' + _dEsc(ty) + '</button>';
       }).join('') + '</div>' +
       '<input id="diagAcctCustom" type="text" placeholder="其他类型可自填，留空由 AI 判断" style="width:100%;box-sizing:border-box;"></div>' +
-      '<div class="diag-s1-sec"><div class="diag-s1-h">同城挡位 &amp; 城市 <span class="qhelp" tabindex="0" data-tip="对截流决策的影响：这一挡决定「读到同城的真人评论时，回不回、往不往前排」。同城就回＝不挑商机，同城一律回（含看不出需求的）；同城优先＝同城往前排，话术尽量走同城案例角度，不强制回；关闭＝属地不参与判断，不单独对同城评论。城市是比对基准：抓主页会自动读下来，也可以手填；留空＝不做同城判断。">?</span></div>' +
+      '<div class="diag-s1-sec"><div class="diag-s1-h">同城挡位 &amp; 城市 <span class="qhelp" tabindex="0" data-tip="对截流决策的影响：这一挡决定「读到同城的真人评论时，回不回、往不往前排」。同城就回＝不挑商机，同城一律回（含看不出需求的）；同城优先＝同城往前排，话术尽量走同城案例角度，不强制回；关闭＝属地不参与判断，不单独对同城评论。城市是比对基准：手填城市或省份；留空＝不做同城判断。">?</span></div>' +
       '<select id="diagSameCity" style="width:100%;box-sizing:border-box;">' +
       '<option value="force">同城就回</option>' +
       '<option value="priority">同城优先</option>' +
@@ -178,10 +201,8 @@ function diagStepBase(body) {
       '<div style="display:flex;gap:6px;align-items:center;">' +
       '<input id="diagCityInp" style="flex:1;box-sizing:border-box;" placeholder="城市或省份，如：深圳"></div>' +
       '<div id="diagCityHint" class="diag-s1-tip"></div></div>' +
-      '<div class="diag-s1-sec"><div class="diag-s1-h">抓主页 <span class="qhelp" tabindex="0" data-tip="会把昵称、简介、发过的笔记标题和同城城市一起读下来；需已在小红书网页版登录">?</span></div>' +
-      '<div id="diagS1Profile"></div></div>'
+      ''
     );
-  diagRenderProfile(document.getElementById('diagS1Profile'));
   const chips = document.getElementById('diagAcctChips');
   if (chips) chips.querySelectorAll('.diag-acct-chip').forEach(function (b) {
     b.onclick = function () {
@@ -248,9 +269,9 @@ async function diagCityPaint() {
   inp.dataset.init = shown;   // 保存时拿它判「用户动过没」：没动过就保留抓主页记下的 source
   const hint = document.getElementById('diagCityHint'); if (!hint) return;
   const src = mc.source === 'manual' ? '你手填的' : (mc.updatedAt ? '从主页读到的' : '');
-  hint.textContent = (src ? '当前：' + (mc.city || '-') + '（' + src + '）' : '还没记录城市——可手填，或点下方「抓取我的主页」读一次') +
+  hint.textContent = (src ? '当前：' + (mc.city || '-') + '（' + src + '）' : '还没记录城市——手填一个，留空＝不做同城判断') +
     (mc.ipLocation ? ' · 主页 IP 属地：' + mc.ipLocation : '') +
-    (!inp.value ? ' · 留空＝不做同城判断' : '');
+    (!inp.value ? '' : ' · 留空＝不做同城判断');
 }
 /* 一次保存整页：产品名称 + 账号类型 + 昵称 + 同城挡位与城市（推广目标/承接在 获客 → 任务配置） */
 async function diagBaseSave() {
@@ -278,6 +299,7 @@ async function diagBaseSave() {
         cityNote = val ? ('同城城市记为你手填的「' + val + '」') : '同城城市已清空（不再做同城判断）';
       }
     }
+    cfg.baseSavedAt = Date.now();
     const type = ((document.getElementById('diagAcctCustom') || {}).value || '').trim();
     cfg.diagnosis = cfg.diagnosis || {};
     const oldType = String(cfg.diagnosis.accountType || '');
@@ -289,6 +311,7 @@ async function diagBaseSave() {
     }
     await _diagSaveCfg(cfg);
     _diagState.accountType = type;
+    _diagState.baseSavedAt = cfg.baseSavedAt;
     _diagState.diagnosis = cfg.diagnosis;   // 类型换了会清掉规划标记，导航圈要立刻跟上
     _diagMsg('diagS1Msg', '✅ 已保存：基础配置已写回账号资料。'
       + (cityNote ? cityNote + '。' : '') + (planDropped ? '账号类型变了，规划要重新生成。' : ''));
@@ -300,72 +323,6 @@ async function diagBaseSave() {
     _diagPaintNav();   // busy 清掉之后再画，否则左栏 tab 会一直卡在禁用态
   }
 }
-async function diagFetchProfile() {
-  const msg = document.getElementById('diagFetchMsg'); const btn = document.getElementById('diagFetchBtn');
-  if (!btn || _diagState.busy) return;
-  _diagState.busy = 'fetch'; btn.disabled = true; btn.textContent = '正在抓取本人主页…'; if (msg) msg.textContent = '正在打开/读取，请稍候…';
-  try {
-    const r = await _diagSay('extractOwnProfile');
-    if (!r || !r.ok || !r.profile) throw new Error((r && (r.reason || r.error)) || '抓取失败');
-    	_diagState.profile = r.profile;
-    // ★ 同城城市：把主页读到的城市/IP 属地记进配置（供评论助手做「同城」判定）；
-    //   手填过的以手填为准，抓取不覆盖；主页上读不到就不动已有值
-    try {
-      const mc = await _diagGetMyCity();
-      const city = String(r.profile.city || '').trim();
-      const ip = String(r.profile.ipLocation || '').trim();
-      if ((city || ip) && mc.source !== 'manual') {
-        const cfg = await _diagGetCfg();
-        cfg.myCity = { city: city || ip, ipLocation: ip, source: 'auto', updatedAt: Date.now() };
-        await _diagSaveCfg(cfg);
-        addLog('📍 同城城市已记录：' + (city || ip) + (ip ? ('（主页 IP 属地：' + ip + '）') : ''), 'info');
-      } else if (!city && !ip) {
-        addLog('📍 主页上没读到城市/属地，可在本页手填（评论助手「同城」判定用）', 'warn');
-      }
-    } catch (_) {}
-
-    // ★ 防重复灌水：默认用抓到的号主个人身份（昵称优先，其次小红书号）兜底
-    try {
-      const cfg = await _diagGetCfg();
-      const names = (cfg.myAccountNames && cfg.myAccountNames.length) ? cfg.myAccountNames : [];
-      const acc = (r.profile.name || '').trim() || (r.profile.xhsId || '').trim();
-      if (acc && !names.some(function (n) { return !n || n === acc; })) {
-        if (names.length) names.push(acc); else names.push(acc);
-        cfg.myAccountNames = names;
-        await _diagSaveCfg(cfg);
-      }
-    } catch (_) {}
-    // 抓完只重画主页区：基础配置的状态变了，_diagPaintNav 会跟着改完成圈；城市那行也顺手刷一次
-    const ps = document.getElementById('diagS1Profile'); if (ps) diagRenderProfile(ps);
-    await diagCityPaint();
-  } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ 抓取失败：' + (e.message || e); } }
-  finally {
-    _diagState.busy = ''; btn.disabled = false; btn.textContent = '抓取我的主页';
-    _diagPaintNav();   // 抓到主页这一页就算完成
-  }
-}
-function diagRenderProfile(section) {
-  if (!section) return;
-  if (!_diagState.profile) {
-    section.innerHTML = _dBtn('diagFetchBtn', '抓取我的主页', '(需已登录小红书)') + '<span id="diagFetchMsg" style="font-size:12px;color:#0a7b5a;"></span>';
-    document.getElementById('diagFetchBtn')?.addEventListener('click', diagFetchProfile);
-    return;
-  }
-  const p = _diagState.profile || {};
-  const notes = (p.notes || []).map(function (n, i) { return (i + 1) + '. ' + (n.title || '（未命名）'); }).join('\n');
-  const stat = function (v, l) { return '<div style="text-align:center;flex:1;"><div style="font-weight:700;font-size:15px;">' + _dEsc(v || '-') + '</div><div style="font-size:11px;color:#999;">' + l + '</div></div>'; };
-  section.innerHTML = _diagCard(
-    '<div style="display:flex;gap:12px;align-items:center;">' +
-    '<div style="width:52px;height:52px;border-radius:50%;background:#f0f0f0;display:flex;align-items:center;justify-content:center;font-size:24px;flex:none;">👤</div>' +
-    '<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:15px;">' + _dEsc(p.name || '未命名') + '</div>' +
-    '<div style="font-size:11px;color:#999;">小红书号：' + _dEsc(p.xhsId || '-') + '</div>' +
-    '<div style="font-size:12px;color:#666;margin-top:2px;white-space:pre-wrap;word-break:break-word;">' + _dEsc(p.desc || '（暂无简介）') + '</div></div></div>' +
-    '<div style="display:flex;margin:10px 0 4px;">' + stat(p.fans, '粉丝') + stat(p.follows, '关注') + stat(p.likes, '获赞') + '</div>'
-  ) + '<div style="margin-top:12px;border:1px solid #eee;border-radius:8px;padding:10px;background:#fafbfc;"><b style="font-size:13px;">发过的笔记 (' + (p.notes || []).length + ')</b><div style="white-space:pre-wrap;font-size:12px;color:#555;margin-top:4px;">' + _dEsc(notes || '（未读到）') + '</div></div>' +
-'<div style="margin-top:14px;">' + _dBtn('diagRefetchBtn', '重新抓取', '', 'btn-outline') + '<span id="diagFetchMsg" style="font-size:12px;color:#0a7b5a;"></span></div>';
-  document.getElementById('diagRefetchBtn')?.addEventListener('click', function () { _diagState.profile = null; diagGo(1); });
-}
-
 /* ── 说话风格（答 3 个问题 → AI 认出你的口吻；AI 写评论、私信时按这个走，少点 AI 味） ── */
 const TONE_QUESTIONS = [
   { q: '随便写几句你平时会发的话', hint: '想到啥写啥，就当刷到一条同行的笔记、顺手回了一句的那种' },
@@ -545,7 +502,7 @@ function _diagRefreshQuizStatus() {
   document.querySelectorAll('.diagQuiz_chip').forEach(function (el) { el.disabled = busy; el.style.opacity = busy ? '.5' : ''; el.style.pointerEvents = busy ? 'none' : ''; });
   _diagPaintNav();
 }
-/* ── 问卷（唯一生成口；不依赖抓主页，随时可填） ── */
+/* ── 问卷（唯一生成口；随时可填） ── */
 function diagStepQuiz(body) {
   if (!body) return;
   body.innerHTML = _diagCard(
@@ -629,11 +586,11 @@ async function diagQuizSync() {
     if (r && r.plan) _diagState.notePlan = r.plan;
     if (!r || !r.ok) throw new Error((r && r.error) || '同步未完成');
     if (r.complete) {
-      _diagState.syncMessage = '问卷已保存，人设、产品卖点、知识库、内容规划都已同步。去左侧栏逐项看一眼即可。';
+      _diagState.syncMessage = '问卷已保存，人设、产品卖点、知识库、排产表都已生成。人设 / 卖点 / 知识库在本页逐项看，排产表在「发笔记 → 笔记规划」。';
       // 答完诊断顺手配素材（两签改版 2026-10-15）：判这 18 类该不该有料 → 集合归类 → 用/停用；不拦在这儿等它，配完弹一条
       npAsConfigKinds(null, {}).catch(function () {});
     } else {
-      const failed = [['persona', '人设'], ['product', '产品卖点'], ['knowledge', '知识库'], ['plan', '内容规划']].filter(function (it) {
+      const failed = [['persona', '人设'], ['product', '产品卖点'], ['knowledge', '知识库'], ['plan', '排产表']].filter(function (it) {
         const res = r.diagnosis && r.diagnosis.results && r.diagnosis.results[it[0]];
         return !res || res.status !== 'done';
       }).map(function (it) {
@@ -736,6 +693,492 @@ async function diagPersonaEditSave() {
   } catch (e) { if (msg) { msg.style.color = '#c62828'; msg.textContent = '❌ ' + (e.message || e); } }
   finally { btn.disabled = false; }
 }
+/* ── 🎭 IP 角色（2026-10-30）
+      一个账号可以建多个角色卡：写稿 ⑤ 出图的每一张、视频分镜都按同一个人的脸 / 发型 / 衣服 / 标志物来写，
+      一篇文章在 ⑤ 里能换人。定妆图不限次数、不扣出图额度（老板 2026-10-30 定），只算全站当日总量。
+      数据真源＝config.ipChars（popup.js 里 npCharsLoad / npCharsSave 管读写，这里只管画）。 ── */
+let _ipcEditId = '';    // 弹窗里在编的角色 id（''＝新建）
+let _ipcBusy = '';      // 正在出图 / 传图的角色 id
+let _ipcPasteId = '';   // 点过照片的卡：复制图片后按 Ctrl+V 就换到这张上
+function _ipcSay(text, color) {
+  const m = document.getElementById('ipcMsg');
+  if (!m) return;
+  m.style.color = color || '#0a7b5a';
+  m.textContent = text || '';
+}
+function diagStepIpChars(body) {
+  if (!body) return;
+  // 演示号只读：建角色的两颗钮干脆不摆（摆了也点不动，还留个清不掉的假待办）
+  const demo = !!window.__xhsDemoAccount;
+  body.innerHTML = _diagCard(
+    _diagStepTitle('IP 角色 · 照片和视频里反复出现的这个人',
+      demo ? '' :
+      '<button type="button" class="btn btn-outline" id="ipcNew">➕ 自己填一个</button>' +
+      '<button type="button" class="btn btn-primary" id="ipcAi">🎲 AI 帮我编一个</button>') +
+    '<div style="font-size:12px;color:#6b7280;line-height:1.7;margin:2px 0 8px;">' +
+      (demo
+        ? '演示号里不能建角色。开自己的号后：建一张角色卡、出一张正面定妆照，写稿 ⑤ 出图和视频分镜就都按这同一个人的脸、发型、衣服和标志物去写。'
+        : '建一张角色卡、说清这个人长什么样，写稿 ⑤ 出图的每一张和视频分镜就都按同一个人的脸、发型、衣服和标志物去写；一篇文章可以在 ⑤ 里换人。' +
+          '一个角色一张定妆照就够，不扣出图额度；风格不满意随时换，换了再点一下重出。') + '</div>' +
+    '<div id="ipcMsg" role="status" style="font-size:12px;color:#0a7b5a;margin:6px 0;"></div>' +
+    '<div id="ipcList"></div>'
+  );
+  document.getElementById('ipcNew')?.addEventListener('click', function () { _ipcOpenEdit(null); });
+  document.getElementById('ipcAi')?.addEventListener('click', _ipcAiBuild);
+  document.getElementById('ipcList')?.addEventListener('click', _ipcListClick);
+  document.getElementById('ipcList')?.addEventListener('change', _ipcStyleChange);
+  if (!window.__ipcPasteBound) {
+    window.__ipcPasteBound = true;
+    document.addEventListener('paste', _ipcOnPaste);
+  }
+  _ipcPaint();
+}
+async function _ipcPaint() {
+  const box = document.getElementById('ipcList'); if (!box) return;
+  const st = await npCharsLoad(true);
+  _diagPaintNav();   // 建过角色就把左栏这一项的完成圈点亮（这一步的判据就是 _npChars）
+  if (!st.list.length) {
+    box.innerHTML = '<div style="padding:18px 12px;text-align:center;color:#8a929e;font-size:12px;border:1px dashed #d8dee9;border-radius:10px;">' +
+      (window.__xhsDemoAccount
+        ? '演示号里还没有角色——开自己的号后，点「🎲 AI 帮我编一个」就能建，出一张定妆照就够用。'
+        : '还没有角色。点右上「🎲 AI 帮我编一个」，它会照你的人设和行业编一个，改改就能用——也可以「➕ 自己填一个」。') +
+      '</div>';
+    return;
+  }
+  box.innerHTML = st.list.map(function (c) { return _ipcCardHtml(c, st); }).join('');
+}
+function _ipcCardHtml(c, st) {
+  const main = c.id === st.mainId;
+  const fullText = _ipcCharText(c).trim();
+  const line = (fullText.length > 160 ? fullText.slice(0, 160) + '…' : fullText) ||
+    '（外形还没写全，点「✏️ 改」补一句：多大年纪、发型、体型、平时穿什么）';
+  // 老号可能还留着侧面 / 全身那两张：卡上只认正面这张，没有就取最后一张
+  const p = (c.portraits || []).filter(function (x) { return x.angle === 'front'; }).slice(-1)[0] || (c.portraits || []).slice(-1)[0];
+  const busy = _ipcBusy === c.id;
+  const demo = !!window.__xhsDemoAccount;
+  const attr = ' data-ipc-shot="' + _dEsc(c.id) + '"' + (_ipcBusy ? ' disabled' : '');
+  const sel = _ipcPasteId === c.id;
+  // 图就是换图入口：点一下选中这张卡，复制了图片按 Ctrl+V 就换上（http 页面读不了剪贴板，只能靠粘贴事件）
+  const shot = '<div style="width:132px;flex:none;">' +
+      '<div class="ipc-shot" data-ipc-pick="' + _dEsc(c.id) + '" title="点一下选中这张卡，复制图片后按 Ctrl+V 就换上"' +
+      ' style="position:relative;border:1px solid ' + (sel ? '#c2410c' : '#e5e8ee') + ';box-shadow:' + (sel ? '0 0 0 2px #fff1e8' : 'none') +
+      ';border-radius:9px;overflow:hidden;background:#f4f6f9;width:132px;cursor:' + (demo ? 'default' : 'pointer') + ';">' +
+      (p
+        ? '<img src="' + _dEsc(p.thumb || p.url || '') + '" alt="定妆照" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block;">' +
+          '<span style="position:absolute;left:5px;bottom:5px;background:rgba(0,0,0,.55);color:#fff;font-size:10px;border-radius:4px;padding:1px 5px;">定妆照</span>'
+        : '<div style="width:100%;aspect-ratio:3/4;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:#fafbfd;padding:6px;box-sizing:border-box;">' +
+            '<span style="font-size:11px;color:#8a929e;text-align:center;line-height:1.5;">还没定妆照<br>' + (demo ? '' : '点这里选中后<br>复制图片按 Ctrl+V') + '</span></div>') +
+      '</div>' +
+      (demo ? '' : '<div style="margin-top:6px;"><button type="button" class="btn btn-sm" data-ipc-upload="' + _dEsc(c.id) + '"' + (_ipcBusy ? ' disabled' : '') +
+        ' style="width:100%;padding:3px 6px;min-height:0;font-size:11px;">⬆ 换成自己的照片</button></div>') +
+    '</div>';
+  const hammers = (c.hammers || []).length
+    ? '<div style="margin:2px 0 0;">' + c.hammers.map(function (h) {
+        return '<span style="display:inline-block;background:#fff4ed;color:#b45309;border-radius:999px;padding:1px 8px;margin:0 4px 4px 0;font-size:11px;">' + _dEsc(h) + '</span>';
+      }).join('') + '</div>'
+    : '';
+  // 风格 + 出图都摆在图外面：从上面那段文字描述出图，风格改完再出
+  const styleRow = demo ? '' :
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;">' +
+      '<select id="ipcStyle_' + _dEsc(c.id) + '" data-ipc-style="' + _dEsc(c.id) + '"' + (_ipcBusy ? ' disabled' : '') +
+        ' style="padding:3px 6px;font-size:12px;border:1px solid #d8dee9;border-radius:7px;background:#fff;color:#374151;">' +
+        NP_CHAR_STYLES.map(function (s) {
+          return '<option value="' + s.k + '"' + (s.k === c.style ? ' selected' : '') + '>' + s.t + '</option>';
+        }).join('') + '</select>' +
+      '<button type="button" class="btn btn-sm btn-primary"' + attr + ' style="padding:3px 10px;min-height:0;font-size:12px;">' +
+        (busy ? '⏳ 出图中' : (p ? '✨ 换个样子' : '✨ 出定妆照')) + '</button>' +
+    '</div>';
+  return '<div style="border:1px solid #e7eaf0;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff;">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<b style="font-size:14px;">' + _dEsc(c.name || c.role || (c.desc ? String(c.desc).trim().slice(0, 10) : '未命名')) + '</b>' +
+      (main ? '<span style="font-size:10px;background:#fff1e8;color:#c2410c;border-radius:999px;padding:1px 8px;">主角</span>' : '') +
+      '<span style="font-size:11px;color:#8a929e;">' + _dEsc(c.role || '') + '</span>' +
+      '<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">' +
+        (main ? '' : '<button type="button" class="btn btn-sm" data-ipc-main="' + _dEsc(c.id) + '">设为主角</button>') +
+        '<button type="button" class="btn btn-sm" data-ipc-edit="' + _dEsc(c.id) + '">✏️ 改</button>' +
+        '<button type="button" class="btn btn-sm" data-ipc-del="' + _dEsc(c.id) + '">🗑</button>' +
+      '</span>' +
+    '</div>' +
+    '<div style="display:flex;gap:12px;align-items:flex-start;margin-top:8px;">' +
+      shot +
+      '<div style="flex:1;min-width:0;">' +
+        '<div style="font-size:12px;color:#4b5563;line-height:1.7;">' + _dEsc(line) + '</div>' +
+        hammers +
+        styleRow +
+      '</div>' +
+    '</div>' +
+    '</div>';
+}
+async function _ipcListClick(e) {
+  // 图就是换图入口：点一下先把这张卡选中，再按 Ctrl+V 粘图（http 页面读不了剪贴板，只能靠粘贴事件）
+  const pick = e.target.closest('[data-ipc-pick]');
+  if (pick) return _ipcPastePick(pick.getAttribute('data-ipc-pick'));
+  const t = e.target.closest('button'); if (!t) return;
+  const shot = t.getAttribute('data-ipc-shot');
+  if (shot) return _ipcShot(shot);
+  const upId = t.getAttribute('data-ipc-upload');
+  if (upId) return _ipcPickFile(upId);
+  const editId = t.getAttribute('data-ipc-edit');
+  if (editId) { const st = await npCharsLoad(true); return _ipcOpenEdit(st.list.find(function (x) { return x.id === editId; }) || null); }
+  const mainId = t.getAttribute('data-ipc-main');
+  if (mainId) {
+    const st = await npCharsLoad(true);
+    await npCharsSave({ mainId: mainId, list: st.list });
+    _ipcSay('✅ 已设为主角——新写的稿默认就按这个人。', '#0a7b5a');
+    return _ipcPaint();
+  }
+  const delId = t.getAttribute('data-ipc-del');
+  if (delId) {
+    const st = await npCharsLoad(true);
+    const c = st.list.find(function (x) { return x.id === delId; });
+    if (!c) return;
+    if (!confirm('删掉角色「' + (c.name || c.role || '未命名') + '」？定妆图也一起删，已经写好的稿不受影响。')) return;
+    const list = st.list.filter(function (x) { return x.id !== delId; });
+    await npCharsSave({ mainId: st.mainId === delId ? (list[0] ? list[0].id : '') : st.mainId, list: list });
+    _ipcSay('已删掉这个角色。', '#6b7280');
+    return _ipcPaint();
+  }
+}
+/* 点了照片 → 选中这张卡，等 Ctrl+V */
+function _ipcPastePick(id) {
+  if (window.__xhsDemoAccount) return;
+  _ipcPasteId = String(id || '');
+  const c = (typeof npCharById === 'function') ? npCharById(_ipcPasteId) : null;
+  _ipcSay('已选中「' + ((c && (c.name || c.role)) || '这张卡') + '」——复制一张图片后按 Ctrl+V 就换上；要用电脑里的文件，点下面「⬆ 换成自己的照片」。', '#b45309');
+  _ipcPaint();
+}
+/* 页面上的粘贴：只在这一页、只有图片才接；落在输入框里不抢 */
+async function _ipcOnPaste(e) {
+  const box = document.getElementById('ipcList');
+  if (!box || !box.offsetParent) return;
+  if (window.__xhsDemoAccount) return;
+  const tg = e.target;
+  if (tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(String(tg.tagName || '')) || tg.isContentEditable)) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  let file = null;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].kind === 'file' && /^image\//.test(String(items[i].type || ''))) { file = items[i].getAsFile(); if (file) break; }
+  }
+  if (!file) return;
+  e.preventDefault();
+  const st = await npCharsLoad();
+  let id = _ipcPasteId;
+  if (!id && st.list.length === 1) id = st.list[0].id;
+  if (!id || !st.list.some(function (x) { return x.id === id; })) {
+    _ipcSay('先点一下要换图的那张照片，再按 Ctrl+V。', '#c62828');
+    return;
+  }
+  _ipcUploadDo(id, file);
+}
+/* 下拉里换风格：先落库，出图时按新风格拼提示词 */
+async function _ipcStyleChange(e) {
+  const el = e.target;
+  const id = el && el.getAttribute ? String(el.getAttribute('data-ipc-style') || '') : '';
+  if (!id) return;
+  const st = await npCharsLoad(true);
+  const next = { mainId: st.mainId, list: st.list.map(function (x) { return Object.assign({}, x); }) };
+  const c = next.list.find(function (x) { return x.id === id; });
+  if (!c) return;
+  c.style = npCharStyle(c.kind, el.value);
+  await npCharsSave(next);
+  const s = NP_CHAR_STYLES.find(function (x) { return x.k === c.style; });
+  _ipcSay('风格换成「' + (s ? s.t : c.style) + '」了——点右边那颗按钮就按这个风格出。', '#0a7b5a');
+}
+/* 出一张定妆照：按卡上那段描述、按刚选的风格出。旧定妆照只有当它已经是画的（styleV≥2）才带来当参考——旧真人图当参考容易又画成照片。就一张，重出＝换掉这张 */
+async function _ipcShot(charId) {
+  if (_ipcBusy) return;
+  const st = await npCharsLoad(true);
+  const c = st.list.find(function (x) { return x.id === charId; });
+  if (!c) return;
+  const live = document.getElementById('ipcStyle_' + charId);
+  const use = Object.assign({}, c, { style: live ? npCharStyle(c.kind, live.value) : c.style });
+  _ipcBusy = charId;
+  _ipcSay('正在出定妆照——一张要几十秒，别关页面…', '#b45309');
+  _ipcPaint();
+  try {
+    const r = await _diagSay('genCharImage', {
+      charId: c.id,
+      prompt: npCharPortraitPrompt(use, 'front'),
+      size: '竖版 3:4',
+      refs: Number(c.styleV || 0) >= 2 ? npCharRefIds(c) : [],
+    });
+    if (!r || r.ok === false || !r.url) throw new Error((r && r.error) || '没出成');
+    const thumb = await _ipcThumb(r.url);
+    const cur = await npCharsLoad(true);
+    const next = { mainId: cur.mainId, list: cur.list.map(function (x) { return Object.assign({}, x); }) };
+    const cc = next.list.find(function (x) { return x.id === charId; });
+    if (!cc) throw new Error('角色不见了（可能刚被删）');
+    cc.style = use.style; cc.kind = '卡通'; cc.styleV = 2;
+    cc.portraits = [{ id: String(r.blobId || ''), url: String(r.url || ''), thumb: thumb || '', angle: 'front', at: Date.now() }];
+    await npCharsSave(next);
+    _ipcSay('✅ 定妆照出好了——这张会当后面配图的参考。', '#0a7b5a');
+  } catch (e) {
+    _ipcSay('❌ ' + ((e && e.message) || e), '#c62828');
+  } finally {
+    _ipcBusy = '';
+    _ipcPaint();
+  }
+}
+/* 上传自己的照片当定妆照：手上已经有像的照片就不用让 AI 画 */
+function _ipcPickFile(charId) {
+  if (_ipcBusy) return;
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*';
+  inp.style.display = 'none';
+  inp.addEventListener('change', function () {
+    const f = inp.files && inp.files[0];
+    inp.remove();
+    if (f) _ipcUploadDo(charId, f);
+  });
+  document.body.appendChild(inp);
+  inp.click();
+}
+/* 长边压到 1400 转 JPEG：手机原图动辄七八兆，服务器只把 ≤8MB 的图当参考图，压完一般几百 K */
+async function _ipcShrink(file) {
+  let bm;
+  try { bm = await createImageBitmap(file); }
+  catch (_) { throw new Error('这张图浏览器打不开（多半是 iPhone 的 HEIC 格式），换一张 JPG / PNG 的'); }
+  const max = 1400;
+  const sc = Math.min(1, max / Math.max(bm.width, bm.height));
+  const w = Math.max(1, Math.round(bm.width * sc)), h = Math.max(1, Math.round(bm.height * sc));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(bm, 0, 0, w, h);
+  try { bm.close(); } catch (_) {}
+  return await new Promise(function (res, rej) {
+    cv.toBlob(function (b) { b ? res(b) : rej(new Error('这张图处理不了，换一张试试')); }, 'image/jpeg', 0.9);
+  });
+}
+async function _ipcUploadDo(charId, file) {
+  if (_ipcBusy) return;
+  const st = await npCharsLoad(true);
+  const c = st.list.find(function (x) { return x.id === charId; });
+  if (!c) return;
+  if (!/^image\//.test(String(file.type || ''))) { _ipcSay('只收图片——JPG / PNG / WebP 都行', '#c62828'); return; }
+  _ipcBusy = charId;
+  _ipcSay('正在处理你上传的这张…', '#b45309');
+  _ipcPaint();
+  try {
+    const blob = await _ipcShrink(file);
+    const r = await fetch('api/blob/put?name=' + encodeURIComponent('定妆照.jpg') + '&mime=image/jpeg', {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'image/jpeg' }, body: blob,
+    }).then(function (x) { return x.json(); }).catch(function () { return null; });
+    if (!r || !r.ok || !r.id) throw new Error((r && r.error) || '上传没成功，再试一次');
+    const url = '/api/blob/' + r.id;
+    const thumb = await _ipcThumb(url);
+    const cur = await npCharsLoad(true);
+    const next = { mainId: cur.mainId, list: cur.list.map(function (x) { return Object.assign({}, x); }) };
+    const cc = next.list.find(function (x) { return x.id === charId; });
+    if (!cc) throw new Error('角色不见了（可能刚被删）');
+    cc.styleV = 2;   // 这张是本人挑的，一次性升级不要再拿 AI 图顶掉
+    cc.portraits = [{ id: String(r.id), url: url, thumb: thumb || '', angle: 'front', at: Date.now() }];
+    await npCharsSave(next);
+    _ipcSay('✅ 换成你上传的这张了——出图时会当参考图一起递。', '#0a7b5a');
+  } catch (e) {
+    _ipcSay('❌ ' + ((e && e.message) || e), '#c62828');
+  } finally {
+    _ipcBusy = '';
+    _ipcPaint();
+  }
+}
+/* 服务器回的 /api/blob/<id> 缩成 120×160 小图存进配置：列表秒开，换台机器也看得见 */
+async function _ipcThumb(url) {
+  try {
+    const abs = new URL(String(url || ''), location.href).href;
+    const r = await fetch(abs, { credentials: 'include' });
+    if (!r.ok) return '';
+    const bm = await createImageBitmap(await r.blob());
+    const cv = document.createElement('canvas'); cv.width = 120; cv.height = 160;
+    const sc = Math.max(120 / bm.width, 160 / bm.height);
+    cv.getContext('2d').drawImage(bm, (120 - bm.width * sc) / 2, (160 - bm.height * sc) / 2, bm.width * sc, bm.height * sc);
+    try { bm.close(); } catch (_) {}
+    return cv.toDataURL('image/jpeg', 0.72);
+  } catch (_) { return ''; }
+}
+async function _ipcAiBuild() {
+  const btn = document.getElementById('ipcAi');
+  if (btn) btn.disabled = true;
+  _ipcSay('AI 正在照你的人设和行业编一个角色…', '#b45309');
+  try {
+    const cfg = await _diagGetCfg();
+    const p = (cfg && cfg.persona) || {};
+    const st = await npCharsLoad(true);
+    const r = await _diagSay('aiIpCharBuild', {
+      profile: _diagState.profile || {},
+      persona: String(p.text || _diagState.persona || ''),
+      product: (cfg && cfg.product) || {},
+      accountType: _diagState.accountType || (cfg && cfg.diagnosis && cfg.diagnosis.accountType) || '',
+      existing: st.list.map(function (x) { return x.name; }).filter(Boolean),
+      seed: String(Date.now()).slice(-5),
+    });
+    if (!r || r.ok === false || !r.char) throw new Error((r && r.error) || 'AI 没给出角色，再点一次试试');
+    const g = r.char;
+    const kind = '卡通';                       // 10-31 起只建画的 IP：不再出真人写实
+    const next = { mainId: st.mainId, list: st.list.map(function (x) { return Object.assign({}, x); }) };
+    const c = {
+      id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name: String(g.name || '').slice(0, 20),
+      kind: kind,
+      style: npCharStyle(kind, ''),
+      role: String(g.role || '').slice(0, 30),
+      age: String(g.age || '').slice(0, 20),
+      hair: String(g.hair || '').slice(0, 40),
+      body: String(g.body || '').slice(0, 40),
+      cloth: String(g.cloth || '').slice(0, 60),
+      hammers: (Array.isArray(g.hammers) ? g.hammers : []).map(function (s) { return String(s || '').trim(); }).filter(Boolean).slice(0, 3),
+      voice: String(g.voice || '').slice(0, 120),
+      desc: '',
+      portraits: [], at: Date.now(),
+    };
+    // 编辑框里得看见一整段：AI 给的那句 desc 常常只概括一句，把拆出来的字段拼回去更全（拆不出来再用它那句）
+    c.desc = _ipcCharText(c).slice(0, 1200) || String(g.desc || '').slice(0, 1200);
+    next.list.push(c);
+    if (!next.mainId) next.mainId = c.id;
+    await npCharsSave(next);
+    _ipcPaint();
+    // 不弹表单：编好直接出第一张定妆照，不满意再点「✏️ 改」
+    _ipcSay('编好了：「' + (c.name || c.role || '角色') + '」。正在出第一张定妆照，几十秒…', '#b45309');
+    await _ipcShot(c.id);
+  } catch (e) {
+    _ipcSay('❌ ' + ((e && e.message) || e), '#c62828');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+/* 角色卡上那段话：desc 优先；老卡没 desc 就把拆好的字段拼回去 */
+function _ipcCharText(c) {
+  if (!c) return '';
+  const t = String(c.desc || '').trim();
+  if (t) return t;
+  const bits = [c.name, c.role, c.age, c.hair, c.body].filter(Boolean).join('，');
+  const h = (c.hammers || []).filter(Boolean);
+  return (bits + (c.cloth ? '，穿' + c.cloth : '') + (h.length ? '。固定不变：' + h.join('、') : '')).trim();
+}
+/* 弹窗只有「名字 + 一段话 + 一颗按我说的改」：其余外形字段由 AI 在后台拆，不铺表单
+   （老板 2026-10-30：「太多东西了」；11-02 加回名字，因为他要能直接改名）。 */
+function _ipcOpenEdit(c) {
+  _ipcEditId = c ? String(c.id || '') : '';
+  const v = c || {};
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask';
+  mask.id = 'ipcMask';
+  mask.innerHTML = '<div class="modal-box" style="max-width:560px;max-height:86vh;overflow:auto;">' +
+    '<h3 style="margin:0 0 4px;">' + (_ipcEditId ? '✏️ 改角色' : '➕ 新角色') + '</h3>' +
+    '<div style="font-size:11.5px;color:#8a929e;line-height:1.6;margin-bottom:8px;">名字在上面直接改；下面一段话讲清这个人：多大年纪、做什么、发型、体型、平时穿什么，再加一两个一眼认得的物件（红色安全帽、腰上挂卷尺）。写得越具体，出的图越像同一个人。</div>' +
+    '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">' +
+      '<span style="font-size:12px;color:#6b7280;flex:none;">名字</span>' +
+      '<input id="ipcF_name" maxlength="20" value="' + _dEsc(v.name || '') + '" placeholder="这个人叫什么（留空就让 AI 从下面那段话里认）" style="flex:1;min-width:0;box-sizing:border-box;font-size:13px;padding:6px 8px;border:1px solid #d8dee9;border-radius:7px;">' +
+    '</div>' +
+    '<textarea id="ipcF_text" rows="7" placeholder="例：小过，32 岁的装修师傅，短发两边推得很短，中等偏壮，常年穿深蓝工装，腰上挂卷尺，一顶红色安全帽。"' +
+      ' style="width:100%;box-sizing:border-box;font-size:13px;line-height:1.7;padding:8px;border:1px solid #d8dee9;border-radius:8px;resize:vertical;">' + _dEsc(_ipcCharText(v)) + '</textarea>' +
+    '<div style="display:flex;gap:6px;margin-top:8px;align-items:center;">' +
+      '<input id="ipcF_ask" placeholder="想让 AI 怎么改？（例：再年轻点，换成长发）" style="flex:1;min-width:0;box-sizing:border-box;font-size:12px;padding:6px 8px;border:1px solid #d8dee9;border-radius:7px;">' +
+      '<button type="button" class="btn btn-sm" id="ipcRevise" style="white-space:nowrap;">✨ 按我说的改</button>' +
+    '</div>' +
+    '<div id="ipcEditMsg" style="font-size:11.5px;color:#b45309;margin-top:6px;min-height:16px;"></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">' +
+      '<button type="button" class="btn" id="ipcCancel">取消</button>' +
+      '<button type="button" class="btn btn-primary" id="ipcSave">💾 保存</button>' +
+    '</div></div>';
+  document.body.appendChild(mask);
+  mask.classList.add('open');
+  mask.addEventListener('click', function (e) { if (e.target === mask) _ipcCloseEdit(); });
+  document.getElementById('ipcCancel')?.addEventListener('click', _ipcCloseEdit);
+  document.getElementById('ipcSave')?.addEventListener('click', _ipcSaveEdit);
+  document.getElementById('ipcRevise')?.addEventListener('click', _ipcRevise);
+}
+function _ipcCloseEdit() {
+  const m = document.getElementById('ipcMask');
+  if (m) m.remove();
+  _ipcEditId = '';
+}
+function _ipcEditSay(text) {
+  const m = document.getElementById('ipcEditMsg');
+  if (m) m.textContent = text || '';
+}
+/* 「按我说的改」：把这段描述＋老板那句话交给 AI，改完换回文本框里，先给人看再保存 */
+async function _ipcRevise() {
+  const ta = document.getElementById('ipcF_text');
+  const ask = document.getElementById('ipcF_ask');
+  const btn = document.getElementById('ipcRevise');
+  const text = ta ? String(ta.value || '').trim() : '';
+  const want = ask ? String(ask.value || '').trim() : '';
+  if (!text) { _ipcEditSay('先把这个人写一句，再让 AI 改'); return; }
+  if (!want) { _ipcEditSay('写一句想怎么改，比如「再年轻点」「换成长发」「加一顶帽子」'); return; }
+  if (btn) btn.disabled = true;
+  _ipcEditSay('AI 正在按你说的改…');
+  try {
+    const r = await _diagSay('aiIpCharParse', { text: text, hint: want, revise: true });
+    if (!r || r.ok === false || !String(r.text || '').trim()) throw new Error((r && r.error) || 'AI 没给出改好的版本');
+    if (ta) ta.value = String(r.text).trim();
+    if (ask) ask.value = '';
+    _ipcEditSay('改好了——不满意可以再说一句，觉得可以就点「💾 保存」。');
+  } catch (e) {
+    _ipcEditSay('❌ ' + ((e && e.message) || e));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+async function _ipcSaveEdit() {
+  const nameEl = document.getElementById('ipcF_name');
+  const ta = document.getElementById('ipcF_text');
+  const name = nameEl ? String(nameEl.value || '').trim().slice(0, 20) : '';
+  const text = ta ? String(ta.value || '').trim() : '';
+  if (!text) { _ipcEditSay('这个人长什么样，写一句也行'); return; }
+  const st = await npCharsLoad(true);
+  const next = { mainId: st.mainId, list: st.list.map(function (x) { return Object.assign({}, x); }) };
+  let c = next.list.find(function (x) { return x.id === _ipcEditId; });
+  if (!c) {
+    c = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), portraits: [], at: Date.now() };
+    next.list.push(c);
+  }
+  if (name) c.name = name;
+  c.desc = text.slice(0, 1200);
+  if (!next.mainId) next.mainId = c.id;
+  await npCharsSave(next);
+  _ipcCloseEdit();
+  _ipcSay('存好了。正在整理发型、穿着、视觉锤这些细节…', '#b45309');
+  _ipcPaint();
+  await _ipcParseInto(c.id, text, name);
+}
+/* 后台把那段话拆成字段；拆不出来也不影响用——出图照样按那段话走。
+   只补空：AI 没给或给空的字段保留原值，别把已经填好的外形冲掉（11-02）。 */
+async function _ipcParseInto(charId, text, keepName) {
+  try {
+    const r = await _diagSay('aiIpCharParse', { text: text, hint: '' });
+    if (!r || r.ok === false || !r.char) throw new Error((r && r.error) || '没拆成');
+    const cur = await npCharsLoad(true);
+    const next = { mainId: cur.mainId, list: cur.list.map(function (x) { return Object.assign({}, x); }) };
+    const c = next.list.find(function (x) { return x.id === charId; });
+    if (!c) throw new Error('角色不见了');
+    const g = r.char;
+    const nk = '卡通';                          // 10-31 起只建画的 IP：不再出真人写实
+    const pick = function (v, old, max) {
+      const s = String(v == null ? '' : v).trim();
+      return (s || String(old || '').trim()).slice(0, max);
+    };
+    const hs = (Array.isArray(g.hammers) ? g.hammers : []).map(function (s) { return String(s || '').trim(); }).filter(Boolean).slice(0, 3);
+    Object.assign(c, {
+      name: pick(keepName || g.name, c.name, 20),
+      kind: nk,
+      style: npCharStyle(nk, c.style),
+      role: pick(g.role, c.role, 30),
+      age: pick(g.age, c.age, 20),
+      hair: pick(g.hair, c.hair, 40),
+      body: pick(g.body, c.body, 40),
+      cloth: pick(g.cloth, c.cloth, 60),
+      hammers: hs.length ? hs : (c.hammers || []),
+      voice: pick(g.voice, c.voice, 120),
+    });
+    await npCharsSave(next);
+    _ipcSay('✅ 存好了——点「✨ 出定妆照」就能出。', '#0a7b5a');
+  } catch (e) {
+    _ipcSay('已存好。外形细节这次没整理成，出图照样按你写的那段来。', '#b45309');
+  }
+  _ipcPaint();
+}
+
 function _diagMsg(id, text, error) {
   const el = document.getElementById(id);
   if (el) { el.textContent = text; el.style.color = error ? '#c62828' : '#0a7b5a'; }
@@ -1559,7 +2002,7 @@ function _diagBkDigest(b) {
   const points = (b.product && Array.isArray(b.product.sellPoints)) ? b.product.sellPoints.length : 0;
   const kb = Array.isArray(b.knowledgeBase) ? b.knowledgeBase.length : 0;
   return '问卷 ' + answers + ' 题、人设' + ((b.persona && b.persona.text) ? '已生成' : '未生成') + '、卖点 ' + points + ' 条、知识库 ' + kb +
-    ' 条、规划' + (b.notePlan ? '已生成' : '未生成') + '、评估报告' + (b.deepReport ? '已生成' : '未生成');
+    ' 条、排产表' + (b.notePlan ? '已生成' : '未生成');
 }
 function _diagBkAny(b) {
   const acc = b.account || {};
@@ -1600,6 +2043,7 @@ async function _diagBkReloadState() {
   const r = await Promise.all([_diagGetCfg(), chrome.storage.local.get(['note_plan', 'deep_report'])]);
   const cfg = r[0], stored = r[1];
   _diagState.diagnosis = cfg.diagnosis || null;
+  _diagState.baseSavedAt = _diagBaseSavedAtOf(cfg);
   _diagState.persona = (cfg.persona && cfg.persona.text) || _diagState.persona;
   _diagState.notePlan = stored.note_plan || null;
   _diagState.report = stored.deep_report || null;
@@ -2010,8 +2454,8 @@ function _ntCfgSt() {
 }
 /* ── 🧬 笔记规划签：一段「怎么用发笔记」＋🗓 每周排法 ＋ 🧠 AI规划 ── */
 function _diagPersonaTableHtml() {
-  const kinds = ['知识', '引流', '案例'];
-  const wkName = { '知识': '📚 知识', '引流': '🔥 引流', '案例': '🎬 案例' };
+  const kinds = ['知识', '引流'];
+  const wkName = { '知识': '📚 知识', '引流': '🔥 引流' };
   const wp = _diagState.weekPlan || {};
   const dayRow = function (d) {
     const sel = wp[d[0]] || [];
@@ -2042,7 +2486,7 @@ function _diagPersonaTableHtml() {
       '<input type="text" class="spCats" data-field="' + field + '" value="' + _dEsc((spl[field] || []).join('、')) + '" placeholder="' + _dEsc(ph) + '" style="flex:1;min-width:0;border:1px solid var(--line,#e2e6ec);border-radius:8px;padding:5px 9px;font-size:12px;font-family:inherit;box-sizing:border-box;">' +
       '</div>';
   };
-  const cnt = { '知识': 0, '引流': 0, '案例': 0 };
+  const cnt = { '知识': 0, '引流': 0 };
   let rest = 0;
   NP_WEEK_DAYS.forEach(function (d) { const s = wp[d] || []; if (!s.length) rest++; s.forEach(function (k) { if (cnt[k] != null) cnt[k]++; }); });
   const sum = kinds.map(function (k) { return cnt[k] ? (wkName[k] + ' ' + cnt[k] + ' 天') : ''; }).filter(Boolean).join(' · ') + (rest ? ' · 休 ' + rest + ' 天' : '');
@@ -2055,7 +2499,7 @@ function _diagPersonaTableHtml() {
       '<b style="color:#374151;">怎么用发笔记</b>：前期先攒干货——新建笔记选「知识」，AI 出稿你过一遍再发，让人记住你是谁；有粉丝了掺引流，评论区把人接住；粉丝过千求稳，照下面的排法固定出，别为了流量乱写。交付形式（图文 / 视频 / 口播）看你自己顺手，没有统一规定。' +
     '</div>' +
     '<div style="margin-top:12px;border:1px solid var(--line,#eceef0);border-radius:10px;padding:10px 12px;background:#fff;">' +
-      '<div style="font-size:12.5px;font-weight:700;color:#1f2329;">🗓 每周排法 <span class="note-xs">一天可以同时勾几种；都不勾＝那天休</span></div>' +
+      '<div style="font-size:12.5px;font-weight:700;color:#1f2329;">🗓 每周排法 <span class="note-xs">一天一条线：点另一类＝换成那类，再点一次＝那天休（写进「🗓 笔记规划」小红书那格；抖音/视频号那条视频线到那边改）</span></div>' +
       '<div style="margin-top:2px;">' + NP_WEEK_DAYS.map(function (d) { return dayRow([d, NP_WEEK_DAY_LABEL[d]]); }).join('') + '</div>' +
       '<div style="font-size:11px;color:#6b7280;margin-top:8px;">本周：' + _dEsc(sum || '还没排') + '</div>' +
     '</div>' +
@@ -2067,18 +2511,17 @@ function _diagPersonaTableHtml() {
     '</div>' +
   '</div>';
 }
-/** 勾/取消一天里的一类：先落内存再写库（config.product.weekPlan），写完按库回读的规整值刷新 */
+/** 勾/取消一天里的一类：先落内存再写库（写进三行表 weekPlanGrid），写完按库回读的规整值刷新 */
 async function _ntWeekToggle(day, k) {
   const st = _ntCfgSt();
   const wp = Object.assign({}, _diagState.weekPlan || npWeekPlanEmpty());
+  /* 一天一条线（2026-11-01 起写进「🗓 笔记规划」的三行表）：点另一类＝换成那类；再点当前那类＝这天休 */
   const arr = (wp[day] || []).slice();
-  const i = arr.indexOf(k);
-  if (i >= 0) arr.splice(i, 1); else arr.push(k);
-  wp[day] = arr;
+  wp[day] = (arr[0] === k) ? [] : [k];
   _diagState.weekPlan = wp;
   st.err = '';
   diagRenderStyle();
-  try { _diagState.weekPlan = await npWeekPlanSave(wp); }
+  try { _diagState.weekPlan = await npPlanWeekViewSave(wp); }
   catch (e) { st.err = '周排保存失败：' + String((e && e.message) || e); diagRenderStyle(); }
 }
 /** 📌 阶段计划两拨键：发频（主发/常发/少发）与多发方面（「、」隔开的短名单）——都是先落内存再写库，写完按库回读的规整值重画 */
@@ -2123,86 +2566,13 @@ async function _diagStyleRun() {
     if (!prof) { try { const c = await _diagGetCfg(); prof = (c && c.diagnosis && c.diagnosis.profile) || null; } catch (_) {} }
     const r = await _diagSay('aiWeekPlan', { profile: prof, personaLine: _ntPersonaLine() });
     if (!r || r.ok === false || !r.weekPlan) throw new Error((r && r.error) || 'AI 没返回可用排法，请重试');
-    _diagState.weekPlan = await npWeekPlanSave(r.weekPlan);
+    _diagState.weekPlan = await npPlanWeekViewSave(r.weekPlan);
     toast('🧠 AI 排好了这一周的节奏——不满意就点格子改');
   } catch (e) {
     st.err = String((e && e.message) || e);
   }
   st.busy = false;
   diagRenderStyle();
-}
-/* ── 规划（内容规划 + 深度评估：一次点击先出规划、再基于新规划出评估） ── */
-function diagStepPlan(body) {
-  if (!body) return;
-  body.innerHTML =
-    _diagCard(_diagStepTitle('规划 · 内容排产与评估',
-      '<button type="button" id="diagPlanBuild" class="btn btn-outline" style="margin:0;">🔄 重新生成规划与评估</button>') +
-      '<div id="diagPlanMsg" role="status" style="font-size:12px;color:#0a7b5a;margin:6px 0;"></div>') +
-    '<div id="diagPlanResult" style="margin-top:10px;"></div>' +
-    '<div id="diagReportResult" style="margin-top:10px;"></div>';
-  if (_diagState.report) diagRenderReport();
-  if (_diagState.notePlan) diagRenderPlan();
-  diagPlanRestore();
-  document.getElementById('diagPlanBuild')?.addEventListener('click', diagPlanBuild);
-}
-async function diagPlanRestore() {
-  const box = document.getElementById('diagPlanResult');
-  try {
-    const stored = await chrome.storage.local.get(['note_plan', 'note_columns']);
-    if (document.getElementById('diagPlanResult') !== box || _diagState.busy) return;
-    _diagState.notePlan = stored.note_plan || _diagState.notePlan;
-    _diagState.columns = NotePlan.normalizeColumns(stored.note_columns);   // 📅 栏目表（长期设定）
-    if (_diagState.notePlan) {
-      diagRenderPlan();
-    } else if (box) {   // 还没规划也能先定栏目（栏目是长期设定，与这批排产表无关）
-      box.innerHTML = '<div style="font-size:12px;color:#888;">还没有已保存的规划。</div>' + _diagColumnsHtml(null);
-      _diagColBind(box);
-    }
-  } catch (e) {
-    const msg = document.getElementById('diagPlanMsg');
-    if (msg && document.getElementById('diagPlanResult') === box) msg.textContent = '读取规划失败：' + (e.message || e) + '。请重新进入本页重试。';
-  }
-}
-async function diagPlanBuild() {
-  const btn = document.getElementById('diagPlanBuild'); const msg = document.getElementById('diagPlanMsg');
-  if (!btn || _diagState.busy) return;
-  _diagState.busy = 'plan';
-  const t = btn.textContent; btn.textContent = '正在重新生成规划…';
-  const lock = function (on) { document.querySelectorAll('#diagBody button').forEach(function (el) { el.disabled = on; }); };
-  lock(true);
-  if (msg) msg.textContent = '';
-  const type = String(_diagState.accountType || (_diagState.notePlan && _diagState.notePlan.accountType) || '').trim();
-  try {
-    const answers = (_diagState.unifiedAnswers || []).map(function (a, i) { return { q: a.q || DIAG_UNIFIED_QUESTIONS[i] || '', answer: a.answer || '' }; });
-    const r = await _diagSay('aiNotePlan', { profile: _diagState.profile, persona: _diagState.persona, accountType: type || '', answers: answers, noteStyle: _diagState.noteStyle || null });
-    if (!r || !r.ok || !r.plan) throw new Error((r && r.error) || 'AI 未生成内容规划');
-    await chrome.storage.local.set({ note_plan: r.plan });
-    _diagState.notePlan = r.plan;
-    _diagState.mixEdit = null;   // 新规划落地：配比条按这次实际用的权重重新起
-    diagRenderPlan();
-    diagRenderStyle();      // 规划页上它是空跑；写稿 ③「📄 内容基调」开着时＝那几张卡跟着新排产表重算
-    // 评估紧跟着走：报告吃刚出的规划，用户视角就是「一次操作出规划+评估」
-    btn.textContent = '正在生成评估…';
-    if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '规划已更新，正在生成评估…'; }
-    const r2 = await _diagSay('aiDeepReport', {
-      profile: _diagState.profile, persona: _diagState.persona,
-      accountType: String(type || (r.plan && r.plan.accountType) || '').trim(),
-      planText: JSON.stringify(_diagState.notePlan),
-    });
-    if (!r2 || !r2.ok || !r2.report) throw new Error((r2 && r2.error) || 'AI 未生成报告');
-    _diagState.report = r2.report;
-    await chrome.storage.local.set({ deep_report: r2.report });   // 落盘：规划的完成状态与刷新后的回显都靠它
-    diagRenderReport();
-    // 基础配置改过账号类型时规划标记会被清掉：这里补回来，规划的完成圈跟着这两份新结果走
-    await _diagMarkNode('plan', '已按账号类型重新生成规划与评估');
-    if (msg) { msg.style.color = '#0a7b5a'; msg.textContent = '✅ 已重新生成内容规划与评估。'; }
-  } catch (e) {
-    if (msg) { msg.style.color = '#c62828'; msg.textContent = '生成失败：' + (e.message || e) + '。已生成的部分保留，可重试。'; }
-  }
-  finally {
-    _diagState.busy = ''; btn.textContent = t; lock(false);
-    _diagPaintNav();   // 规划的完成圈跟着规划与报告走
-  }
 }
 /** 问卷里某一题的答案（按题面片段找，不写死下标；答案可能带补充，按分号拆） */
 async function diagStyleRestore() {
@@ -2215,7 +2585,7 @@ async function diagStyleRestore() {
     _diagState.imgLook = npLookShape(Object.assign({}, NP_LOOK_XHS, (r[0] && r[0].imgLook) || {}));   // 🎨 出图默认：打底＝统一小红书（六十一改）
     await npLoadImgMotifs();                                   // 🎭 账号自加的画面流派（内置十条在 lib/visual-motif.js）
     _diagState.styleAdvice = (r[1] && r[1].note_style_advice) || null;
-    _diagState.weekPlan = await npWeekPlanRead();              // 🗓 每周排法（真源 config.product.weekPlan）
+    _diagState.weekPlan = await npPlanWeekViewRead();         // 🗓 每周排法（真源三行表 weekPlanGrid）
     _diagState.stagePlan = await npStagePlanRead();            // 📌 阶段计划三档（真源 config.product.stagePlan；K 线 ① 那行读它）
   } catch (_) {}
   diagRenderStyle();
@@ -2473,7 +2843,7 @@ function _diagMotifRowHtml(embed) {
 }
 /* 画面风格小样（二十一改：画「画面长什么样」不是排版示意——办公室照/PPT页/手写纸，纯 CSS；自加的名字认不出就摆 🎨） */
 function cfgMotifSpecimen(motif, th) {
-  if (motif === '真人工作场景') {
+  if (motif === '人物工作场景' || motif === '真人工作场景') {
     return '<div style="position:absolute;inset:0;overflow:hidden;opacity:.9;">' +
       '<div style="position:absolute;right:4%;top:0;width:36%;height:62%;background:linear-gradient(200deg,rgba(255,238,190,.55),rgba(255,238,190,0));border-radius:8px;"></div>' +
       '<div style="position:absolute;left:10%;bottom:13%;width:80%;height:8%;background:' + th.band + ';border-radius:3px;"></div>' +
@@ -2513,22 +2883,11 @@ function cfgMotifSpecimen(motif, th) {
    这一轴以前只随尾巴出现、面板不摆，引擎读到「实拍」就往广告片靠。在这儿钉两格：
    形式＝界面上选那一个词，提示词只带这一句拍法；主角＝一句话在组头说一次，一套几张不会换六个人。 */
 function _diagBornCastingHtml() {
-  const look = _diagState.imgLook || {};
-  const axis = NP_LOOK_AXES.filter(function (a) { return a.k === 'born'; })[0];
-  const cur = String(look.born || NP_LOOK_XHS.born);
-  const chips = axis.opts.map(function (v) {
-    const on = v === cur;
-    return '<button type="button" class="npar-filter ntBornPick' + (on ? ' on' : '') + '" data-v="' + _dEsc(v) + '">' + (on ? '\u2713 ' : '') + esc(v) + '</button>';
-  }).join('');
   return '<div style="margin-top:8px;border:1px solid var(--c-brand-line);border-radius:10px;padding:10px 12px;background:#fff;">' +
-    '<div style="font-size:12.5px;font-weight:700;color:var(--ink);">\uD83D\uDCF7 画面形式 <span class="note-xs">' + esc(axis.d) + '</span></div>' +
-    '<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:8px;">' + chips + '</div>' +
-    '<div style="font-size:10px;color:#98a1ad;margin-top:6px;">选哪一格，提示词里就照那一格给拍法：手机随拍＝像朋友在旁边拿手机顺手拍、只用现场光；广告片＝影棚布光、构图干净、精修。</div>' +
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;">' +
-      '<span style="font-size:12.5px;font-weight:700;color:var(--ink);">\uD83E\uDDCD 这一套图里的主角</span>' +
-      '<input class="input ntCasting" value="' + _dEsc(look.casting || '') + '" placeholder="一句话说清同一个人，比如：40 岁男瓦工，短寸头，深蓝工装外套袖口磨白，腰间一把铲刀" style="flex:1;min-width:220px;max-width:430px;">' +
-    '</div>' +
-    '<div style="font-size:10px;color:#98a1ad;margin-top:4px;">填了才带进每一张提示词，一套几张不会换人；留空＝不说。</div>' +
+    '<div style="font-size:12.5px;font-weight:700;color:var(--ink);">\uD83C\uDFA8 画风 <span class="note-xs">跟 IP 角色走</span></div>' +
+    '<div style="font-size:11.5px;color:#555;line-height:1.75;margin-top:6px;">' +
+      '出图不出真人写实：画风、主角、背景、道具全都跟「\uD83C\uDFAD IP 角色」里那个角色走——角色选的是哪种画风，整张图就按哪种画。' +
+      '要换画风，去「\uD83E\uDDEC 账号规划 → \uD83C\uDFAD IP 角色」改那个角色的画风。</div>' +
   '</div>';
 }
 function _diagLookDefaultHtml(embed) {
@@ -2851,418 +3210,3 @@ function _ntCfgBind(box) {
 /* ── 老「账号阶段 × 个人人设」三件套已随三签改版下线（_diagStyleBind / aiNoteStyleAdvice 版 _diagStyleRun /
      _diagStyleSetTalk / _diagToneSet / _diagStageCustom / _diagStageTotal / 旧 _diagPersonaTableHtml）── */
 
-// 线徽标：一条排产 = 哪条线 · 哪种具体写法（档位已撤，不再标卖不卖）
-function _diagKindName(k) {
-  try { const x = NotePlan.kindOf(k); if (x) return x.name; } catch (_) {}
-  return '';
-}
-function _diagScopeTag(scope) {
-  if (scope === 'samePeople') return '<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#eaf7f0;color:#0a7b5a;">同人群</span>';
-  if (scope === 'breakout') return '<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:#fff4e5;color:#b26a00;">破圈</span>';
-  return '';
-}
-function _diagTypeName(k) {
-  try { const t = NotePlan.typeOf(k); if (t) return t.name; } catch (_) {}
-  return String(k || '');
-}
-/* ── ⚖️ 配比（可调）：权重 → 篇数，改的是「下一批怎么分」，本批排产表不动 ── */
-function _diagMixSize(p) {
-  const m = (p && Array.isArray(p.mix)) ? p.mix : [];
-  const n = m.reduce(function (a, r) { return a + (Number(r && r.count) || 0); }, 0);
-  return n > 0 ? n : 12;
-}
-function _diagMixRows(stage, weights) {
-  let base = [];
-  try { base = NotePlan.mixOf(stage, null) || []; } catch (_) {}
-  return base.map(function (r) {
-    const raw = (weights && weights[r.type] != null) ? Number(weights[r.type]) : r.share;
-    return Object.assign({}, r, { share: Math.max(0, Math.min(60, isFinite(raw) ? raw : r.share)) });
-  });
-}
-function _diagMixPlan(p, rows) {
-  const shortSet = {};
-  (Array.isArray(p && p.short) ? p.short : []).forEach(function (s) { if (s && s.type) shortSet[s.type] = 1; });
-  const alloc = NotePlan.allocate((rows || []).filter(function (r) { return !shortSet[r.type]; }), _diagMixSize(p));
-  const target = {};
-  alloc.forEach(function (r) { target[r.type] = r.count; });
-  const actual = {};
-  ((p && p.items) || []).forEach(function (it) { if (it && it.type) actual[it.type] = (actual[it.type] || 0) + 1; });
-  return { alloc: alloc, target: target, actual: actual, shortSet: shortSet };
-}
-function _diagMixHtml(p) {
-  const stage = String((p && p.stage) || '');
-  const used = (p && p.mixWeights) || null;
-  if (!stage || !used) return '';
-  if (!_diagState.mixEdit || _diagState.mixEdit.stage !== stage) {
-    _diagState.mixEdit = { stage: stage, weights: Object.assign({}, used), dirty: false };
-  }
-  const w = _diagState.mixEdit.weights;
-  const rows = _diagMixRows(stage, w);
-  const calc = _diagMixPlan(p, rows);
-  const sum = rows.reduce(function (a, r) { return a + (Number(r.share) || 0); }, 0);
-  const chip = function (r) {
-    const cnt = calc.target[r.type] || 0;
-    const pct = sum > 0 ? Math.round((Number(r.share) || 0) / sum * 100) : 0;
-    return '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (cnt ? '#e3e8ef' : '#f0f1f3') + ';border-radius:8px;padding:3px 5px;background:' + (cnt ? '#fafbfc' : '#f7f8fa') + ';" title="' + _dEsc((r.goal || '') + (r.ex ? '（例：' + r.ex + '）' : '')) + '">' +
-      '<span style="font-size:11px;color:' + (cnt ? '#333' : '#aaa') + ';">' + _dEsc(_diagTypeName(r.type)) + '</span>' +
-      '<b style="font-size:11px;color:' + (cnt ? 'var(--c-brand-ink)' : '#bbb') + ';">' + cnt + '篇</b>' +
-      '<span style="font-size:10px;color:#999;">' + pct + '%</span>' +
-      '<button type="button" data-mix="' + _dEsc(r.type) + '" data-d="-5" style="width:19px;height:19px;line-height:1;padding:0;border:1px solid #d8dee9;background:#fff;border-radius:6px;font-size:12px;color:#555;cursor:pointer;">−</button>' +
-      '<button type="button" data-mix="' + _dEsc(r.type) + '" data-d="5" style="width:19px;height:19px;line-height:1;padding:0;border:1px solid #d8dee9;background:#fff;border-radius:6px;font-size:12px;color:#555;cursor:pointer;">＋</button>' +
-      '</div>';
-  };
-  const size = _diagMixSize(p);
-  let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#fff;margin-top:10px;">' +
-    '<div style="font-weight:700;font-size:14px;">⚖️ 配比<span style="font-size:11px;color:#888;font-weight:400;margin-left:6px;">下一批 ' + size + ' 篇怎么分，可以自己挪</span></div>' +
-    '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + rows.map(chip).join('') + '</div>';
-  if (!(sum > 0)) {
-    h += '<div style="font-size:11px;color:#c62828;margin-top:8px;">一类都排不出来了：至少给一类留权重，再保存。</div>';
-  } else {
-    const off = [];
-    rows.forEach(function (r) {
-      const want = calc.target[r.type] || 0, got = calc.actual[r.type] || 0;
-      if (Math.abs(got - want) >= 2) off.push(_diagTypeName(r.type) + ' 目标 ' + want + ' / 本批排了 ' + got);
-    });
-    if (off.length) h += '<div style="font-size:11px;color:#c77700;margin-top:8px;">⚠️ 本批和这个配比有出入：' + _dEsc(off.join('；')) + '——这张排产表是旧配比排的，想照新的重排一遍，点顶部「🔄 重新生成规划与评估」。</div>';
-    else h += '<div style="font-size:11px;color:#0a7b5a;margin-top:8px;">✓ 本批篇数跟这个配比一致。</div>';
-  }
-  const shortNames = Object.keys(calc.shortSet).map(function (k) {
-    const row = (Array.isArray(p.short) ? p.short : []).filter(function (s) { return s && s.type === k; })[0];
-    return (row && row.name) || _diagTypeName(k);
-  });
-  if (shortNames.length) h += '<div style="font-size:11px;color:#888;margin-top:4px;">这几条线缺料、这次没排：' + _dEsc(shortNames.join('、')) + '——补齐后它的篇数会自动加进来。</div>';
-  h += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-    '<button type="button" id="diagMixSave" class="btn btn-primary" style="font-size:11px;margin:0;">保存配比</button>' +
-    '<button type="button" id="diagMixReset" class="btn btn-outline" style="font-size:11px;margin:0;">恢复默认</button>' +
-    (_diagState.mixEdit.dirty ? '<span style="font-size:11px;color:#c77700;">有改动还没保存</span>' : '') +
-    '<span id="diagMixMsg" style="font-size:11px;color:#0a7b5a;"></span></div>';
-  return h + '</div>';
-}
-function _diagMixStep(type, d) {
-  const st = _diagState.mixEdit;
-  if (!st || !type || !d) return;
-  const cur = Number(st.weights[type]);
-  st.weights[type] = Math.max(0, Math.min(60, (isFinite(cur) ? cur : 0) + d));
-  st.dirty = true;
-  diagRenderPlan();
-}
-async function _diagMixPersist(rows) {
-  const p = _diagState.notePlan || {};
-  const stage = String((_diagState.mixEdit || {}).stage || p.stage || '');
-  const d = await chrome.storage.local.get('note_plan_mix');
-  const store = (d && d.note_plan_mix && typeof d.note_plan_mix === 'object') ? d.note_plan_mix : {};
-  const patch = { note_plan_mix: store };
-  if (rows) store[stage] = rows.reduce(function (a, r) { a[r.type] = r.share; return a; }, {});
-  else delete store[stage];
-  if (Array.isArray(p.items)) {   // 本批的「目标篇数」跟着更新，实排不动——偏差提示才是当前口径
-    const shortSet = {};
-    (Array.isArray(p.short) ? p.short : []).forEach(function (s) { if (s && s.type) shortSet[s.type] = 1; });
-    p.mix = NotePlan.allocate(((rows || _diagMixRows(stage, null)) || []).filter(function (r) { return !shortSet[r.type]; }), _diagMixSize(p));
-    p.mixWeights = _diagMixRows(stage, rows ? rows.reduce(function (a, r) { a[r.type] = r.share; return a; }, {}) : null)
-      .reduce(function (a, r) { a[r.type] = r.share; return a; }, {});
-    p.problems = NotePlan.validatePlan(p).problems;
-    patch.note_plan = p;
-  }
-  await chrome.storage.local.set(patch);
-}
-async function _diagMixSave() {
-  const st = _diagState.mixEdit;
-  if (!st) return;
-  const msg = document.getElementById('diagMixMsg');
-  const rows = _diagMixRows(st.stage, st.weights);
-  if (!rows.reduce(function (a, r) { return a + r.share; }, 0)) {
-    if (msg) { msg.style.color = '#c62828'; msg.textContent = '至少给一类留权重。'; }
-    return;
-  }
-  try {
-    await _diagMixPersist(rows);
-    const stage = st.stage;
-    _diagState.mixEdit = { stage: stage, weights: rows.reduce(function (a, r) { a[r.type] = r.share; return a; }, {}), dirty: false };
-    diagRenderPlan();
-    const m2 = document.getElementById('diagMixMsg');
-    if (m2) m2.textContent = '✅ 已保存：下一批按这个配比排。';
-  } catch (e) {
-    if (msg) { msg.style.color = '#c62828'; msg.textContent = '保存失败：' + (e.message || e) + '。'; }
-  }
-}
-async function _diagMixReset() {
-  const st = _diagState.mixEdit;
-  if (!st) return;
-  try {
-    await _diagMixPersist(null);
-    _diagState.mixEdit = null;
-    diagRenderPlan();
-    const m2 = document.getElementById('diagMixMsg');
-    if (m2) m2.textContent = '✅ 已恢复默认配比。';
-  } catch (_) {}
-}
-// 类型解锁地图：现在能做什么 / 补什么解锁什么（比"缺 N 条知识"友好）
-function _diagMapHtml(p) {
-  const map = (p && p.map) || null;
-  if (!map || !Array.isArray(map.unlocked)) return '';
-  const groups = Array.isArray(map.groups) ? map.groups : [];
-  const chip = function (name, on) {
-    return '<span style="display:inline-block;font-size:11px;padding:2px 8px;margin:0 6px 6px 0;border-radius:10px;' +
-      (on ? 'background:#eaf7f0;color:#0a7b5a;border:1px solid #c6e6d6;' : 'background:#f5f6f8;color:#999;border:1px solid #e6e8ec;') + '">' + _dEsc(name) + '</span>';
-  };
-  let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#fff;margin-top:10px;">' +
-    '<div style="font-weight:700;font-size:14px;">🗺️ 类型解锁地图</div>' +
-    '<div style="font-size:11px;color:#888;margin-top:2px;">现在能做 ' + map.unlocked.length + ' 类；灰的还缺料——补一样就点亮一类。</div>' +
-    '<div style="margin-top:8px;">' + map.unlocked.map(function (k) { return chip(_diagTypeName(k), true); }).join('') + '</div>';
-  if (groups.length) {
-    h += groups.map(function (g) {
-      return '<div style="font-size:11px;margin-top:6px;padding:6px 8px;background:#fafbfc;border-radius:8px;">' +
-        '<span style="color:#c77700;">' + _dEsc(g.needText) + '</span><br>' +
-        '<span style="color:#999;">→ 解锁：' + (g.types || []).map(_dEsc).join('、') + '</span></div>';
-    }).join('');
-  }
-  return h + '</div>';
-}
-/* ── 📅 栏目表（长期设定：一个栏目＝每周固定一天发的那一条线笔记） ── */
-// 老板口径：「栏目化应该是长期设定的，但是具体发布就是每周发」——所以这里是账号级配置，
-//   存 note_columns；排产时每个栏目每周占掉一个篇位（线由栏目定死），日子到那天发。
-function _diagCols() { return Array.isArray(_diagState.columns) ? _diagState.columns : null; }
-function _diagColSig(list) {
-  return (Array.isArray(list) ? list : []).map(function (c) { return [c.id, c.name, c.day || 0, c.type].join('|'); }).join(';');
-}
-function _diagColsStale(p) {
-  const cols = _diagCols();
-  if (!cols) return false;
-  return _diagColSig(cols) !== _diagColSig(NotePlan.normalizeColumns((p && p.columns) || []));
-}
-function _diagColUnlocked(p) {
-  return (p && p.map && Array.isArray(p.map.unlocked)) ? p.map.unlocked : null;
-}
-function _diagColForm(ed, cols, unlocked) {
-  const takenBy = {};
-  (cols || []).forEach(function (c) { if (c.day && c.id !== ed.id) takenBy[c.day] = c.name; });
-  const opt = function (v, label, on, dis) {
-    return '<option value="' + _dEsc(v) + '"' + (on ? ' selected' : '') + (dis ? ' disabled' : '') + '>' + _dEsc(label) + '</option>';
-  };
-  const typeOpts = NotePlan.TYPES.map(function (t) {
-    const off = unlocked && unlocked.indexOf(t.key) < 0;
-    return opt(t.key, t.name + (off ? '（这条线现在缺料）' : ''), t.key === ed.type);
-  }).join('');
-  const dayOpts = opt('0', '日子自定', !ed.day) + NotePlan.COLUMN_DAYS.map(function (d) {
-    return opt(String(d.key), d.name + (takenBy[d.key] ? '（已被「' + takenBy[d.key] + '」占）' : ''), d.key === ed.day);
-  }).join('');
-  return '<div class="diag-col-form" style="margin-top:6px;padding:8px;border:1px dashed #cfd6e0;border-radius:8px;background:#fbfcfe;">' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;font-size:11px;color:#555;">' +
-      '<label>栏目名 <input class="diag-col-f-name" type="text" maxlength="20" value="' + _dEsc(ed.name || '') + '" placeholder="例：老友测评" style="width:112px;"></label>' +
-      '<label>星期几 <select class="diag-col-f-day">' + dayOpts + '</select></label>' +
-      '<label>线 <select class="diag-col-f-type">' + typeOpts + '</select></label>' +
-    '</div>' +
-    '<div style="font-size:11px;color:#888;margin-top:4px;">线＝这一栏每周固定写的那一条线；具体写法跟发笔记 ④ 挑稿走。</div>' +
-    '<div style="margin-top:6px;display:flex;gap:8px;align-items:center;">' +
-      '<button type="button" class="btn btn-primary diag-col-save" style="font-size:11px;margin:0;">保存</button>' +
-      '<button type="button" class="btn btn-outline diag-col-cancel" style="font-size:11px;margin:0;">取消</button>' +
-      '<span class="diag-col-msg" style="font-size:11px;color:#c62828;"></span></div>' +
-    '</div>';
-}
-function _diagColumnsHtml(p) {
-  const cols = _diagCols();
-  const unlocked = _diagColUnlocked(p);
-  const ed = _diagState.colEdit || null;
-  let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#fff;margin-top:10px;">' +
-    '<div style="font-weight:700;font-size:14px;">📅 栏目表<span style="font-size:11px;color:#888;font-weight:400;margin-left:6px;">长期设定，定完每周照发</span></div>' +
-    '<div style="font-size:11px;color:#888;margin-top:2px;">一个栏目＝每周固定发一篇的那一条线笔记（线定死、日子固定）。这是账号的长期设定，配一次就一直用；具体发布就是每周按它排一篇。</div>';
-  if (!cols) h += '<div style="font-size:12px;color:#888;margin-top:6px;">正在读取…</div>';
-  else if (!cols.length && !ed) {
-    h += '<div style="font-size:12px;color:#666;margin-top:6px;">还没配栏目——不配也能发，只是每周发什么全靠配比排。想要「每周四固定发一篇测评」这种节奏，就加一个栏目。</div>';
-  }
-  if (cols && cols.length) {
-    h += '<div style="margin-top:8px;">' + cols.slice().sort(function (a, b) { return (a.day || 9) - (b.day || 9); }).map(function (c) {
-      const off = unlocked && unlocked.indexOf(c.type) < 0;
-      return '<div class="diag-col-row" data-col="' + _dEsc(c.id) + '" style="display:flex;align-items:center;gap:8px;font-size:12px;padding:5px 8px;border:1px solid #eceff3;border-radius:8px;margin-top:4px;">' +
-        '<span style="font-size:11px;color:#7a5af5;font-weight:600;">📅 ' + (c.day ? _dEsc(NotePlan.columnDayName(c.day)) : '日子自定') + '</span>' +
-        '<b>' + _dEsc(c.name) + '</b>' +
-        '<span style="color:#666;">' + _dEsc(_diagTypeName(c.type)) + '</span>' +
-        (off ? '<span style="font-size:11px;color:#c77700;">⚠ 这条线现在缺料</span>' : '') +
-        '<span style="margin-left:auto;display:flex;gap:6px;">' +
-          '<button type="button" class="btn btn-outline diag-col-edit" style="font-size:11px;margin:0;">编辑</button>' +
-          '<button type="button" class="btn btn-outline diag-col-del" style="font-size:11px;margin:0;">删</button>' +
-        '</span></div>';
-    }).join('') + '</div>';
-  }
-  if (!ed) {
-    const canAdd = !cols || cols.length < 7;
-    h += '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;">' +
-      (canAdd
-        ? '<button type="button" id="diagColAdd" class="btn btn-outline" style="font-size:11px;margin:0;">➕ 加一个栏目</button>'
-        : '<span style="font-size:11px;color:#c77700;">一周只有 7 天，已经排满了。</span>') +
-      '<span id="diagColMsg" style="font-size:11px;color:#0a7b5a;">' + _dEsc(_diagState.colMsg || '') + '</span></div>';
-  } else {
-    h += _diagColForm(ed, cols || [], unlocked);
-    h += '<div id="diagColMsg" style="font-size:11px;color:#0a7b5a;margin-top:6px;">' + _dEsc(_diagState.colMsg || '') + '</div>';
-  }
-  const probs = cols ? NotePlan.columnsProblems(cols, null) : [];
-  if (probs.length) h += '<div style="font-size:11px;color:#c77700;margin-top:6px;">⚠️ ' + probs.map(_dEsc).join('；') + '</div>';
-  if (_diagColsStale(p)) h += '<div style="font-size:11px;color:#c77700;margin-top:4px;">栏目表改过了：点顶部「🔄 重新生成规划与评估」，才会按新栏目重排这张排产表。</div>';
-  else if (cols && cols.length && p && Array.isArray(p.items)) h += '<div style="font-size:11px;color:#0a7b5a;margin-top:4px;">✓ 每个栏目每周排 1 篇，剩下的篇位按上面配比补。</div>';
-  return h + '</div>';
-}
-function _diagColOpen(id) {
-  const cols = _diagCols() || [];
-  const c = id ? cols.filter(function (x) { return x.id === id; })[0] : null;
-  const unlocked = _diagColUnlocked(_diagState.notePlan);
-  _diagState.colMsg = '';
-  _diagState.colEdit = c
-    ? { id: c.id, name: c.name, day: c.day || 0, type: c.type }
-    : { id: '', name: '', day: 0, type: ((unlocked && unlocked[0]) || (NotePlan.TYPES[0] || {}).key || '') };
-  diagRenderPlan();
-}
-async function _diagColPersist(cols, okMsg) {
-  const clean = NotePlan.normalizeColumns(cols);
-  try {
-    await chrome.storage.local.set({ note_columns: clean });
-  } catch (e) {
-    _diagState.colMsg = '保存失败：' + (e.message || e) + '。';
-    diagRenderPlan();
-    return;
-  }
-  _diagState.columns = clean;
-  _diagState.colEdit = null;
-  _diagState.colMsg = okMsg;
-  diagRenderPlan();
-}
-function _diagColSave() {
-  const form = document.querySelector('#diagPlanResult .diag-col-form');
-  if (!form) return;
-  const ed = _diagState.colEdit || {};
-  const val = function (sel) { const el = form.querySelector(sel); return el ? String(el.value || '') : ''; };
-  const msg = form.querySelector('.diag-col-msg');
-  const name = val('.diag-col-f-name').trim();
-  const type = val('.diag-col-f-type');
-  if (!name) { if (msg) msg.textContent = '栏目名不能空。'; return; }
-  if (!NotePlan.typeOf(type)) { if (msg) msg.textContent = '要给这一栏选一个类型。'; return; }
-  const row = { id: ed.id || ('c' + Date.now().toString(36)), name: name, day: Number(val('.diag-col-f-day')) || 0, type: type, note: '' };
-  const cols = (_diagCols() || []).slice();
-  const i = cols.findIndex(function (c) { return c.id === row.id; });
-  if (i >= 0) cols[i] = row; else cols.push(row);
-  return _diagColPersist(cols, i >= 0 ? '✅ 已保存这一栏。' : '✅ 已加一栏——点顶部「🔄 重新生成规划与评估」重排到表里。');
-}
-function _diagColDel(id) {
-  return _diagColPersist((_diagCols() || []).filter(function (c) { return c.id !== id; }), '✅ 已删掉这一栏。');
-}
-function _diagColBind(box) {
-  box.querySelectorAll('.diag-col-row').forEach(function (row) {
-    const id = row.getAttribute('data-col');
-    const ed = row.querySelector('.diag-col-edit');
-    if (ed) ed.addEventListener('click', function () { _diagColOpen(id); });
-    const del = row.querySelector('.diag-col-del');
-    if (del) del.addEventListener('click', function () { _diagColDel(id); });
-  });
-  const add = document.getElementById('diagColAdd');
-  if (add) add.addEventListener('click', function () { _diagColOpen(''); });
-  const save = box.querySelector('.diag-col-save');
-  if (save) save.addEventListener('click', _diagColSave);
-  const cancel = box.querySelector('.diag-col-cancel');
-  if (cancel) cancel.addEventListener('click', function () { _diagState.colEdit = null; _diagState.colMsg = ''; diagRenderPlan(); });
-}
-/* 🪟 门面那两篇的要求说明（2026-10-19 批4：替掉旧「📌 置顶 / 门面」那块——规划 AI 照样产出 pinned，界面不再画它）。
-   段名摊开给你看要说什么；缺哪篇去「笔记档案」页顶那条横幅点「去建」；建它不占每周格子；案例那格只做说明不建条目。 */
-function _diagFacadeHtml() {
-  const keys = ['intro', 'deal'];
-  return '<div style="font-size:12px;margin-top:8px;padding:9px 10px;background:#f5f8ff;border:1px solid #dbe6fb;border-radius:8px;">' +
-    '<b style="color:#1d4ed8;">🪟 主页门面两篇</b>' +
-    '<span style="font-size:10px;color:#8a929e;margin-left:5px;font-weight:400;">各建一次、发一次钉住，不进每周排法也不占这里的格子</span>' +
-    keys.map(function (k) {
-      const o = FACADE_OUTLINE[k] || {};
-      const segs = (o.segs || []).map(function (s) { return s.k; }).join(' → ');
-      return '<div style="margin-top:6px;font-size:11px;line-height:1.7;">· <b>' + _dEsc(o.lab || k) + '</b>——' + _dEsc(o.use || '') +
-        '<div style="color:#666;margin-top:1px;">提纲钉死：' + _dEsc(segs) + '</div></div>';
-    }).join('') +
-    '<div style="font-size:11px;color:#666;margin-top:6px;">缺哪篇：去「笔记档案」页顶那条横幅点「去建」——这两篇走自己那条流，不进上面的排产表。</div>' +
-    '<div style="font-size:11px;color:#8a929e;margin-top:2px;">主页第三格留给案例：不用另建，从已发的案例篇里挑最强那篇，自己在小红书置顶。</div>' +
-    '</div>';
-}
-function diagRenderPlan() {
-  const p = _diagState.notePlan || {};
-  const box = document.getElementById('diagPlanResult'); if (!box) return;
-  // v1 老规划（平表）兜底：结构不认识就按老样子画，别让用户看到一片空白
-  if (!Array.isArray(p.items)) {
-    const topics = Array.isArray(p.topics) ? p.topics : [];
-    box.innerHTML = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#f8fafd;"><div style="font-weight:700;font-size:14px;">📚 内容规划（旧版）</div>' +
-      (p.accountType ? '<div style="font-size:12px;margin-top:4px;"><b>账号类型：</b>' + _dEsc(p.accountType) + '</div>' : '') +
-      (p.contentFocus ? '<div style="font-size:12px;margin-top:4px;"><b>讲什么内容：</b>' + _dEsc(p.contentFocus) + '</div>' : '') +
-      (p.targetPeople ? '<div style="font-size:12px;margin-top:4px;"><b>主要人群：</b>' + _dEsc(p.targetPeople) + '</div>' : '') +
-      (topics.length ? '<div style="font-size:12px;margin-top:6px;"><b>选题池：</b>' + topics.map(function (x) { return '<div style="font-size:12px;margin:2px 0 2px 8px;">· ' + _dEsc(x.title || '') + (x.angle ? '（' + _dEsc(x.angle) + '）' : '') + '</div>'; }).join('') + '</div>' : '') +
-      '<div style="font-size:11px;color:#888;margin-top:8px;">这是旧版规划，点上面的「重新生成规划与评估」升级成排产表。</div></div>';
-    _diagColBind(box);
-    return;
-  }
-  const items = p.items;
-  let stageDef = null;
-  try { stageDef = NotePlan.stageOf(p.stage); } catch (_) {}
-  let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#f8fafd;">' +
-    '<div style="font-weight:700;font-size:14px;">📚 内容排产表</div>' +
-    (stageDef ? '<div style="font-size:12px;margin-top:6px;"><b>成长阶段：</b><b style="color:var(--c-brand-ink);">' + _dEsc(stageDef.name) + '</b>（粉丝 ' + _dEsc(stageDef.fans) + '）　' + _dEsc(stageDef.will || '') + '</div>' : '') +
-    (p.stageNote ? '<div style="font-size:11px;color:#666;margin-top:2px;">' + _dEsc(p.stageNote) + '</div>' : '') +
-    (p.contentFocus ? '<div style="font-size:12px;margin-top:4px;"><b>讲什么：</b>' + _dEsc(p.contentFocus) + '</div>' : '') +
-    (p.targetPeople ? '<div style="font-size:12px;margin-top:4px;"><b>给谁看：</b>' + _dEsc(p.targetPeople) + '</div>' : '') +
-    ((p.rhythm || p.timing) ? '<div style="font-size:12px;margin-top:4px;"><b>节奏：</b>' + _dEsc([p.rhythm, p.timing].filter(Boolean).join('；')) + '</div>' : '') +
-    _diagFacadeHtml() +
-    '<div style="font-size:12px;margin-top:10px;"><b>未来 ' + items.length + ' 篇</b><span style="font-size:11px;color:#888;margin-left:6px;">发一篇补一篇，栏目照旧跑</span></div>' +
-    items.map(function (it, i) {
-      const arc = it.arc || null;
-      const arcTag = arc ? '<span style="font-size:10px;color:#7a5af5;">系列·' + _dEsc(arc.name) + ' ' + arc.part + '/' + arc.total + (arc.closing ? ' 收口' : '') + '</span>' : '';
-      const scopeTag = _diagScopeTag(it.scope);
-      const kindName = _diagKindName(it.kind);
-      return '<div style="margin-top:6px;padding:8px;background:' + (it.done ? '#f7f9f7' : '#fff') + ';border:1px solid #eceff3;border-radius:8px;">' +
-        '<div style="font-size:12px;font-weight:600;">' + (it.done ? '✅ ' : '') + (i + 1) + '. ' + _dEsc(it.title) + '</div>' +
-        '<div style="font-size:11px;color:#666;margin-top:3px;">' + _dEsc(_diagTypeName(it.type)) + (kindName ? ' · ' + _dEsc(kindName) : '') + (scopeTag ? '　' + scopeTag : '') + (arcTag ? '　' + arcTag : '') + '</div>' +
-        (it.goal ? '<div style="font-size:11px;color:#8a929e;margin-top:2px;">要干嘛：' + _dEsc(it.goal) + '</div>' : '') +
-        (it.angle ? '<div style="font-size:11px;color:#666;margin-top:2px;">切入：' + _dEsc(it.angle) + '</div>' : '') +
-        (it.credential ? '<div style="font-size:11px;color:#8a929e;margin-top:2px;">凭据：' + _dEsc(it.credential) + '</div>' : '') +
-        (it.kb ? '<div style="font-size:11px;color:#8a929e;margin-top:2px;">素材：' + _dEsc(it.kb) + '</div>' : '') +
-        '</div>';
-    }).join('');
-  const probs = Array.isArray(p.problems) ? p.problems : [];
-  if (probs.length) h += '<div style="font-size:11px;color:#c62828;margin-top:8px;">⚠️ 自查有 ' + probs.length + ' 处要改：' + probs.slice(0, 4).map(_dEsc).join('；') + '</div>';
-  h += '</div>';
-  h += _diagColumnsHtml(p);
-  h += _diagMixHtml(p);
-  h += _diagMapHtml(p);
-  box.innerHTML = h;
-  box.querySelectorAll('button[data-mix]').forEach(function (el) {
-    el.addEventListener('click', function () { _diagMixStep(el.getAttribute('data-mix'), Number(el.getAttribute('data-d')) || 0); });
-  });
-  const mixSave = document.getElementById('diagMixSave');
-  if (mixSave) mixSave.addEventListener('click', _diagMixSave);
-  const mixReset = document.getElementById('diagMixReset');
-  if (mixReset) mixReset.addEventListener('click', _diagMixReset);
-  _diagColBind(box);
-}
-
-/* ── 规划里的深度评估报告（渲染 / 复制；生成已并进「重新生成规划与评估」） ── */
-function diagRenderReport() {
-  const r = _diagState.report || {};
-  const box = document.getElementById('diagReportResult'); if (!box) return;
-  const sections = Array.isArray(r.sections) ? r.sections : [];
-  const priorities = Array.isArray(r.priorities) ? r.priorities : [];
-  const risks = Array.isArray(r.risks) ? r.risks : [];
-  const block = function (label, txt) { return txt ? '<div style="font-size:12px;margin-top:4px;"><b>' + label + '：</b>' + txt + '</div>' : ''; };
-  let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;padding:12px;background:#f8fafd;">' +
-    '<div style="font-weight:700;font-size:14px;">📋 深度评估报告</div>' +
-    (r.overall ? '<div style="font-size:13px;color:var(--c-brand-ink);margin-top:4px;font-weight:600;">' + _dEsc(r.overall) + '</div>' : '') +
-    (r.summary ? '<div style="font-size:12px;margin-top:4px;">' + _dEsc(r.summary) + '</div>' : '') +
-    (r.positioning ? block('定位/人设问题', _dEsc(r.positioning.issue)) + block('定位/人设建议', _dEsc(r.positioning.suggestion)) : '') +
-    (r.personaReview ? block('人设问题', _dEsc(r.personaReview.issue)) + block('人设建议', _dEsc(r.personaReview.suggestion)) : '') +
-    (r.kbReview ? block('知识库问题', _dEsc(r.kbReview.issue)) + block('知识库建议', _dEsc(r.kbReview.suggestion)) : '') + '</div>';
-  h += '<div style="margin-top:8px;">' + sections.map(function (s) { return '<div style="border:1px solid #eee;border-radius:8px;padding:8px 10px;background:#fff;margin-top:6px;"><div style="font-weight:600;font-size:13px;">' + _dEsc(s.name) + '</div>' + (s.issue ? '<div style="font-size:12px;color:#d33;margin-top:2px;">问题：' + _dEsc(s.issue) + '</div>' : '') + (s.suggestion ? '<div style="font-size:12px;color:#0a7b5a;margin-top:2px;">建议：' + _dEsc(s.suggestion) + '</div>' : '') + '</div>'; }).join('') + '</div>';
-  h += (priorities.length ? '<div style="margin-top:8px;"><b>⚡ 优先整改</b><ol style="margin:4px 0 0 18px;">' + priorities.map(function (x) { return '<li style="font-size:12px;">' + _dEsc(x) + '</li>'; }).join('') + '</ol></div>' : '');
-  h += (risks.length ? '<div style="margin-top:8px;"><b>⚠️ 风险提醒</b><ul style="margin:4px 0 0 18px;">' + risks.map(function (x) { return '<li style="font-size:12px;">' + _dEsc(x) + '</li>'; }).join('') + '</ul></div>' : '');
-  h += '<div style="margin-top:12px;">' + _dBtn('diagCopyBtn', '📋 复制报告', '', 'btn-outline') + '</div>';
-  box.innerHTML = h;
-  document.getElementById('diagCopyBtn')?.addEventListener('click', diagCopyReport);
-}
-async function diagCopyReport() {
-  const r = _diagState.report || {};
-  const sections = Array.isArray(r.sections) ? r.sections : [];
-  const lines = ['【深度评估报告】', r.overall || '', r.summary || ''];
-  if (r.positioning && r.positioning.suggestion) lines.push('定位/人设建议：' + r.positioning.suggestion);
-  (Array.isArray(r.priorities) ? r.priorities : []).forEach(function (x, i) { lines.push((i + 1) + '. ' + x); });
-  sections.forEach(function (s) { lines.push('【' + (s.name || '') + '】问题：' + (s.issue || '') + '；建议：' + (s.suggestion || '')); });
-  const btn = document.getElementById('diagCopyBtn');
-  try { await copyToClipboard(lines.filter(Boolean).join('\n')); if (btn) btn.textContent = '✅ 已复制'; } catch (_) {}
-}

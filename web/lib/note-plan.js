@@ -764,13 +764,26 @@ KINDS.forEach(k => { KIND_BY_KEY[k.key] = k; });
 const STAGE_BY_KEY = {};
 STAGES.forEach(s => { STAGE_BY_KEY[s.key] = s; });
 
+/* 显示名 → 代号：排产那一步的提示词允许「type 填中文线名」（知识·干货 / 感悟…），
+ * 只认英文代号的话中文名会整片落到配比里篇数最多的那一类——12 篇全挤进「干货」，
+ * 具体写法（kind）也一起丢掉。归一中文、全角符号、箭头后再比一次。 */
+const _nameKey = (s) => String(s == null ? '' : s).replace(/[\s·・•\-—_\/｜|>→]/g, '');
+const TYPE_BY_NAME = {};
+TYPES.forEach(t => { TYPE_BY_NAME[_nameKey(t.name)] = t.key; });
+TYPE_BY_NAME['干货'] = 'howto';
+TYPE_BY_NAME['知识'] = 'howto';
+TYPE_BY_NAME['情绪共鸣'] = 'echo';
+TYPE_BY_NAME['梗'] = 'meme';
+const KIND_BY_NAME = {};
+KINDS.forEach(k => { KIND_BY_NAME[_nameKey(k.name)] = k.key; });
+
 function typeOf(key) {
   const k = String(key || '');
-  return TYPE_BY_KEY[k] || TYPE_BY_KEY[LEGACY_TYPES[k]] || null;
+  return TYPE_BY_KEY[k] || TYPE_BY_KEY[LEGACY_TYPES[k]] || TYPE_BY_KEY[TYPE_BY_NAME[_nameKey(k)]] || null;
 }
 function kindOf(key) {
   const k = String(key || '');
-  return KIND_BY_KEY[k] || KIND_BY_KEY[LEGACY_KINDS[k]] || null;
+  return KIND_BY_KEY[k] || KIND_BY_KEY[LEGACY_KINDS[k]] || KIND_BY_KEY[KIND_BY_NAME[_nameKey(k)]] || null;
 }
 function stageOf(key) { return STAGE_BY_KEY[String(key || '')] || null; }
 

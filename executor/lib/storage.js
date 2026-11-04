@@ -63,7 +63,7 @@ const DEFAULT_CONFIG = {
   //   { city: 城市/地区（如"深圳"，缺省时回落 IP 属地）, ipLocation: 主页 IP 属地（如"广东"）, source: auto|manual, updatedAt }
   //   评论助手扫评论时用它与评论人的属地匹配（同省即算同城）
   myCity: { city: '', ipLocation: '', source: '', updatedAt: 0 },
-  // ★ 同城挡位（诊断&配置 → 基础配置 里切换）：
+  // ★ 同城挡位（账号规划 → 基础配置 里切换）：
   //   'force'    = 同城就回：不管是不是商机，同城真人评论一律纳入回复
   //   'priority' = 同城优先：同城往前排 + 话术尽量走同城案例角度，但不强制纳入
   //   'off'      = 关闭：不单独对同城评论，same_city 一律 false

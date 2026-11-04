@@ -76,11 +76,11 @@ const AutoWater = {
     } else if (scanCfg && only) {
       // 前台手点：只认这一个类型，也不顺延（她点的就是这个词这类）
       let p = [];
-      try { p = drainKeywordPasses(all[start], scanCfg, 0, { only, force: true }); } catch (_) { p = []; }
+      try { p = drainKeywordPasses(all[start], scanCfg, 0, { only, force: true, passId: o.passId }); } catch (_) { p = []; }
       if (!p.length) {
         const meta = (typeof DRAIN_TYPE_META !== 'undefined') ? DRAIN_TYPE_META.find(m => m.scenario === only) : null;
         if (meta && meta.needCity && !String(scanCfg.city || '').trim()) {
-          return { ok: false, error: '「' + all[start] + '」要搜「' + (drainPassLabel({ scenario: only }) || only) + '」，但还没设城市：「📍本地」搜的是「诊断&配置 → 基础配置」里的同城城市，去那里抓一下主页或手填。' };
+          return { ok: false, error: '「' + all[start] + '」要搜「' + (drainPassLabel({ scenario: only }) || only) + '」，但还没设城市：「📍本地」搜的是「账号规划 → 基础配置」里的同城城市，去那里抓一下主页或手填。' };
         }
         return { ok: false, error: '「' + all[start] + '」没勾「' + (drainPassLabel({ scenario: only }) || only) + '」这一类：到「任务配置 → 📚 关键词池」把这个词这一列的格勾上，或换一个词。' };
       }
@@ -88,7 +88,7 @@ const AutoWater = {
     } else if (scanCfg && o.kw) {
       // 队列点单（没指定类型时才走这）：就跑这个词「到点该跑的类型」，一个都没到点也不换词
       let p = [];
-      try { p = drainKeywordPasses(all[start], scanCfg, 0, { force: !!o.force }); } catch (_) { p = []; }
+      try { p = drainKeywordPasses(all[start], scanCfg, 0, { force: !!o.force, passId: o.passId }); } catch (_) { p = []; }
       if (!p.length) {
         return { ok: false, error: '「' + all[start] + '」的搜索动作还没到点：到「任务配置 → 📚 关键词池」表头把这列的节奏改成「每轮跑」，或等「隔N小时」到点再来。' };
       }
@@ -172,45 +172,57 @@ const AutoWater = {
     return { ok: true };
   },
 
-  /* ─── 按「标题搜出来 → 匹配作者 → 点开」打开笔记（当前页没这张卡片时的通路，替代冷开 /explore/） ───
-     ① 先让页面像真人一样用页头搜索框搜标题，再在结果里按 noteId/标题+作者 匹配后点开；
-     ② 页内没搜成（当前页连搜索框都没有，或页面中途真刷新了）→ 由背景侧导航到搜索页（普通搜索 URL）再点一次。
-     返回 { ok, via, noteId } 或 { ok:false, error } */
+  /* ─── 当前页点不到时的兜底：回到「这一行搜的那个词」的搜索页，按 noteId 再点一次 ───
+     绝不拿笔记标题去搜：标题一搜，页面就被带出这个词，后面的笔记全对不上（2026-11-03 实锤）。
+     返回 { ok, via, noteId } 或 { ok:false, skipped:true, error } */
   async _openBySearch(tab, item) {
     const title = String((item && item.title) || '').trim();
-    const author = String((item && item.author) || '').trim();
     const noteId = String((item && item.noteId) || '').trim();
-    if (!title) return { ok: false, error: '这篇没标题，搜不了名字' };
+    if (!noteId) return { ok: false, skipped: true, error: '这篇没有笔记 ID，当前页又点不到——跳过' };
+    const term = await this._currentSearchTerm();
+    if (!term) return { ok: false, skipped: true, error: '这一行不是搜词（主页/追涨），当前页点不到——跳过' };
 
-    let resp = null;
-    try {
-      resp = await this._send(tab.id, { action: 'openNoteBySearch', title, author, noteId }, 45000);
-    } catch (e) {
-      console.warn('[一键灌水] 页内搜索打开失败:', e && e.message ? e.message : e);
+    let cur = '';
+    try { cur = (await chrome.tabs.get(tab.id)).url || ''; } catch (_) {}
+    let sameTerm = false;
+    try { sameTerm = cur.indexOf('/search_result') >= 0 && decodeURIComponent(cur).includes('keyword=' + term); } catch (_) {}
+    if (!sameTerm) {
+      console.log('[一键灌水] 当前页不是「' + term + '」的搜索结果，拉回来再点:', title);
+      try {
+        await chrome.tabs.update(tab.id, { url: DRAIN_SEARCH_URL(term) });
+        await this._waitForTabLoad(tab.id, 20000);
+        await this._sleep(1200);
+      } catch (e) {
+        return { ok: false, error: '回到「' + term + '」的搜索页失败: ' + (e && e.message ? e.message : e) };
+      }
     }
-    if (resp && resp.ok) return { ok: true, via: 'search:' + (resp.matchedBy || '?'), noteId: resp.noteId || noteId };
-    // 页面明确说「搜过了、就是没匹配上」→ 不再折腾导航（省一轮 20 秒往返）；miss=true 表示"确实搜不到"（截流列表据此作废）
-    if (resp && resp.searched) return { ok: false, error: resp.error || '搜索结果里没匹配上这篇', miss: !!resp.miss };
 
-    // 导航到搜索页时要用页面算好的同一个搜索词（「标题末尾减3字」），没有就用整条标题兜底
-    const url = DRAIN_SEARCH_URL((resp && resp.term) || title);
-    console.log('[一键灌水] 页内搜不了，导航到搜索页再点开:', title);
-    try {
-      await chrome.tabs.update(tab.id, { url });
-      await this._waitForTabLoad(tab.id, 20000);
+    let r = null;
+    try { r = await this._send(tab.id, { action: 'clickNoteLink', title, noteId }, 15000); } catch (_) {}
+    if (!(r && r.clicked)) {
+      try { await this._send(tab.id, { action: 'scrollLoadMore' }, 8000); } catch (_) {}
       await this._sleep(1200);
-    } catch (e) {
-      return { ok: false, error: '打开搜索页失败: ' + (e && e.message ? e.message : e) };
+      try { r = await this._send(tab.id, { action: 'clickNoteLink', title, noteId }, 15000); } catch (_) {}
     }
-    let resp2 = null;
-    try {
-      resp2 = await this._send(tab.id, { action: 'openNoteBySearch', title, author, noteId, resultsReady: true }, 40000);
-    } catch (e) {
-      return { ok: false, error: '搜索结果页没响应: ' + (e && e.message ? e.message : e) };
-    }
-    if (resp2 && resp2.ok) return { ok: true, via: 'search-nav:' + (resp2.matchedBy || '?'), noteId: resp2.noteId || noteId };
-    return { ok: false, error: (resp2 && resp2.error) || '搜索结果里没匹配上这篇', miss: !!(resp2 && resp2.miss) };
+    if (r && r.clicked) return { ok: true, via: 'term:' + (r.method || '?'), noteId };
+    return { ok: false, skipped: true, error: '「' + term + '」这次搜索的结果里没有这篇了（可能已翻页/换序），跳过' };
   },
+
+  /* 这一行正在搜的词（老账多筛选的取最后那一搜）；主页/追涨返回空 */
+  async _currentSearchTerm() {
+    try {
+      const state = await Storage.getAutoWaterState();
+      const ss = (state && state.searchState) || {};
+      const plan = ss.plan || [];
+      const p = plan[ss.planIdx] || plan[plan.length - 1] || null;
+      if (!p || p.kind === 'profile') return '';
+      const term = String(p.term || ss.currentKeyword || '').trim();
+      return /^https?:/i.test(term) ? '' : term;
+    } catch (_) {
+      return '';
+    }
+  },
+
 
   /* ── 单篇打开笔记（模拟用户点击笔记链接，触发 SPA 路由跳转） ─── */
   async openNote(note) {
@@ -257,6 +269,19 @@ const AutoWater = {
       console.warn('[一键灌水] 激活标签页失败（继续尝试）:', e);
     }
 
+    // ★ 扩展刚重载过时，页面里那份 content.js 会失联：消息发得出去、永远等不到回话，
+    //   于是每开一篇都白等十几秒。点之前先探一下，没回话就补装一份再往下走。
+    const alive = await this._tabAlive(tab.id);
+    if (!alive) {
+      console.log('[一键灌水] 小红书页面的脚本没回话 → 补装 content.js 后再点');
+      try {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+        await this._sleep(800);
+      } catch (e) {
+        console.warn('[一键灌水] 补装 content.js 失败:', e && e.message ? e.message : e);
+      }
+    }
+
     // ★ 点开后轮询笔记详情页“就绪”（有评论区/回复框）；未就绪则自愈重试（最多 2 次，总上限 20 秒）。
     //   搜索结果页刚加载完 SPA 路由可能未绑定、列表还在虚拟滚动重排，编程点击常被吞掉，
     //   第二次点击时页面已稳定，成功率大增。retryFn 传哪个通路的“再开一次”。
@@ -290,16 +315,16 @@ const AutoWater = {
           const r = await _awaitReady(Date.now(), () => this._send(tab.id, _clickMsg, 15000));
           return { ok: true, success: true, message: '已打开笔记', noteTitle: item.title, noteId: item.noteId, ready: r.ready, waitedMs: r.waitedMs, via: 'click' };
         }
-        console.log('[一键灌水] 当前页没有这张卡片 → 改走「搜标题 → 匹配作者 → 点开」通路');
+        console.log('[一键灌水] 当前页没有这张卡片 → 回到本行搜索词再按笔记 ID 点开');
       }
 
       // ②：搜索通路（列表里的旧笔记、只有标题没 ID 的笔记都走这里；不再冷开 /explore/）
       const t1 = Date.now();
       const alt = await this._openBySearch(tab, item);
       if (alt.ok) {
-        console.log('[一键灌水] ✅ 搜索通路打开成功（' + alt.via + '）:', item.title);
-        const r = await _awaitReady(t1, () => this._openBySearch(tab, item));
-        return { ok: true, success: true, message: '已打开笔记（搜索通路）', noteTitle: item.title, noteId: alt.noteId || item.noteId, ready: r.ready, waitedMs: Date.now() - t1, via: 'search' };
+        console.log('[一键灌水] ✅ 回搜索词页打开成功（' + alt.via + '）:', item.title);
+        const r = await _awaitReady(t1, () => this._send(tab.id, _clickMsg, 15000));
+        return { ok: true, success: true, message: '已打开笔记（回本行搜索词）', noteTitle: item.title, noteId: alt.noteId || item.noteId, ready: r.ready, waitedMs: Date.now() - t1, via: 'search' };
       }
       return { ok: false, skipped: true, error: alt.error || '没能在搜索结果里匹配到这篇笔记', noteTitle: item.title, noteId: item.noteId };
     } catch (e) {
@@ -311,9 +336,9 @@ const AutoWater = {
         const t2 = Date.now();
         const alt = await this._openBySearch(tab, item);
         if (alt.ok) {
-          const r = await _awaitReady(t2, () => this._openBySearch(tab, item));
+          const r = await _awaitReady(t2, () => this._send(tab.id, _clickMsg, 15000));
           console.log('[一键灌水] 重注入 content.js 后重试打开成功, 就绪:', r.ready, '重试次数:', r.retries);
-          return { ok: true, success: true, message: '已打开笔记（搜索通路·重注入后）', noteTitle: item.title, noteId: alt.noteId || item.noteId, ready: r.ready, waitedMs: Date.now() - t2, via: 'search' };
+          return { ok: true, success: true, message: '已打开笔记（回本行搜索词·重注入后）', noteTitle: item.title, noteId: alt.noteId || item.noteId, ready: r.ready, waitedMs: Date.now() - t2, via: 'search' };
         }
         return { ok: false, skipped: true, error: alt.error || '未能在搜索结果里匹配到这篇笔记，已跳过', noteTitle: item.title, noteId: item.noteId };
       } catch (e2) {
@@ -453,7 +478,7 @@ const AutoWater = {
 
         // ★ 记「这个词 × 这个类型刚跑过」：词池里设成「隔几小时跑」的据此算下次到点时间
         //   盯的账号记在主页链接上（drainAccountState 按同一个键查）
-        try { await drainMarkPassRan(pass.k || keyword, pass.scenario); } catch (me) {
+        try { await drainMarkPassRan(pass.k || keyword, pass.scenario, Date.now(), '', pass.passId); } catch (me) {
           console.warn('[一键灌水] 记录搜索时间失败(忽略):', (me && me.message) || me);
         }
 
@@ -557,6 +582,16 @@ const AutoWater = {
 
   /* 带超时的 tabs.sendMessage：页面导航中/主线程繁忙/content script 卡死时不再无限等待。
      超时或接收端不存在 → reject，由调用方 catch 走跳过/重试分支 */
+  /* 页面脚本还活着吗：3 秒内回一句话就算活。超时/断开都当“死了”，交给调用方补装 */
+  async _tabAlive(tabId) {
+    try {
+      const r = await this._send(tabId, { action: 'countSearchNotes' }, 3000);
+      return !!r;
+    } catch (_) {
+      return false;
+    }
+  },
+
   _send(tabId, msg, timeoutMs) {
     return new Promise(function (resolve, reject) {
       const timer = setTimeout(function () {

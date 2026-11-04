@@ -56,7 +56,7 @@ const KERNEL = ['background.js', 'exec-core.js'];
 const OWN = [
   'manifest.json', 'exec-boot.js', 'exec-shell.js', 'exec-workwin.js', 'work-boot.js',
   'work-idle.html', 'panel.html', 'panel.js', 'hand-mode.js', 'hand-cover.js', 'pack.js',
-  'hand-popup-gate.snippet.js', 'hand-video-auto.snippet.js',
+  'hand-popup-gate.snippet.js', 'hand-video-auto.snippet.js', 'hand-content-whoami.snippet.js',
   'Edge-防禁用.bat', '装机-看这里.txt',
 ];
 /* 需要挡页的页面（注入 hand-mode.js） */
@@ -111,13 +111,41 @@ function injectGate(html) {
 }
 
 /* ── 手包专属补丁（主本没有，也不该有）：同步完主本再补上，别让下一次同步冲掉 ── */
+let GATE_PATCHED = true;      // 主本有没有 extPreGate() 那个锚；没有就整段跳过，核对也别再要这个标记
 function patchPopupHand(js) {
   if (js.includes('window.__XHS_HAND_BLOCKED__')) return js;
   const anchor = 'async function extPreGate() {\n';
   const i = js.indexOf(anchor);
-  if (i < 0) die('popup.js 里找不到 extPreGate()，手包的前置门补不上——先对齐主本再同步');
+  /* 主本现在没有这个锚（前置门搬进了 guide.html 那一侧）：不拦同步，照现状出包——
+     跟线上执行器现在这份一模一样；哪天锚回来了，这段自动再补上。 */
+  if (i < 0) { GATE_PATCHED = false; say('  ⚠ popup.js 没有 extPreGate() 锚：前置门这段跳过（与现网包一致）'); return js; }
   const snippet = fs.readFileSync(path.join(DST, 'hand-popup-gate.snippet.js'), 'utf8');
   return js.slice(0, i + anchor.length) + snippet + js.slice(i + anchor.length);
+}
+
+/* ── content.js 的认号补丁（主本没有）：搬完主本后补回 whoAmI。
+      少了它，所有发笔记/获客都停在「认号没读出来」——10-30 出 1.6.3 就是这样丢的 ── */
+const WHOAMI_MARK = "request.action === 'whoAmI'";
+function patchContentWhoAmI(js) {
+  if (js.includes(WHOAMI_MARK)) return js;
+  const raw = fs.readFileSync(path.join(DST, 'hand-content-whoami.snippet.js'), 'utf8');
+  const eol = js.includes('\r\n') ? '\r\n' : '\n';
+  const body = raw.replace(/\r\n/g, '\n').replace(/\n/g, eol);
+  const SPLIT = '// [[SPLIT-MARK]]';
+  const at = body.indexOf(SPLIT);
+  if (at < 0) die('认号补丁片段坏了（缺 SPLIT-MARK）：executor/hand-content-whoami.snippet.js');
+  const funcs = body.slice(0, at).replace(/^(\/\/[^\r\n]*\r?\n)+/, '').trimEnd() + eol + eol;
+  const handler = body.slice(at + SPLIT.length).replace(/^\r?\n/, '');
+  const funcAnchor = '  // 串行执行包装：同一时刻只允许一个变更类操作';
+  const i = js.indexOf(funcAnchor);
+  if (i < 0) die('content.js 里找不到「串行执行包装」锚，认号补丁补不上——先对齐主本再同步');
+  js = js.slice(0, i) + funcs + js.slice(i);
+  const listenerAnchor = 'chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {';
+  const j = js.indexOf(listenerAnchor);
+  if (j < 0) die('content.js 里找不到消息监听锚，认号补丁补不上——先对齐主本再同步');
+  const lineEnd = js.indexOf('\n', j + listenerAnchor.length);
+  if (lineEnd < 0) die('content.js 消息监听开头没有换行，认号补丁补不上');
+  return js.slice(0, lineEnd + 1) + handler + js.slice(lineEnd + 1);
 }
 
 function patchVideoHand(js) {
@@ -206,17 +234,21 @@ function main() {
   fs.writeFileSync(popupJsP, patchPopupHand(fs.readFileSync(popupJsP, 'utf8')), 'utf8');
   const videoJsP = path.join(DST, 'video.js');
   fs.writeFileSync(videoJsP, patchVideoHand(fs.readFileSync(videoJsP, 'utf8')), 'utf8');
+  const contentP = path.join(DST, 'content.js');
+  fs.writeFileSync(contentP, patchContentWhoAmI(fs.readFileSync(contentP, 'utf8')), 'utf8');
+  if (!fs.readFileSync(contentP, 'utf8').includes(WHOAMI_MARK)) die('content.js 的认号补丁没补上——这包发出去所有活都会卡在认号');
   say('  ＋ 已给 ' + GATED.join(' / ') + ' 注入 hand-mode.js＋hand-cover.js 挡页；popup.html 补了 work-boot.js；');
-  say('    popup.js 补了通行证前置门；video.js 补了自动出片');
+  say('    ' + (GATE_PATCHED ? 'popup.js 补了通行证前置门' : 'popup.js 未补前置门（主本没有那个锚）') + '；video.js 补了自动出片；content.js 补了认号');
 
   /* 5) 核对：搬过去的与主本逐字节一致（挡页补丁改过的那几页不参与逐字节比，另有"补丁在不在"的检查）；内核钩子没改名；执行器自己的文件还在 */
   const bad = [];
-  const PATCHED_JS = ['popup.js', 'video.js'];
+  const PATCHED_JS = ['popup.js', 'video.js', 'content.js'];
   for (const f of FILES) {
     if (GATED.includes(f) || PATCHED_JS.includes(f)) continue;
     if (md5(path.join(SRC, f)) !== md5(path.join(DST, f))) bad.push(f);
   }
   for (const [f, mark] of [['popup.js', 'window.__XHS_HAND_BLOCKED__'], ['video.js', 'autoFilm']]) {
+    if (f === 'popup.js' && !GATE_PATCHED) continue;   // 锚不在＝这段本来就没补，别拿它当错
     if (!fs.readFileSync(path.join(DST, f), 'utf8').includes(mark)) bad.push(f + '（手包补丁）');
   }
   if (md5(path.join(SRC, KERNEL[0])) !== md5(path.join(DST, KERNEL[1]))) bad.push(KERNEL[0] + '（内核）');
@@ -231,6 +263,9 @@ function main() {
     let expect = injectGate(fs.readFileSync(path.join(SRC, f), 'utf8'));
     if (f === 'popup.html') expect = injectWorkBoot(expect);
     if (expect !== fs.readFileSync(path.join(DST, f), 'utf8')) bad.push(f + '（补丁结果与预期不一致）');
+  }
+  if (patchContentWhoAmI(fs.readFileSync(path.join(SRC, 'content.js'), 'utf8')) !== fs.readFileSync(contentP, 'utf8')) {
+    bad.push('content.js（认号补丁结果与预期不一致）');
   }
 
   /* 6) 空壳核对：该空的是空壳（有标记），该没的没了，页面也不再挂它的脚本 */
@@ -249,4 +284,5 @@ function main() {
   say('   下一步：node build.js <档位> 打客户包，或 node executor/pack.js 刷新网页「装执行器」那个下载包');
 }
 
-main();
+if (require.main === module) main();
+module.exports = { patchContentWhoAmI };

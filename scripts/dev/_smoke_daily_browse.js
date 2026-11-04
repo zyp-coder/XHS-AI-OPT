@@ -31,15 +31,17 @@ const D = (over) => DailyBrowse.normDirection(Object.assign({ id: 'dx', name: '�
   // 1) 默认配置：关着、不自动塞满、方向给一个「随便刷刷」兜底
   let cfg = await DailyBrowse.getConfig();
   assert.strictEqual(cfg.enabled, false, '默认关闭');
-  assert.strictEqual(cfg.insert.everyN, 3, '默认每 3 格插 1 轮');
+  assert.ok(!('insert' in cfg), '「每 N 格插 1 轮」已废弃（改成每趟开跑插一轮）');
   assert.deepStrictEqual(cfg.autorun, { enabled: false, from: '09:00', to: '21:00' }, '默认不自动跑 + 09:00-21:00（🛡 静默期不跑）');
-  assert.strictEqual(cfg.perRound, 6, '默认一轮 6 篇');
+  assert.strictEqual(cfg.perRound, 10, '默认一轮 10 篇（2026-10-30 放宽）');
+  assert.deepStrictEqual([cfg.comment.dailyMax, cfg.reply.dailyMax, cfg.follow.dailyMax], [30, 10, 8], '顺手互动名额默认 30/10/8');
   assert.strictEqual(cfg.directions.length, 1, '没配方向时兜底一个方向');
   assert.strictEqual(cfg.directions[0].keywords.length, 0, '兜底方向走首页推荐（泛刷）');
   assert.deepStrictEqual(cfg.directions[0].windows.map(w => w.start + '-' + w.end),
     ['09:00-11:30', '14:00-17:30', '20:00-21:00'], '方向默认三段时段（🛡 都在 09:00–21:00 内）');
   assert.strictEqual(cfg.directions[0].dailyQuota, 40, '方向默认配额 40');
-  console.log('✅ 默认配置：每', cfg.insert.everyN, '格插 1 轮 | autorun', cfg.autorun.from + '-' + cfg.autorun.to,
+  console.log('✅ 默认配置：一轮', cfg.perRound, '篇 | 名额 评论', cfg.comment.dailyMax, '回复', cfg.reply.dailyMax,
+    '关注', cfg.follow.dailyMax, '| autorun', cfg.autorun.from + '-' + cfg.autorun.to,
     '| 方向', cfg.directions[0].name, cfg.directions[0].dailyQuota + ' 篇');
 
   // 2) 越界值夹紧 / 非法值丢弃
@@ -60,10 +62,11 @@ const D = (over) => DailyBrowse.normDirection(Object.assign({ id: 'dx', name: '�
   assert.strictEqual(cfg.dwellMax, 120, '停留上限跟随下限');
   assert.strictEqual(cfg.openRate, 100, '打开比例上限 100');
   assert.strictEqual(cfg.likeRate, 0, '点赞比例下限 0');
-  assert.strictEqual(cfg.insert.everyN, 20, '塞入间隔上限 20');
+  assert.ok(!('insert' in cfg), '老配置里的 insert 读进来就丢掉');
   assert.strictEqual(cfg.comment.rate, 100, '评论概率上限 100');
   assert.strictEqual(cfg.comment.dailyMax, 0, '评论每日上限下限 0');
   assert.strictEqual(cfg.reply.dailyMax, 100, '回复每日上限上限 100');
+  assert.strictEqual(cfg.follow.dailyMax, 8, '老默认 3 一次性抬到 8（2026-10-30 放宽）');
   assert.deepStrictEqual(cfg.pool, ['A', 'B'], '句池去空');
   const d1 = cfg.directions[0];
   assert.deepStrictEqual(d1.keywords, ['A', 'B'], '关键词去空去重');
@@ -72,7 +75,15 @@ const D = (over) => DailyBrowse.normDirection(Object.assign({ id: 'dx', name: '�
   assert.strictEqual(d1.dailyQuota, 300, '方向配额上限 300');
   assert.strictEqual(d1.weight, 5, '方向权重上限 5');
   console.log('✅ 夹紧：轮', cfg.perRound, '| 停留', cfg.dwellMin + '-' + cfg.dwellMax, '| 比例', cfg.openRate + '/' + cfg.likeRate,
-    '| 间隔', cfg.insert.everyN, '| 方向', d1.dailyQuota, JSON.stringify(d1.keywords), JSON.stringify(d1.windows));
+    '| 名额', cfg.comment.dailyMax + '/' + cfg.reply.dailyMax + '/' + cfg.follow.dailyMax,
+    '| 方向', d1.dailyQuota, JSON.stringify(d1.keywords), JSON.stringify(d1.windows));
+
+  // 2b) 「尽量宽松」迁移：存量里还是老默认 5/2/3 的一次性抬到 30/10/8；手调成别的值不动
+  const mig = DailyBrowse.norm({ enabled: true, comment: { rate: 10, dailyMax: 5 }, reply: { dailyMax: 2 }, follow: { rate: 8, dailyMax: 3 } });
+  assert.deepStrictEqual([mig.comment.dailyMax, mig.reply.dailyMax, mig.follow.dailyMax], [30, 10, 8], '老默认抬到 30/10/8');
+  const kept = DailyBrowse.norm({ enabled: true, comment: { rate: 10, dailyMax: 7 }, reply: { dailyMax: 1 }, follow: { rate: 8, dailyMax: 20 } });
+  assert.deepStrictEqual([kept.comment.dailyMax, kept.reply.dailyMax, kept.follow.dailyMax], [7, 1, 20], '手调过的值原样保留');
+  console.log('✅ 名额迁移：5/2/3 → 30/10/8；手调过的 7/1/20 不动');
 
   // 3) 老配置（全局关键词+时段+配额）一次性升级成一个方向，不丢配置
   const legacy = DailyBrowse.norm({

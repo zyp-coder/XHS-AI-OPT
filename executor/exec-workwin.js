@@ -171,6 +171,8 @@
     if (task && task.loginPoll) clearInterval(task.loginPoll);
     if (task && task.loginTimer) clearTimeout(task.loginTimer);
     await tidyHandedOver();
+    /* 上一趟留在待命页上的黄字（停在哪/为什么）开工前先抹掉，别让这趟看着像还没开始 */
+    setIdleStatus('');
     task = {
       id: 'wt_' + Math.random().toString(16).slice(2, 10),
       kind: String(kind || ''),
@@ -233,6 +235,33 @@
         result: task ? task.result : '',
         touch: task ? task.touch : 0,
       }).catch(() => {});
+    } catch (_) {}
+  }
+
+  /* 干活窗里那块占位页写一行字：等着的时候（比如从服务器取素材）不能黑屏干等，
+     人要看得见"在等什么、等到哪了"。占位页已经被平台页顶替了就什么都不做。 */
+  let idleTxt = '', idleAt = 0;
+  async function setIdleStatus(txt) {
+    const s = String(txt || '');
+    const t = now();
+    if (t - idleAt < 600) return;          // 最密 0.6 秒刷一次，别为一行字把 CPU 打满
+    if (s === idleTxt) return;
+    idleTxt = s; idleAt = t;
+    try {
+      const id = workWinId || Number(await session.get(K_WIN)) || 0;
+      if (!id) return;
+      const tabs = await chrome.tabs.query({ windowId: id });
+      const idle = tabs.find((x) => String(x.url || '').includes('work-idle.html'));
+      if (!idle) return;
+      await chrome.scripting.executeScript({ target: { tabId: idle.id }, func: paintIdle, args: [s] });
+    } catch (_) {}
+  }
+
+  function paintIdle(s) {
+    try {
+      const el = document.getElementById('status');
+      if (el) el.textContent = String(s || '');
+      document.title = s ? ('机器人专用窗口 · ' + s) : '机器人专用窗口';
     } catch (_) {}
   }
 
@@ -449,11 +478,13 @@
      窗一直留着，直到人自己关掉；下一趟活来了复用这扇窗（见 beginTask → tidyHandedOver）。 */
   async function holdOpen(ok, text) {
     if (!task) return;
+    let kept = 0;
     for (const id of task.locked.slice()) {
       let t = null;
       try { t = await chrome.tabs.get(id); } catch (_) {}
       if (!t) continue;
       const inside = t.windowId === workWinId;
+      if (inside) kept++;
       try {
         await unlockTab(id, inside ? 'done' : 'remove',
           inside ? { ok: !!ok, text: String(text || ''), label: task.label || '' } : {});
@@ -462,9 +493,16 @@
     task.locked = [];
     task.handedOver = true;
     broadcast();
+    /* 平台页已经被收掉了（失败时大多是这样）：待命页别黑着——把「停在哪、为什么」写上去，
+       不然这扇窗一黑，人以为卡死/坏了（2026-10-29 实踩） */
+    if (!kept) {
+      await setIdleStatus((ok ? '✅ 这趟干完了' : '⚠ 这趟停在半路') + (text ? '：' + String(text).replace(/\s+/g, ' ') : ''));
+    }
     reportLine(ok
       ? '✅ 这趟干完了——窗不关：页面交给你，接着点没人管；下一趟活来了这扇窗自己接着用'
-      : '⚠ 这趟停在半路——窗不关：页面留在这儿给你看到哪一步；回工作台再点一次开始');
+      : (kept
+        ? '⚠ 这趟停在半路——窗不关：页面留在这一页给你看卡在哪；回工作台再点一次开始'
+        : '⚠ 这趟停在半路——发布页已经关了，卡在哪看这扇窗上面那行黄字；回工作台再点一次开始'));
   }
 
   /* 上一趟留下的页和那条「这趟完了」：这趟要用同一扇窗，先收干净。
@@ -853,23 +891,41 @@
       else document.addEventListener('DOMContentLoaded', startObserve, { once: true });
     }
 
+    /* 蒙层跟着页面深浅走：浅色页盖 20% 黑，深色页盖 8% 白——深色底上压黑肉眼看不见 */
+    function veil() {
+      let dark = false;
+      try {
+        const lum = (s) => {
+          const m = /rgba?\(([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\)/.exec(s || '');
+          if (!m) return null;
+          if (m[4] !== undefined && +m[4] < 0.5) return null;
+          return 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3];
+        };
+        const el = document.body || document.documentElement;
+        const bgL = lum(getComputedStyle(el).backgroundColor)
+          ?? lum(getComputedStyle(document.documentElement).backgroundColor);
+        const txtL = lum(getComputedStyle(el).color);
+        dark = bgL != null ? bgL < 110 : (txtL != null && txtL > 150);
+      } catch (_) {}
+      return dark ? 'rgba(255,255,255,.08)' : 'rgba(10,12,18,.2)';
+    }
+
     function renderLock() {
       let root = document.getElementById(ROOT_ID);
       if (!root) {
         root = document.createElement('div');
         root.id = ROOT_ID;
-        root.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;'
-          + 'justify-content:center;background:rgba(10,12,18,.92);color:#e8eaf0;backdrop-filter:blur(2px);'
+        root.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:flex-start;'
+          + 'justify-content:center;background:' + veil() + ';color:#e8eaf0;'
           + 'font:14px/1.7 system-ui,-apple-system,"Microsoft YaHei",sans-serif;');
-        root.innerHTML = '<div style="text-align:center;max-width:560px;padding:24px;">'
-          + '<div style="font-size:42px;line-height:1">🖐</div>'
-          + '<div style="font-size:13px;color:#9aa3b5;margin-top:14px">机器人正在干活</div>'
-          + '<div style="font-size:22px;font-weight:800;margin-top:6px;letter-spacing:.5px">机器人干活中 · 请勿操作</div>'
-          + '<div style="font-size:13px;color:#9aa3b5;margin-top:12px">这 2 分钟先别动这个窗口；点、打字、滚动、右键都不生效。</div>'
-          + '<div class="xl-step" style="margin-top:20px;font-size:14px;color:#e6e9ef"></div>'
-          + '<div class="xl-count" style="font-size:12px;color:#9aa3b5;margin-top:6px"></div>'
-          + '<div class="xl-tip" style="font-size:12px;color:#fbbf24;margin-top:14px;min-height:18px"></div>'
-          + '<div style="font-size:11px;color:#6b7280;margin-top:18px">被碰次数会记进这一单的回执；锁只挡人手，不挡机器人自己的点击。</div>'
+        root.innerHTML = '<div style="margin-top:14px;max-width:min(760px,94vw);padding:10px 18px 11px;'
+          + 'border-radius:14px;background:rgba(12,15,22,.78);box-shadow:0 8px 24px rgba(0,0,0,.28);'
+          + 'text-align:center;">'
+          + '<div style="font-size:23px;font-weight:800;letter-spacing:.5px">🖐 机器人干活中 · 请勿操作</div>'
+          + '<div class="xl-step" style="margin-top:2px;font-size:14px;color:#e6e9ef"></div>'
+          + '<div class="xl-count" style="font-size:12px;color:#9aa3b5"></div>'
+          + '<div class="xl-tip" style="font-size:12px;color:#fbbf24"></div>'
+          + '<div style="font-size:11px;color:#8b93a5">点、打字、滚动、右键都不生效；被碰次数会记进这一单的回执。</div>'
           + '</div>';
         (document.body || document.documentElement).appendChild(root);
       }
@@ -1016,7 +1072,7 @@
   }
 
   self.WorkWin = {
-    beginTask, setStep, finish, closeAfter, closeWindow,
+    beginTask, setStep, setIdleStatus, finish, closeAfter, closeWindow,
     humanRequired, humanDone, loginRequired, loginDone, isLoginWait,
     getStats, wasAborted, abortReason, handedOver,
     onAbort, onLogin, onLoginDone, setReporter,

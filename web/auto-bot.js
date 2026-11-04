@@ -233,22 +233,35 @@
     var panel = document.getElementById('logPanel');
     if (panel) {
       panel.style.display = 'block';
-      if (panel.children.length === 1 && panel.children[0].textContent.includes('操作日志将显示在这里')) {
-        panel.innerHTML = '';
-      }
       var now = new Date();
       var timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      var entry = document.createElement('div');
-      entry.className = 'log-entry ' + type;
-      entry.dataset.src = 'bot';   // ★ 标记来源，配合"只看 bot"过滤
-      entry.innerHTML = '<span class="log-time">' + timeStr + '</span><span class="log-src" style="color:#c41d3c;font-weight:700;margin-right:4px;font-size:10px;">🤖</span>' + msg;
-      panel.appendChild(entry);
-      panel.scrollTop = panel.scrollHeight;
-      while (panel.children.length > 200) panel.removeChild(panel.firstChild);
+      /* 公网那套页面：面板由执行桥统一画（时间口径一致、占位按 id 撤）；扩展里没这个钩子就走老路 */
+      var unified = (typeof window.__XHS_BENCH_LOG__ === 'function') &&
+        window.__XHS_BENCH_LOG__(msg, '🤖', type, timeStr);
+      if (!unified) {
+        if (panel.children.length === 1 && panel.children[0].textContent.includes('操作日志将显示在这里')) {
+          panel.innerHTML = '';
+        }
+        var entry = document.createElement('div');
+        entry.className = 'log-entry ' + type;
+        entry.dataset.src = 'bot';   // ★ 标记来源，配合"只看 bot"过滤
+        entry.innerHTML = '<span class="log-time">' + timeStr + '</span><span class="log-src" style="color:#c41d3c;font-weight:700;margin-right:4px;font-size:10px;">🤖</span>' + msg;
+        panel.appendChild(entry);
+        panel.scrollTop = panel.scrollHeight;
+        while (panel.children.length > 200) panel.removeChild(panel.firstChild);
+      }
       // ★ 同步镜像到锁定遮罩日志（bot 运行时遮罩会盖住面板，以前 bot 的日志在遮罩上完全看不到）
       if (typeof window.__xhsMirrorLog === 'function') {
         try { window.__xhsMirrorLog(msg, type, timeStr, 'bot', '🤖'); } catch (_) {}
       }
+      /* ★ 同一句也回传服务器：公网工作台的「操作日志 / 这一趟的记录」靠它显示
+         「正在打开哪一篇 / 已经跑了哪些篇」。网页自己（非扩展页）跑时没有后台可发，跳过。 */
+      try {
+        if (location.protocol === 'chrome-extension:' && chrome.runtime && chrome.runtime.sendMessage) {
+          var _bp = chrome.runtime.sendMessage({ type: 'ex.botlog', text: msg });
+          if (_bp && _bp.catch) _bp.catch(function () {});
+        }
+      } catch (_) {}
       console.log('[Bot][' + timeStr + '] ' + msg);
     }
   }
@@ -280,19 +293,31 @@
         botLog('⏳ 机器人已在运行中', 'warn');
         return;
       }
-      // 🛡 账号安全：静默期 / 单休 / 起床前 / 发布占线 → 这趟不新起（手动点也一样，顺延到恢复时刻）
+      // 🛡 账号安全：静默期 / 单休 / 起床前 / 发布占线 → 这趟不新起
+      //    （网页上手点的单会带一张「手点这一轮」的放行票，静默期照跑；票是否有效由 AccountGuard 判）
       try {
         if (typeof AccountGuard !== 'undefined') {
           var _wall = await AccountGuard.blockAllReason();
-          if (_wall) { botLog('🛡 ' + _wall.text, 'warn'); return; }
+          if (_wall) { botLog('🛡 ' + _wall.text, 'warn'); return { blocked: _wall.text }; }
         }
       } catch (_) {}
       window.__botEngineBusy = 'bot';
       this.running = true;
       this.stopped = false;
       this.paused = false;
+      /* 按计划歇着（等下一项到点）：遮罩的"卡住"判据要放过这段，不然定时轮每歇一次就报黄 */
+      this.waiting = false;
+      this.waitUntil = 0;    // 等到的时刻（遮罩上倒计时用；0＝没有确定时刻）
+      this.waitWhy = '';     // 在等什么（一句白话，遮罩直接显示）
       this.autoMode = !!(opts && opts.auto);
       this._autoStopN = 0;
+      /* 服务器按平台暂停/没认号算出来的"这趟跳过哪几头"（xhs / dy）：那几头的趟这轮一律不取 */
+      this.skipPlats = (opts && Array.isArray(opts.skipPlats))
+        ? opts.skipPlats.filter(function (p) { return p === 'xhs' || p === 'dy'; })
+        : [];
+      /* 人手点的「▶ 开始」＝现在就跑：队列里没有到点的活，就自动塞一轮日常浏览（一趟只塞一次） */
+      /* 🌿 日常浏览：每趟开跑先在队首插一轮「刷首页」（一趟最多一轮，见 _runQueue） */
+      this._dailyPlugged = false;
       this.scope = scope === 'growing' ? 'growing' : 'all';
       this.pace = (pace === 'once' || pace === 'interval') ? pace : 'interval';
       // ★ 双引擎：启动即绑定水 tab（只在它上面驱动页面，客服走客服 tab，二者互不抢页）
@@ -301,6 +326,10 @@
       this._setBotLock(true);
       botLog('🤖 ===== 自动灌水启动（口径：' + (this.scope === 'growing' ? '只追涨势' : '全部未灌过') +
         ' · 节奏：' + (this.pace === 'interval' ? '定时轮' : '一遍跑完') + (this.autoMode ? ' · 后台保底时钟拉起' : '') + '） =====', 'info');
+      if (this.skipPlats.length) {
+        botLog('⏸ 这趟跳过「' + this.skipPlats.map(function (p) { return p === 'dy' ? '抖音' : '小红书'; }).join('、') +
+          '」那一头（后台按了暂停 / 还没认号）', 'warn');
+      }
       this._updateUI(true);
       // 执行器状态：后台看门狗靠它判断"要不要再把窗口拉起来"（跑完/停掉都写回 false）
       await this._setRunFlag(true);
@@ -315,7 +344,7 @@
         // ★ 队列执行器：跑的是「词 × 类型」这一格一格（到点的那些格子＝队列），一格 = 一次搜索 + 按口径灌水
         if (this.pace === 'interval') {
           var config = await this._trendConfig();
-          botLog('⏳ 定时轮：每 ' + config.scanIntervalMin + ' 分钟跑队列里的一项（把额度摊开到一天；间隔在「🎯 获客 → ⚙️ 设置 → 🤖 拟人化与频率 → ⚙️ 高级配置」里改）', 'info');
+          botLog('⏳ 定时轮：每 ' + config.scanIntervalMin + ' 分钟跑队列里的一项（把额度摊开到一天；间隔在「🎯 获客 → ⚙️ 设置 → 🤖 跑活节奏 → ⚙️ 高级配置」里改）', 'info');
         } else {
           botLog('▶ 一遍跑完：从队首连跑到队尾（去「🔁 队列」页看这一队：正在跑 / 待跑 / 已完成）', 'info');
         }
@@ -335,6 +364,7 @@
       }
 
       window.__botEngineBusy = '';
+      window.__acqCurScenario = '';
       this.running = false;
       this._updateUI(false);
       this._setBotLock(false);
@@ -407,10 +437,29 @@
       var round = 0, completed = 0;
       var dropped = {};   // 本次跑里"丢掉了、但还挂在队头"的项 → 防止原地反复重搜
       var ran = {};       // 本次跑已跑过的项（"每轮跑"的格子跑完仍算到点，一趟里不重复跑）
+      /* 🌿 每趟开跑先插一轮日常浏览（刷首页），排在队首，获客往后退一位。
+         一趟最多插一轮；开关关着就不插。 */
+      if (!self._dailyPlugged) {
+        var _pd0 = await self._plugDailyRound();
+        if (_pd0) {
+          self._dailyPlugged = true;
+          botLog('🌿 这趟开跑先刷一轮首页（日常浏览，排第一位）', 'info');
+        }
+      }
       while (true) {
         await self._checkStop();
         var item = await drainQueueTake(ran);
         if (!item) {
+          /* 开跑那一刻没插上（开关刚关 / 队里已经排着一轮）：队列跑空了再试一次（还是一趟只插一轮） */
+          if (!self._dailyPlugged) {
+            self._dailyPlugged = true;
+            var _pd = await self._plugDailyRound();
+            if (_pd) {
+              botLog('🌿 队列里没有到点的活了，趁着这会儿补刷一轮首页', 'info');
+              continue;
+            }
+            botLog('🌿 队列里没有到点的活，日常浏览也没插上（开关关着 / 今天被「停止本轮」按住了）——去「获客 → 队列 → 🌿 日常浏览」看一眼', 'warn');
+          }
           var waitingN = 0, planNow = null;
           try {
             planNow = drainQueuePlan(await drainGetScanCfg(), await drainGetQueue(), Date.now(), await drainDailyCtx());
@@ -423,6 +472,7 @@
               var nxt = new Date(Date.now() + rest.waitMs);
               botLog('⏳ 自动跑：到点的都跑完了（本次跑了 ' + completed + ' 项），今天还有活——' + rest.why +
                 '，约 ' + String(nxt.getHours()).padStart(2, '0') + ':' + String(nxt.getMinutes()).padStart(2, '0') + ' 后再看队列', 'info');
+              self.waitWhy = rest.why || '下一项还没到点';
               await self._autoSleep(rest.waitMs);
               continue;
             }
@@ -434,10 +484,18 @@
             '——改表就是改队列，随时可再跑一趟', 'success');
           return true;
         }
-        var ik = _drainQKey(item.k, item.scenario);
+        // 一趟里的去重键＝一次搜索（词|类型#筛选）：拆行后同一词的三次 TOP 各算各的，不能互相顶掉
+        var ik = _drainQKey(item.k, item.scenario, item.plat, item.passId);
+        /* 后台暂停 / 没认号的那一头：这趟不跑，记进 ran 别在队头原地空转 */
+        if (item.plat && self.skipPlats.indexOf(item.plat) >= 0) {
+          ran[ik] = true;
+          continue;
+        }
         if (dropped[ik]) {
-          botLog('⏸ 队头这一项「' + (item.label || item.k) + ' × ' + self._qTypeName(item.scenario) + '」跑不起来、又还挂在配置表里，先停下不空转——去「获客 → 任务配置」改这一格', 'warn');
-          return false;
+          await drainQueueBlock(item, '跑不起来、又还挂在配置表里');
+          ran[ik] = true;
+          botLog('🔴 队头这一项「' + (item.label || item.k) + ' × ' + self._qTypeName(item.scenario) + '」跑不起来、又还挂在配置表里，先标红不空转——去「获客 → 任务配置」改这一格', 'warn');
+          continue;
         }
         round++;
         var r = null;
@@ -449,17 +507,36 @@
           throw e;
         }
         if (r && r.drop) { dropped[ik] = true; continue; }
-        if (r && r.stop) {
-          botLog('⏸ 队列停在「' + (item.label || item.k) + ' × ' + self._qTypeName(item.scenario) + '」这一项，已记欠账——下次点「🤖 开始」从它接着跑', 'warn');
-          // 🌿 自动跑的"空转熔断"：连续三次都卡在同一类问题上（页面被占着 / 卡住），先别反复拉起
+        /* 🛑 整队停（到上限 / 账号安全拦下 / 页面没接上）：这些不是某一项的问题，换一项也没用 */
+        if (r && r.stop && r.global) {
+          try { await drainQueueHold(item, r.why || '跑不起来'); } catch (_) {}
+          try { await drainQueueLastStop(item, r.why || '跑不起来', { global: true }); } catch (_) {}
+          botLog('⏸ 队列停下：' + (r.why || '跑不起来') + '——已记欠账，下次点「🤖 开始」从这一项接着跑', 'warn');
           if (self.autoMode) {
             self._autoStopN = (self._autoStopN || 0) + 1;
             if (self._autoStopN >= 3) {
-              try { await chrome.storage.local.set({ daily_browse_broken: { at: Date.now(), reason: '连续 3 次没跑起来（页面被手动占用 / 页面卡住）' } }); } catch (_) {}
-              botLog('🛑 自动跑先停了：连续 ' + self._autoStopN + ' 次没跑起来。看一眼小红书页面是不是没打开 / 卡住了，回头点「🤖 开始」手动跑一趟', 'error');
+              try { await chrome.storage.local.set({ daily_browse_broken: { at: Date.now(), reason: '连续 3 次没跑起来（页面被手动占用 / 页面卡住 / 到上限）' } }); } catch (_) {}
+              botLog('🛑 先停了：连续 ' + self._autoStopN + ' 次没跑起来。看一眼小红书页面是不是没打开 / 卡住了，回头点「🤖 开始」手动跑一趟', 'error');
             }
           }
           return false;
+        }
+        /* ⏭ 某一项跑不起来：记一笔就往下走，别让整条队列卡在它身上（老板 2026-10-30 定） */
+        if (r && (r.block || r.stop)) {
+          var _nm = '「' + (item.label || item.k) + ' × ' + self._qTypeName(item.scenario) + '」';
+          var _why = r.why || '跑不起来';
+          ran[ik] = true;
+          var _nb = await drainQueueBlock(item, _why);
+          try { await drainQueueLastStop(item, _why, { n: _nb }); } catch (_) {}
+          if (r.block) {
+            botLog('🔴 ' + _nm + '标红等你处理：' + _why + '——队列继续往下走', 'warn');
+          } else if (_nb < 3) {
+            await drainQueueHold(item, _why);
+            botLog('⏭ ' + _nm + '先跳过（今天第 ' + _nb + ' 次没跑起来：' + _why + '），队列继续往下走', 'warn');
+          } else {
+            botLog('🔴 ' + _nm + '连续 ' + _nb + ' 次没跑起来，标红等你处理：' + _why + '——队列继续往下走', 'warn');
+          }
+          continue;
         }
         ran[ik] = true;   // 跑过的不再进这一趟（"每轮跑"的格子下一趟再来）
         completed++;
@@ -469,7 +546,7 @@
           var nextN = 0;
           try {
             var _pn = drainQueuePlan(await drainGetScanCfg(), await drainGetQueue(), Date.now(), await drainDailyCtx());
-            nextN = _pn.todo.filter(it => !ran[_drainQKey(it.k, it.scenario)]).length;
+            nextN = _pn.todo.filter(it => !ran[_drainQKey(it.k, it.scenario, it.plat, it.passId)]).length;
           } catch (_) {}
           if (nextN > 0) {
             var config = await self._trendConfig();
@@ -488,46 +565,69 @@
       self._stats = { found: 0, comments: 0, notes: [] };
       self._curKw = item.k;              // 💬 评论条队列的实时进度要带上"这一项是哪个词 × 哪个类型"
       self._curScenario = item.scenario;
-      botLog('▶ 第 ' + seq + ' 项：' + card + ' × 「' + (item.label || item.k) + '」' +
+      window.__acqCurScenario = item.scenario || '';   // 这一格是哪个玩法：回评论区那句要跟着它
+      /* 拆行后 seq 是「第几次搜索」；同一个词的热门会连着出现三次（点赞/评论/收藏最多） */
+      var cardLine = card + (item.passLabel ? ' · ' + item.passLabel : '');
+      var seqUnit = item.scenario === 'daily' ? ' 轮' : (item.acct ? ' 次主页扫描' : ' 次搜索');
+      botLog('▶ 第 ' + seq + seqUnit + '：' + cardLine + ' × 「' + (item.label || item.k) + '」' +
         (item.carry ? '（接着上次没跑完的）' : '') + (item.manual ? '（手插到最前）' : ''), 'info');
 
       // 🌿 日常流程：不走「搜索 → 灌水」那条路，单独跑（见 _runDailyItem）
       if (item.scenario === 'daily') return await self._runDailyItem(item, seq);
 
+      // 🎵 抖音那一趟：搜词 → 捞作品 → 进评论找问价的人（见 _runDouyinItem）
+      if (item.plat === 'dy') return await self._runDouyinItem(item, seq);
+
       var notes = await self._doSearchRound(item);
       if (!notes) {
         var qe = self._qErr || { kind: 'hold', msg: '搜索没出结果' };
+        /* 词被停用 / 属地没填：重试没用，直接标红等人工改配置；其余当可重试的失败 */
         if (qe.kind === 'drop') {
-          await drainQueueDrop(item.k, item.scenario);
-          botLog('⏭ 这一项已从队列删掉：' + qe.msg, 'warn');
-          return { drop: true };
+          botLog('🔴 这一项跑不了，标红等你处理：' + qe.msg, 'warn');
+          return { block: true, why: qe.msg };
         }
-        await drainQueueHold(item, qe.msg);
         botLog('⚠️ 这一项没跑起来：' + qe.msg, 'warn');
-        return { stop: true };
+        return { stop: true, why: qe.msg };
       }
       self._stats.found = notes.length;
 
       if (self.scope === 'growing') await self._roundGrowing(notes);
       else await self._roundAll(notes);
 
-      if (self._capHit || self._guardStop) {
-        await drainQueueHold(item, self._guardStop ? '🛡 账号安全拦下（额度用完/时段外），下次接着跑' : '今天已到上限，下次接着跑');
-        return { stop: true };
+      /* 🛡 账号安全拦下 / 今天评论到顶：换一项也没用，整队停（队列页顶部会说清原因） */
+      if (self._guardStop) {
+        return { stop: true, global: true, why: '🛡 账号安全拦下（今日额度用完 / 不在能跑的时段），下次接着跑' };
       }
+      if (self._capHit && self._capKind !== 'round') {
+        return { stop: true, global: true, why: '今天评论到上限了，明天接着跑' };
+      }
+      /* 每轮篇数跑满＝这一格这一趟该干的干完了，不算失败：记完成、换队列下一项 */
       await drainQueueFinish(item, {
         foundN: self._stats.found,
         commentN: self._stats.comments,
         notes: self._stats.notes,
-        note: self._stats.comments > 0 ? ('评论 ' + self._stats.comments + ' 条') : '没找到可评论的',
+        allSkipped: !!self._allSkipped,
+        note: self._allSkipped ? '搜到的都评过了'
+          : (self._stats.comments > 0 ? ('评论 ' + self._stats.comments + ' 条') : '没找到可评论的'),
       });
-      botLog('✅ 第 ' + seq + ' 项跑完：搜到 ' + self._stats.found + ' 篇 · 评论 ' + self._stats.comments + ' 条', 'success');
+      botLog('✅ 第 ' + seq + seqUnit + '跑完（' + cardLine + '）：搜到 ' + self._stats.found + ' 篇 · ' +
+        (self._allSkipped ? '都评过了 · 0 条' : ('评论 ' + self._stats.comments + ' 条')), 'success');
       return { done: true };
     },
 
+    /* ─── 🎵 抖音那一趟：搜词 → 捞 20 条作品 → 逐条进评论找问价的人 ───
+     *   只「看和记」：不发评论、不发私信、不关注（确认单 §二/§四）。
+     *   网页这份没有抖音页可驱动（抖音只在执行器里跑），所以老实地记欠账、不冒充跑过。 */
+    _runDouyinItem: async function (item, seq) {
+      var self = this;
+      await self._checkStop();
+      botLog('🔴 抖音获客要在执行器里跑：网页这头没有抖音页，标红等你换到执行器跑', 'warn');
+      return { block: true, why: '抖音获客要在执行器里跑（网页这头没有抖音页）' };
+    },
+
     /* 🌿 自动跑：今天还剩哪些"还没到点"的活 → 值不值得守着（返回 {waitMs, why}；waitMs=0＝今天没活了）
-     *   ① 获客格子 / 盯的账号：它们自带"下次到点"；② 日常浏览：今天还有配额，只是还没到它那个时段。
-     *   再拿自动跑时段收口：等不到那一刻（已过时段）就直接收工，别把窗口守过夜。 */
+     *   获客格子 / 盯的账号：它们自带"下次到点"。日常浏览没有时段/配额这一层（上午没插上就跑空了再补），
+     *   不参与"要等多久"的判断。再拿自动跑时段收口：等不到那一刻就直接收工，别把窗口守过夜。 */
     _autoRest: async function (plan) {
       var self = this;
       var now = Date.now();
@@ -539,15 +639,6 @@
         }
       });
       var db = await drainDailyCtx();
-      try {
-        // 只在"日常这一轮确实欠着"时才为它守着（每 N 格插 1 轮，已经跑到该它了）；
-        // 而且要等的是"下一段时段开始"（现在就有方向可跑的话，队列早就把它取出来了）
-        var owed = !!(plan && plan.dbOn && (Number(plan.everyN) || 0) > 0 && (Number(plan.sinceN) || 0) >= plan.everyN);
-        if (owed && db && db.cfg && db.cfg.enabled && typeof DailyBrowse !== 'undefined') {
-          var openAt = DailyBrowse.nextOpenMs ? DailyBrowse.nextOpenMs(db.cfg, db.daily, now) : 0;
-          if (openAt > now + 60000 && openAt <= endToday.getTime()) cands.push({ at: openAt, why: '日常浏览还没到它那个时段' });
-        }
-      } catch (_) {}
       if (!cands.length) return { waitMs: 0, why: '今天没有还没到点的活了' };
       cands.sort(function (a, b) { return a.at - b.at; });
       var wait = Math.max(60000, Math.min(cands[0].at - now, 10 * 60000));
@@ -564,11 +655,16 @@
     _autoSleep: async function (ms) {
       var self = this;
       var deadline = Date.now() + Math.max(0, ms);
-      while (Date.now() < deadline) {
+      self.waiting = true;
+      self.waitUntil = deadline;
+      if (!self.waitWhy) self.waitWhy = '下一项还没到点';
+      try {
+        while (Date.now() < deadline) {
+          await self._checkStop();
+          await sleep(Math.min(5000, Math.max(1000, deadline - Date.now())));
+        }
         await self._checkStop();
-        await sleep(Math.min(5000, Math.max(1000, deadline - Date.now())));
-      }
-      await self._checkStop();
+      } finally { self.waiting = false; self.waitUntil = 0; self.waitWhy = ''; }
     },
 
     /* 队列项的类型名（表格里的口径名，如「💬 最新」） */
@@ -587,13 +683,13 @@
       await self._checkStop();
       var db = await drainDailyCtx();
       var cfg = db && db.cfg;
-      if (!cfg) { await drainQueueHold(item, '读不到日常浏览配置'); botLog('⚠️ 读不到日常浏览配置（重开弹窗再试）', 'warn'); return { stop: true }; }
+      if (!cfg) { botLog('⚠️ 读不到日常浏览配置（重开弹窗再试）', 'warn'); return { stop: true, what: 'daily', why: '读不到日常浏览配置（重开弹窗再试）' }; }
       var dir = (typeof DailyBrowse !== 'undefined') ? DailyBrowse.dirById(cfg, item.k) : null;
-      if (!dir) { await drainQueueDrop(item.k, 'daily'); botLog('⏭ 这一轮日常流程作废：方向已经不在配置里了', 'warn'); return { drop: true }; }
+      if (!dir) { await drainQueueDrop(item.k, 'daily'); botLog('⏭ 这一轮日常流程作废：日常浏览已经关掉了', 'warn'); return { drop: true }; }
 
-      // 该不该跑（关掉 / 方向停用 / 配额满 / 不在时段）→ 记一条完成跳过，别把整条队列堵在这一项上
-      // 手插的一轮＝「现在就跑」：总开关与时段拦不住它（方向停用、配额满仍然拦）
-      var skip = self._dailySkipReason(cfg, db.daily, dir, !!item.manual);
+      // 该不该跑（只认总开关）→ 记一条完成跳过，别把整条队列堵在这一项上
+      // 手插的一轮＝「现在就跑」：总开关拦不住它
+      var skip = self._dailySkipReason(cfg, !!item.manual);
       if (skip) { await drainQueueFinish(item, { note: skip }); botLog('⏭ 这一轮跳过：' + skip, 'warn'); return { done: true }; }
       if (item.manual && !cfg.enabled) botLog('ℹ️ 日常浏览总开关是关的：这一轮是你手插的，照跑一次（队列不会自动排它）', 'info');
 
@@ -610,26 +706,24 @@
         }
       } catch (_) {}
       if (_gw) {
-        await drainQueueHold(item, '🛡 ' + (_gw.text || '账号安全拦下这一轮'));
-        botLog('⏹ 🛡 ' + (_gw.text || '账号安全拦下这一轮') + '，记欠账下次接着跑', 'warn');
-        return { stop: true };
+        botLog('⏹ 🛡 ' + (_gw.text || '账号安全拦下这一轮') + '，这一项先跳过', 'warn');
+        return { stop: true, why: '🛡 ' + (_gw.text || '账号安全拦下这一轮') };
       }
 
-      var used = self._dailyUsed(db.daily, dir.id);
-      var count = Math.max(1, Math.min(Number(cfg.perRound) || 6, dir.dailyQuota - used));
-      if (_gLeft < count) count = Math.max(1, _gLeft);   // 🛡 别超「打开浏览」总账剩下的量
-      var kws = (dir.keywords || []).filter(Boolean);
-      var kw = kws.length ? kws[Math.floor(Math.random() * kws.length)] : '';
-      var url = kw
-        ? ('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(kw) + '&source=web_explore_feed')
-        : 'https://www.xiaohongshu.com/explore';
+      /* 一轮刷几篇：在「下限~上限」之间随机取（默认 18~22）
+         账号安全「打开浏览」总账不够时，按剩下的量收口 */
+      var _mn = Math.max(1, Number(cfg.perRoundMin) || 18);
+      var _mx = Math.max(_mn, Number(cfg.perRoundMax) || _mn);
+      var count = _mn + Math.floor(Math.random() * (_mx - _mn + 1));
+      if (_gLeft < count) count = Math.max(1, _gLeft);
+      var url = 'https://www.xiaohongshu.com/explore';
 
       var tabId = await self._ensureWaterTab();
-      if (!tabId) { await drainQueueHold(item, '没找到工作台标签页'); botLog('⚠️ 没找到「💧 灌水工作台」标签页，先停下', 'warn'); return { stop: true }; }
+      if (!tabId) { botLog('⚠️ 没找到「💧 灌水工作台」标签页，先停下', 'warn'); return { stop: true, global: true, why: '没找到「💧 灌水工作台」标签页（页面被关了 / 没打开）' }; }
       var roundId = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-      botLog('  → 进' + (kw ? '搜索「' + kw + '」' : '首页推荐') + '，泛刷 ' + count + ' 篇（单篇停留 ' + cfg.dwellMin + '~' + cfg.dwellMax + 's）', 'info');
+      botLog('  → 进首页推荐，泛刷 ' + count + ' 篇（正常看 ' + cfg.dwellMin + '~' + cfg.dwellMax + 's，秒退 ' + (Number(cfg.bounceRate) || 0) + '%，看完 ' + (Number(cfg.fullRate) || 0) + '%）', 'info');
       try { await chrome.tabs.update(tabId, { url: url }); }
-      catch (e) { await drainQueueHold(item, '打开浏览页失败'); botLog('⚠️ 打开浏览页失败：' + ((e && e.message) || e), 'warn'); return { stop: true }; }
+      catch (e) { botLog('⚠️ 打开浏览页失败：' + ((e && e.message) || e), 'warn'); return { stop: true, global: true, why: '打开浏览页失败：' + ((e && e.message) || e) }; }
       await self._dbWaitLoad(tabId, 20000);
       await self._checkStop();
 
@@ -638,13 +732,15 @@
         dirId: dir.id, dirName: dir.name,
         dwellMin: cfg.dwellMin, dwellMax: cfg.dwellMax,
         openRate: cfg.openRate, likeRate: cfg.likeRate, collectRate: cfg.collectRate,
-        // 顺手互动：只给"今天还剩几条"的预算（页面按概率发，发出去才算数）；上限 0 ＝ 不做这类动作
-        comment: { rate: (cfg.comment || {}).rate, left: Math.max(0, (Number((cfg.comment || {}).dailyMax) || 0) - (Number(db.daily.comments) || 0)) },
-        reply: { left: Math.max(0, (Number((cfg.reply || {}).dailyMax) || 0) - (Number(db.daily.replies) || 0)) },
-        follow: { rate: (cfg.follow || {}).rate, left: Math.max(0, (Number((cfg.follow || {}).dailyMax) || 0) - (Number(db.daily.follows) || 0)) },
+        /* 打开后怎么看法：秒退 / 看完 / 余下正常看（2026-10-30） */
+        bounceRate: cfg.bounceRate, fullRate: cfg.fullRate,
+        /* 顺手互动：只按概率走、不设每日名额（-1＝不限）；0% ＝ 这个动作不做。
+           「评论」一项管发新评论和回别人一句两种说法；真正的天花板是账号安全那道闸 */
+        comment: { rate: (cfg.comment || {}).rate, left: -1 },
+        follow: { rate: (cfg.follow || {}).rate, left: -1 },
       };
       var sent = await self._dbStartRound(tabId, opts);
-      if (!sent) { await drainQueueHold(item, '页面脚本没接上（这一轮没发车）'); botLog('⚠️ 页面脚本没接上：可能页面没加载好，下次接着跑', 'warn'); return { stop: true }; }
+      if (!sent) { botLog('⚠️ 页面脚本没接上：可能页面没加载好，下次接着跑', 'warn'); return { stop: true, why: '页面脚本没接上（这一轮没发车）' }; }
 
       var r = null;
       try {
@@ -656,14 +752,16 @@
       }
       if (!r.ok) {
         var why = r.noStart ? '页面没动起来（可能被手动操作占着 / 页面没加载好）' : '这一轮跑太久，先收尾';
-        await drainQueueHold(item, why);
-        botLog('⚠️ ' + why + '，记欠账下次接着跑', 'warn');
-        return { stop: true };
+        botLog('⚠️ ' + why + '，这一项先跳过', 'warn');
+        return { stop: true, why: why };
       }
 
       var last = r.last || {};
       var items = Array.isArray(last.items) ? last.items : [];
       var viewed = items.length;
+      /* 这一趟的"刷了几篇日常"要跟着回执走到网页上：不然「搜到 0 篇」会被读成"根本没刷" */
+      self._stats = self._stats || {};
+      self._stats.daily = { name: dir.name, viewed: viewed };
       var opened = items.filter(x => x && x.opened).length;
       var liked = items.filter(x => x && x.liked).length;
       var collected = items.filter(x => x && x.collected).length;
@@ -697,17 +795,29 @@
       return { done: true };
     },
 
-    /* 今天这个方向还能不能跑（不能跑＝跳过这一轮，不堵队列）
-       force＝手插的一轮：用户当下点了「塞一轮」，总开关与时段不拦它（方向停用、配额满仍然拦） */
-    _dailySkipReason: function (cfg, daily, dir, force) {
-      if (!force && (!cfg || !cfg.enabled)) return '日常浏览已关（配置在「获客 → 任务配置 → 🌿 日常浏览」）';
-      if (!dir || dir.enabled === false) return '这个方向被停用了';
-      if (this._dailyUsed(daily, dir.id) >= (Number(dir.dailyQuota) || 0)) return '「' + dir.name + '」今天已经刷满 ' + dir.dailyQuota + ' 篇';
-      if (!force && typeof DailyBrowse !== 'undefined' && !DailyBrowse.inWindow(dir.windows, Date.now())) return '「' + dir.name + '」现在还不在时段内';
+    /* 今天这一轮还能不能跑（不能跑＝跳过这一轮，不堵队列）
+       force＝手塞的一轮：用户当下点了「塞一趟」，总开关不拦它 */
+    _dailySkipReason: function (cfg, force) {
+      if (!force && (!cfg || !cfg.enabled)) return '日常浏览已关（在「获客 → 队列 → 🌿 日常浏览」里打开）';
       return '';
     },
-    _dailyUsed: function (daily, dirId) {
-      return Number((((daily || {}).byDirection) || {})[dirId]) || 0;
+    /* 每趟开跑/队列跑空时：塞一轮到队首（等同「🌿 塞一趟」）。没得塞返回 null。 */
+    _plugDailyRound: async function () {
+      try {
+        if (typeof drainDailyCtx !== 'function' || typeof drainQueuePushFront !== 'function') return null;
+        if (typeof DailyBrowse === 'undefined' || !DailyBrowse.pickDirection) return null;
+        var db = await drainDailyCtx();
+        if (!db || !db.cfg || !db.cfg.enabled) return null;
+        /* 队列里已经排着一轮（刚手插过 / 点过「🌿 日常浏览」手塞的待跑或计划 / 欠着没跑完）→ 不重复插 */
+        var q = await drainGetQueue();
+        var hasDaily = ((q && q.manual) || []).concat((q && q.carry) || []).some(function (x) { return x && x.scenario === 'daily'; })
+          || (((q && q.dailyPlan) || []).length > 0);
+        if (hasDaily) return null;
+        var pick = DailyBrowse.pickDirection(db.cfg, db.daily, Date.now());
+        if (!pick) return null;
+        await drainQueuePushFront(pick.id, 'daily', pick.name || '日常浏览');
+        return pick;
+      } catch (_) { return null; }
     },
     _dbLast: async function () {
       try {
@@ -757,7 +867,10 @@
       var self = this;
       var t0 = Date.now();
       var startMs = 90000;
-      var runMs = Math.round(count * (((Number(cfg.dwellMax) || 25) + 40) * 1000) + 120000);
+      var _dMax = Number(cfg.dwellMax) || 25;
+      /* 一篇最多可能占到「看完」的 2 分钟封顶（没配看完就按正常看的视频上限算） */
+      var _perNote = Math.max(_dMax, Math.min(_dMax * 1.6, 120), Number(cfg.fullRate) > 0 ? 120 : 0);
+      var runMs = Math.round(count * ((_perNote + 40) * 1000) + 120000);
       var started = false, lastN = -1;
       while (true) {
         await sleep(2000);
@@ -785,9 +898,13 @@
       var SCREEN_MAX = 30;
       // ★ 节奏控制：本轮已处理篇数 + 每日已达上限（dailyMax/perRound，0=不限）
       var processedThisRun = 0;
+      var _triesThisRun = 0;   // ★ 这一行实际点开的篇数（失败的也算，否则页面一坏会一路试到底盘 20 篇）
       var _awSch = await _awSchedule();
       var _dailyMax = Number(_awSch.dailyMax) || 0;
-      var _perRoundCap = Number(_awSch.perRound) || 0;
+      /* 2026-11-03 拆行：上限按「一行（一次搜索）」算；没设过＝3 篇，不在一行上耗到底 */
+      var _perRoundCap = Number(_awSch.perRound) || 3;
+      self._allSkipped = false;
+      var _seenNotes = 0, _skipNotes = 0;
       var notes = $$('#noteList .note-item');
       if (notes.length === 0) {
         botLog('⚠️ 笔记列表为空，结束本轮', 'warn');
@@ -811,17 +928,20 @@
           continue;
         }
         handledNotes[nid] = true; // 先登记，逐屏推进时据此跳过已处理的，防重复
+        _seenNotes++;
 
         // ★ 节奏控制每日/每轮门禁：达到即停（队列执行器据此把这一项记欠账，下次接着跑）
         var _usedNow = await _awDailyUsed();
         if (_dailyMax > 0 && _usedNow >= _dailyMax) {
           self._capHit = true;
+          self._capKind = 'daily';
           botLog('⏹ 已达每日评论上限 ' + _dailyMax + ' 条（今天已发 ' + _usedNow + '），本轮结束', 'warn');
           break;
         }
-        if (_perRoundCap > 0 && processedThisRun >= _perRoundCap) {
+        if (_perRoundCap > 0 && _triesThisRun >= _perRoundCap) {
           self._capHit = true;
-          botLog('⏹ 已达每轮处理上限 ' + _perRoundCap + ' 篇，本轮结束', 'warn');
+          self._capKind = 'round';
+          botLog('⏹ 这一行（这次搜索）跑满 ' + _perRoundCap + ' 篇（打开失败也算，别在一行上耗到底；上限在「获客 → ⚙️ 设置 → 高级配置 → 每轮最多处理」里调），换下一行', 'warn');
           break;
         }
 
@@ -833,15 +953,18 @@
           var openBtn = note.querySelector('.btn-open-note');
           // 已灌水 → 跳过（与列表徽标「全部未灌过」口径同源）
           if (!openBtn || openBtn.dataset.watered === 'true') {
+            _skipNotes++;
             botLog('⏭ 笔记 "' + noteTitle + '" 已灌水，跳过', 'info');
             continue;
           }
           // 队列里已经跑过这一篇（工作台那个「✅ 队列已跑过」标）→ 也跳过，别再开一遍重评
           var qBtn = note.querySelector('.note-q');
           if (qBtn && qBtn.dataset.qdone === 'true') {
+            _skipNotes++;
             botLog('⏭ 笔记 "' + noteTitle + '" 队列里已跑过，跳过', 'info');
             continue;
           }
+          _triesThisRun++;
           botLog('📄 打开笔记 "' + noteTitle + '" (' + num + '/' + notes.length + ')', 'info');
           self._cqNoteIdx = num; self._cqNoteTotal = notes.length;
           await self._cqLive({ kw: self._curKw, scenario: self._curScenario, title: noteTitle, idx: num, total: notes.length });
@@ -882,6 +1005,8 @@
         }
       }
 
+      /* 这一搜扫到的每一篇都是「已灌水 / 队列已跑过」→ 队列行要写「都评过了」，别装作没找到 */
+      self._allSkipped = (_seenNotes > 0 && _skipNotes === _seenNotes);
       botLog('📊 所有笔记处理完成！', 'success');
       return true;
     },
@@ -936,6 +1061,7 @@
         var _used = await _awDailyUsed();
         if (_dMax > 0 && _used >= _dMax) {
           self._capHit = true;
+          self._capKind = 'daily';
           botLog('⏹ 已达每日评论上限 ' + _dMax + ' 条（今天已发 ' + _used + '），本轮停止', 'warn');
           break;
         }
@@ -986,6 +1112,8 @@
     stop: function () {
       this.paused = false;   // 暂停中也能直接停：先解掉暂停，让等着的那一处走到 _checkStop 抛错退出
       this.stopped = true;
+      this.waitUntil = 0;
+      this.waitWhy = '';
       botLog('⏹ 收到停止信号，等待当前操作完成后停止...', 'warn');
       this._updateUI(false);
     },
@@ -994,6 +1122,8 @@
     pause: function () {
       if (!this.running || this.paused) return;
       this.paused = true;
+      this.waitUntil = 0;
+      this.waitWhy = '已暂停（点工作台上的「▶ 继续」接着跑）';
       botLog('⏸ 已暂停：当前这一步做完就停下等（点「▶ 继续」接着跑，进度不丢）', 'warn');
       this._updateUI(true);
     },
@@ -1002,6 +1132,7 @@
     resume: function () {
       if (!this.paused) return;
       this.paused = false;
+      this.waitWhy = '';
       botLog('▶ 已继续，接着跑', 'info');
       this._updateUI(true);
     },
@@ -1026,9 +1157,16 @@
     _goBackToList: async function () {
       var self = this;
       var backBtn = document.getElementById('btnBackToList');
-      // ★ 返回用搜索列表首关键词（不再依赖输入框单值）
+      // ★ 返回用「这一行正在搜的词」（不拿配置里第一个词兜底：队列一行可能是别的词，回错词页面就全对不上了）
       var kw = '';
-      try { var _r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); }); kw = (((_r['auto_water_config'] || {}).keywords) || [])[0] || ''; } catch (_) {}
+      try {
+        var _s = await new Promise(function (res) { chrome.storage.local.get('auto_water_state', res); });
+        var _ss = ((_s['auto_water_state'] || {}).searchState) || {};
+        var _pl = _ss.plan || [];
+        var _p = _pl[_ss.planIdx] || _pl[_pl.length - 1] || null;
+        if (_p && !_p.kind && _p.term && !/^https?:/i.test(_p.term)) kw = String(_p.term);
+      } catch (_) {}
+      if (!kw) { try { var _r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); }); kw = (((_r['auto_water_config'] || {}).keywords) || [])[0] || ''; } catch (_) {} }
       // ★ 不再用“按钮是否可见”来判断：时序常使可见性为 none，导致跳过返回、紧接笔记导航错乱（“断”）。
       //   .click() 对隐藏元素同样触发事件，这里始终点击以触发 popup 的 goBack（重置 UI + 让 tab 回搜索页）
       if (backBtn) {
@@ -1130,9 +1268,10 @@
       try { words = await drainSyncEnabledKeywords(); } catch (_) {}
       var idx = words.indexOf(item.k);
       if (idx < 0) { self._qErr = { kind: 'drop', msg: '「' + item.k + '」已不在启用词里（被停用/移除了）' }; return null; }
-      botLog('🔍 搜「' + item.k + '」的 ' + card + '（点单这一类，不顺延到别的词）...', 'info');
+      botLog('🔍 搜「' + item.k + '」的 ' + card + (item.passLabel ? ' · ' + item.passLabel : '') +
+        '（只跑这一搜，不顺延到别的词/别的筛选）...', 'info');
       var r = null;
-      try { r = await window._useKw(idx, item.scenario); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+      try { r = await window._useKw(idx, item.scenario, item.passId); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
       if (!r || !r.ok) {
         var em = (r && r.error) || '搜索没起来';
         // ⚙️ 配置表已经不含这一格／城市没设（这类根本搜不了）→ 「改表＝改队列」，直接丢；其余（网络/超时）留欠账
@@ -1200,7 +1339,9 @@
           }
         }
         if (opts.force) window.__forceRescan = true;
-        var resp = await sendMsg('openNote', { note: note });
+        /* ★ 等足 60 秒：打开笔记内部要「点卡片 → 等详情页就绪 → 没就绪再点两次」，最坏 50 多秒；
+           以前只等 10 秒，慢一点就被判失败，随后又去「返回列表」跟它抢页面 → 一篇都开不进去 */
+        var resp = await sendMsg('openNote', { note: note }, 60000);
         if (resp && resp.ok) {
           try { if (typeof AccountGuard !== 'undefined') await AccountGuard.spend('open', 1); } catch (_) {}
           botLog('  ✅ 笔记已打开（' + (resp.ready ? '详情页就绪' : '就绪超时，仍尝试扫描') + '）', 'success');
@@ -1224,7 +1365,8 @@
         botLog('  ' + (skipped ? '⏭' : '❌') + ' 打开失败/跳过：' + ((resp && resp.error) || '未知原因'), skipped ? 'warn' : 'error');
         return false;
       } catch (e) {
-        botLog('  ⚠️ 打开异常：' + e.message, 'warn');
+        var _em = (e && e.message) || String(e);
+        botLog('  ⚠️ 打开异常：' + _em + (/超时|无响应/.test(_em) ? '（页面脚本没回话——把打开的小红书页面刷一下再跑，或点一次扩展「重新加载」）' : ''), 'warn');
         return false;
       }
     },
@@ -1362,7 +1504,7 @@
       } catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
       if (res && res.success) {
         try { if (typeof AccountGuard !== 'undefined') await AccountGuard.spend('comment', 1); } catch (_) {}
-        botLog('  ✅ 已发一级评论（' + label + '）：' + text.slice(0, 24) + (text.length > 24 ? '…' : ''), 'success');
+        botLog('  ✅ 已发一级评论（' + label + '）：' + text.slice(0, 60) + (text.length > 60 ? '…' : ''), 'success');
         return { count: 1, reason: 'sent', comment: text };
       }
       var re = (res && res.error) || '发送没成功';
@@ -1400,6 +1542,7 @@
             noteUrl: curNid ? ('https://www.xiaohongshu.com/explore/' + curNid) : '',
             comment: b.dataset.original || '',
             userUrl: b.dataset.userlink || '',
+            scenario: self._curScenario || '',
           },
           origin: '评论',
         };
@@ -1443,7 +1586,7 @@
       var sc = self._curScenario || '';
       var pb = (sc && typeof drainPlaybookOf === 'function') ? drainPlaybookOf(sc) : null;
       var ncCount = 0;   // 「评笔记本身」那一条的成绩（0/1）
-      var replyCommenters = !pb || pb.send === 'both';   // 只有求助（both）和老入口才逐条回复评论者
+      var replyCommenters = !pb || pb.send === 'both';   // 六个玩法现在全走 both（评笔记＋回评论区）；只有同行／竞对不逐条回复
       var scanCommenters = !pb || pb.find === 'commenters';   // 本地不扫评论区，其余类型都扫
 
       // ① 对笔记本身发一条一级评论（最新=抢位 / TOP=活水 / 本地 / 高V=借势 / 求助=对楼主）
@@ -1548,7 +1691,7 @@
         botLog('  → 笔记 "' + noteTitle + '" 无待发送评论，返回列表', 'info');
         return { count: ncCount, reason: ncCount > 0 ? 'sent' : 'nobtns' };
       }
-      // ★ 只收人不回复：竞对＝埋伏（不评论）；最新/TOP/高V＝交完自己那条露脸评论，顺手把有商机的人收进清单
+      // ★ 只收人不回复：只有同行／竞对（埋伏，一个字都不评论）走这条，其余玩法评完笔记接着回评论区
       if (!replyCommenters) {
         var pbNone = !!(pb && pb.send === 'none');
         botLog('  ' + (pbNone ? '🕵️ 发现 ' : '📥 发现 ') + sendBtns.length + ' 个有商机的评论者（'
@@ -1678,6 +1821,7 @@
                   noteUrl: _curNid ? ('https://www.xiaohongshu.com/explore/' + _curNid) : '',
                   comment: sendBtn.dataset.original || '',
                   userUrl: sendBtn.dataset.userlink || '',
+                  scenario: self._curScenario || '',
                 },
                 dmStatus: 'sent',
                 dmCount: 1,
@@ -1736,10 +1880,15 @@
       var mm = String(nextAt.getMinutes()).padStart(2, '0');
       botLog('⏳ 第 ' + round + ' 项跑完。队列里的下一项将于 ' + hh + ':' + mm + ' 自动开始（约 ' + mins + ' 分钟后）...', 'info');
       var deadline = Date.now() + mins * 60000;
-      while (Date.now() < deadline) {
-        await self._checkStop();
-        await sleep(Math.min(5000, Math.max(1000, deadline - Date.now())));
-      }
+      self.waiting = true;
+      self.waitUntil = deadline;
+      self.waitWhy = '下一项 ' + hh + ':' + mm + ' 到点后自己开跑';
+      try {
+        while (Date.now() < deadline) {
+          await self._checkStop();
+          await sleep(Math.min(5000, Math.max(1000, deadline - Date.now())));
+        }
+      } finally { self.waiting = false; self.waitUntil = 0; self.waitWhy = ''; }
     },
 
     /* ─── 更新 UI：执行器两个参数在运行中禁用，按钮切「开始/停止」 ─── */

@@ -222,6 +222,9 @@ body.film-page { margin: 0; height: 100vh; overflow: hidden; background: var(--c
 #filmPane .mixbar .row { margin-top: 4px; }
 #filmPane .mixbar .row:first-child { margin-top: 0; }
 #filmPane .mixbar button { padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }
+/* 一起出画面那颗是这一栏的主按钮：比旁边那些大一圈、实心，别让人一屏一屏去点 */
+#filmPane .mixbar button.primary { padding: 6px 14px; font-size: var(--fs-sm); font-weight: 700; }
+#filmPane .mixbar button.primary:hover:not(:disabled) { background: var(--c-brand-ink); border-color: var(--c-brand-ink); color: #fff; }
 #filmPane .matrow { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
 #filmPane .matrow .tiny { flex: none; white-space: nowrap; }
 #filmPane .matrow button { flex: none; padding: 3px 9px; font-size: var(--fs-xs); font-weight: 600; }

@@ -168,11 +168,11 @@ window.AutoWaterApp = (function () {
   var KW_TYPES = [
     { id: 'latest', icon: '🆕', svg: 'spark', name: '最新', tip: '关键词按「最新」搜，盯新帖抢前排' },
     { id: 'top', icon: '🔥', svg: 'pulse', name: 'TOP', tip: '关键词按点赞/评论/收藏最多搜，走活水维护' },
-    { id: 'local', icon: '📍', svg: 'building', name: '本地', tip: '关键词+属地搜，本地刚需直接评（属地跟「账号规划 → 基础配置」）' },
-    { id: 'pain', icon: '🎯', svg: 'target', name: '求助', tip: '关键词+求助词搜（求推荐/听劝）' },
-    { id: 'rival', icon: '🕵️', svg: 'eye', name: '竞对', tip: '词填竞品名：只进笔记蹲人拉清单，一个字都不评论' }
+    { id: 'local', icon: '📍', svg: 'building', name: '本地', tip: '关键词+属地搜，本地刚需直接评；同行/机构的招生帖只收人不留言（属地跟「账号规划 → 基础配置」）' },
+    { id: 'pain', icon: '🎯', svg: 'target', name: '求助', tip: '关键词+求助词搜（求推荐/听劝）' }
   ];
   function curKwType() {
+    if (_kwType === 'rival') _kwType = 'local';   // 竞对已并进本地（2026-11-02）
     for (var i = 0; i < KW_TYPES.length; i++) { if (KW_TYPES[i].id === _kwType) return KW_TYPES[i]; }
     return KW_TYPES[0];
   }
@@ -346,7 +346,7 @@ window.AutoWaterApp = (function () {
 
   /* 选定某个关键词为“当前要搜的词”并立刻搜「当前类型」这一类（一次只搜这一个动作）
      队列执行器会传 (idx, 类型)：只搜「这个词 × 这一类」，返回 {ok} 供它判定下一步 */
-  async function useKeyword(idx, scenario) {
+  async function useKeyword(idx, scenario, passId) {
     var list = await loadKwList();
     if (idx < 0 || idx >= list.length) idx = 0;
     var only = scenario ? String(scenario) : '';
@@ -362,6 +362,8 @@ window.AutoWaterApp = (function () {
     try {
       var opt = { scenario: only || _kwType, force: true };
       if (only) opt.kw = list[idx];  // ★ 队列点单：词要精确命中（后台不顺延到别的词）
+      /* 拆行后队列点单到「第几次搜索」：只跑这一种筛选（top:likes / pain:求推荐…） */
+      if (passId) opt.passId = String(passId);
       var r = await sendMsg('searchNotes', opt);
       if (!r.ok) { showError(r.error || '搜索启动失败'); return { ok: false, error: r.error || '搜索启动失败' }; }
       await loadKwList();
@@ -854,7 +856,7 @@ window.AutoWaterApp = (function () {
       if (ord && !ord.done) {
         showPanel('searching');
         document.getElementById('searchText').textContent = '已派给执行器：正在搜「' + (ord.keyword || '') + '」';
-        document.getElementById('searchDetail').textContent = '执行器在它那台浏览器里跑；想停就点下面「取消搜索」。跑完的结果会落到这里';
+        document.getElementById('searchDetail').textContent = '执行器在它那台浏览器里跑；想停就去「队列」页点「⏹ 停止本轮」。跑完的结果会落到这里';
         var ordPlan = document.getElementById('searchPlan');
         if (ordPlan) ordPlan.innerHTML = '';
         document.getElementById('searchBar').style.width = '100%';
@@ -941,7 +943,7 @@ window.AutoWaterApp = (function () {
           document.getElementById('searchText').textContent = '正在搜「' + chainKw + '」· 这一轮只跑「' + chainName + '」';
           document.getElementById('searchDetail').textContent = '这一轮跑完把结果交回工作台' +
             (chainRem.length ? '；约 10 分钟后再跑「' + chainRem[0] + '」' : '') +
-            '。想停就点下面「取消」';
+            '。想停就去「队列」页点「⏹ 停止本轮」';
           renderSearchPlan([], 0, []);
           document.getElementById('searchBar').style.width = '100%';
           document.getElementById('searchBarLabel').textContent = '已派给执行器 · 等这一轮跑完';

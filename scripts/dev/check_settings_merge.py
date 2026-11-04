@@ -128,7 +128,8 @@ with tempfile.TemporaryDirectory(prefix='xhs-merge-') as profile, sync_playwrigh
         page.click('#tabHuoke')
         page.wait_for_timeout(300)
         assert page.locator('#tabHuokeCfg').count() == 1, '获客二级少了「设置」（拟人化与频率）'
-        assert page.locator('#subTabs button').count() == 5, '获客二级应恰好 5 项，实际 %d' % page.locator('#subTabs button').count()
+        # 2026-10-24「任务配置」并进队列后只剩 4 项（队列 / 工作台 / 笔记池 / 设置）
+        assert page.locator('#subTabs button').count() == 4, '获客二级应恰好 4 项，实际 %d' % page.locator('#subTabs button').count()
         page.click('#tabHuokeCfg')
         sframe(page, 'delays')
         hf = page.frame_locator('#huokeCfgFrame')
@@ -161,7 +162,9 @@ with tempfile.TemporaryDirectory(prefix='xhs-merge-') as profile, sync_playwrigh
         # 线索二级恰好四条，紧贴一级项下方、顺序固定：任务配置 / 通知 / 消息 / 设置（任务配置最前，2026-09-25 改）
         lead_ids = page.locator('#leadTabs button').evaluate_all('els => els.map(e => e.id)')
         assert lead_ids == ['tabLeadTaskCfg', 'tabLeadNotif', 'tabLeadMsg', 'tabLeadCfg'], lead_ids
-        lead_labels = page.locator('#leadTabs button').evaluate_all('els => els.map(e => e.innerText.trim())')
+        # 侧栏按钮现在都带一个表情前缀（🎤 任务配置 / 🔔 通知 / 📩 消息 / 🤖 设置）→ 只比文字那截
+        lead_labels = page.locator('#leadTabs button').evaluate_all(
+            "els => els.map(e => (e.querySelector('.rail-tx') || e).innerText.trim())")
         assert lead_labels == ['任务配置', '通知', '消息', '设置'], lead_labels
         print('PASS 线索二级：%s' % ' / '.join(lead_labels))
 
@@ -559,7 +562,8 @@ with tempfile.TemporaryDirectory(prefix='xhs-merge-') as profile, sync_playwrigh
         page.wait_for_timeout(400)
         bk_txt = fr.locator('#tab-backup').inner_text()
         assert '整机' in bk_txt, '整机备份页文案没改名'
-        assert '某一个产品' in bk_txt and '诊断&配置 → 知识库 → 📦 备份' in bk_txt, '整机备份页没跟知识库「📦 备份」互指: %s' % bk_txt[:120]
+        # 「诊断&配置」已改口「账号规划」（2026-10-17 起界面上叫账号规划）
+        assert '某一个产品' in bk_txt and '账号规划 → 知识库 → 📦 备份' in bk_txt, '整机备份页没跟知识库「📦 备份」互指: %s' % bk_txt[:120]
         print('PASS 备份两条路互指（整机 ↔ 单产品「📦 备份」）')
 
         # 12) 每轮篇数 = 一份真源，0=不限 要落盘（含 mirrors 到 auto_water_config）—— 弹窗底部那一个「保存」

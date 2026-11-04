@@ -11,6 +11,9 @@
   .hand{font-size:44px;line-height:1}
   h1{font-size:20px;margin:14px 0 6px;letter-spacing:.5px}
   p{color:#9aa3b5;margin:4px 0;font-size:13px}
+  #status{margin-top:14px;padding:10px 14px;border-radius:10px;background:#151a24;color:#ffd479;
+    font-size:14px;line-height:1.6;min-height:20px;word-break:break-all}
+  #status:empty{display:none}
 </style>
 </head>
 <body>
@@ -19,6 +22,7 @@
   <h1>机器人专用窗口</h1>
   <p>这扇窗只在机器人干活时打开；这一趟干完，页面交回给你，窗不关。</p>
   <p>现在没活，正在等服务器派单。</p>
+  <div id="status"></div>
 </div>
 </body>
 </html>

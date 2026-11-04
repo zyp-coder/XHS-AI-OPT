@@ -30,9 +30,10 @@ const TODAY = new Date().getDay();
 const FAR = (TODAY + 3) % 7;   // 停用一个「3 天后的星期几」当休息日，保证今天/明天都不撞
 
 (async () => {
-  // 1) 默认配置：保守挡 + 本周抽了 1 天单休 + 日波动/起床延迟在带内
+  // 1) 默认配置：谨慎挡（2026-10-30 从保守升上来）+ 本周抽了 1 天单休 + 日波动/起床延迟在带内
   let cfg = await G.getCfg();
-  assert.strictEqual(cfg.level, '保守', '默认落最保守挡');
+  assert.strictEqual(cfg.level, '谨慎', '默认落「谨慎」挡');
+  assert.strictEqual(cfg.levelManual, false, '没手动切过 → 不算手动');
   assert.ok(cfg.restDay >= 0 && cfg.restDay <= 6, '单休日已抽出（0~6）');
   assert.strictEqual(G.WEEKDAYS.length, 7, '一周七个名字备好');
   let daily = await G.getDaily();
@@ -89,19 +90,19 @@ const FAR = (TODAY + 3) % 7;   // 停用一个「3 天后的星期几」当休�
   await G.saveCfg({ restDay: FAR });
   console.log('✅ 顺延会跳过休息日（22:00 + 明天休 → 后天 09:00）');
 
-  // 7) 总账扣减与挡位：日波动=1 时保守 open 上限 60，第 61 次停手；账本跨步持久
+  // 7) 总账扣减与挡位：日波动=1 时谨慎 open 上限 140，第 141 次停手；账本跨步持久
   store.guard_daily = { date: (await G.getDaily()).date, wave: 1, wakeDelayMin: 0, used: {}, beatH: -1, beatMin: 0, beatLast: -1 };
   let g = await G.spend('open', 1, mk(10, 0));
   assert.strictEqual(g.ok, true, '第一次能开');
-  assert.strictEqual(g.cap, 60, '日波动=1 时按 60');
+  assert.strictEqual(g.cap, 140, '日波动=1 时按谨慎 140');
   let stopped = null;
-  for (let i = 2; i <= 61; i++) { const r = await G.spend('open', 1, mk(10, 0)); if (!r.ok) { stopped = { i, r }; break; } }
+  for (let i = 2; i <= 141; i++) { const r = await G.spend('open', 1, mk(10, 0)); if (!r.ok) { stopped = { i, r }; break; } }
   assert.ok(stopped, '总会停手');
-  assert.strictEqual(stopped.i, 61, '第 61 次停手');
+  assert.strictEqual(stopped.i, 141, '第 141 次停手');
   assert.strictEqual(stopped.r.code, 'cap', '原因＝额度用完');
-  assert.strictEqual(stopped.r.used, 60, '用了 60');
-  assert.strictEqual(store.guard_daily.used.open, 60, '账本落盘 60');
-  console.log('✅ 总账：保守上限 60（波=1）→ 第 61 次停手「cap」');
+  assert.strictEqual(stopped.r.used, 140, '用了 140');
+  assert.strictEqual(store.guard_daily.used.open, 140, '账本落盘 140');
+  console.log('✅ 总账：谨慎上限 140（波=1）→ 第 141 次停手「cap」');
 
   // 8) 挡位切换：谨慎 140 / 正常 240；发笔记当天其它动作打折（保守 5 折）
   await G.saveCfg({ level: '谨慎' });

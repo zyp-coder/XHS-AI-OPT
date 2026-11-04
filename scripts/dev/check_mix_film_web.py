@@ -7,14 +7,14 @@
   ② 「📚 知识」那行 4 张卡，视频只剩「字体动效视频」一张（自带形式，点进去直接是片台）；
   ③ 片台分幕区两个页签：「分幕」改字、「画面」配画面；画面签里「不加／加画面」开关，
      加画面再二选一「垫满屏／垫进卡」；「背景音乐」「音效」只在有底时摆出来；
-  ④ 顶上那栏报「几屏有料／还差几屏／几屏料不够长」；「✨ AI 先配一版」拿稿子的字撞素材库（不发图问 AI），
-     一屏不够长就多撞几段拼上；对不上就往下退：先退到只撞上一个字，再退到拿这一版里现成的段／照片垫上
-     （标「通用」，垫满这一屏、不受 3 秒封顶），实在没辙才红字标「配不到」，并给「只看配不到的」滤一遍；
-  ⑤ 一屏的料是一单不是一段：几节按原片里的先后排；末节短成一秒的碎尾摊掉；
-     还差就让最后一节从头再播（最多补 3 秒），再差就在屏上点名「还差几秒」；
+  ④ 顶上那栏报「几段有料／还差几段／几段料不够长」；「✨ AI 先配一版」拿稿子的字撞素材库（不发图问 AI），
+     一段只用一份料、先保不重复；字对不上就往下退：只撞上一个字，再退到拿没用过的垫上（标「通用」），
+     实在不够才复用（隔段、标「复用」），没辙才红字标「配不到」，并给「只看配不到的」滤一遍；
+  ⑤ 一段的料是一单不是一节：几节按原片里的先后排；末节短成一秒的碎尾摊掉；
+     还差就让最后一节从头再播（一段一份料时垫满整段；拼多节时最多补 3 秒），再差就点名「还差几秒」；
   ⑥ 照片屏不拼（一屏就一张）；点「＋加一节」能按文件夹、按名字/标签搜，点一格追加进来；
   ⑦ 照片库里只有小图 →「🖼 补照片原图」一次多选，按文件名对上，只这一趟用、不入库；
-  ⑧ 画面真垫进去了：照片那屏比没料时亮；段那屏拿到会播的原视频；换到下一节那一节自己重新淡入；
+  ⑧ 画面真垫进去了：照片那屏比没料时亮；段那屏拿到会播的原视频；换到下一节直接切、不黑一下；
   ⑨ 音效不跟换屏响，跟「字弹出来那一下」响＝这一幕起 + 0.42 秒；讲坑的响闷「咚」、讲好处的响轻亮「啵」、
      平常一句极轻带一下（每屏的调在画面那一签点着换）；
   ⑩ 出片：垫满屏不走逐帧编码、不派执行器，改边播边录；配音＋背景音乐＋跟字音效三条轨混成一条，
@@ -443,7 +443,7 @@ def main():
                 await Film.flush();
                 return { n0: rows0.length, redRow, btnTxt, only, backTxt, allN,
                          bar: (document.getElementById('mixBar').textContent || '').replace(/\\s+/g, ' ').trim() }; }''')
-            if red['n0'] == sc_n and '配不到' in red['redRow'] and '只看配不到的 1 屏' in red['btnTxt'] \
+            if red['n0'] == sc_n and '配不到' in red['redRow'] and '只看配不到的 1 段' in red['btnTxt'] \
                     and red['only'] == [0] and '看全部' in red['backTxt'] and red['allN'] == sc_n:
                 ok('实在没辙的那屏：%s｜点「%s」整单只剩第 %d 屏，再点「%s」回整单'
                    % (red['redRow'][:32], red['btnTxt'], red['only'][0] + 1, red['backTxt']))
@@ -603,10 +603,10 @@ def main():
                 bad('画面没垫进 canvas：有料 %s vs 没料 %s' % (px['withMat'], px['noMat']))
             else:
                 bad('没有照片屏可比对')
-            # 换到下一节那一节自己重新淡入：两节交界处那一截比节中间暗（先把播放器开起来，懒加载）
+            # 换到下一节直接切：刚切过去就跟半秒后一样亮，不再黑一下再淡出来（11-03 改）
             multi = j(page, '() => Film.scenes.findIndex((x, k) => Film.matPlanAt(k).list.length > 1)')
             if multi < 0:
-                bad('没有两节的屏可验淡入')
+                bad('没有两节的屏可验直接切')
             else:
                 for frac in (0.3, 0.8):                 # 两节各画一帧，把各自的播放器懒加载起来（同一原视频共用一只）
                     j(page, '''(a) => { const T = Film.timeline(), sc = T.scenes[a.i];
@@ -614,7 +614,7 @@ def main():
                     page.wait_for_timeout(1600)
                 if not wait_js(page, '(i) => (Film.scenes[i].mats || []).filter(m => m.kind === "clip").every(m => m.vid)',
                               20000, 400, multi):
-                    bad('第 %d 屏的段播放器开不起来（淡入这一项验不了）' % (multi + 1))
+                    bad('第 %d 屏的段播放器开不起来（直接切这一项验不了）' % (multi + 1))
                 else:
                     page.wait_for_timeout(1200)
                     fade = j(page, '''(idx) => {
@@ -625,15 +625,19 @@ def main():
                             for (let i = 0; i < d.length; i += 4) s += (d[i] + d[i + 1] + d[i + 2]) / 3;
                             return +(s / (d.length / 4)).toFixed(1); };
                         const cut = sc.start + p.list[1].from;
-                        Film.paintAt(cut + 0.06); const atCut = avg();
+                        Film.paintAt(cut - 0.04); const before = avg();
+                        Film.paintAt(cut + 0.04); const atCut = avg();
+                        const v = p.list[1].m && p.list[1].m.vid;
+                        const img0 = sc.matImg ? (sc.matImg.tagName || sc.matImg.constructor.name) : '';
+                        const st = v ? { t: +v.currentTime.toFixed(2), rs: v.readyState, paused: v.paused } : null;
                         Film.paintAt(cut + 0.60); const mid = avg();
-                        return { atCut, mid, idx: idx + 1 };
+                        return { before, atCut, mid, img0, st, idx: idx + 1 };
                     }''', multi)
-                    if fade and fade['mid'] > fade['atCut'] + 1:
-                        ok('第 %s 屏换到第二节：那一节自己从头淡入推近（刚切 %.1f → 半秒后 %.1f）' % (
+                    if fade and fade['atCut'] > 10 and abs(fade['mid'] - fade['atCut']) < 18:
+                        ok('第 %s 屏换到第二节直接切：刚切 %.1f → 半秒后 %.1f（不再黑一下）' % (
                             fade['idx'], fade['atCut'], fade['mid']))
                     elif fade:
-                        bad('换节没重新淡入：%r' % (fade,))
+                        bad('换节还在淡入／黑一下：%r' % (fade,))
 
             # ── ⑨ 音效跟「字弹出来那一下」响，不跟换屏响；调三档由每屏的 tone 定 ──
             tones = j(page, '''() => { const T = Film.timeline();
@@ -913,6 +917,58 @@ def main():
             else:
                 bad('草稿没记垫进卡：%r' % (cdoc,))
             j(page, '() => { Film.noteId = ""; }')
+
+            # ── ⑭ 长稿（18 句）自动并段：几幕一段、一段一份料，不再一句一张；不够才复用、隔开标黄 ──
+            j(page, '() => document.querySelector(\'#scTabs [data-sctab="pic"]\').click()')
+            j(page, '() => document.querySelector(\'#picKind [data-pickind="mix"]\').click()')
+            if not wait_js(page, '() => Film.cfg.frame === "mix"'):
+                bad('⑭ 回不到垫满屏')
+            grp = j(page, '''async () => {
+                Film.noteId = '';
+                const L = ['瓷砖要挑对','客厅地面要平','缝要匀','花洒装得好','洗澡不积水','龙头别漏水',
+                    '门头要亮','灯要够亮','招牌字要清楚','颜色别太杂','柜台要干净','样品要摆齐',
+                    '地面要防滑','玻璃要擦亮','货架别太高','收银要顺手','灯光分两层','客人走得顺'];
+                const r = Film.loadScript(L.join('\\n'));
+                document.getElementById('matAuto').click();
+                for (let k = 0; k < 100; k++) {
+                    await new Promise(r2 => setTimeout(r2, 200));
+                    if (Film.scenes.every(s => (s.mats || []).length)) break;
+                }
+                const keys = Film.scenes.map(s => s.matKey || '');
+                const runs = [];
+                keys.forEach((k, i) => {
+                    const last = runs[runs.length - 1];
+                    if (last && last.key === k) { last.to = i; return; }
+                    runs.push({ key: k, from: i, to: i });
+                });
+                const info = runs.map(run => {
+                    const lead = Film.scenes[run.from];
+                    return { n: run.to - run.from + 1,
+                             names: (lead.mats || []).map(m => m.name),
+                             shared: Film.scenes.slice(run.from, run.to + 1).every(s => s.mats === lead.mats),
+                             reuse: (lead.mats || []).map(m => !!m.reuse) };
+                });
+                const ids = {};
+                runs.forEach((run, ri) => (Film.scenes[run.from].mats || []).forEach(m => {
+                    const id = String(m.clipId || '');
+                    if (id) (ids[id] = ids[id] || []).push(ri);
+                }));
+                const gaps = Object.keys(ids).filter(id => ids[id].length > 1).map(id => ids[id][ids[id].length - 1] - ids[id][0]);
+                return { r, n: Film.scenes.length, runs: info, gaps,
+                         bar: (document.getElementById('mixBar').textContent || '').replace(/\\s+/g, ' ').trim(),
+                         rows: [...document.querySelectorAll('#matList .matline')].map(x => (x.textContent || '').replace(/\\s+/g, ' ').trim()) };
+            }''')
+            rs = grp['runs']
+            if grp['r'] == 'ok' and grp['n'] == 18 and 3 <= len(rs) <= 7 \
+                    and all(x['n'] >= 2 and x['shared'] and x['names'] for x in rs) \
+                    and any(any(x['reuse']) for x in rs) and all(g >= 2 for g in grp['gaps']) \
+                    and len(grp['rows']) == len(rs) and any('复用' in r for r in grp['rows']) \
+                    and ('%d 段有料' % len(rs)) in grp['bar']:
+                ok('18 句的长稿自己并成 %d 段（%s），几幕共用一单料、段短才往后接；料不够才复用（隔 %s 段，列表标「复用」）'
+                   % (len(rs), '、'.join('%d 句' % x['n'] for x in rs),
+                      '、'.join(str(g) for g in grp['gaps'])))
+            else:
+                bad('长稿没按段并：%r' % (grp,))
 
             # ── ⑬ 页内报错 ──
             if errs:

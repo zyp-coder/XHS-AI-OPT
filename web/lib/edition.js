@@ -15,6 +15,7 @@
  *   comment        基础版（¥239/月；共有 + 发笔记：整页发送 / 账号诊断&配置 / 产品库·知识库 / 多产品切换 / 笔记生成+素材库+笔记档案+字效编辑器）
  *   comment-multi  升级版（¥399/月；① + 获客：一键灌水/笔记列表/关键词维护）
  *   full           全功能版（¥539/月；② + 线索：通知/私信、获客清单）
+ *   全平台         全平台版（¥699/月；③ + 抖音 / 视频号：发笔记能发这两家、抖音获客也能跑）
  *   pro            自用版（全功能、零等待、不过期，自用）
  *   ※ 关键词上限三档一律不限（keywordMax 0＝不限）
  *
@@ -27,6 +28,7 @@
  *   notePublish  发笔记（AI 选题 → 生成图文 → 发布 + 素材库/笔记档案）→ ① 起
  *   dailyBrowse  日常浏览（按时段/配额自动浏览，可配点赞收藏；随获客 ② 起开，不列入对外功能清单）
  *   videoFilm    字效编辑器（口播稿 → 分幕 → 配音 → 竖版视频；随发笔记一起给）→ ① 起
+ *   multiPlatform 抖音 / 视频号（发笔记能发这两家、抖音获客也能跑；没开＝只做小红书）→ 全平台版起
  */
 
 const EDITION = {
@@ -62,11 +64,12 @@ const EDITION = {
     notePublish: true,
     dailyBrowse: true,
     videoFilm: true,
+    multiPlatform: true,
   },
 };
 
 /** 服务器下发的八格里有的格名（缺格按「关」算，宁少不多） */
-const EDITION_CELLS = ['batchSend', 'tenant', 'knowledge', 'notePublish', 'autoWater', 'dailyBrowse', 'prospectList', 'videoFilm'];
+const EDITION_CELLS = ['batchSend', 'tenant', 'knowledge', 'notePublish', 'autoWater', 'dailyBrowse', 'prospectList', 'videoFilm', 'multiPlatform'];
 
 /** 领回来的那张表（null = 从没领到过，走包里的进门默认） */
 let _edGrant = null;
@@ -80,6 +83,15 @@ function editionSetGrant(g) {
     label: String(g.label || ''),
     draftOnly: !!g.draftOnly,
     onTrial: !!g.onTrial,
+    trialTier: String(g.trialTier || ''),
+    trialUntil: Number(g.trialUntil) || 0,
+    trialDays: Number(g.trialDays) || 0,
+    trialExpired: !!g.trialExpired,
+    planTier: String(g.planTier || ''),
+    planPrice: Number(g.planPrice) || 0,
+    paidUntil: Number(g.paidUntil) || 0,
+    planDays: Number(g.planDays) || 0,
+    planExpired: !!g.planExpired,
     features: feats,
   } : null;
   return _edGrant;
@@ -184,6 +196,19 @@ function editionSummary(nowMs) {
     tier: _edGrant ? _edGrant.tier : '',
     draftOnly: !!(_edGrant && _edGrant.draftOnly),
     onTrial: !!(_edGrant && _edGrant.onTrial),
+    trialTier: _edGrant ? (_edGrant.trialTier || '') : '',
+    trialUntil: _edGrant ? (_edGrant.trialUntil || 0) : 0,
+    trialDays: (_edGrant && _edGrant.onTrial && _edGrant.trialUntil)
+      ? Math.max(0, Math.ceil((_edGrant.trialUntil - (nowMs || Date.now())) / 86400000))
+      : (_edGrant ? (_edGrant.trialDays || 0) : 0),
+    trialExpired: !!(_edGrant && _edGrant.trialExpired),
+    planTier: _edGrant ? (_edGrant.planTier || '') : '',
+    planPrice: _edGrant ? (_edGrant.planPrice || 0) : 0,
+    paidUntil: _edGrant ? (_edGrant.paidUntil || 0) : 0,
+    planDays: (_edGrant && !_edGrant.planExpired && _edGrant.paidUntil)
+      ? Math.max(0, Math.ceil((_edGrant.paidUntil - (nowMs || Date.now())) / 86400000))
+      : (_edGrant ? (_edGrant.planDays || 0) : 0),
+    planExpired: !!(_edGrant && _edGrant.planExpired),
     grantAt: _edGrant ? _edGrant.at : 0,
     expired: nowMs !== undefined ? editionIsExpired(nowMs) : false,
     remainingDays: nowMs !== undefined ? editionRemainingDays(nowMs) : null,

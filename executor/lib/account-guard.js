@@ -15,6 +15,7 @@
  *   account_health [ { t, kind, note, at, before, after, floor } ]                  体检卡历史
  *   np_pub_guard   { leadUntil, busySince, postUntil, defers{} }   发布前/后缓冲 + 顺延账（background 发布链写，这里读）
  *                  leadUntil＝下一位子的到点时刻（发布前 15 分钟＝它前面那个窗口）；defers＝{行key:{to,reason}}
+ *   guard_once     { at, until, reason }    「手点开跑」一次性放行票（放单休/静默期/起床延迟；额度、干歇、发布占线照挡）
  *
  * 注意：本文件被 background.js（importScripts）、popup.html / settings.html（经典 <script>）共用，
  *       只写顶层 const，不要碰裸 window（后台 SW 会整体不启动）。
@@ -23,11 +24,13 @@
 const AccountGuard = (() => {
   'use strict';
 
-  /* ─── 三档参数表（一天合计上限；打开浏览含：获客打开、截流扫描、日常浏览） ─── */
+  /* ─── 三档参数表（一天合计上限；打开浏览含：获客打开、截流扫描、日常浏览） ───
+     2026-10-30 老板定「尽量宽松」：评论这一项三档各抬一倍（12/25/45 → 24/50/90），
+     其余动作不动；默认挡位从「保守」升到「谨慎」。 */
   const LEVELS = [
-    { name: '保守', sub: '默认 · 最高风险保护', cap: { open: 60, like: 20, save: 8, comment: 12, follow: 4, dm: 8, post: 2 } },
-    { name: '谨慎', sub: '量放开一档', cap: { open: 140, like: 45, save: 16, comment: 25, follow: 9, dm: 16, post: 3 } },
-    { name: '正常', sub: '日常运营量', cap: { open: 240, like: 80, save: 28, comment: 45, follow: 16, dm: 30, post: 5 } },
+    { name: '保守', sub: '最高风险保护', cap: { open: 60, like: 20, save: 8, comment: 24, follow: 4, dm: 8, post: 2 } },
+    { name: '谨慎', sub: '默认 · 量放开一档', cap: { open: 140, like: 45, save: 16, comment: 50, follow: 9, dm: 16, post: 3 } },
+    { name: '正常', sub: '日常运营量', cap: { open: 240, like: 80, save: 28, comment: 90, follow: 16, dm: 30, post: 5 } },
   ];
   const KINDS = ['open', 'like', 'save', 'comment', 'follow', 'dm', 'post'];
   const KIND_NAMES = {
@@ -43,8 +46,9 @@ const AccountGuard = (() => {
   const POST_HOLD_MIN = 30;                      // 发布后 30 分钟不跑其他
   const POSTDAY_FACTOR = { '保守': 0.5, '谨慎': 0.75, '正常': 1 };   // 发笔记当天其他动作打折
   const BUSY_STALE_MS = 60 * 60000;              // 发布 busy 标记超 60 分钟当残留（SW 被掐断）忽略
+  const ONCE_MAX_MIN = 180;                      // 「手点开跑」放行票最长 3 小时，超时自动作废
 
-  const K = { CFG: 'account_guard', DAILY: 'guard_daily', HEALTH: 'account_health', PUB: 'np_pub_guard' };
+  const K = { CFG: 'account_guard', DAILY: 'guard_daily', HEALTH: 'account_health', PUB: 'np_pub_guard', ONCE: 'guard_once' };
 
   /* ─── 小工具 ─── */
   function _num(v, def, min, max) {
@@ -65,6 +69,9 @@ const AccountGuard = (() => {
   }
   function _at(d, h, m) { const x = new Date(d); x.setHours(h, m || 0, 0, 0); return x.getTime(); }
   function _inQuiet(nowMs) { const h = new Date(nowMs || Date.now()).getHours(); return h >= QUIET_FROM_H || h < QUIET_TO_H; }
+  /* 「手点开跑」一次性放行（2026-10-26 老板定）：只放静默期与 09:00 后那段起床延迟，
+     单休 / 发布占线 / 日额度 / 干歇节拍 / 发布前 15 分钟一概照旧。票由手本机收到手点单时记、跑完收回。 */
+  function _onceOk(once, nowMs) { return !!(once && Number(once.until) > (nowMs || Date.now())); }
 
   /* 写操作串行化（同一上下文内；跨上下文极小概率的读改写竞争可以容忍——封顶少算不超发太多） */
   let _wq = Promise.resolve();
@@ -76,9 +83,12 @@ const AccountGuard = (() => {
 
   function _normCfg(raw) {
     const o = (raw && typeof raw === 'object') ? raw : {};
-    const level = LEVELS.some(l => l.name === o.level) ? o.level : '保守';
+    /* 2026-10-30：默认挡位从「保守」升到「谨慎」。存量里没手动切过挡位的号（还是老的默认「保守」）
+       一次性跟着升，免得规则变了、号还停在旧默认上；`levelManual` 是手动切过挡位的标记。 */
+    let level = LEVELS.some(l => l.name === o.level) ? o.level : '谨慎';
+    if (!o.level || (o.level === '保守' && !o.levelManual)) level = '谨慎';
     const rd = parseInt(o.restDay, 10);
-    return { level, restWeek: String(o.restWeek || ''), restDay: (rd >= 0 && rd <= 6) ? rd : -1 };
+    return { level, levelManual: !!o.levelManual, restWeek: String(o.restWeek || ''), restDay: (rd >= 0 && rd <= 6) ? rd : -1 };
   }
   /* 抽本周休息日：只从「今天起、到本周日为止」里挑（避免抽到已经过去的日子、这周白歇） */
   function _drawRestDay(nowMs) {
@@ -103,6 +113,7 @@ const AccountGuard = (() => {
     const cur = _normCfg(await _get(K.CFG));
     const next = Object.assign({}, cur, patch || {});
     if (next.level && !LEVELS.some(l => l.name === next.level)) next.level = cur.level;
+    if (patch && 'level' in patch && patch.level !== cur.level) next.levelManual = true;   // 手动切过挡位就不再跟着默认走
     const rd = parseInt(next.restDay, 10);
     if (!(rd >= 0 && rd <= 6)) next.restDay = cur.restDay;
     if (patch && ('restDay' in patch || 'level' in patch)) next.restWeek = _weekKey();
@@ -163,11 +174,16 @@ const AccountGuard = (() => {
     return nowMs >= _at(d, QUIET_TO_H, 0) && nowMs < wake;
   }
   /* 每天都会挡的墙（休息日 / 静默期 / 起床前 / 发布占线 / 发布后缓冲）→ {code,text,at?} | null
-     at＝预计恢复时刻（发布后缓冲＝postUntil；占线＝结束时间未知，给"尽快复查"） */
-  function _wall(cfg, daily, pub, nowMs) {
-    if (_restToday(cfg, nowMs)) return { code: 'rest', text: '今天是本周的单休日——全停一天（想换日子：设置 → 🛡 账号安全）' };
-    if (_inQuiet(nowMs)) return { code: 'quiet', text: '静默期（21:00–09:00）不跑——顺延到 09:00 后' };
-    if (_beforeWake(daily, nowMs)) return { code: 'quiet', text: '还没到起床时间（09:00 后随机等 0~40 分钟）——稍后再来' };
+     at＝预计恢复时刻（发布后缓冲＝postUntil；占线＝结束时间未知，给"尽快复查"）
+     once＝「手点了这一轮」的放行票：单休、静默期、起床延迟都放（老板定了：手点说要跑就跑）；
+           发布占线与发布后缓冲照挡（那是平台那边正在动，不是排期问题） */
+  function _wall(cfg, daily, pub, nowMs, once) {
+    const keyed = _onceOk(once, nowMs);
+    if (!keyed && _restToday(cfg, nowMs)) return { code: 'rest', text: '今天是本周的单休日——全停一天（想换日子：设置 → 🛡 账号安全）' };
+    if (!keyed) {
+      if (_inQuiet(nowMs)) return { code: 'quiet', text: '静默期（21:00–09:00）不跑——顺延到 09:00 后' };
+      if (_beforeWake(daily, nowMs)) return { code: 'quiet', text: '还没到起床时间（09:00 后随机等 0~40 分钟）——稍后再来' };
+    }
     if (pub.busySince && nowMs - pub.busySince < BUSY_STALE_MS) return { code: 'hold', text: '正在发笔记这一趟——其他自动化先让路', at: nowMs };
     if (pub.postUntil > nowMs) return { code: 'hold', text: '刚发完笔记——30 分钟内不跑其他自动化', at: pub.postUntil };
     return null;
@@ -195,13 +211,13 @@ const AccountGuard = (() => {
     n = Math.max(1, parseInt(n, 10) || 1);
     const now = nowMs || Date.now();
     const cfg = await getCfg(now), daily = await getDaily(now), pub = await _getPub();
-    return _check(kind, n, cfg, daily, pub, now);
+    return _check(kind, n, cfg, daily, pub, now, await _get(K.ONCE));
   }
-  function _check(kind, n, cfg, daily, pub, now) {
+  function _check(kind, n, cfg, daily, pub, now, once) {
     const cap = capOf(kind, cfg, daily);
     const used = daily.used[kind] || 0;
     const base = { used, cap, level: cfg.level, wave: daily.wave };
-    const wall = _wall(cfg, daily, pub, now);
+    const wall = _wall(cfg, daily, pub, now, once);
     if (wall) return Object.assign({ ok: false }, wall, base);
     // 发布前 15 分钟「只浏览不动手」：open（含收藏/点赞？不——浏览指开页看，动手都不行）与 post 不拦
     if (kind !== 'post' && kind !== 'open') {
@@ -220,14 +236,14 @@ const AccountGuard = (() => {
     n = Math.max(1, parseInt(n, 10) || 1);
     const now = nowMs || Date.now();
     const cfg = await getCfg(now), daily = await getDaily(now);
-    return _check(kind, n, cfg, daily, { leadUntil: 0, busySince: 0, postUntil: 0 }, now);
+    return _check(kind, n, cfg, daily, { leadUntil: 0, busySince: 0, postUntil: 0 }, now, await _get(K.ONCE));
   }
 
   /* 只读：墙上有没有挡（不含动作自己的额度/节拍）——给「闹钟该不该起跑」用 */
   async function blockAllReason(nowMs) {
     const now = nowMs || Date.now();
     const cfg = await getCfg(now), daily = await getDaily(now), pub = await _getPub();
-    return _wall(cfg, daily, pub, now);
+    return _wall(cfg, daily, pub, now, await _get(K.ONCE));
   }
 
   /* 扣账（先查后记，记步进账本 + 干歇节拍逐分钟打点）。返回同 decide */
@@ -237,7 +253,7 @@ const AccountGuard = (() => {
     const now = nowMs || Date.now();
     return _serial(async () => {
       const cfg = await getCfg(now), daily = await getDaily(now), pub = await _getPub();
-      const g = _check(kind, n, cfg, daily, pub, now);
+      const g = _check(kind, n, cfg, daily, pub, now, await _get(K.ONCE));
       if (!g.ok) return g;
       daily.used[kind] = (daily.used[kind] || 0) + n;
       const h = new Date(now).getHours(), mk = Math.floor(now / 60000);
@@ -269,7 +285,7 @@ const AccountGuard = (() => {
   async function nextAllowedAt(kind, nowMs) {
     const now = nowMs || Date.now();
     const cfg = await getCfg(now), daily = await getDaily(now), pub = await _getPub();
-    const wall = _wall(cfg, daily, pub, now);
+    const wall = _wall(cfg, daily, pub, now, await _get(K.ONCE));
     if (wall) return { code: wall.code, text: wall.text, at: wall.at || nextRunAt(now, cfg, daily) };
     if (kind !== 'post' && kind !== 'open') {
       const lead = _lead(pub, now);
@@ -353,7 +369,8 @@ const AccountGuard = (() => {
       if (kind === '处罚') after = '保守';
       else after = LEVELS[Math.max(0, idx - 1)].name;   // 警告 / 限流：降一级
       floor = (after === before);
-      if (!floor) await _set({ [K.CFG]: Object.assign({}, cfg, { level: after }) });
+      /* 记过降级要写死（levelManual）——不然降到「保守」会被「存量保守跟默认升谨慎」那条迁移顶回去 */
+      if (!floor) await _set({ [K.CFG]: Object.assign({}, cfg, { level: after, levelManual: true }) });
       const list = await _healthList();
       const item = { t: String(rec.t || _todayKey()), kind, note: String(rec.note || ''), at: Date.now(), before, after, floor };
       list.push(item);
@@ -367,16 +384,37 @@ const AccountGuard = (() => {
       const cfg = _normCfg(await _get(K.CFG));
       const idx = LEVELS.findIndex(l => l.name === cfg.level);
       const next = LEVELS[Math.min(LEVELS.length - 1, idx + 1)];
-      if (next.name !== cfg.level) await _set({ [K.CFG]: Object.assign({}, cfg, { level: next.name }) });
+      if (next.name !== cfg.level) await _set({ [K.CFG]: Object.assign({}, cfg, { level: next.name, levelManual: true }) });
       return { ok: true, level: next.name };
     });
+  }
+
+  /* ─── 「手点开跑」放行票（一次性；跑完收回） ─── */
+  /** 记票：minutes 默认 60、最长 180；只放静默期与起床延迟 */
+  async function openOnce(opt, nowMs) {
+    const now = nowMs || Date.now();
+    const o = opt || {};
+    const min = Math.max(1, Math.min(ONCE_MAX_MIN, parseInt(o.minutes, 10) || 60));
+    const rec = { at: now, until: now + min * 60000, reason: String(o.reason || '手点开跑') };
+    await _set({ [K.ONCE]: rec });
+    return rec;
+  }
+  /** 收票：这一轮结束（或这一单没跑成）就清，下一轮/自动跑照旧 */
+  async function clearOnce() {
+    try { await chrome.storage.local.remove(K.ONCE); } catch (_) {}
+  }
+  /** 现在有没有票（没过期的才算） */
+  async function getOnce(nowMs) {
+    const once = await _get(K.ONCE);
+    return _onceOk(once, nowMs) ? once : null;
   }
 
   /* ─── 汇总快照（弹窗小标 / 设置页 / 队列页读它） ─── */
   async function status(nowMs) {
     const now = nowMs || Date.now();
     const cfg = await getCfg(now), daily = await getDaily(now), pubB = await _getPub();
-    const wall = _wall(cfg, daily, pubB, now);
+    const once = await _get(K.ONCE);
+    const wall = _wall(cfg, daily, pubB, now, once);
     return {
       ok: true,
       level: cfg.level,
@@ -386,6 +424,7 @@ const AccountGuard = (() => {
       quiet: { from: '09:00', to: '21:00', inQuiet: _inQuiet(now), beforeWake: _beforeWake(daily, now), wakeDelayMin: daily.wakeDelayMin },
       burst: { h: new Date(now).getHours(), min: (daily.beatH === new Date(now).getHours() ? daily.beatMin : 0), max: BURST_MIN_PER_HOUR },
       blocked: wall,
+      once: _onceOk(once, now) ? { at: once.at, until: once.until, reason: once.reason } : null,
       health: await _healthList(),
       at: now,
     };
@@ -397,6 +436,7 @@ const AccountGuard = (() => {
     KEYS: K,
     getCfg, saveCfg, getDaily, capOf,
     decide, decideSelf, blockAllReason, spend, spendSelf, nextAllowedAt, nextRunAt,
+    openOnce, clearOnce, getOnce,
     pub,
     record, recover, healthList: _healthList,
     status,

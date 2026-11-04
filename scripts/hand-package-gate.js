@@ -37,6 +37,7 @@ const ALLOW_FILES = new Set([
   'panel.html', 'panel.js',
   'Edge-防禁用.bat', '装机-看这里.txt',
   'repair.ps1', 'repair.bat', '一键修复.bat', 'boot-start.vbs',   // 自检修复＋开机自启（2026-10-29）
+  '设置开机自启.bat',                  // 手动装 / 启动项丢了：双击这一下就把开机自启补回来
   '装机教程.html',                     // 与网页同一份图文教程（离线也能看）
   '装我.bat', '更新.bat', '卸载.bat',   // 按客户出包时带的三个双击脚本（通用包里没有）
   'prefill.json',                      // 按客户出包时带的预填（服务器地址＋配对号）
@@ -154,7 +155,7 @@ function check(dir) {
     'exec-douyin.js',
     'work-idle.html', 'hand-mode.js', 'hand-cover.js', 'popup.html', 'video.html',
     'panel.html', 'icons', 'lib',
-    'repair.ps1', 'repair.bat', '一键修复.bat', 'boot-start.vbs',
+    'repair.ps1', 'repair.bat', '一键修复.bat', 'boot-start.vbs', '设置开机自启.bat',
   ];
   for (const n of NEED) if (!fs.existsSync(path.join(dir, n))) errors.push(`缺必需件：${n}`);
 

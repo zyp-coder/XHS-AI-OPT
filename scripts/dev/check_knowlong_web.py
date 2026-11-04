@@ -1,6 +1,9 @@
-# 公网那份（web/）知识线「🧠 思维导图 / 📜 长图」二选一点检 —— 2026-10-22。
-# 走真链路：档案那篇 → 导图工作区 → 点「📜 长图」→ 预览换文章式排版 → 「✓ 完成，回档案」
-#          → imgDocs 里 kind='mind' 那一行 layout='long'、宽 1080；再切回思维导图重出＝同一条行换图。
+# 公网那份（web/）知识线「图文」点检 —— 2026-11-02 撤导图、改图文。
+# 这一轮改的是两件事：① 知识行四张卡（🖼 图文笔记 / 🎬 视频笔记 / 🎙 真人口播 / 📝 长文笔记），导图整条撤掉；
+# ② 知识图文接引流线后半段：挑知识 → 改稿 → 🖋 分镜确认（5）→ 👀 预览（6）→ 发布。
+# 走真链路（不调 AI）：站点表 / 四站底栏 / 第 5 站渲染出分镜台 / 第 6 站渲染出成品预览
+#          → 档案「下一步」缺图指回 5 站、图齐指预览 → 「✓ 完成，回档案」落档标「代发」
+#          → 导图入口与工作区确实已撤（函数没了、容器没了）。
 # 只用临时账本（tmp/knowlong-check/），不调 AI。
 # 用法：python3 -X utf8 scripts/dev/check_knowlong_web.py
 import os
@@ -8,7 +11,6 @@ import sys
 import time
 import shutil
 import socket
-import base64
 import subprocess
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -22,19 +24,6 @@ DATA = REPO / 'tmp' / 'knowlong-check' / 'data'
 OUT = REPO / 'tmp' / 'knowlong-check'
 fails = 0
 COPY = '装修报价单怎么看？先看有没有漏项，再看总量。单价低不代表总价低。最后看付款节点，首付别超过一半。'
-MD = ('# 装修报价单怎么看\n'
-      '## 先看漏项\n'
-      '- 报价单上没有的那一行，才是要花钱的\n'
-      '  - 水电按实收最容易漏\n'
-      '  - 收口和找平常被拆开写\n'
-      '- 单价低不等于总价低\n'
-      '## 再看总量\n'
-      '- 面积按套内还是建筑面积\n'
-      '  - 问清这一条再签字\n'
-      '- 损耗谁承担\n'
-      '## 最后看付款\n'
-      '- 首付别超过一半\n'
-      '- 每个节点验收完再付\n')
 
 
 def ok(msg):
@@ -48,58 +37,85 @@ def bad(msg):
 
 
 SEED = r'''async (opt) => {
-  const note = {
-    id: opt.id, title: opt.title, form: '图文', dir: 'k', kOut: 'img', status: '草稿',
-    draft: opt.copy, platform: 'xhs',
-    mind: { md: opt.md, ver: 1, src: 'human', sig: npMindSig(opt.copy), out: 'mind' },
-    imgDocs: [], createdAt: Date.now(), updatedAt: Date.now(),
-  };
-  await chrome.storage.local.set({ np_notes: [note] });
+  const shotsOf = (withImgs) => ({
+    items: [
+      { id: 's1', text: '先看有没有漏项', copyText: '漏项最费钱', imgs: withImgs ? ['a1'] : [] },
+      { id: 's2', text: '单价低不等于总价低', copyText: '看总价', imgs: withImgs ? ['a2'] : [] },
+      { id: 's3', text: '首付别超过一半', copyText: '付款节点', imgs: withImgs ? ['a3'] : [] },
+    ],
+    cv: withImgs ? { on: false, imgs: [] } : { on: true, imgs: [] },
+  });
+  const mk = (id, withImgs, extra) => Object.assign({
+    id: id, title: '装修报价单怎么看', form: '图文', dir: 'k', kOut: 'img', status: '草稿',
+    draft: opt.copy, platform: 'xhs', voice: opt.copy,
+    imgDocs: [{ id: 'g' + id, pid: 'xhs', style: '', kind: '', img: '', shots: shotsOf(withImgs), visual: null, updatedAt: Date.now() }],
+    createdAt: Date.now(), updatedAt: Date.now(),
+  }, extra || {});
+  await chrome.storage.local.set({ np_notes: [mk('kimg1', false), mk('kimg2', true)] });
+  /* 真素材：三张 1×1 的图先放进素材库——「✓ 完成，回档案」要把图搬进待发区才算真能发 */
+  const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  await chrome.storage.local.set({ np_assets: ['a1', 'a2', 'a3'].map((aid, i) => ({
+    id: aid, name: '装修图' + (i + 1), kind: '其他', use: true, thumb: px, shotOf: 'kimg2#0',
+    createdAt: Date.now(), updatedAt: Date.now(),
+  })) });
   return (await npNotesAll()).length;
 }'''
 
-OPEN = r'''async (opt) => {
-  let host = document.getElementById('npMindCheckHost');
+WIZ = r'''async (opt) => {
+  let host = document.getElementById('npKimgCheckHost');
   if (!host) {
-    host = document.createElement('div'); host.id = 'npMindCheckHost';
-    host.style.cssText = 'position:fixed;left:0;top:0;width:1000px;background:#fff;z-index:99999;padding:0;overflow:auto;max-height:100vh;';
+    host = document.createElement('div'); host.id = 'npKimgCheckHost';
+    host.style.cssText = 'position:fixed;left:0;top:0;width:1100px;background:#fff;z-index:99999;padding:12px;overflow:auto;max-height:100vh;';
     document.body.appendChild(host);
   }
-  const n = (await npNotesAll()).find(x => x.id === opt.id);
-  if (!n) return { err: 'note not found' };
-  ensureNpDelegation();
-  npMindRender = function () {
-    if (!_npMind) return;
-    host.innerHTML = npMindHtml();
-    const cv0 = host.querySelector('#npMindCv');
-    if (cv0) npMindPaint(cv0, 1);
-  };
-  await npOpenMind(host, n);
-  const cv = document.getElementById('npMindCv');
-  return { out: _npMind && _npMind.out, w: cv && cv.width, h: cv && cv.height,
-    text: host.innerText, mindBtn: !!host.querySelector('.np-mind-out[data-out="mind"]'),
-    longBtn: !!host.querySelector('.np-mind-out[data-out="long"]'),
-    activeLong: !!host.querySelector('.np-mind-out[data-out="long"][style*="background:#1f2937"]'),
-    activeMind: !!host.querySelector('.np-mind-out[data-out="mind"][style*="background:#1f2937"]') };
+  host.innerHTML = '<div id="npSteps"></div><div id="npWizBody"></div><div id="npWizNav"></div>';
+  const bak = _npWiz;
+  const w = { arId: opt.id, kOut: 'img', step: 5, status: '草稿',
+    draft: { content: opt.copy, titles: ['装修报价单怎么看'] },
+    imgDocs: (await npNotesAll()).find(x => x.id === opt.id).imgDocs };
+  _npWiz = w;
+  const cards = (NP_DIR_EFFECTS.k || []).map(e => ({ f: e.f, t: e.t }));
+  const st = npKStations(w).map(x => ({ k: x.k, t: x.t }));
+  w.step = 4; const nav4 = navForStep();
+  w.step = 5; const nav5 = navForStep();
+  renderStep(host);
+  await new Promise(r => setTimeout(r, 900));
+  const body5 = (document.getElementById('npWizBody') || {}).innerText || '';
+  w.step = 6; const nav6 = navForStep();
+  renderStep(host);
+  await new Promise(r => setTimeout(r, 200));
+  const body6 = (document.getElementById('npWizBody') || {}).innerText || '';
+  const res = { cards: cards, stations: st, nav4: nav4, nav5: nav5, nav6: nav6, body5: body5, body6: body6,
+    mindFn: typeof npOpenMind, mindBox: !!document.getElementById('noteMindContent') };
+  _npWiz = bak;
+  host.remove();
+  return res;
 }'''
 
-STATE = r'''async (opt) => {
-  const n = (await npNotesAll()).find(x => x.id === opt.id) || null;
-  const cv = document.getElementById('npMindCv');
-  const rows = (n && Array.isArray(n.imgDocs)) ? n.imgDocs.filter(x => x && x.kind === 'mind') : [];
-  let dim = null, data = '';
-  if (rows.length && rows[0].img) {
-    data = rows[0].img;
-    dim = await new Promise(r => { const im = new Image(); im.onload = () => r({ w: im.naturalWidth, h: im.naturalHeight }); im.onerror = () => r({ err: 1 }); im.src = rows[0].img; });
-  }
-  return { status: n && n.status, mind: n && n.mind, rows: rows.map(x => ({ id: x.id, layout: x.layout, len: String(x.img || '').length })),
-    dim, data: data.indexOf(',') >= 0 ? data.slice(data.indexOf(',') + 1) : '',
-    out: _npMind && _npMind.out, cvW: cv && cv.width, cvH: cv && cv.height };
+NEXT = r'''async (opt) => {
+  const list = await npNotesAll();
+  const a = list.find(x => x.id === 'kimg1'), b = list.find(x => x.id === 'kimg2');
+  return { gap: npArImgGapOf(a), next: npArNext(a).lab + '|' + (npArNext(a).to || ''),
+    gap2: npArImgGapOf(b), next2: npArNext(b).lab + '|' + (npArNext(b).to || '') };
+}'''
+
+DONE = r'''async (opt) => {
+  const bak = _npWiz;
+  const n = (await npNotesAll()).find(x => x.id === 'kimg2');
+  const w = { arId: n.id, kOut: 'img', path: 'image', step: 6, draft: { content: opt.copy, titles: ['装修报价单怎么看'] },
+    imgDocs: n.imgDocs.map(r => Object.assign({}, r)), imgOpen: n.imgDocs[0].id };
+  w.shots = npShotsShape(n.imgDocs[0].shots);
+  _npWiz = w;
+  await npDshDone();
+  _npWiz = bak;
+  const after = (await npNotesAll()).find(x => x.id === n.id);
+  return { status: after.status, steps: w.step,
+    rows: (after.imgDocs || []).length, hasPrompt: String(((after.imgDocs || [])[0] || {}).visual || '').length > 0 || !!(after.imgDocs || [])[0].visual };
 }'''
 
 
 def main():
-    print('── 公网知识线🧠/📜二选一：默认导图 → 切长图 → 出 1080 文章式 → 切回重出同一条行 ──', flush=True)
+    print('── 知识线图文：四张卡 → 分镜确认 → 预览 → 回档案；导图已撤 ──', flush=True)
     if DATA.exists():
         shutil.rmtree(DATA)
     DATA.mkdir(parents=True, exist_ok=True)
@@ -141,95 +157,70 @@ def main():
                 return
             goto_big(page, BASE + '/popup.html?mode=big', wait_until='domcontentloaded', timeout=90000)
             page.wait_for_timeout(4000)
-            seed = page.evaluate(SEED, {'id': 'mindchk1', 'title': '装修报价单怎么看', 'copy': COPY, 'md': MD})
-            if seed != 1:
+            seed = page.evaluate(SEED, {'copy': COPY})
+            if seed != 2:
                 bad('种子档案没落上：%r' % (seed,))
-            page.evaluate(OPEN, {'id': 'mindchk1'})
-            page.wait_for_timeout(1200)
-            st1 = page.evaluate(STATE, {'id': 'mindchk1'})
-            ui1 = page.evaluate('''() => { const h = document.getElementById('npMindCheckHost');
-              return { mindBtn: !!h.querySelector('.np-mind-out[data-out="mind"]'), longBtn: !!h.querySelector('.np-mind-out[data-out="long"]'),
-                mindOn: !!h.querySelector('.np-mind-out[data-out="mind"][style*="background:#1f2937"]'),
-                longOn: !!h.querySelector('.np-mind-out[data-out="long"][style*="background:#1f2937"]'),
-                text: h.innerText }; }''')
-            if ui1.get('mindBtn') and ui1.get('longBtn') and ui1.get('mindOn') and not ui1.get('longOn'):
-                ok('老档（没记号）进站默认「🧠 思维导图」——二选一就在标题旁')
+            wiz = page.evaluate(WIZ, {'id': 'kimg1', 'copy': COPY})
+            cards = wiz.get('cards') or []
+            names = ''.join(c.get('t') or '' for c in cards)
+            if [c.get('f') for c in cards] == ['图文', '视频', '口播稿', '长文'] and all(k in names for k in ('图文笔记', '视频笔记', '真人口播', '长文笔记')):
+                ok('知识行四张卡：🖼 图文笔记 / 🎬 视频笔记 / 🎙 真人口播 / 📝 长文笔记')
             else:
-                bad('默认没落在思维导图：%r' % (ui1,))
-            if st1.get('cvW') == 540 and (st1.get('cvH') or 0) > 0:
-                ok('预览画布 540 宽、按内容定高（%s）' % (st1.get('cvH'),))
+                bad('四张卡不对：%r' % (cards,))
+            ks = [x.get('k') for x in (wiz.get('stations') or [])]
+            ts = ''.join(x.get('t') or '' for x in (wiz.get('stations') or []))
+            if ks == [0, 4, 5, 6, -1] and '分镜确认' in ts and '预览' in ts:
+                ok('站点条：挑知识 → 改稿 → 🖋 分镜确认（5）→ 👀 预览（6）→ 发布')
             else:
-                bad('导图预览画布不对：%r' % (st1.get('cvW'), st1.get('cvH')))
-            page.locator('#npMindCheckHost').screenshot(path=str(OUT / '1-mind.png'))
-            ai_before = len(ai_reqs)
-            page.click('#npMindCheckHost .np-mind-out[data-out="long"]')
-            page.wait_for_timeout(900)
-            st2 = page.evaluate(STATE, {'id': 'mindchk1'})
-            ui2 = page.evaluate('''() => { const h = document.getElementById('npMindCheckHost');
-              return { longOn: !!h.querySelector('.np-mind-out[data-out="long"][style*="background:#1f2937"]'),
-                mindOn: !!h.querySelector('.np-mind-out[data-out="mind"][style*="background:#1f2937"]'),
-                text: h.innerText }; }''')
-            if st2.get('out') == 'long' and ui2.get('longOn') and not ui2.get('mindOn') and '出文章式长图' in (ui2.get('text') or ''):
-                ok('点「📜 长图」＝当场换文章式排版（同一份 MD，不重出结构、不烧 AI）')
+                bad('站点条不对：%r' % (wiz.get('stations'),))
+            if 'np-d-fin-img' in (wiz.get('nav4') or '') and '拆分镜' in (wiz.get('nav4') or ''):
+                ok('第 4 站底栏＝「下一步 → 拆分镜」')
             else:
-                bad('切长图没切成：%r / %r' % (st2.get('out'), ui2))
-            if st2.get('cvW') == 540 and (st2.get('cvH') or 0) != (st1.get('cvH') or 0):
-                ok('文章式预览另算高（%s → %s）' % (st1.get('cvH'), st2.get('cvH')))
+                bad('第 4 站底栏不对：%r' % (wiz.get('nav4'),))
+            if 'np-dsh-next' in (wiz.get('nav5') or '') and '下一步' in (wiz.get('nav5') or ''):
+                ok('第 5 站底栏＝分镜确认的「下一步 →」（切出分镜才点得动）')
             else:
-                bad('切了排版画布没变：%r' % (st2.get('cvH'),))
-            if (st2.get('mind') or {}).get('out') == 'long':
-                ok('二选一的选择回写档案（mind.out=long）')
+                bad('第 5 站底栏不对：%r' % (wiz.get('nav5'),))
+            if 'np-dsh-done' in (wiz.get('nav6') or '') and '完成，回档案' in (wiz.get('nav6') or ''):
+                ok('第 6 站底栏＝「✓ 完成，回档案」')
             else:
-                bad('选择没回写档案：%r' % (st2.get('mind'),))
-            page.locator('#npMindCheckHost').screenshot(path=str(OUT / '2-long-preview.png'))
-            if len(ai_reqs) == ai_before:
-                ok('切排版没打 AI（只换画法）')
+                bad('第 6 站底栏不对：%r' % (wiz.get('nav6'),))
+            b5 = wiz.get('body5') or ''
+            if '生成前定一次' in b5 and '整组提示词' in b5 and 'AI 读正文自己定' in b5:
+                ok('第 5 站画的是分镜确认台（画面风格 / 张数 / 整组提示词）')
             else:
-                bad('切排版期间打了 AI：%r' % (ai_reqs[ai_before:][:3],))
-            page.click('#npMindCheckHost .np-mind-export')
-            page.wait_for_timeout(1500)
-            st3 = page.evaluate(STATE, {'id': 'mindchk1'})
-            rows = st3.get('rows') or []
-            dim = st3.get('dim') or {}
-            if rows and rows[0].get('layout') == 'long' and dim.get('w') == 1080 and (dim.get('h') or 0) > 0:
-                ok('「✓ 完成，回档案」出的是 1080 宽文章式长图（%s×%s），imgDocs 记 layout=long' % (dim.get('w'), dim.get('h')))
+                bad('第 5 站没画分镜台：%r' % (b5[:120],))
+            b6 = wiz.get('body6') or ''
+            if '封面' in b6 and '正文（' in b6 and '科普腔' in b6:
+                ok('第 6 站画的是成品预览：封面＋合成卡图＋正文（科普腔）')
             else:
-                bad('出图不对：rows=%r dim=%r' % (rows, dim))
-            if st3.get('status') == '代发':
-                ok('出完这篇标到「代发」')
+                bad('第 6 站没画成品预览：%r' % (b6[:160],))
+            nx = page.evaluate(NEXT)
+            if nx.get('gap') and nx.get('gap') > 0 and nx.get('next') == '✏️ 编辑|img':
+                ok('档案「下一步」：缺图那篇指回出图（缺 %s 张）' % (nx.get('gap'),))
             else:
-                bad('状态没推进：%r' % (st3.get('status'),))
-            with page.expect_download() as dl:
-                saved = page.evaluate('''async () => {
-                  const n = (await npNotesAll()).find(x => x.id === 'mindchk1');
-                  const row = ((n && n.imgDocs) || []).find(x => x && x.kind === 'mind');
-                  if (!row || !row.img) return { ok: false };
-                  const a = document.createElement('a'); a.href = row.img; a.download = 'knowledge-long.png';
-                  document.body.appendChild(a); a.click(); a.remove();
-                  return { ok: true, len: String(row.img).length };
-                }''')
-            if saved.get('ok'):
-                dl.value.save_as(str(OUT / 'knowledge-long.png'))
-                ok('档案里那张长图能直接下载（%dKB）' % (os.path.getsize(OUT / 'knowledge-long.png') // 1024))
+                bad('缺图篇的下一步不对：%r' % (nx,))
+            if nx.get('gap2') == 0 and nx.get('next2') == '👀 预览|preview':
+                ok('档案「下一步」：图齐那篇直接指预览')
             else:
-                bad('档案里找不到可下载的长图')
-            # 再开门切回导图、重出：同一条 imgDocs 行换图，不叠第二条
-            page.evaluate(OPEN, {'id': 'mindchk1'})
-            page.wait_for_timeout(900)
-            page.click('#npMindCheckHost .np-mind-out[data-out="mind"]')
-            page.wait_for_timeout(700)
-            page.click('#npMindCheckHost .np-mind-export')
-            page.wait_for_timeout(1500)
-            st4 = page.evaluate(STATE, {'id': 'mindchk1'})
-            rows4 = st4.get('rows') or []
-            if len(rows4) == 1 and rows4[0].get('layout') == 'mind' and rows4[0].get('id') == rows[0].get('id'):
-                ok('切回导图重出：档案里还是同一条行、同 id 换图（只留当前这种）')
+                bad('图齐篇的下一步不对：%r' % (nx.get('next2'), nx.get('gap2')))
+            done = page.evaluate(DONE, {'copy': COPY})
+            if done.get('status') == '代发':
+                ok('「✓ 完成，回档案」＝落档标「代发」')
             else:
-                bad('切回重出叠行 / 没换对：%r' % (rows4,))
-            if (st4.get('mind') or {}).get('out') == 'mind':
-                ok('档案那边的选择也回到思维导图')
+                bad('完成没落成代发：%r' % (done,))
+            if done.get('rows') == 1:
+                ok('落档后还是同一套图（不叠第二行）')
             else:
-                bad('切回后档案没记回 mind：%r' % (st4.get('mind'),))
+                bad('落档后图行数不对：%r' % (done.get('rows'),))
+            if wiz.get('mindFn') == 'undefined' and not wiz.get('mindBox'):
+                ok('导图入口与容器都已撤（npOpenMind 没了、#noteMindContent 没了）')
+            else:
+                bad('导图还留着：fn=%r box=%r' % (wiz.get('mindFn'), wiz.get('mindBox')))
+            if ai_reqs:
+                bad('这轮点检不该打 AI，但打了：%r' % (ai_reqs[:3],))
+            else:
+                ok('整场没打 AI（只看界面与落档）')
             if errs:
                 bad('页面抛错：%r' % (errs[:6],))
             else:

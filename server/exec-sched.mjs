@@ -23,6 +23,8 @@
  *   auto[accId] = { d:'YYYY-MM-DD', rounds:n, lastAt, cmdId }
  *   发布行试够了（3 次）或已成定论＝done（当天不再动）；retry＝等 5 分钟再来；nofile＝缺料（补齐即接着发）。
  */
+import { featuresFor } from './tier.mjs';
+
 const TICK_MS = 60000;            // 每 60 秒看一次表
 const QUIET_FROM = 21, QUIET_TO = 9;   // 静默期（服务器本地钟）：21:00–09:00 不派单
 const NP_TRIES = 3;               // 发布行一天最多自动试几回（镜像内核 NP_PUB_BG_MAX_TRIES）
@@ -78,45 +80,38 @@ function inQuiet(nowMs) {
   const h = new Date(nowMs || Date.now()).getHours();
   return h >= QUIET_FROM || h < QUIET_TO;
 }
+/* 这份队列配置派给哪几个平台（配置里叫 dy，服务器这边叫 douyin）：老配置没写＝只投小红书 */
+function platsOfCfg(cfgIn) {
+  const cfg = (cfgIn && typeof cfgIn === 'object') ? cfgIn : {};
+  const p = (cfg.plats && typeof cfg.plats === 'object') ? cfg.plats : {};
+  const out = [];
+  if (p.xhs !== false) out.push('xhs');
+  if (p.dy === true) out.push('douyin');
+  return out;
+}
 
-/* ── 发布队列口径（镜像 background.js _npPubBgSlotParse/_npPubBgSlotDay/_npPubBgDueAt/_npPubBgRows）── */
-const DAY_IDX = { mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6, sun: 0 };
-function slotParse(slotKey) {
-  const m = String(slotKey || '').match(/^w(\d+):(\w+):(.+)$/);
-  return m ? { w: Number(m[1]), day: m[2], kind: m[3] } : null;
-}
-function slotDay(w, day, now) {
-  if (!(day in DAY_IDX)) return null;
-  const tIdx = now.getDay();
-  const nextMon = (((1 - tIdx + 7) % 7) || 7);
-  let off;
-  if (w === 1) { off = DAY_IDX[day] - tIdx; if (off < 0) return null; }   // 过去了的日子不滚出来
-  else off = nextMon + ((DAY_IDX[day] + 6) % 7) + (w - 2) * 7;
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+/* ── 到点口径（镜像 background.js _npPubBgDueAt/_npPubBgRows）── */
 function dueAt(day, hhmm) {
   const m = String(hhmm || '').match(/^(\d{1,2}):(\d{2})$/);
   const hh = m ? Math.min(23, Number(m[1])) : 12;   // 没定＝12:00（与 popup 展示同口径）
   const mm = m ? Math.min(59, Number(m[2])) : 0;
   return new Date(day.getFullYear(), day.getMonth(), day.getDate(), hh, mm, 0, 0).getTime();
 }
+/* 到点的发布行（2026-10-29 发笔记重排）：从「笔记规划」来——篇上的 planDate / planTime；
+   行键＝plan|篇id；没排日期 / 已发 / 已归档的不出现（队列整套撤了，镜像内核 _npPubBgRows）。 */
 function npRows(bag, now) {
-  const q = (bag.note_queue && typeof bag.note_queue === 'object') ? bag.note_queue : {};
-  const times = (bag.np_queue_times && typeof bag.np_queue_times === 'object') ? bag.np_queue_times : {};
+  const list = Array.isArray(bag.np_notes) ? bag.np_notes : [];
   const rows = [];
-  for (const slotKey of Object.keys(q)) {
-    const ids = Array.isArray(q[slotKey]) ? q[slotKey] : [];
-    if (!ids.length) continue;
-    const p = slotParse(slotKey);
-    if (!p) continue;
-    const day = slotDay(p.w, p.day, now);
-    if (!day) continue;
-    for (const id of ids) {
-      const lineKey = slotKey + '|' + String(id);
-      rows.push({ slotKey, id: String(id), lineKey, dueAt: dueAt(day, times[lineKey]), dateStr: dateStr(day) });
-    }
+  for (const n of list) {
+    if (!n || n.id == null) continue;
+    const ds = String(n.planDate || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ds)) continue;
+    const st = npStatus(n);
+    if (st === '已发' || st === '已归档') continue;
+    const day = new Date(ds + 'T00:00:00');
+    if (isNaN(day.getTime())) continue;
+    const slotKey = 'plan';
+    rows.push({ slotKey, id: String(n.id), lineKey: slotKey + '|' + String(n.id), dueAt: dueAt(day, String(n.planTime || '')), dateStr: ds });
   }
   return rows;
 }
@@ -125,15 +120,20 @@ function npStatus(note) {
   const s = String((note && note.status) || '');
   return ['草稿', '代发', '待发', '已发', '已归档'].indexOf(s) >= 0 ? s : '草稿';
 }
-/* 这轮接进开关/并行的两家（视频号先不接，原来的发法照旧）；按篇的形式再筛一遍 */
-const PUB_ROUND = ['xhs', 'douyin'];
+/* 这轮接进开关/并行的三家（视频号 2026-10-25 放开）；按篇的形式再筛一遍 */
+const PUB_ROUND = ['xhs', 'douyin', 'channels'];
 function npPubIsVideoForm(form) {
   const f = String(form || '');
   return f === '视频' || f === '案例成片' || f.indexOf('口播') >= 0 || f === '数字人';
 }
-function npPubPlatsFor(form) {
+/* 全平台闸（2026-10-29）：抖音/视频号只在「全平台」档开；没开就按只做小红书算 */
+function platsAllowedFor(acc, store) {
+  return featuresFor(acc, store && store.tier_table).features.multiPlatform;
+}
+function npPubPlatsFor(form, multiPlatform) {
   const all = npPubIsVideoForm(form) ? ['xhs', 'douyin', 'channels'] : ['xhs', 'douyin'];
-  return all.filter((p) => PUB_ROUND.indexOf(p) >= 0);
+  const ok = multiPlatform === false ? ['xhs'] : all;
+  return ok.filter((p) => PUB_ROUND.indexOf(p) >= 0);
 }
 
 export function createExecSched(ctx) {
@@ -192,13 +192,12 @@ export function createExecSched(ctx) {
     return dirty;
   }
 
-  /* ── 发布队列到点：挨行看，到点且没结账的就派（一条账一天一套账）
+  /* ── 笔记规划到点：挨行看，到点且没结账的就派（一条账一天一套账）
      返回 {placed, dirty}：placed＝这钩真派了单（后面就别再派别的），dirty＝账动过 ── */
   async function jobNp(acc, bag, now, did) {
     const notesArr = Array.isArray(bag.np_notes) ? bag.np_notes : [];
     const notesById = {};
     for (const n of notesArr) if (n && n.id != null) notesById[String(n.id)] = n;
-    const modes = (bag.np_pub_modes && typeof bag.np_pub_modes === 'object') ? bag.np_pub_modes : {};
     const srvFiles = (bag.np_srv_files && typeof bag.np_srv_files === 'object') ? bag.np_srv_files : {};
     const platsAll = (bag.np_pub_plats && typeof bag.np_pub_plats === 'object') ? bag.np_pub_plats : {};
     const switches = (bag.np_pub_switch && typeof bag.np_pub_switch === 'object') ? bag.np_pub_switch : {};
@@ -206,6 +205,24 @@ export function createExecSched(ctx) {
     const led = (store.exec_sched.np[acc.id] = store.exec_sched.np[acc.id] || {});
     const pause = platformPauseOf ? platformPauseOf(acc) : {};
     let dirty = false;
+
+    /* 工作台「等您接手」里这两类自动收：long＝长文发出去了 / 改回草稿；noimg＝图补齐了
+       （镜像内核 _npPubStuckSyncFails；清单就是包里这份 np_pub_stuck，网页工作台读的也是它） */
+    if (Array.isArray(bag.np_pub_stuck) && bag.np_pub_stuck.length) {
+      const keep = bag.np_pub_stuck.filter((x) => {
+        if (!x) return false;
+        const n = notesById[String(x.id)];
+        const st2 = n ? npStatus(n) : '';
+        const pending = !!(n && (st2 === '代发' || st2 === '待发'));
+        if (x.k === 'long') return !!(pending && String(n.form || '') === '长文');
+        if (x.k === 'noimg' || x.k === 'nofilm') {
+          const f = Array.isArray(srvFiles[String(x.id)]) ? srvFiles[String(x.id)].filter((y) => y && y.id) : [];
+          return !!(pending && !f.length);
+        }
+        return true;
+      });
+      if (keep.length !== bag.np_pub_stuck.length) { bag.np_pub_stuck = keep; dirty = true; }
+    }
 
     for (const r of npRows(bag, new Date(now))) {
       if (r.dueAt > now) continue;                                     // 还没到点
@@ -217,21 +234,39 @@ export function createExecSched(ctx) {
       const e = led[key];
       if (e && (e.state === 'done' || e.state === 'sent')) continue;   // 今天已成定论 / 还在飞
       if (e && e.state === 'retry' && (now - (e.at || 0)) < NP_RETRY_MIN * 60000) continue;   // 试败了：歇 5 分钟
+      if (e && e.state === 'long') continue;   // 长文今天已经提醒过了（工作台那条还在就够）
 
-      const mode = (modes[r.lineKey] === 'auto' || modes[r.lineKey] === 'prep') ? modes[r.lineKey] : 'hold';
-      if (mode === 'prep') {
-        led[key] = { state: 'done', attempts: 0, at: now, why: 'prep（只备稿）档' };
+      /* 📝 长文：执行器开不了长文模式——到这步不派单，只把「等你点发布」记进工作台 */
+      if (String(note.form || '') === '长文') {
+        if (!Array.isArray(bag.np_pub_stuck)) bag.np_pub_stuck = [];
+        const stuckArr = bag.np_pub_stuck;
+        if (!stuckArr.some((x) => x && x.k === 'long' && String(x.id) === String(r.id))) {
+          stuckArr.push({ k: 'long', id: String(r.id), p: 'xhs', at: now });
+        }
+        report(acc.id, `📝 「${note.title || r.id}」到点了——长文机器发不了，去「📒 笔记档案」这一篇行尾点「🚀 发布」`);
+        led[key] = { state: 'long', attempts: 0, at: now, why: '长文等你点发布' };
+        did.push(`[${acc.name}] 📝 长文到点：${note.title || r.id}（等你点发布）`);
         dirty = true;
-        report(acc.id, `⏰ 「${note.title || r.id}」到点了，但它是「只备稿」档（prep）——备稿在网页侧走，发布台里可以改发布方式`);
         continue;
       }
+
+      /* 笔记规划那行（plan|篇id）：到点自己发，不再有 hold / prep 档
+         视频篇的片子是页面开着录的——到点还没录出来就不硬发，挂进工作台「等您接手」 */
       const files = Array.isArray(srvFiles[r.id]) ? srvFiles[r.id].filter((f) => f && f.id) : [];
+      const isVid = npPubIsVideoForm(note.form || '图文');
       if (!files.length) {
         if (!(e && e.state === 'nofile')) {
-          report(acc.id, `⏰ 「${note.title || r.id}」到点了，但素材还没交到服务器——打开网页把这篇的图/片重新交一次，补齐后到点自动接着发`);
-          did.push(`[${acc.name}] 到点缺料：${note.title || r.id}`);
+          const kk = isVid ? 'nofilm' : 'noimg';
+          if (!Array.isArray(bag.np_pub_stuck)) bag.np_pub_stuck = [];
+          if (!bag.np_pub_stuck.some((x) => x && x.k === kk && String(x.id) === String(r.id))) {
+            bag.np_pub_stuck.push({ k: kk, id: String(r.id), p: isVid ? 'douyin' : 'xhs', at: now });
+          }
+          report(acc.id, isVid
+            ? `⏰ 「${note.title || r.id}」到点了，但片子还没录出来——打开「📒 笔记档案」这一篇的「🎬 录片」，页面开着录完再点「🚀 发布」`
+            : `⏰ 「${note.title || r.id}」到点了，但配图还没出齐（料没进待发区）——打开「📒 笔记档案」这篇补图，补齐后到点自动接着发`);
+          did.push(`[${acc.name}] 到点缺料：${note.title || r.id}${isVid ? '（片子还没录）' : ''}`);
         }
-        led[key] = { state: 'nofile', attempts: 0, at: now, why: '素材还没交到服务器' };
+        led[key] = { state: 'nofile', attempts: 0, at: now, why: isVid ? '片子还没录出来' : '素材还没交到服务器' };
         dirty = true;
         continue;
       }
@@ -239,25 +274,44 @@ export function createExecSched(ctx) {
       const adapted = { title: note.title || '', body: note.draft || '', tags: [] };
       /* 这次发哪几家：每篇选好的（没记过＝按形式全发）∩ 本轮两家 ∩ 总开关，再刨掉已经发成的家
          （部分成功＝只补没成的那家，不重复打扰已发出去的那家） */
-      const can = npPubPlatsFor(note.form || '图文');
+      const can = npPubPlatsFor(note.form || '图文', platsAllowedFor(acc, store));
       const recSel = Array.isArray(platsAll[r.lineKey]) ? platsAll[r.lineKey].filter((p) => can.indexOf(p) >= 0) : [];
       const baseSel = recSel.length ? recSel : can.slice();
       const sentRec = (sentAll[r.id] && typeof sentAll[r.id] === 'object') ? sentAll[r.id] : {};
-      const platforms = baseSel
+      /* 视频号一天一条：今天已经发成过一条（哪一篇都算）就不再发第二条 */
+      const day0 = new Date(now); day0.setHours(0, 0, 0, 0);
+      const chDoneToday = Object.keys(sentAll).some((nid) => {
+        const c = sentAll[nid] && sentAll[nid].channels;
+        return !!(c && c.ok && Number(c.at || 0) >= day0.getTime());
+      });
+      const baseOk = baseSel
         .filter((p) => switches[p] !== false)
-        .filter((p) => !(p === 'douyin' && pause[p]))   // 抖音格暂停发笔记：这一行原样等着，恢复后下一分钟接着发
-        .filter((p) => !(sentRec[p] && sentRec[p].ok))
+        .filter((p) => !((p === 'douyin' || p === 'channels') && pause[p]))   // 抖音格/视频号格暂停发笔记：这一行原样等着，恢复后下一分钟接着发
+        .filter((p) => !(sentRec[p] && sentRec[p].ok));
+      const chCap = chDoneToday && baseOk.indexOf('channels') >= 0;
+      const platforms = (chCap ? baseOk.filter((p) => p !== 'channels') : baseOk)
         .map((p) => ({
           platform: p,
           adapted: (note.pub && note.pub.adapted && note.pub.adapted[p]) || adapted,
         }));
-      if (!platforms.length) continue;   // 两家都关了 / 都已经发成：这一行今天不派，开关一开下分钟就接上
+      if (!platforms.length) {
+        /* 只剩视频号、而它今天已经发过一条：记一笔，今天不再试 */
+        if (chCap) {
+          if (!(e && e.state === 'chcap')) {
+            report(acc.id, `🎥 「${note.title || r.id}」到点了——视频号一天只发一条，今天那条已经发过了，这条不补发`);
+            did.push(`[${acc.name}] 视频号当日已发过，跳过：${note.title || r.id}`);
+          }
+          led[key] = { state: 'chcap', attempts: 0, at: now, why: '视频号今天已经发过一条' };
+          dirty = true;
+        }
+        continue;   // 两家都关了 / 都已经发成：这一行今天不派，开关一开下分钟就接上
+      }
       const params = {
         note: { id: r.id, form: note.form || '图文', title: note.title || '' },
         platform: platforms[0].platform,
         platforms,
         files: files.map((f) => ({ blobId: f.id, name: f.name || '', mime: f.mime || '' })),
-        hold: mode === 'hold',
+        hold: false,
         sched: { lineKey: r.lineKey, dateStr: r.dateStr },
       };
       const res = await placeOrder(acc, 'note_publish', params, 'sched');
@@ -335,7 +389,7 @@ export function createExecSched(ctx) {
     const nextName = (ch.remainNames || [])[0] || next;
     const res = await placeOrder(acc, 'acquire', {
       op: 'search', kw: ch.kw || undefined, profile: ch.profile || undefined, label: ch.label || undefined,
-      scenario: next, force: true, snapshot: ch.snapshot || undefined,
+      scenario: next, force: true,
       chainId: ch.id, seq: 'chain-' + now.toString(36),
     }, 'sched');
     if (res && res.ok) {
@@ -360,8 +414,13 @@ export function createExecSched(ctx) {
     const qWin = qWinOn(bag.drain_scan_cfg && bag.drain_scan_cfg.queueAuto, now);
     const dbWin = dbWinOn(bag.daily_browse_config, now);
     if (!qWin && !dbWin) return false;
-    /* 老板暂停了小红书这头：自动跑这趟直接跳过，不动冷却/趟数，恢复后下一钩接上 */
-    if (platformPauseOf && platformPauseOf(acc).xhs) return false;
+    /* 老板暂停了某一头：那一头的趟跳过（别的平台照跑）；这份队列派的平台全暂停才整趟不派
+       （全平台闸：抖音只在「全平台」档开，没开就只按小红书这一头算） */
+    if (platformPauseOf) {
+      const pause = platformPauseOf(acc);
+      const mp = platsAllowedFor(acc, store);
+      if (!platsOfCfg(bag.drain_scan_cfg).filter((p) => p === 'xhs' || mp).some((p) => !pause[p])) return false;
+    }
     /* 搜索链还没跑完：让它先走完这几类，别让后台队列把它撤掉 */
     const ch = (store.exec_chains || {})[acc.id];
     if (ch && (ch.status === 'waiting' || ch.status === 'running')) return false;
@@ -373,12 +432,8 @@ export function createExecSched(ctx) {
     if (!online(hand)) return false;                                     // 机器没在线：下一钩再看
     if (activeCmdOf(acc.id, now)) return false;                          // 有单在飞：等它跑完
 
-    const snap = {};
-    for (const k of ['drain_scan_cfg', 'auto_water_config', 'daily_browse_config', 'config']) {
-      if (bag[k] !== undefined) snap[k] = clone(bag[k]);
-    }
     const res = await placeOrder(acc, 'acquire', {
-      snapshot: snap, scope: 'all', pace: 'interval',
+      scope: 'all', pace: 'interval',
       seq: 'sched-' + now.toString(36),
     }, 'sched');
     let dirty = true;
@@ -388,6 +443,8 @@ export function createExecSched(ctx) {
       rec.cmdId = res.cmdId;
       report(acc.id, `⏰ 排期到点自动下单：获客队列自动跑一轮（${qWin ? '每周自动跑时段' : '日常浏览时段'}）已交给执行器`);
       did.push(`[${acc.name}] ⏰ 队列自动跑派单（今天第 ${rec.rounds} 趟）`);
+    } else if (res && res.paused) {
+      /* 刚按下的暂停：这趟不派、不记趟数，恢复后下一钩接上 */
     } else {
       rec.lastAt = now;   // 派失败了也歇一歇，别每 60 秒撞一次
       did.push(`[${acc.name}] 队列自动跑没派出去：${(res && res.error) || ''}`);

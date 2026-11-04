@@ -121,13 +121,13 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
 
-        # ① 档案「下一步」：排过分镜之前＝「✏️ 编辑」（title 指去分镜出词）
+        # ① 档案「下一步」：视频篇有稿子就按片子进度说真话——没排分镜也是「🎬 录片」（title 指去分镜站）
         page.evaluate('() => switchMainTab("noteArchive")')
         page.wait_for_selector('.npar-next[data-id="ndv1"]')
         nb1 = page.locator('.npar-next[data-id="ndv1"]')
-        expect(nb1).to_have_text('✏️ 编辑')
-        assert '照讲到哪儿切到哪儿排成分镜' in (nb1.get_attribute('title') or ''), nb1.get_attribute('title')
-        print('PASS: archive next-step reads 编辑 before splitting (title points to the dv station)')
+        expect(nb1).to_have_text('🎬 录片')
+        assert '还没分镜' in (nb1.get_attribute('title') or ''), nb1.get_attribute('title')
+        print('PASS: archive next-step reads 录片 before splitting (title points to the dv station)')
 
         # ② 点「下一步」直落写稿⑤站：五站条 + 自动排分镜（等待条→生成条表）
         page.locator('.npar-next[data-id="ndv1"]').click()
@@ -176,14 +176,14 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         assert '重点：' in idx and '不要出现人脸口型' in idx, 'note_dgens 索引内容不对'
         print('PASS: dgen src snapshot set and the plain-text index (note_dgens) is refreshed')
 
-        # ⑤ 回档案：中途态＝「✏️ 编辑」（title 带还差几条）＋ 已分记号
+        # ⑤ 回档案：中途态＝「🎬 录片」（title 带还差几条）＋ 已分记号
         page.evaluate('() => switchMainTab("noteArchive")')
         page.wait_for_selector('.npar-next[data-id="ndv1"]')
         nb5 = page.locator('.npar-next[data-id="ndv1"]')
-        expect(nb5).to_have_text('✏️ 编辑')
+        expect(nb5).to_have_text('🎬 录片')
         assert '还差 3 条' in (nb5.get_attribute('title') or ''), nb5.get_attribute('title')
         assert '🎬 分了 3 条' in page.locator('.npar-list').inner_text()
-        print('PASS: mid-state archive row shows 编辑 with 还差 3 条 in the tip, plus the split-count chip')
+        print('PASS: mid-state archive row shows 录片 with 还差 3 条 in the tip, plus the split-count chip')
 
         # ⑥ 再点「下一步」回来：分镜原样在（不重排）
         calls = sw.evaluate('self.testDvCalls')
@@ -207,8 +207,8 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         print('PASS: edited draft invalidates src and auto re-splits into 3 segments')
 
         # ⑧ 守门：没传齐时点拼片＝弹提示原地不动；三条「⬆ 传回来」后可以拼
-        assert page.locator('.np-dv-asm[disabled]').count() == 0, '拼片钮该常亮可点（软提示守门）'
-        page.locator('.np-dv-asm').click()
+        assert page.locator('.np-dv-asm-big[disabled]').count() == 1, '素材没齐时大钮该是灰的（底下那颗小钮仍可点、只弹提示）'
+        page.locator('.np-dv-asm:not(.np-dv-asm-big)').click()
         expect(page.locator('#popToastBox')).to_contain_text('还有条没传回来')
         assert page.evaluate('_npWiz.step === 5 && !_npWiz.dgen.segs.some(s => s.done)'), '没传齐时不该拼片'
         # 三段「豆包导出的片段」用 ffmpeg 现造（真 mp4、时长有限——拼片那步要读得到 duration），一段一格传回来
@@ -237,7 +237,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-dv-') as tmp, sync_playwright(
         # ⑩ 真拼片：三段片段按稿子顺序接＋字幕烧进画面＋配音——配音走 Edge 免费口子，这里桩掉（不联网，走无声容忍）；
         #    真录真存：落 filmDocs／xhsFilmDocs／标「代发」／档案自动回列表
         page.evaluate('() => { EdgeTTS.synth = async () => { throw new Error("自检：配音桩"); }; }')
-        page.locator('.np-dv-asm').click()
+        page.locator('.np-dv-asm-big').click()
         page.wait_for_selector('#noteArchiveContent .npar-stsel[data-id="ndv1"]', timeout=120000)
         expect(page.locator('#noteArchiveContent .npar-stsel[data-id="ndv1"]')).to_have_value('代发')
         entry = sw.evaluate('''async () => {

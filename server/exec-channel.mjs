@@ -17,6 +17,8 @@
  *                          （排期自动下单的单子只带素材 id——网页交的料由服务器代管，执行器来这儿取）
  *     /api/exec/prompts    提示词下发 {handId,token} → {version,prompts}
  *                          （客户包里不带提示词；执行器挂上线领一份，版本变了心跳会提醒再领）
+ *     /api/exec/config     配置下发 {handId,token} → {version,config,knowledge_base,...}
+ *                          （客户机不存独立配置：每个动作开跑前先刷这一份；AI Key 不发）
  *   网页侧（认的是登录会话 cookie）：
  *     /api/exec/order      下单 {kind,params} → {cmdId}（按档位拦）
  *     /api/exec/orders     看这只手的订单/在线状态/进度播报 → {hand,orders,reports,reports}
@@ -27,8 +29,9 @@
  *     /api/exec/kill       一键熔断 / /api/exec/unkill 解除
  *     /api/exec/sched-tick 排期立刻看一次表（验收/运维用；正常每 60 秒自己看）
  *
- * 档位（与 §8.4 对齐）：免费0 / 基础1(239) / 升级2(399) / 全功能3(539)；
+ * 档位（与 §8.4 对齐）：免费0 / 基础1(239) / 升级2(399) / 全功能3(539) / 全平台4(699)；
  *   能装的活：发笔记≥1、获客≥2、日常浏览≥2、AI客服≥3；自检0（A 期验线用，不碰平台）。
+ *   抖音 / 视频号另看档位表里的「抖音 / 视频号」那一格（只有全平台档开），见 placeOrder 里的全平台闸。
  * 一个账号挂一台（§8.2 #7）：再 pair 一次＝解绑重挂（旧 token 作废）。
  * 熔断（§8.2 #3）：全局一键 → 毫秒级送达所有在线的执行器；重启也逃不掉（问服务器说了算）。
  * 排期到点自动下单（§8.2 #6 收尾 · v10）：服务器自己看表（发布队列到点 / 队列整条每周自动跑 /
@@ -45,10 +48,10 @@
  *   免费档不生成；老板换码＝作废重发＋把已挂机器踢下线（kick）。 */
 
 import { createRequire } from 'node:module';
-import { createHash } from 'node:crypto';
+import { createHash, webcrypto } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { readFileSync, statSync } from 'node:fs';
-import { ensureTierStore, editionOf, canKind } from './tier.mjs';
+import { ensureTierStore, editionOf, canKind, featuresFor } from './tier.mjs';
 
 /* 客户包里不带提示词：这只手挂上线后凭挂线凭据来领。版本＝整份内容的哈希，
    变了就在心跳/派单回包里带上新版本号，执行器自己比对后重领。 */
@@ -83,23 +86,62 @@ function expectedHandVersion() {
   } catch (_) { return ''; }
 }
 
+/* ── 配置下发（/api/exec/config）：客户机不存独立配置，动作前先来这儿拿公网这一份。
+ *    只发"做动作要用的设置"；运行流水/获客清单/回复记录这些数据类 key 一律不发。
+ *    整块密文（knowledge_base / script_library）在服务器按账号的盐解开再给明文——
+ *    客户机的盐和公网不是同一把，直接发密文它解不开。AI Key 永远不出门（走 /api/exec/ai）。 */
+const EXEC_CFG_KEYS = [
+  'config', 'knowledge_base', 'script_library', 'note_plan', 'note_columns',
+  'delay_config', 'account_guard', 'ui_theme',
+  'drain_scan_cfg', 'auto_water_config', 'daily_browse_config',
+];
+const EXEC_CFG_ENC = new Set(['knowledge_base', 'script_library']);
+const CB_PEPPER = 'xhs-local-vault-2026-09';
+const CB_ITER = 120000;
+const CB_PREFIX = 'enc:v1:';
+const CB_FMT = 'xhs-enc-v1';
+
+async function cbKeyFor(saltB64) {
+  const base = await webcrypto.subtle.importKey('raw', new TextEncoder().encode(CB_PEPPER), 'PBKDF2', false, ['deriveKey']);
+  return webcrypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: Buffer.from(saltB64, 'base64'), iterations: CB_ITER, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+}
+/* 解整块密文；存量明文原样回；解不开返回 undefined（调用方跳过这个 key，别拿空值盖掉客户机缓存） */
+async function unlockBagValue(bag, value) {
+  if (typeof value !== 'string' || value.indexOf(CB_PREFIX) !== 0) return value;
+  const salt = bag && bag._crypt_salt_v1;
+  if (!salt) return undefined;
+  try {
+    const inner = JSON.parse(Buffer.from(value.slice(CB_PREFIX.length), 'base64').toString('utf8'));
+    if (!inner || inner.f !== CB_FMT || !inner.i || !inner.d) throw new Error('密文格式不认识');
+    const key = await cbKeyFor(salt);
+    const pt = await webcrypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: Buffer.from(inner.i, 'base64') }, key, Buffer.from(inner.d, 'base64'));
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch (_) { return undefined; }
+}
+
 const HOLD_MS = 25000;          // 长轮询挂住的秒数
 const ONLINE_MS = 35000;        // 多久没心跳算离线
 const CMD_KEEP = 200;           // 订单流水保留条数
 const LOG_KEEP = 500;           // 事件流水保留条数
-const REPORT_KEEP = 80;         // 每只手的进度播报保留条数（网页实时进度条）
+const REPORT_KEEP = 400;        // 每只手的进度播报保留条数（网页工作台的「操作日志」读它：一趟活几十句，80 条只够看尾巴）
 const PENDING_CAP = 3;          // 下单防连点：一个账号手上最多压几条没跑完的（D 期）
 const PENDING_STALE_MS = 6 * 3600000;   // 超过这么久还在飞＝当没派成，不占防连点的名额
 const DEMO_NO_EXEC_MSG = '演示号只逛不真发——这类活得注册自己的号、挂上执行器';
 const SWEEP_MS = 3 * 3600000;   // 派出去 3 小时没回执＝自动作废（机器关了/换了；D 期）
 const SEARCH_SWEEP_MS = 20 * 60 * 1000;   // 搜索单 20 分钟没回执＝作废（执行器自己 15 分钟必收场，留 5 分钟余量）
+/* 发笔记单：派出去两分钟一个字都没回来＝这台执行器没接住（心跳还在，但没干活）。
+   不再干等 3 小时——标「机器人没回话」、松开防连点，工作台上给一条「🔄 重派」（2026-10-26）。 */
+const PUB_SILENCE_MS = 2 * 60 * 1000;
 /* 搜索链：一类跑完歇约 10 分钟再派下一类（不给旋钮，确认单 2026-10-23） */
 const CHAIN_GAP_MS = 10 * 60 * 1000;
 const CHAIN_KEEP_MS = 3 * 86400000;   // 跑完/停手的链留 3 天给网页看结果，之后清掉
 
-export const TIER_RANK = { '免费': 0, '基础': 1, '升级': 2, '全功能': 3 };
-export const KIND_NEED = { self_test: 0, note_publish: 1, batch_send: 0, film: 1, acquire: 2, daily_browse: 2, leads: 3 };
-export const KIND_LABEL = { self_test: '自检', note_publish: '发笔记', batch_send: '整页发送', film: '本机出片', acquire: '获客', daily_browse: '日常浏览', leads: 'AI客服' };
+export const TIER_RANK = { '免费': 0, '基础': 1, '升级': 2, '全功能': 3, '全平台': 4 };
+export const KIND_NEED = { self_test: 0, note_publish: 1, batch_send: 0, film: 1, acquire: 2, daily_browse: 2, leads: 3, relogin: 0 };
+export const KIND_LABEL = { self_test: '自检', note_publish: '发笔记', batch_send: '整页发送', film: '本机出片', acquire: '获客', daily_browse: '日常浏览', leads: 'AI客服', relogin: '登录机器人' };
 
 /* 同一种活里的细分动作（搜索 / 评论刷新 / 截流扫一轮 …）：防连点按「活＋动作」算一条，
    不然搜一下就把整页发送也堵住了。没分的活就按 kind 本身算。 */
@@ -122,6 +164,24 @@ function normalizeCaps(v) {
   return out;
 }
 
+/* 队列里的 plats 叫 xhs / dy，服务器这边叫 xhs / douyin。 */
+function platsFromCfg(cfg) {
+  const p = (cfg && cfg.plats && typeof cfg.plats === 'object') ? cfg.plats : {};
+  const out = [];
+  if (p.xhs !== false) out.push('xhs');
+  if (p.dy === true) out.push('douyin');
+  return out;
+}
+
+/* 这一单投哪几个平台：新单由服务器下单时从公网本书现读（params.plats 带下来），
+   老单还带着 snapshot 的按快照兜底；都没有＝只投小红书（跟升级前一样）。 */
+function acquirePlats(params) {
+  const p = params || {};
+  if (Array.isArray(p.plats)) return p.plats.map(String).filter((x) => x === 'xhs' || x === 'douyin');
+  const snap = (p.snapshot && typeof p.snapshot === 'object') ? p.snapshot : {};
+  return platsFromCfg(snap.drain_scan_cfg);
+}
+
 /* 这只手会不会这一单：老包不报 caps（null）就不拦，让它自己拒；
    报了 caps 的，按"活 + 细分动作"核（换手 12A：服务器遇到不会的活直接提示升级，不硬派）。 */
 function handSupports(h, kind, params) {
@@ -133,6 +193,11 @@ function handSupports(h, kind, params) {
   if (kind === 'acquire') {
     const op = String(p.op || 'round');
     if (op !== 'round' && !has('acquire:' + op)) return false;
+    /* 这单要投抖音、又没被这趟跳过 → 手得会抖音那一套（老包没 exec-douyin.js，提示升级，不硬派） */
+    if (op === 'round') {
+      const skip = Array.isArray(p.skipPlats) ? p.skipPlats.map((x) => String(x || '')) : [];
+      if (acquirePlats(p).includes('douyin') && !skip.includes('dy') && !has('acquire:dy')) return false;
+    }
   }
   if (kind === 'leads') {
     const dm = p.op === 'dm' || !!p.person || (Array.isArray(p.people) && p.people.length > 0);
@@ -141,7 +206,13 @@ function handSupports(h, kind, params) {
   return true;
 }
 
-const stamp = () => new Date().toISOString().replace('T', ' ').slice(11, 23);
+/* 时间戳按服务器本机时区给（老板就看这一台的表）。原先用 toISOString＝UTC，网页上整条日志慢 8 小时，
+   跟同一屏里本地时间的老行混在一起，看着像没在动。 */
+const stamp = () => {
+  const d = new Date();
+  const p = (n, w) => String(n).padStart(w || 2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3);
+};
 
 export function createExecChannel(ctx) {
   const { store, persist, json, resolveAccount, readEnv, bookBagFor } = ctx;
@@ -175,19 +246,25 @@ export function createExecChannel(ctx) {
   function reportBy(accId, text) {
     log('SRV', text);
     const ring = (store.exec_reports[accId] = store.exec_reports[accId] || []);
-    ring.push({ t: stamp(), text });
+    ring.push({ t: stamp(), at: Date.now(), text });   // at：毫秒时刻，网页按它认「是不是今天的」
     if (ring.length > REPORT_KEEP) ring.splice(0, ring.length - REPORT_KEEP);
   }
 
   const rankOf = (tier) => TIER_RANK[tier] || 0;
-  const accTier = (acc) => (acc && acc.tier) || '免费';
+  /* 发给执行器 / 本机档位闸用的档：试用期内按试用档算。
+     不然试用号（本档还是免费）领到活，到了本机又被「本档没开」挡回去。 */
+  const accTier = (acc) => {
+    if (!acc) return '免费';
+    return featuresFor(acc, store && store.tier_table).label;
+  };
   const online = (h) => !!h && Date.now() - (h.lastSeen || 0) < ONLINE_MS;
   const findHandByAccount = (accountId) => Object.values(store.exec_hands).find((h) => h.accountId === accountId) || null;
 
   /* ── 平台认号（2026-10-23）──
      一个网页账号在每个平台锁一个号：xhs＝小红书号（＋主页内部 id），douyin＝抖音号（＋uid/secUid）。
-     给人看的是号（可能改名），机器校验用内部 id。没绑＝这个平台不能用；撞号＝拒绝并让找我们。 */
-  const BIND_LABEL = { xhs: '小红书', douyin: '抖音' };
+     给人看的是号（可能改名），机器校验用内部 id。没绑＝这个平台不能用；
+     同一个号被别的网页账号绑过也放行（2026-10-29 老板定：不做这个限制），只记一笔。 */
+  const BIND_LABEL = { xhs: '小红书', douyin: '抖音', channels: '视频号' };
 
   function cleanBinding(raw) {
     if (!raw || typeof raw !== 'object') return null;
@@ -206,7 +283,8 @@ export function createExecChannel(ctx) {
     return !!a.displayId && a.displayId === b.displayId;
   }
 
-  /* 有没有别的网页账号已经绑了同一个号（撞号）：uid 或 号的显示值撞上都算 */
+  /* 有没有别的网页账号已经绑了同一个号（撞号）：uid 或 号的显示值撞上都算。
+     只用来记账（老板要共用同一个号），不再拦绑定。 */
   function bindingOwner(platform, b, exceptAccId) {
     const list = Object.entries(store.accounts || {});
     for (const [id, a] of list) {
@@ -237,36 +315,42 @@ export function createExecChannel(ctx) {
     return out;
   }
 
-  /* 分平台暂停（2026-10-25）：小红书这格管获客（搜词/盯账号/截流）＋日常浏览，抖音这格管发笔记。
-     只挡以后的新单，不打断正在跑的那一趟；要当场停用「停这一趟」。 */
+  /* 分平台暂停（2026-10-25）：小红书这格管小红书获客（搜词/盯账号/截流）＋日常浏览；
+     抖音这格管抖音发笔记＋抖音获客；视频号这格只管发笔记（2026-10-25 放开视频号时加；
+     2026-10-26 起视频号也认号，三格都能单独停）。只挡以后的新单，
+     不打断正在跑的那一趟；要当场停用「停这一趟」。 */
+  const PAUSE_LABEL = { xhs: '小红书', douyin: '抖音', channels: '视频号' };
+  const PAUSE_PLATS = ['xhs', 'douyin', 'channels'];
+  const PAUSE_WHAT = { xhs: '获客', douyin: '发笔记和获客', channels: '发笔记' };
   function platformPauseOf(acc) {
     const raw = (acc && acc.platform_pause) || {};
     const out = {};
-    for (const p of Object.keys(BIND_LABEL)) {
+    for (const p of PAUSE_PLATS) {
       const v = raw[p];
       out[p] = v && typeof v === 'object' ? { at: Number(v.at) || 0, by: String(v.by || '') } : null;
     }
     return out;
   }
-  /* 这一单被哪几头的暂停挡着：获客/日常浏览归小红书格的「暂停获客」；
-     发笔记只认抖音格的「暂停发笔记」（小红书格暂停获客不影响发笔记），别的活不挡 */
+  /* 这一单被哪几头的暂停挡着：获客按"这份队列派给哪几个平台"算；
+     发笔记只认抖音格、视频号格的「暂停发笔记」（小红书格暂停获客不影响发小红书笔记），别的活不挡 */
   function pausedOf(acc, kind, params) {
     const st = platformPauseOf(acc);
-    if (kind === 'acquire' || kind === 'daily_browse') return st.xhs ? ['xhs'] : [];
-    if (kind === 'note_publish') return platformsOf(kind, params).filter((p) => p === 'douyin' && st[p]);
+    if (kind === 'acquire') return acquirePlats(params).filter((p) => st[p]);
+    if (kind === 'daily_browse') return st.xhs ? ['xhs'] : [];
+    if (kind === 'note_publish') return platformsOf(kind, params).filter((p) => (p === 'douyin' || p === 'channels') && st[p]);
     return [];
   }
   function pauseMsg(kind, ps) {
-    const names = ps.map((p) => BIND_LABEL[p] || p).join('、');
+    const names = ps.map((p) => PAUSE_LABEL[p] || p).join('、');
     return `老板暂停了${names}这头的${kind === 'note_publish' ? '发笔记' : '获客'}——等老板恢复再派`;
   }
   /* 老板在后台按暂停/恢复：状态存服务器，执行器离线下一次上线也照这个挡 */
   async function setPlatformPause(acc, platform, paused, by) {
     const p = String(platform || '');
-    if (!BIND_LABEL[p]) return { ok: false, error: '只认 xhs / douyin 两个平台' };
+    if (!PAUSE_LABEL[p]) return { ok: false, error: '只认 xhs / douyin / channels 三个平台' };
     acc.platform_pause = platformPauseOf(acc);
     acc.platform_pause[p] = paused ? { at: Date.now(), by: String(by || 'web') } : null;
-    log('WEB', `${paused ? '⏸ 暂停' : '▶ 恢复'}：${acc.name} ${BIND_LABEL[p]}${p === 'xhs' ? '获客' : '发笔记'}`);
+    log('WEB', `${paused ? '⏸ 暂停' : '▶ 恢复'}：${acc.name} ${PAUSE_LABEL[p]}${PAUSE_WHAT[p]}`);
     await persist();
     return { ok: true, platformPause: platformPauseOf(acc) };
   }
@@ -278,10 +362,6 @@ export function createExecChannel(ctx) {
     if (!BIND_LABEL[p]) return { ok: false, error: '不认识的平台：' + (p || '(空)') };
     const b = cleanBinding(raw);
     if (!b) return { ok: false, error: '没读到' + BIND_LABEL[p] + '号——先登录，再打开本人主页重试' };
-    const dup = bindingOwner(p, b, acc.id);
-    if (dup) {
-      return { ok: false, error: '这个' + BIND_LABEL[p] + '号已经绑在另一个网页账号（' + (dup.name || dup.id) + '）上了——找给你网址的人处理' };
-    }
     acc.bindings = bindingsOf(acc);
     const cur = acc.bindings[p];
     if (cur) {
@@ -296,6 +376,8 @@ export function createExecChannel(ctx) {
       acc.bindings[p] = Object.assign({}, cur, b, { boundAt: cur.boundAt || Date.now() });
       return { ok: true, binding: acc.bindings[p], same: true };
     }
+    const dup = bindingOwner(p, b, acc.id);
+    if (dup) log('SRV', `🔗 撞号放行：${acc.name} 绑的${BIND_LABEL[p]}号 ${b.displayId || b.uid} 也绑在 ${dup.name || dup.id} 上`);
     acc.bindings[p] = Object.assign({}, b, { boundAt: Date.now() });
     return { ok: true, binding: acc.bindings[p], bound: true };
   }
@@ -328,6 +410,16 @@ export function createExecChannel(ctx) {
       return arr.length ? arr : [String((params && params.platform) || 'xhs')];
     }
     return [platformOf(kind, params)].filter(Boolean);
+  }
+
+  /* 视频号一天最多发几条（老板 2026-10-25 定的：一天一条）；数的是这只账号今天真发成的条数 */
+  const CH_DAY_MAX = 1;
+  function channelPostsToday(acc) {
+    const bag = bookBagFor(acc.id);
+    const arr = Array.isArray(bag.np_pub_log) ? bag.np_pub_log : [];
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    const t0 = d0.getTime();
+    return arr.filter((e) => e && e.channels && e.channels.ok && Number(e.at) >= t0 && Number(e.at) < t0 + 86400000).length;
   }
 
   /* 下单闸：这一单要用哪个平台的号、那个号绑没绑。发布单按 params.platform，其余小红书活按 xhs。
@@ -433,6 +525,56 @@ export function createExecChannel(ctx) {
     return n;
   }
 
+  /* ── 发笔记单「回话了没」（2026-10-26）──
+     派出去的工单，执行器只要报过一条进度 / 回过一次执，就记 wordAt＝接住了。
+     两分钟一个字都没有 → 判没接住：单标失败、工单里的大字节清掉、松开防连点（能重派）。 */
+  function findSentPub(accountId) {
+    let best = null;
+    for (const c of Object.values(store.exec_cmds || {})) {
+      if (c.accountId !== accountId || c.kind !== 'note_publish' || c.state !== 'sent') continue;
+      if (!best || (c.sentAt || 0) > (best.sentAt || 0)) best = c;
+    }
+    return best;
+  }
+  function markWord(accountId) {
+    const c = findSentPub(accountId);
+    if (!c || c.wordAt) return false;
+    c.wordAt = Date.now();
+    return true;
+  }
+  function stripCmdFiles(c) {
+    const arr = c && c.params && c.params.files;
+    if (!Array.isArray(arr)) return false;
+    let big = 0;
+    const slim = arr.map((f) => {
+      if (f && f.b64) { big += String(f.b64).length; return { blobId: f.blobId || '', localKey: f.localKey || '', name: f.name || '', mime: f.mime || '', size: f.size || 0 }; }
+      return f;
+    });
+    if (!big) return false;
+    c.params = Object.assign({}, c.params, { files: slim });
+    return true;
+  }
+  function pubNoteIdOf(c) { return String((c && c.params && c.params.note && c.params.note.id) || ''); }
+  /* 「等您接手」钉一条：整单没开跑（p 为空——不是某一家发失败） */
+  function markPubNostart(acc, noteId) {
+    if (!acc || !noteId) return false;
+    const bag = bookBagFor(acc.id);
+    let stuck = Array.isArray(bag.np_pub_stuck) ? bag.np_pub_stuck.slice() : [];
+    stuck = stuck.filter((x) => !(x && String(x.id) === noteId && x.k === 'nostart'));
+    stuck.push({ k: 'nostart', id: noteId, p: '', why: '机器人没回话', at: Date.now() });
+    bag.np_pub_stuck = stuck;
+    return true;
+  }
+  function clearPubNostart(acc, noteId) {
+    if (!acc || !noteId) return false;
+    const bag = bookBagFor(acc.id);
+    const cur = Array.isArray(bag.np_pub_stuck) ? bag.np_pub_stuck : [];
+    const next = cur.filter((x) => !(x && String(x.id) === noteId && x.k === 'nostart'));
+    if (next.length === cur.length) return false;
+    bag.np_pub_stuck = next;
+    return true;
+  }
+
   /* ── 房务定时（exec-sched 每 60 秒叫一次）：派出去很久没回执的单自动作废 ──
      （机器关了/崩了/换了——这单永远不会来回执；标作废，网页上不留"永远在跑"的死单。）
      搜索单单独短时限：执行器那边 15 分钟必收场，再留 5 分钟余量；到点就作废，
@@ -441,7 +583,41 @@ export function createExecChannel(ctx) {
     const t = now || Date.now();
     let dirty = false;
     for (const c of Object.values(store.exec_cmds || {})) {
+      /* 同一种病、排在队里那版：发笔记单两分钟没人来取，可这台手心跳还在、手上也没别的活在跑
+         → 耳朵没在听（长轮询死了）。同样标没接住、松开重派；不留在队里，免得机器回来双发。 */
+      if (c.state === 'queued' && c.kind === 'note_publish') {
+        if ((t - (c.createdAt || 0)) < PUB_SILENCE_MS) continue;
+        const h = findHandByAccount(c.accountId);
+        if (!online(h)) continue;                 // 机器本来不在线：正常排着，不催
+        const busy = Object.values(store.exec_cmds || {}).some((x) => x !== c && x.accountId === c.accountId && x.state === 'sent');
+        if (busy) continue;                       // 手上还有活在跑：排队是正常的
+        const acc = store.accounts[c.accountId];
+        c.state = 'failed'; c.ok = false;
+        c.note = '作废：排了两分钟没被取走（机器人没在听）——可以重派';
+        c.doneAt = t;
+        c.stalled = true;
+        stripCmdFiles(c);
+        markPubNostart(acc, pubNoteIdOf(c));
+        log('SRV', `🤖 发笔记单排了 ${Math.round((t - (c.createdAt || t)) / 1000)} 秒没人取（心跳在、没别的活在跑）——已标没接住、松开可重派`);
+        dirty = true;
+        continue;
+      }
       if (c.state !== 'sent') continue;
+      /* 发笔记单：派出去两分钟一个字都没回来 → 没接住（心跳还在，但没干活）。
+         标失败、松开防连点；工作台「等您接手」钉一条，给「🔄 重派」。 */
+      if (c.kind === 'note_publish' && !c.wordAt) {
+        if ((t - (c.sentAt || c.createdAt || 0)) < PUB_SILENCE_MS) continue;
+        const acc = store.accounts[c.accountId];
+        c.state = 'failed'; c.ok = false;
+        c.note = '作废：派出去两分钟没回话（机器人没接到）——可以重派';
+        c.doneAt = t;
+        c.stalled = true;
+        stripCmdFiles(c);   // 老工单里塞的 b64 一并清掉（省几十 MB）
+        markPubNostart(acc, pubNoteIdOf(c));
+        log('SRV', `🤖 发笔记单派出去 ${Math.round((t - (c.sentAt || t)) / 1000)} 秒没回话——已标没接住、松开可重派`);
+        dirty = true;
+        continue;
+      }
       const isSearch = c.kind === 'acquire' && String((c.params && c.params.op) || '') === 'search';
       const limit = isSearch ? SEARCH_SWEEP_MS : SWEEP_MS;
       if ((t - (c.sentAt || c.createdAt || 0)) < limit) continue;
@@ -538,7 +714,6 @@ export function createExecChannel(ctx) {
       store.exec_chains[acc.id] = {
         id: 'chain_' + Math.random().toString(16).slice(2, 10),
         kw: String(d.kw || p.kw || ''), profile: String(p.profile || ''), label: String(p.label || ''),
-        snapshot: p.snapshot || null,
         status: 'waiting', round: String(d.round || ''), roundName: String(d.roundName || ''),
         roundFound: Number(d.found) || 0,
         remain, remainNames,
@@ -611,12 +786,42 @@ export function createExecChannel(ctx) {
   async function placeOrder(acc, kind, params, by) {
     const tag = by === 'sched' ? 'sched' : 'web';
     if (!(kind in KIND_NEED)) return { ok: false, error: '不认识的活：' + kind };
+    /* 获客投哪几个平台：新单从公网本书现读，写进这一单的参数（执行器不再带配置快照）；
+       老单还带着 snapshot 的就按老快照走，别被公网默认值盖掉 */
+    if (kind === 'acquire' && !Array.isArray(params && params.plats) && !(params && params.snapshot)) {
+      const bag = (typeof bookBagFor === 'function' ? bookBagFor(acc.id) : null) || {};
+      params = Object.assign({}, params || {}, { plats: platsFromCfg(bag.drain_scan_cfg) });
+    }
     const rank = rankOf(accTier(acc));
     /* 档位闸（2026-10-16 起看的是公网那台那张表，含小灶与试用期，不再只比档位数） */
     const gate = canKind(acc, store, kind);
     if (!gate.ok) return { ok: false, error: gate.error };
+    /* 全平台闸（2026-10-29）：抖音 / 视频号只在「全平台」档开。
+       前三档 / 免费档：发笔记这一单只留小红书；获客里抖音那头按「这趟跳过」处理（跟暂停同一套机制）。
+       写稿能选哪几个平台不受影响——那只是出文案，不碰账号。 */
+    const feats = featuresFor(acc, store.tier_table).features;
+    if (!feats.multiPlatform) {
+      if (kind === 'note_publish' && Array.isArray(params && params.platforms)) {
+        const keep = params.platforms.filter((x) => String((x && x.platform) || x || '') === 'xhs');
+        const dropped = params.platforms.filter((x) => String((x && x.platform) || x || '') !== 'xhs');
+        if (!keep.length) return { ok: false, error: '抖音 / 视频号要「全平台版（699）」才发——这一单先发小红书，或升级后再发' };
+        if (dropped.length) {
+          params = Object.assign({}, params, { platforms: keep, platform: 'xhs' });
+          log('SRV', `🔒 全平台闸：抖音/视频号没开（当前「${accTier(acc)}」）——这单只发小红书：${acc.name}`);
+        }
+      } else if (kind === 'acquire' && acquirePlats(params).includes('douyin')) {
+        const targets0 = acquirePlats(params);
+        if (targets0.every((p) => p === 'douyin')) return { ok: false, error: '抖音获客要「全平台版（699）」才跑——这一档只做小红书' };
+        const prev = Array.isArray(params && params.skipPlats) ? params.skipPlats.map(String) : [];
+        if (!prev.includes('dy')) prev.push('dy');
+        params = Object.assign({}, params, { skipPlats: prev });
+        log('SRV', `🔒 全平台闸：抖音获客没开（当前「${accTier(acc)}」，要「全平台」档）——这趟只跑小红书：${acc.name}`);
+      }
+    }
     /* 暂停闸（2026-10-25）：只挡以后的新单，在飞的不动。
-       发笔记按家算：把暂停的那家从这单里剔掉（恢复后只补没发成的），全暂停才不派。 */
+       发笔记按家算：把暂停的那家从这单里剔掉（恢复后只补没发成的），全暂停才不派。
+       获客按「这份队列派给哪几个平台」算：某一头暂停 / 没认号 → 只跳过那一头（记进 skipPlats），
+       另一头照跑；几个平台全跳过才不派。 */
     if (kind === 'note_publish' && Array.isArray(params && params.platforms)) {
       const paused = new Set(pausedOf(acc, kind, params));
       if (paused.size) {
@@ -626,27 +831,81 @@ export function createExecChannel(ctx) {
           platforms: keep,
           platform: String((keep[0] && keep[0].platform) || keep[0] || 'xhs'),
         });
-        log('SRV', `⏸ 暂停跳过（${[...paused].map((p) => BIND_LABEL[p] || p).join('、')}）：发笔记 → ${acc.name}`);
+        log('SRV', `⏸ 暂停跳过（${[...paused].map((p) => PAUSE_LABEL[p] || p).join('、')}）：发笔记 → ${acc.name}`);
+      }
+    } else if (kind === 'acquire') {
+      const targets = acquirePlats(params);
+      const st = platformPauseOf(acc);
+      const binds = bindingsOf(acc);
+      const lost = targets.filter((p) => {
+        if (st[p]) return true;
+        const b = binds[p];
+        return !(b && (b.uid || b.displayId));
+      });
+      if (lost.length === targets.length) {
+        const pausedP = lost.filter((p) => st[p]);
+        const noBindP = lost.filter((p) => !st[p]);
+        if (!noBindP.length) return { ok: false, paused: true, error: pauseMsg(kind, pausedP) };
+        const names = noBindP.map((p) => BIND_LABEL[p] || p).join('、');
+        const also = pausedP.length ? `（另外${pausedP.map((p) => BIND_LABEL[p] || p).join('、')}这头老板暂停着）` : '';
+        return { ok: false, error: `这份队列要跑${names}，但这个号还没认${names}号——打开执行器面板，点「认一下${names}」再试${also}` };
+      }
+      if (lost.length) {
+        /* 执行器/队列那边平台叫 xhs / dy，这里翻译过去；这趟只跑没被跳过的那几头
+           （前面「全平台闸」可能已经塞了 dy，别把它盖掉） */
+        const add = lost.map((p) => (p === 'douyin' ? 'dy' : p));
+        const merged = Array.isArray(params.skipPlats) ? params.skipPlats.map(String) : [];
+        add.forEach((x) => { if (!merged.includes(x)) merged.push(x); });
+        params = Object.assign({}, params, { skipPlats: merged });
+        log('SRV', `⏸ 这趟跳过（${lost.map((p) => (BIND_LABEL[p] || p) + (st[p] ? '暂停' : '没认号')).join('、')}）：获客 → ${acc.name}`);
       }
     } else {
       const paused = pausedOf(acc, kind, params);
       if (paused.length) return { ok: false, paused: true, error: pauseMsg(kind, paused) };
     }
-    /* 平台认号闸：这一单要用哪个平台的号，那个号必须绑在这个网页账号上（没绑/错号不派） */
+    /* 视频号一天一条（2026-10-25 老板定的）：今天已经发成过一条 → 这单把视频号剔掉、别家照发；
+       只剩视频号一家时直接不派，并说明原因。到点自动发的第二天自然就放开了。 */
+    if (kind === 'note_publish' && platformsOf(kind, params).indexOf('channels') >= 0) {
+      const used = channelPostsToday(acc);
+      if (used >= CH_DAY_MAX) {
+        const keepP = platformsOf(kind, params).filter((p) => p !== 'channels');
+        if (!keepP.length) {
+          return { ok: false, error: `视频号一天只发一条——今天已经发过 ${used} 条了，明天再发` };
+        }
+        const arr = Array.isArray(params.platforms)
+          ? params.platforms.filter((x) => String((x && x.platform) || x || '') !== 'channels')
+          : keepP.map((p) => ({ platform: p }));
+        params = Object.assign({}, params, { platforms: arr, platform: keepP[0] });
+        log('SRV', `📵 视频号今天已发过 ${used} 条（一天一条）——这趟跳过它，只发 ${keepP.map((p) => PAUSE_LABEL[p] || p).join('、')}：${acc.name}`);
+      }
+    }
+    /* 平台认号闸（2026-10-26 起三家都认号）：没认上的那头从这单里剔掉、别家照发；
+       全都没认才拒。错号/没登录由执行器每次开窗现场复核，同样只跳过那一头。 */
     if (kind === 'note_publish' && Array.isArray(params && params.platforms)) {
       const ps = platformsOf(kind, params);
+      const binds = bindingsOf(acc);
       const unbound = ps.filter((p) => {
-        if (!BIND_LABEL[p]) return true;
-        const b = bindingsOf(acc)[p];
+        const b = binds[p];
         return !(b && (b.uid || b.displayId));
       });
       if (unbound.length) {
         const names = unbound.map((p) => BIND_LABEL[p] || p).join('、');
-        return { ok: false, error: `这单要发${ps.map((p) => BIND_LABEL[p] || p).join('＋')}，但${names}还没认号——打开执行器面板点「认一下${names}」再试` };
+        const keep = params.platforms.filter((x) => unbound.indexOf(String((x && x.platform) || x || '')) < 0);
+        if (!keep.length) {
+          return { ok: false, error: `这单要发${ps.map((p) => BIND_LABEL[p] || p).join('＋')}，但${names}还没认号——打开执行器面板点「认一下${names}」再试` };
+        }
+        params = Object.assign({}, params, {
+          platforms: keep,
+          platform: String((keep[0] && keep[0].platform) || keep[0] || 'xhs'),
+        });
+        log('SRV', `⏭ 没认号跳过（${names}）：发笔记 → ${acc.name}`);
       }
     }
-    const bindErr = bindingBlock(acc, kind, params);
-    if (bindErr) return { ok: false, error: bindErr };
+    /* 获客单的绑号闸在上面按平台逐个算过了（没绑的那头只跳过，两头都不行才拒） */
+    if (kind !== 'acquire') {
+      const bindErr = bindingBlock(acc, kind, params);
+      if (bindErr) return { ok: false, error: bindErr };
+    }
     const h = findHandByAccount(acc.id);
     if (!h) return { ok: false, error: '还没挂执行器——先下载装上、登录挂线' };
     /* 版本闸：这台电脑上的执行器必须和公网发出去的那个包同版本，不同就不派 */
@@ -659,6 +918,14 @@ export function createExecChannel(ctx) {
       log('SRV', `⛔ 拒派（执行器 ${h.version || '旧版'} 不会）：${KIND_LABEL[kind] || kind} → ${acc.name}`);
       return { ok: false, error: `这只执行器的版本太旧，不会「${KIND_LABEL[kind] || kind}」这个动作——在客户机上重新装最新执行器再派` };
     }
+    /* 「去登录」这一单（2026-11-04）：网页点红标 → 让那台电脑打开登录页等人扫码。
+       不看档位、不看暂停、不看认号（号坏了正是要点它的时候）；但要求那台电脑当场连着——
+       不在线点了也没人开页面，别留一条永远跑不了的单；正在跑别的活时先不插队（免得登录页顶掉干活窗口）。 */
+    if (kind === 'relogin') {
+      if (!online(h)) return { ok: false, error: '那台电脑的执行器现在没连上——在它浏览器右上角点开执行器图标，连上再点这一下' };
+      const busy = pendingOf(acc.id).some((c) => c && c.kind !== 'relogin');
+      if (busy) return { ok: false, error: '那台电脑正在干活——等这一趟跑完再点去登录' };
+    }
     /* 下单防连点（D 期）：同类活还排着一条就不重复排；手上压着的活最多 PENDING_CAP 条。
        （排期自动下单不会撞这道闸——exec-sched 只在账号"没有在飞的单"时才派。） */
     const pending = pendingOf(acc.id);
@@ -670,6 +937,33 @@ export function createExecChannel(ctx) {
     if (pending.length >= PENDING_CAP) {
       return { ok: false, error: `手上排的活太多了（最多 ${PENDING_CAP} 条没跑完）——等跑完再点` };
     }
+    /* 派单不扛整段视频的字节（2026-10-26）：网页若还把素材当 b64 塞进来（老页面 / 后备路），
+       这里先转成服务器素材编号，工单里只留编号——几十 MB 的 b64 会把派单撑爆，
+       执行器那头卡死、连回执都不给（10-26 那单就是这么没动静的）。转不成才照旧带 b64。 */
+    if (kind === 'note_publish' && Array.isArray(params && params.files) && typeof ctx.putBlobBuf === 'function') {
+      const conv = [];
+      let moved = 0;
+      for (const f of params.files) {
+        if (f && f.b64 && !f.blobId) {
+          try {
+            const buf = Buffer.from(String(f.b64), 'base64');
+            const bid = ctx.putBlobBuf(buf, f.mime || 'application/octet-stream', f.name || 'file', acc.id);
+            if (bid) {
+              moved++;
+              conv.push({ blobId: bid, localKey: f.localKey || '', name: f.name || 'file', mime: f.mime || 'application/octet-stream', size: buf.length });
+              continue;
+            }
+          } catch (_) {}
+        }
+        conv.push(f);
+      }
+      if (moved) {
+        params = Object.assign({}, params, { files: conv });
+        log('SRV', `📦 派单素材转托管：${moved} 件只带编号（带字节的工单太重，执行器接不住）`);
+      }
+    }
+    /* 新单进来：把这条片先前那条「机器人没回话」收掉（老板点的就是重派，钉子该跟着新单走） */
+    if (kind === 'note_publish') clearPubNostart(acc, String((params && params.note && params.note.id) || ''));
     const id = 'cmd_' + Math.random().toString(16).slice(2, 10) + Date.now().toString(16).slice(-6);
     /* 新的搜索 / 队列开始 → 先把旧的那串活撤掉，不叠两条；记下这是这个号最新一单，旧单晚到的回执不立新链 */
     const op = String((params && params.op) || 'round');
@@ -712,6 +1006,7 @@ export function createExecChannel(ctx) {
       else if (r.needLogin) entry[p] = { needLogin: true };
       else if (r.needPerm) entry[p] = { needPerm: true };
       else if (r.needVerify) entry[p] = { ok: false, needVerify: true, msg: r.msg || '' };
+      else if (r.skip) entry[p] = { skip: true, msg: r.msg || '' };   // 认号没过的平台这趟跳过：别家照发，这头等认上号再补
       else if (r.prep) entry[p] = { prep: true };
       else entry[p] = { ok: false, msg: r.msg || '', audit: r.audit || null, scan: r.scan || null };
     });
@@ -725,6 +1020,8 @@ export function createExecChannel(ctx) {
 
     /* 卡点：发成的家收掉；没发成的家按四态钉上（执行器进度接口先到的话这里是补齐） */
     let stuck = Array.isArray(bag.np_pub_stuck) ? bag.np_pub_stuck.slice() : [];
+    /* 真回执到了 → 先前那条「机器人没回话」自动收掉（它终究是开了工） */
+    stuck = stuck.filter((x) => !(x && String(x.id) === id && x.k === 'nostart'));
     const drop = (p) => { stuck = stuck.filter((x) => !(x && String(x.id) === id && String(x.p) === p)); };
     list.forEach((r) => {
       const p = String((r && r.platform) || '');
@@ -732,7 +1029,7 @@ export function createExecChannel(ctx) {
       drop(p);
       if (r.stopped) return;
       let k = '';
-      if (r.ok || r.prep) k = '';
+      if (r.ok || r.prep || r.skip) k = '';
       else if (r.pending) k = 'pending';
       else if (r.needVerify) k = 'verify';
       else if (r.needLogin) k = 'login';
@@ -770,6 +1067,15 @@ export function createExecChannel(ctx) {
     if (pass) return String(req.headers['x-admin-pass'] || '') === pass;
     const ip = ctx.clientIp(req);
     return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip);
+  }
+
+  /* 配置版本：按账本里那几把钥匙的原文算哈希（不解密，心跳每 15 秒都能算）。
+     客户机拿它跟自己缓存的那版比，不一样就重刷。 */
+  function execConfigVersion(accountId) {
+    const bag = (typeof ctx.bookBagFor === 'function' ? ctx.bookBagFor(accountId) : null) || {};
+    const raw = {};
+    for (const k of EXEC_CFG_KEYS) if (k in bag) raw[k] = bag[k];
+    return createHash('sha256').update(JSON.stringify(raw)).digest('hex').slice(0, 16);
   }
 
   /* 返回 true＝已处理；false＝不归我管（交回主程序） */
@@ -815,7 +1121,7 @@ export function createExecChannel(ctx) {
       store.exec_hands[handId] = h;
       log('EXT', `🔗 执行器挂线：${acc.name}（${tier}档 · ${h.version ? 'v' + h.version : '旧版未报版本'} · ${h.caps.length} 项能力）`);
       await persist();
-      return done(res, 200, { ok: true, handId, token, account: { name: acc.name }, bindings: bindingsOf(acc), serverName: 'AI雕兄 · 服务器', tier, tierRank: rankOf(tier), edition: editionOf(acc, store), rulesVersion: rulesPack().version, expectVersion: expectedHandVersion() });
+      return done(res, 200, { ok: true, handId, token, account: { name: acc.name }, bindings: bindingsOf(acc), serverName: 'AI雕兄 · 服务器', tier, tierRank: rankOf(tier), edition: editionOf(acc, store), rulesVersion: rulesPack().version, configVersion: execConfigVersion(acc.id), expectVersion: expectedHandVersion() });
     }
 
     /* 认号（执行器侧）：挂线后各平台各认一次；空着＝绑上，同一个＝刷新，不同＝拒绝（换绑只能老板做） */
@@ -849,6 +1155,31 @@ export function createExecChannel(ctx) {
       return done(res, 200, { ok: true, version: pack.version, prompts: pack.prompts });
     }
 
+    /* 配置下发：客户机每个动作开跑前先来这儿刷一遍（本机只当缓存）。
+       公网账本里没有的 key 就不发——客户机按默认值走，不拿本机旧设置顶上去。 */
+    if (path === '/api/exec/config') {
+      const c = checkCred(body);
+      if (!c.ok) return done(res, 200, { ok: false, valid: false, error: c.reason });
+      const bag = (typeof ctx.bookBagFor === 'function' ? ctx.bookBagFor(c.acc.id) : null) || {};
+      const items = {};
+      const warnings = [];
+      for (const k of EXEC_CFG_KEYS) {
+        if (!(k in bag) || bag[k] === undefined || bag[k] === null) continue;
+        let v = bag[k];
+        if (EXEC_CFG_ENC.has(k)) {
+          v = await unlockBagValue(bag, v);
+          if (v === undefined) { warnings.push(k + ' 解不开，先按客户机缓存走'); continue; }
+        }
+        items[k] = JSON.parse(JSON.stringify(v));
+      }
+      if (items.config && typeof items.config === 'object' && items.config.ai) {
+        delete items.config.ai.apiKey;
+        delete items.config.ai.fallbackApiKey;
+      }
+      const version = execConfigVersion(c.acc.id);
+      return done(res, 200, Object.assign({ ok: true, version, fetchedAt: Date.now() }, items, warnings.length ? { warnings } : null));
+    }
+
     if (path === '/api/exec/heartbeat') {
       const c = checkCred(body);
       if (!c.ok) return done(res, 200, { ok: true, valid: false, reason: c.reason, killed: !!store.exec_killed });
@@ -860,7 +1191,7 @@ export function createExecChannel(ctx) {
       const pending = Object.values(store.exec_cmds).filter((x) => x.accountId === c.acc.id && x.state === 'queued').length;
       /* stopAt 带上：执行器正忙着跑活时没挂长轮询，"停这一趟"推不进去——靠心跳补，
          执行器按时间戳去重（比自己记住的那个新才动手），不会重复触发。 */
-      return done(res, 200, { ok: true, valid: true, killed: !!store.exec_killed, tier: accTier(c.acc), tierRank: rankOf(accTier(c.acc)), pending, stopAt: c.h.stopAt || 0, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, expectVersion: expectedHandVersion() });
+      return done(res, 200, { ok: true, valid: true, killed: !!store.exec_killed, tier: accTier(c.acc), tierRank: rankOf(accTier(c.acc)), pending, stopAt: c.h.stopAt || 0, pauseOn: !!c.h.pauseOn, pauseAt: c.h.pauseAt || 0, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, configVersion: execConfigVersion(c.acc.id), expectVersion: expectedHandVersion() });
     }
 
     if (path === '/api/exec/poll') {
@@ -890,13 +1221,13 @@ export function createExecChannel(ctx) {
         next.state = 'sent'; next.sentAt = Date.now();
         log('SRV', `📤 下单送达（${KIND_LABEL[next.kind] || next.kind}）→ ${c.acc.name}`);
         persist();
-        return done(res, 200, { ok: true, valid: true, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, expectVersion: needVer, cmd: { id: next.id, type: 'run', kind: next.kind, params: next.params || {}, tier: accTier(c.acc), tierRank: rankOf(accTier(c.acc)), edition: editionOf(c.acc, store) } });
+        return done(res, 200, { ok: true, valid: true, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, configVersion: execConfigVersion(c.acc.id), expectVersion: needVer, cmd: { id: next.id, type: 'run', kind: next.kind, params: next.params || {}, tier: accTier(c.acc), tierRank: rankOf(accTier(c.acc)), edition: editionOf(c.acc, store) } });
       }
       const w = { res, timer: null, handId: c.h.handId };
       w.timer = setTimeout(() => {
         const i = waiters.indexOf(w);
         if (i >= 0) waiters.splice(i, 1);
-        json(res, 200, { ok: true, valid: true, cmd: null, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, expectVersion: needVer, versionMismatch: verMismatch });
+        json(res, 200, { ok: true, valid: true, cmd: null, edition: editionOf(c.acc, store), rulesVersion: rulesPack().version, configVersion: execConfigVersion(c.acc.id), expectVersion: needVer, versionMismatch: verMismatch });
       }, HOLD_MS);
       waiters.push(w);
       req.on('close', () => {
@@ -918,6 +1249,8 @@ export function createExecChannel(ctx) {
       /* 登录过期：这一单失败，但要让网页醒目提醒「去扫码」——执行器那边已经停手了 */
       cmd.needLogin = !body.ok && !!body.needLogin;
       cmd.doneAt = Date.now();
+      /* 这一单收尾了：暂停旗子跟着落地（下一单从"跑着"开始，别一上线就停住） */
+      if (c.h) { c.h.pauseOn = false; c.h.pauseAt = 0; }
       /* 发布单：按 detail 里每家各自的结果落账（流水 / 已发 / 补发账 / 等您接手） */
       try { await recordPublishAck(c.acc, cmd); } catch (e) { log('SRV', '发布回执落账失败：' + ((e && e.message) || e)); }
       /* 搜索链：首轮立链 / 后续轮推进 / 失败停手（网页从 /api/exec/orders 的 chain 读） */
@@ -934,24 +1267,104 @@ export function createExecChannel(ctx) {
       log('EXT', `${c.acc.name}：${text}`);
       /* 网页上那根"实时进度"从这个按账号的环形账读（不用去翻全站事件流水） */
       const ring = (store.exec_reports[c.acc.id] = store.exec_reports[c.acc.id] || []);
-      ring.push({ t: stamp(), text });
+      ring.push({ t: stamp(), at: Date.now(), text });   // at：毫秒时刻，网页按它认「是不是今天的」
       if (ring.length > REPORT_KEEP) ring.splice(0, ring.length - REPORT_KEEP);
+      markWord(c.acc.id);   // 这只手出声了＝接住了（发笔记单不再判「没回话」）
       await persist();
       return done(res, 200, { ok: true });
     }
 
     /* 发布进度（2026-10-24 并行批）：执行器每走一步 POST 一次，服务器直接写进这只账号的小账本——
      * 网页工作台读的是同一本（np_pub_live / np_pub_runs / np_pub_stuck），不用另开一套通道。
-     * body：{ live?:{...}|null, run?:{...}, stuckOps?:[{op:'add'|'clear', id, p, it?}] } */
+     * body：{ live?:{...}|null, run?:{...}, stuckOps?:[{op:'add'|'clear', id, p, it?}],
+     *         dy?:{ last?:{...}, leads?:[{key,...}] } }
+     * dy（2026-10-25）：抖音获客一轮跑完回传——浏览器那只手只负责"看见并记下"，
+     *   账记在这儿，网页工作台的「抖音」页签读同一本（与小红书的结果各记各的，不混）。 */
     if (path === '/api/exec/progress') {
       const c = checkCred(body);
       if (!c.ok) return done(res, 200, { ok: false, error: c.reason });
       const bag = bookBagFor(c.acc.id);
       if ('live' in body) bag.np_pub_live = (body.live && typeof body.live === 'object') ? body.live : null;
+      if (body.dy && typeof body.dy === 'object') {
+        const dy = body.dy;
+        if (dy.last && typeof dy.last === 'object') {
+          bag.dy_drain_last = Object.assign({ plat: 'dy' }, dy.last);
+        }
+        const add = Array.isArray(dy.leads) ? dy.leads.slice(0, 200) : [];
+        if (add.length) {
+          const cur = Array.isArray(bag.dy_leads) ? bag.dy_leads : [];
+          const seen = new Set();
+          cur.forEach((x) => { if (x && x.key) seen.add(String(x.key)); });
+          const fresh = [];
+          for (const x of add) {
+            if (!x || !x.key || seen.has(String(x.key))) continue;
+            seen.add(String(x.key));
+            fresh.push(Object.assign({ plat: 'dy' }, x));
+          }
+          if (fresh.length) bag.dy_leads = fresh.concat(cur).slice(0, 500);
+        }
+      }
       if (body.run && typeof body.run === 'object') {
         const runs = Array.isArray(bag.np_pub_runs) ? bag.np_pub_runs : [];
         runs.unshift(body.run);
         bag.np_pub_runs = runs.slice(0, 3);
+      }
+      /* 💬 评论/灌水记录回传（11-04）：评论是在客户浏览器里发的，明细本来只落在客户机那本账上，
+         网页「笔记池 → 💬 评论记录 / 💧 灌水历史」读的是服务器这本——不搬过来就是空的。
+         只做"合并不覆盖"：同一句（时间＋笔记＋人＋话术）算一条，网页那边清空后不会又被旧数据灌回来
+         （客户端只回传最近 200 条，本机清掉后自然也不再有）。 */
+      if (body.water && typeof body.water === 'object') {
+        const w = body.water;
+        if (Array.isArray(w.logs) && w.logs.length) {
+          const cur = Array.isArray(bag.watering_logs) ? bag.watering_logs : [];
+          const keyOf = (x) => {
+            const ts = Number((x && x.ts) || 0);
+            const base = [String((x && x.noteUrl) || ''), String((x && x.author) || ''), String((x && x.comment) || ''), String((x && x.replyText) || '')].join('|');
+            if (!base.replace(/\|/g, '')) return '';
+            return ts ? (ts + '|' + base) : ('c|' + base);
+          };
+          const seen = new Set(cur.map(keyOf));
+          const fresh = [];
+          for (const x of w.logs.slice(0, 300)) {
+            if (!x || typeof x !== 'object') continue;
+            const k = keyOf(x);
+            if (!k || seen.has(k)) continue;
+            seen.add(k);
+            fresh.push({
+              noteUrl: String(x.noteUrl || '').slice(0, 500),
+              noteTitle: String(x.noteTitle || '').slice(0, 200),
+              author: String(x.author || '').slice(0, 100),
+              comment: String(x.comment || '').slice(0, 800),
+              replyText: String(x.replyText || '').slice(0, 800),
+              source: x.source === 'batch' ? 'batch' : 'manual',
+              ts: Number(x.ts) || Date.now(),
+            });
+          }
+          if (fresh.length) {
+            bag.watering_logs = fresh.concat(cur).sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0)).slice(0, 500);
+          }
+        }
+        if (w.hist && typeof w.hist === 'object' && !Array.isArray(w.hist)) {
+          const cur = (bag.auto_water_history && typeof bag.auto_water_history === 'object' && !Array.isArray(bag.auto_water_history))
+            ? bag.auto_water_history : {};
+          for (const k of Object.keys(w.hist).slice(0, 300)) {
+            const r = w.hist[k];
+            if (!r || typeof r !== 'object') continue;
+            cur[String(k)] = {
+              title: String(r.title || '').slice(0, 200),
+              url: String(r.url || '').slice(0, 500),
+              status: String(r.status || '').slice(0, 40),
+              author: String(r.author || '').slice(0, 100),
+              comment: String(r.comment || '').slice(0, 800),
+              replyText: String(r.replyText || '').slice(0, 800),
+              wateredAt: Number(r.wateredAt) || Date.now(),
+            };
+          }
+          const keep = Object.entries(cur)
+            .sort((a, b) => (Number(b[1].wateredAt) || 0) - (Number(a[1].wateredAt) || 0))
+            .slice(0, 300);
+          bag.auto_water_history = Object.fromEntries(keep);
+        }
       }
       if (Array.isArray(body.stuckOps)) {
         let stuck = Array.isArray(bag.np_pub_stuck) ? bag.np_pub_stuck.slice() : [];
@@ -964,6 +1377,7 @@ export function createExecChannel(ctx) {
         }
         bag.np_pub_stuck = stuck;
       }
+      markWord(c.acc.id);   // 有进度回来＝接住了
       await persist();
       return done(res, 200, { ok: true });
     }
@@ -999,6 +1413,25 @@ export function createExecChannel(ctx) {
       return done(res, 200, { ok: true, name: b.name || '', mime: b.m || 'application/octet-stream', b64: b.buf.toString('base64') });
     }
 
+    /* 同上，但直接给原始二进制（2026-10-26）：几十 MB 的片走 b64 要多背三分之一、还看不出进度。
+       执行器优先走这口，老服务器没这口它自己会回落到 /api/exec/blob。 */
+    if (path === '/api/exec/blob-raw') {
+      const c = checkCred(body);
+      if (!c.ok) return done(res, 200, { ok: false, error: c.reason });
+      if (typeof ctx.getBlob !== 'function') return done(res, 200, { ok: false, error: '服务器没配素材仓' });
+      const b = await ctx.getBlob(String(body.blobId || ''));
+      if (!b) return done(res, 200, { ok: false, error: '素材不在服务器上了（可能清过）' });
+      if (b.acc && b.acc !== c.acc.id) return done(res, 200, { ok: false, error: '这个素材不是这只账号的' });
+      const buf = b.buf;
+      res.writeHead(200, {
+        'Content-Type': b.m || 'application/octet-stream',
+        'Content-Length': String(buf.length),
+        'Cache-Control': 'no-store',
+      });
+      res.end(buf);
+      return true;
+    }
+
     /* ── 网页侧（登录会话）────────────────────────────────────── */
     if (path === '/api/exec/order') {
       const acc = resolveAccount(req);
@@ -1006,6 +1439,11 @@ export function createExecChannel(ctx) {
       /* 演示号不派活：网页这侧先把口子堵上（挂线口也拦了演示号） */
       if (acc.kind === 'demo') return done(res, 200, { ok: false, error: DEMO_NO_EXEC_MSG, demo: 'readonly-foundation' });
       const r = await placeOrder(acc, String(body.kind || ''), body.params || {}, 'web');
+      /* 新一单开跑：把上一趟留下的暂停旗子清掉（不然机器人一上线就停在原地） */
+      if (r && r.ok && String(body.kind || '') === 'acquire') {
+        const h0 = findHandByAccount(acc.id);
+        if (h0) { h0.pauseOn = false; h0.pauseAt = 0; }
+      }
       return done(res, 200, r);
     }
 
@@ -1021,6 +1459,7 @@ export function createExecChannel(ctx) {
         bindState: bindStateOf(acc), // 最近一次开窗认号的结果：ok / mismatch / loggedout / unknown
         pause: platformPauseOf(acc), // 老板按了两头的暂停没有：{xhs:{at}|null, douyin:{at}|null}
         orders: cmdsOf(acc.id),
+        botPause: { on: !!(h && h.pauseOn), at: (h && h.pauseAt) || 0 },   // 工作台上的「暂停/继续」（不是平台暂停）
         chain: publicChain(acc.id),   // 搜索链：这一轮 / 后面还有哪几类 / 下一类几点 / 停手原因
         reports: (store.exec_reports[acc.id] || []).slice(-REPORT_KEEP),   // 网页上那根实时进度
       });
@@ -1050,11 +1489,40 @@ export function createExecChannel(ctx) {
       const h = findHandByAccount(acc.id);
       if (!h) return done(res, 200, { ok: false, error: '还没挂执行器' });
       h.stopAt = Date.now();
+      h.pauseOn = false; h.pauseAt = 0;      // 停比暂停大：停下去就不留暂停旗子
       dropChain(acc.id, '手动「停这一趟」（不弹横幅）');
+      /* 还没派出去的单也一并作废：点了停，就不能等执行器一上线又把这几单跑起来 */
+      let dropped = 0;
+      for (const c of Object.values(store.exec_cmds || {})) {
+        if (c.accountId !== acc.id || c.state !== 'queued') continue;
+        c.state = 'failed'; c.ok = false;
+        c.note = '作废：网页点了「停这一趟」，这单还没派出去就不跑了';
+        c.doneAt = Date.now();
+        dropped++;
+      }
       const n = deliver({ type: 'stop', reason: '网页点了「停这一趟」', at: h.stopAt }, h.handId);
-      log('WEB', `⏹ 网页让「${acc.name}」停这一趟（${n ? '当场送达' : '等心跳补'}）`);
+      log('WEB', `⏹ 网页让「${acc.name}」停这一趟（${n ? '当场送达' : '等心跳补'}${dropped ? '，撤掉还没派的 ' + dropped + ' 单' : ''}）`);
       await persist();
       return done(res, 200, { ok: true, delivered: n });
+    }
+
+    /* 「⏸ 暂停 / ▶ 继续」（网页工作台上点）——只让机器人停在下一个检查点，不结束这一趟、不丢队列进度。
+     * 与「停」同一条送达路：长轮询挂着就当场送；执行器忙着跑活就靠心跳补（按 pauseAt 去重）。 */
+    if (path === '/api/exec/pause') {
+      const acc = resolveAccount(req);
+      if (!acc) return done(res, 200, { ok: false, error: '先登录', demo: 'need-account' });
+      const h = findHandByAccount(acc.id);
+      if (!h) return done(res, 200, { ok: false, error: '还没挂执行器' });
+      const on = body.on === undefined ? true : !!body.on;
+      h.pauseOn = on;
+      h.pauseAt = Date.now();
+      const n = deliver({
+        type: 'pause', on: on, at: h.pauseAt,
+        reason: on ? '网页点了「暂停」' : '网页点了「继续」',
+      }, h.handId);
+      log('WEB', `${on ? '⏸' : '▶'} 网页让「${acc.name}」${on ? '暂停' : '继续'}（${n ? '当场送达' : '等心跳补'}）`);
+      await persist();
+      return done(res, 200, { ok: true, delivered: n, on });
     }
 
     /* ── 老板侧 ──────────────────────────────────────────────── */
@@ -1137,6 +1605,9 @@ export function createExecChannel(ctx) {
       platformPauseOf,
       pausedOf,
       setPlatformPause,
+      pauseLabel: PAUSE_LABEL,
+      pausePlats: PAUSE_PLATS,
+      pauseWhat: PAUSE_WHAT,
       checkCred,                  // 云端出片口认扩展发来的挂线凭据（handId+token）走这一份
       /* 搜索链：排期模块推进/清账用（失败停在链上，网页从 chain 读原因） */
       chainOf: publicChain,

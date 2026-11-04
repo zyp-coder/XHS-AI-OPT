@@ -470,19 +470,18 @@
     return out;
   }
 
-  /* ---------------- 混剪实拍：一屏可以拼几节料（不够长让最后一节从头再播） ----------------
+  /* ---------------- 混剪实拍：一段共用一份料（不够长让最后一节从头再播） ----------------
      跟卡片轮播共用同一套文案数据，区别在底：底铺满整屏（不框卡），字压在暗罩上。
-     这一屏播到哪一节、这一节的起止，由 video.js 算好挂在 sc.matRun 上（淡入和推近按节各算，一节一开头）。
-     没料的屏留深色纯字。 */
+     这一屏播到哪一节、这一节的起止，由 video.js 算好挂在 sc.matRun 上（推近按段算，整段一直在推）。
+     换段直接切、不淡入淡出（老板 11-03 定：观众要看字，别黑一下）。没料的屏留深色纯字。 */
   function drawMatBackdrop(ctx, t, sc, S, tl) {
     const img = sc.matImg;
     if (!img) return;                                   // 这一屏没料：buildStyle 那层深色底顶着，纯大字
     const run = sc.matRun || { start: sc.start, end: sc.end };
-    const enter = eoc(seg(t, run.start, .34));
     const kb = 1 + .04 * clamp01((t - run.start) / Math.max(.001, run.end - run.start));
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
-    ctx.globalAlpha = Math.max(.05, enter);
+    ctx.globalAlpha = 1;                                // 硬切：上一份料收、这一份料立刻满格出来
     drawCover(ctx, img, 0, 0, W, H, kb);
     ctx.restore();
     const g = ctx.createLinearGradient(0, 0, 0, H);      // 上压品牌行、中压大字、底留一点素材亮度

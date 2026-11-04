@@ -241,13 +241,13 @@ with tempfile.TemporaryDirectory(prefix='xhs-note-flows-') as profile, sync_play
             raise AssertionError('%s（实测 %s）' % (msg, last))
 
         page.locator('#tabQueue').click()
-        page.locator('#queueTabs .q-tab[data-qtab="config"]').click()
-        expect(page.locator('#queueTabs .q-tab[data-qtab="config"]')).to_have_class(re.compile(r'\bactive\b'))
+        # 2026-10-28 v2：配置收成队列页右上角「⚙️ 批量」，日常浏览搬去「🌿 日常浏览」的小三角弹窗
+        page.locator('#qBulkBtn').click()
         cfg = page.locator('#drainCfgContent')
-        # 三张卡固定：🔎 跑什么 / 🌿 日常浏览 / 🎯 推广目标 · 承接；进来默认展开「跑什么」
-        expect(cfg.locator('details.cfgcard')).to_have_count(3)
+        # 批量页两张卡：🔎 跑什么 / 🎯 推广目标 · 承接；进来默认展开「跑什么」
+        expect(cfg.locator('details.cfgcard')).to_have_count(2)
         expect(cfg.locator('.cfgcard-t')).to_have_text(
-            ['🔎 跑什么', '🌿 日常浏览', '🎯 推广目标 · 承接'])
+            ['🔎 跑什么', '🎯 推广目标 · 承接'])
         expect(cfg.locator('details.cfgcard[data-cfgsec="run"]')).to_have_attribute('open', '')
         expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=20000)
 

@@ -20,9 +20,9 @@
 (() => {
 
 const DEFAULT_SERVER = 'http://127.0.0.1:8799';
-const TIER_RANK = { '免费': 0, '基础': 1, '升级': 2, '全功能': 3 };
-const KIND_NEED = { self_test: 0, note_publish: 1, batch_send: 0, film: 1, acquire: 2, daily_browse: 2, leads: 3 };
-const KIND_LABEL = { self_test: '自检', note_publish: '发笔记', batch_send: '整页发送', film: '本机出片', acquire: '获客', daily_browse: '日常浏览', leads: 'AI客服' };
+const TIER_RANK = { '免费': 0, '基础': 1, '升级': 2, '全功能': 3, '全平台': 4 };
+const KIND_NEED = { self_test: 0, note_publish: 1, batch_send: 0, film: 1, acquire: 2, daily_browse: 2, leads: 3, relogin: 0 };
+const KIND_LABEL = { self_test: '自检', note_publish: '发笔记', batch_send: '整页发送', film: '本机出片', acquire: '获客', daily_browse: '日常浏览', leads: 'AI客服', relogin: '登录机器人' };
 /* 活 → 看档位表哪一格（#11 接单后再查一次：以服务器随单带来的 edition 为准） */
 const KIND_CELL = { note_publish: 'notePublish', batch_send: 'batchSend', film: 'videoFilm', acquire: 'autoWater', daily_browse: 'dailyBrowse', leads: 'prospectList' };
 const CELL_LABEL = { notePublish: '发笔记', batchSend: '整页发送', videoFilm: '字效编辑器', autoWater: '获客', dailyBrowse: '日常浏览', prospectList: '线索' };
@@ -30,16 +30,26 @@ const CELL_LABEL = { notePublish: '发笔记', batchSend: '整页发送', videoF
 /* 这只手"会哪些活"：挂线/心跳随报；服务器遇到不会的直接提示升级，不硬派（换手 12A） */
 const HAND_VERSION = (() => { try { return chrome.runtime.getManifest().version; } catch (_) { return ''; } })();
 const HAND_CAPS = [
-  'self_test', 'note_publish', 'batch_send', 'film', 'acquire', 'daily_browse', 'leads',
+  'self_test', 'note_publish', 'batch_send', 'film', 'acquire', 'daily_browse', 'leads', 'relogin',
   'acquire:round', 'acquire:search', 'acquire:scan', 'acquire:backfill', 'acquire:open', 'acquire:refresh',
+  'acquire:dy',
   'leads:watch', 'leads:dm',
   'workwin:1', 'ticket:1',
+];
+/* 配置缓存只认这几把钥匙（公网发什么就铺什么；公网没有的从本机删掉，按默认值走）。
+   运行流水/获客清单/回复记录这些数据类 key 不在这里——它们本来就不该跟着配置走。 */
+const EXEC_CFG_KEYS = [
+  'config', 'knowledge_base', 'script_library', 'note_plan', 'note_columns',
+  'delay_config', 'account_guard', 'ui_theme',
+  'drain_scan_cfg', 'auto_water_config', 'daily_browse_config',
 ];
 const WW = self.WorkWin || null;   // 干活专用窗口 + 整页锁 + 一次性通行证（exec-workwin.js）
 const AC = self.AcctCheck || null;  // 平台认号（exec-acct-check.js）：挂线认一次、每开一次干活窗口各认一次
 
 let earsOn = false;
 let running = false;
+/* 同一单只回报一次：兜底那头出异常时也会补一条失败回执——重复回执会把已经记好的「成功」改回失败 */
+const ackedCmdIds = [];
 let keepActivity = false;   // AI客服（监听）下完令别把状态栏抹回"待命"
 let currentCmd = null;      // 正在跑的这一单（关窗时要按失败回报）
 let abortNote = '';         // 干活窗口被关 / 被收队的原因
@@ -85,6 +95,8 @@ const setState = (s) => set('ex.state', { ...s, at: Date.now() });
 const setActivity = (text) => {
   /* 顺手把这句话推到干活窗口的罩子上：客户看到的是「搜索中 1/8」，不是一直「正在准备…」 */
   try { if (WW && typeof WW.setStep === 'function') WW.setStep(text); } catch (_) {}
+  /* 占位页（黑底那页）也写一行：等素材 / 等页面的时候，人得看得见在等什么 */
+  try { if (WW && typeof WW.setIdleStatus === 'function') WW.setIdleStatus(text).catch(() => {}); } catch (_) {}
   return set('ex.activity', { text, at: Date.now() });
 };
 /* 心跳每通上一次就盖个时间戳——面板据此区分「在线」和「连不上服务器」 */
@@ -100,10 +112,14 @@ const isStopping = async () => !!((await get('ex.stopping')));
 /* 「停这一趟」的时间戳（去重用：心跳会反复带同一个 stopAt，比自己记住的那个新才动手） */
 const markStopAt = (at) => set('ex.stopAt', Number(at) || Date.now());
 const stopAtSeen = async () => Number(await get('ex.stopAt')) || 0;
+/* 「暂停 / 继续」的时间戳（同一条去重规矩） */
+const markPauseAt = (at) => set('ex.pauseAt', Number(at) || Date.now());
+const pauseAtSeen = async () => Number(await get('ex.pauseAt')) || 0;
+const setPauseOn = (on) => set('ex.pauseOn', !!on);
 /* 领回来的档位表：存一份，断网/下次开机沿用（后台 lib/edition.js 开机自己捞） */
 const saveGrant = (ed) => {
   if (!ed || !ed.features) return;
-  set('ed.grant', { at: Date.now(), tier: ed.tier || '', label: ed.tierLabel || ed.label || '', draftOnly: !!ed.draftOnly, onTrial: !!ed.onTrial, features: ed.features });
+  set('ed.grant', { at: Date.now(), tier: ed.tier || '', label: ed.tierLabel || ed.label || '', draftOnly: !!ed.draftOnly, onTrial: !!ed.onTrial, trialTier: ed.trialTier || '', trialUntil: Number(ed.trialUntil) || 0, trialDays: Number(ed.trialDays) || 0, trialExpired: !!ed.trialExpired, features: ed.features });
 };
 
 /* ── 写稿/话术规则：客户包里不带，挂上线后向服务器领一份 ──
@@ -164,6 +180,66 @@ async function ensureRules() {
   if (Date.now() - at > 30 * 60 * 1000) await fetchRules(false);
 }
 
+/* ── 配置缓存：本机不存独立配置，公网那本账才是真源 ──
+ * 每个动作开跑前先来这儿刷一遍；刷下来的东西只当缓存，动作里照旧从 chrome.storage.local 读。
+ * 公网没有的 key 从本机删掉（按默认值走），解不开的那几项保留上次缓存。 */
+async function fetchConfig(force) {
+  const cred = await getCred();
+  if (!cred || !cred.server) return { ok: false, reason: '还没挂线' };
+  let j;
+  try {
+    const r = await fetchT(cred.server + '/api/exec/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handId: cred.handId, token: cred.token }),
+    }, 10000);
+    j = await r.json();
+  } catch (e) {
+    return { ok: false, reason: '连不上服务器：' + ((e && e.message) || e) };
+  }
+  if (!j || !j.ok) return { ok: false, reason: (j && j.error) || '服务器没给到配置' };
+  const cur = String((await get('ex.cfgVersion')) || '');
+  if (!force && j.version && j.version === cur) {
+    await set('ex.cfgAt', Date.now());
+    return { ok: true, unchanged: true, version: j.version };
+  }
+  const items = {};
+  for (const k of EXEC_CFG_KEYS) if (k in j) items[k] = j[k];
+  const warnings = Array.isArray(j.warnings) ? j.warnings.map(String) : [];
+  const warned = new Set(warnings.map((w) => String(w).split(' ')[0]));
+  const drop = EXEC_CFG_KEYS.filter((k) => !(k in items) && !warned.has(k));
+  if (Object.keys(items).length) await chrome.storage.local.set(items);
+  if (drop.length) await chrome.storage.local.remove(drop);
+  await set('ex.cfgVersion', String(j.version || ''));
+  await set('ex.cfgAt', Date.now());
+  await set('ex.cfgAccount', String((cred.account && cred.account.name) || ''));
+  return { ok: true, version: j.version, warnings, dropped: drop };
+}
+
+/* 干活前刷配置：连不上就重试约 10 秒；还不行就用上次缓存并吭一声；连缓存都没有才停手。 */
+async function ensureConfig() {
+  let r = await fetchConfig(true);
+  for (let i = 0; !r.ok && i < 3; i++) {
+    await new Promise((res) => setTimeout(res, 3000));
+    r = await fetchConfig(true);
+  }
+  if (r.ok) {
+    if (r.warnings && r.warnings.length) {
+      await report('⚠️ 这次有几项配置没取到：' + r.warnings.join('；') + '——这几项先用上次缓存');
+    }
+    return r;
+  }
+  const has = await get('ex.cfgVersion');
+  if (has) {
+    await report('⚠️ 这次没连上公网刷配置（' + (r.reason || '未知') + '）——先用上次缓存跑');
+    return { ok: true, stale: true, reason: r.reason };
+  }
+  throw new Error('配置还没从公网取到（' + (r.reason || '连不上') + '）——这单先不干');
+}
+
+async function clearConfig() {
+  await chrome.storage.local.remove(EXEC_CFG_KEYS.concat(['ex.cfgVersion', 'ex.cfgAt', 'ex.cfgAccount']));
+}
+
 async function report(text) {
   const cred = await getCred();
   if (!cred || !cred.server) return;
@@ -174,6 +250,79 @@ async function report(text) {
     }, 10000);
   } catch { /* 服务器不在/不回话就算了，别把整趟活挂死 */ }
 }
+
+/* 🎵 抖音获客这一轮的结果回传：手只负责「看见并记下」，账记在服务器那只账号的账本里，
+   网页工作台的「抖音」页签读同一本（dy_drain_last / dy_leads）；小红书那份照旧不出本机。
+   since＝这轮开工的时间戳：本机那笔 last 比它旧，说明这轮压根没跑抖音这趟，不必回传。 */
+async function pushDyResults(since) {
+  const cred = await getCred();
+  if (!cred || !cred.server) return;
+  let d = null;
+  try { d = await chrome.storage.local.get(['dy_drain_last', 'dy_leads']); } catch (_) { return; }
+  const last = (d && d.dy_drain_last) || null;
+  if (!last || Number(last.at || 0) < (Number(since) || 0)) return;
+  const leads = (Array.isArray(d.dy_leads) ? d.dy_leads : []).slice(0, 100);
+  try {
+    await fetchT(cred.server + '/api/exec/progress', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        handId: cred.handId, token: cred.token,
+        dy: {
+          last: {
+            at: Number(last.at) || Date.now(), kw: String(last.kw || ''),
+            found: Number(last.found) || 0, comments: Number(last.comments) || 0,
+            leadN: Number(last.leadN) || 0, note: String(last.note || ''),
+          },
+          leads: leads,
+        },
+      }),
+    }, 20000);
+  } catch { /* 回传丢了就丢了：本机那本还在，下一轮会再带上去 */ }
+}
+
+/* 💬 评论 / 灌水明细回传（11-04）：网页「笔记池 → 💬 评论记录 / 💧 灌水历史」读的是服务器那本账，
+   评论是在客户浏览器里发的、明细本来只落在这台机器上——不搬过去，网页那边永远是空的。
+   本机这份是加密的（DataPrivacy），在这里先解开再传；服务器不碰客户机的盐。 */
+let _waterPushTimer = null;
+function scheduleWaterPush(ms) {
+  if (_waterPushTimer) clearTimeout(_waterPushTimer);
+  _waterPushTimer = setTimeout(() => { _waterPushTimer = null; pushWaterResults(); }, Math.max(300, Number(ms) || 1500));
+}
+async function pushWaterResults() {
+  const cred = await getCred();
+  if (!cred || !cred.server) return;
+  let logs = [], hist = {};
+  try {
+    const raw = await chrome.storage.local.get(['watering_logs', 'auto_water_history']);
+    const dp = (typeof DataPrivacy !== 'undefined') ? DataPrivacy : null;
+    logs = dp ? await dp.unlock('watering_logs', raw.watering_logs) : raw.watering_logs;
+    hist = dp ? await dp.unlock('auto_water_history', raw.auto_water_history) : raw.auto_water_history;
+  } catch (_) { return; }
+  if (!Array.isArray(logs)) logs = [];
+  if (!hist || typeof hist !== 'object' || Array.isArray(hist)) hist = {};
+  /* 只带最近 300 篇灌水历史（按最后灌水时间） */
+  const hs = Object.entries(hist)
+    .sort((a, b) => (Number((b[1] || {}).wateredAt) || 0) - (Number((a[1] || {}).wateredAt) || 0))
+    .slice(0, 300);
+  hist = Object.fromEntries(hs);
+  if (!logs.length && !hs.length) return;
+  try {
+    await fetchT(cred.server + '/api/exec/progress', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        handId: cred.handId, token: cred.token,
+        water: { logs: logs.slice(0, 200), hist: hist },
+      }),
+    }, 20000);
+  } catch { /* 下次有变动再传 */ }
+}
+/* 本机一发评论/灌水就攒一下回传（同一秒里连发几条只传一次） */
+try {
+  chrome.storage.onChanged.addListener((ch, area) => {
+    if (area !== 'local') return;
+    if (ch.watering_logs || ch.auto_water_history) scheduleWaterPush(1200);
+  });
+} catch (_) {}
 
 /* 带超时的 fetch：网络半断、服务器接了不回时，回执和进度不能无限等 */
 async function fetchT(url, opts, ms) {
@@ -242,10 +391,11 @@ async function pair(server, code, label) {
   if (!j.ok) return { ok: false, msg: j.error || '挂线失败' };
   await set('ex.cred', { server: srv, handId: j.handId, token: j.token, account: j.account, serverName: j.serverName || '服务器' });
   saveGrant(j.edition);
-  await setState({ status: 'active', reason: '', tier: j.tier, tierRank: j.tierRank || TIER_RANK[j.tier] || 0 });
+  await setState({ status: 'active', reason: '', tier: j.tier, tierRank: j.tierRank || TIER_RANK[j.tier] || 0, tierLabel: (j.edition && j.edition.tierLabel) || '' });
   await touchLink();
   await setActivity('已挂线，待命');
   await fetchRules(true).catch(() => {});
+  await fetchConfig(true).catch(() => {});
   await report(`🔗 执行器已挂线（${(j.account && j.account.name) || cd}）——耳朵上线`);
   earLoop();
   /* 挂上那一刻各认一次号：小红书 + 抖音。哪个没登录/没给权限，那一格先空着，不影响另一个。
@@ -254,13 +404,17 @@ async function pair(server, code, label) {
   if (AC) {
     try {
       if (AC.setBindings) await AC.setBindings(j.bindings || {});
-      bindRes = await AC.bindPlatforms(['xhs', 'douyin'], { onStep: (t) => { setActivity(t); } });
-      const okList = ['xhs', 'douyin'].filter((p) => bindRes[p] && bindRes[p].status === 'ok');
-      const miss = ['xhs', 'douyin'].filter((p) => !bindRes[p] || bindRes[p].status !== 'ok');
-      await setActivity(okList.length ? '已认号：' + okList.map((p) => (p === 'xhs' ? '小红书' : '抖音')).join('、') : '挂上了：两个平台都还没认上号');
+      /* 视频号只在已经给过网页权限时才顺手认一次——权限弹框必须跟在点击上，
+         挂线这条链已经走远，硬要会弹不出来；没授权就先空着，面板点「认一下视频号」时再要。 */
+      const plats = ['xhs', 'douyin'];
+      try { if (AC.hasChannelsPermission && await AC.hasChannelsPermission()) plats.push('channels'); } catch (_) {}
+      bindRes = await AC.bindPlatforms(plats, { onStep: (t) => { setActivity(t); } });
+      const NAME = { xhs: '小红书', douyin: '抖音', channels: '视频号' };
+      const okList = plats.filter((p) => bindRes[p] && bindRes[p].status === 'ok');
+      const miss = plats.filter((p) => !bindRes[p] || bindRes[p].status !== 'ok');
+      await setActivity(okList.length ? '已认号：' + okList.map((p) => NAME[p]).join('、') : '挂上了：各平台都还没认上号');
       if (miss.length) {
-        const bad = miss.map((p) => (p === 'xhs' ? '小红书' : '抖音')).join('、');
-        await report(`⚠️ 这两个平台的号还没认上：${bad}——在面板点「认一下」补齐（哪个平台没登录就先登录）`);
+        await report(`⚠️ 这些平台的号还没认上：${miss.map((p) => NAME[p]).join('、')}——在面板点「认一下」补齐（哪个平台没登录就先登录）`);
       }
     } catch (e) {
       await report('⚠️ 认号没跑完：' + ((e && e.message) || e) + '——可以在面板点「认一下」重试');
@@ -271,6 +425,7 @@ async function pair(server, code, label) {
 
 async function logout() {
   await clearRules();
+  await clearConfig();
   await chrome.storage.local.remove(['ex.cred', 'ex.stopping', 'ex.stopAt', 'ed.grant']);
   await setActivity('已退出');
   await setState({ status: 'unpaired', reason: '已退出挂线' });
@@ -305,6 +460,7 @@ async function heartbeatOnce() {
       workStop();
       await chrome.storage.local.remove('ed.grant');   // 不是这位的客户机了：档位表收回，回到进门默认
       await clearRules();                              // 写稿/话术规则也一并收回
+      await clearConfig();                             // 配置缓存也收回（别让下一位号用上一位的人设）
       await setState({ status: 'unpaired', reason: (j.reason || '挂线失效') + '——这台已解绑或被新机器替换' });
       return;
     }
@@ -312,13 +468,18 @@ async function heartbeatOnce() {
     /* 服务器换了规则版本 → 重新领一份（没变就不动，省流量） */
     const rv = String(j.rulesVersion || '');
     if (rv && rv !== String((await get('ex.rulesVersion')) || '')) await fetchRules(false);
+    /* 公网配置变了：闲着就顺手刷进缓存（正在干活就等这一单收工后的下一次动作再刷，
+       别跑到半路把设置换掉） */
+    const cv = String(j.configVersion || '');
+    if (!running && cv && cv !== String((await get('ex.cfgVersion')) || '')) await fetchConfig(false);
     const cur = await getState();
+    const tierLabel = (j.edition && j.edition.tierLabel) || '';
     if (j.killed) {
-      if (cur.status !== 'killed') { await setState({ status: 'killed', reason: '服务器一键熔断', tier: j.tier, tierRank: j.tierRank }); await setActivity('服务器熔断：全部停着'); await report('🔴 心跳对账：服务器在熔断中——保持锁定'); }
+      if (cur.status !== 'killed') { await setState({ status: 'killed', reason: '服务器一键熔断', tier: j.tier, tierRank: j.tierRank, tierLabel }); await setActivity('服务器熔断：全部停着'); await report('🔴 心跳对账：服务器在熔断中——保持锁定'); }
       return;
     }
-    if (cur.status !== 'active' || cur.tier !== j.tier) {
-      await setState({ status: 'active', reason: '', tier: j.tier, tierRank: j.tierRank });
+    if (cur.status !== 'active' || cur.tier !== j.tier || cur.tierLabel !== tierLabel) {
+      await setState({ status: 'active', reason: '', tier: j.tier, tierRank: j.tierRank, tierLabel });
       if (cur.status === 'killed') await report('🟢 心跳对账：服务器已解冻——功能恢复');
     }
     /* 「⏹ 停这一趟」的补递：执行器正忙着跑活时没挂长轮询、停令推不进去——靠心跳这一路补上。
@@ -330,63 +491,100 @@ async function heartbeatOnce() {
       workStop();
       await report('⏹ 收到「停这一趟」（心跳补递的）：这一趟收队，队列进度不丢');
     }
+    /* 「⏸ 暂停 / ▶ 继续」的补递：与停令同一条路（网页工作台上点的） */
+    const pauseAt = Number(j.pauseAt) || 0;
+    if (pauseAt && pauseAt > (await pauseAtSeen())) {
+      await markPauseAt(pauseAt);
+      await applyPause(!!j.pauseOn);
+    }
   } catch { /* 掉线：保持现状，不闪崩 */ }
 }
 
 /* ── 耳朵：长轮询，服务器一有令就收到 ── */
+/* 2026-10-26（第三刀）：这层以前没兜异常——某一条令在开窗口/认号/存状态时抛一下，整只耳朵就没了，
+   可心跳还在蹦（网页上看着"在线"，派出去的单永远等不到回音）。现在三件事：
+   ① 收到「干活」令先当场吭一声（服务器那本账据此松开「两分钟没回话」，不等开窗认号那几十秒）；
+   ② 一条令出任何错都吞在这一条里：回执报失败、接着听下一条；
+   ③ 整只耳朵真掉了（finally）就把门留着，心跳那一路 15 秒内会把它重新挂上。 */
 async function earLoop() {
   if (earsOn) return;
   earsOn = true;
-  for (;;) {
-    const cred = await getCred();
-    if (!cred) { earsOn = false; return; }
-    let j = null;
-    try {
-      const r = await fetch(cred.server + '/api/exec/poll', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handId: cred.handId, token: cred.token }),
-      });
-      j = await r.json();
-    } catch {
-      await new Promise((r2) => setTimeout(r2, 3000));
-      continue;
-    }
-    /* 这里不盖「通上话」时间戳：长轮询最多挂 25 秒，回包可能来自断网前的请求，会把断线判断拖慢 */
-    if (!j || j.valid === false) { await heartbeatOnce(); await new Promise((r2) => setTimeout(r2, 4000)); continue; }
-    const cmd = j.cmd;
-    saveGrant(j.edition || (cmd && cmd.edition));
-    /* 随单/长轮询回包带了新规则版本 → 先领最新规则再干活 */
-    const rv = String(j.rulesVersion || '');
-    if (rv && rv !== String((await get('ex.rulesVersion')) || '')) await fetchRules(false);
-    if (!cmd) continue;
-    if (cmd.type === 'lock') {
-      await setState({ status: 'killed', reason: cmd.reason || '服务器一键熔断' });
-      await setActivity('服务器熔断：全部停着');
-      workStop();
-      await report('🔒 收到熔断令：本机功能当场全停');
-    } else if (cmd.type === 'unlock') {
-      const cred2 = await getCred();
-      if (cred2) await heartbeatOnce();
-      await report('🟢 收到解冻令：功能恢复');
-    } else if (cmd.type === 'stop') {
-      /* 同一条停令可能走两条路（跑活中＝心跳补递；空闲＝长轮询）——按时间戳去重，只认第一次 */
-      const at = Number(cmd.at) || Date.now();
-      if (at > (await stopAtSeen())) {
-        await markStopAt(at);
-        await setStopping(true);
-        workStop();
-        await setActivity('收到「停这一趟」，收队中…');
-        await report('⏹ 收到「停这一趟」：这一趟做完当前这一步就停（队列进度不丢）');
+  try {
+    for (;;) {
+      const cred = await getCred();
+      if (!cred) return;
+      try {
+        let j = null;
+        try {
+          const r = await fetch(cred.server + '/api/exec/poll', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handId: cred.handId, token: cred.token }),
+          });
+          j = await r.json();
+        } catch {
+          await new Promise((r2) => setTimeout(r2, 3000));
+          continue;
+        }
+        /* 这里不盖「通上话」时间戳：长轮询最多挂 25 秒，回包可能来自断网前的请求，会把断线判断拖慢 */
+        if (!j || j.valid === false) { await heartbeatOnce(); await new Promise((r2) => setTimeout(r2, 4000)); continue; }
+        const cmd = j.cmd;
+        saveGrant(j.edition || (cmd && cmd.edition));
+        /* 随单/长轮询回包带了新规则版本 → 先领最新规则再干活 */
+        const rv = String(j.rulesVersion || '');
+        if (rv && rv !== String((await get('ex.rulesVersion')) || '')) await fetchRules(false);
+        if (!cmd) continue;
+        if (cmd.type === 'run') {
+          report(`🤖 收到「${KIND_LABEL[cmd.kind] || cmd.kind}」——这就开工`).catch(() => {});
+          try {
+            await runWork(cmd);
+          } catch (e) {
+            running = false;
+            currentCmd = null;
+            const why = '跑的时候出错：' + ((e && e.message) || e) + '——这一单没收好尾，可以重派';
+            try { await ack(cmd.id, false, why); } catch (_) {}
+          }
+        } else if (cmd.type === 'lock') {
+          await setState({ status: 'killed', reason: cmd.reason || '服务器一键熔断' });
+          await setActivity('服务器熔断：全部停着');
+          workStop();
+          await report('🔒 收到熔断令：本机功能当场全停');
+        } else if (cmd.type === 'unlock') {
+          const cred2 = await getCred();
+          if (cred2) await heartbeatOnce();
+          await report('🟢 收到解冻令：功能恢复');
+        } else if (cmd.type === 'stop') {
+          /* 同一条停令可能走两条路（跑活中＝心跳补递；空闲＝长轮询）——按时间戳去重，只认第一次 */
+          const at = Number(cmd.at) || Date.now();
+          if (at > (await stopAtSeen())) {
+            await markStopAt(at);
+            await setStopping(true);
+            workStop();
+            await setActivity('收到「停这一趟」，收队中…');
+            await report('⏹ 收到「停这一趟」：这一趟做完当前这一步就停（队列进度不丢）');
+          }
+        } else if (cmd.type === 'pause') {
+          const at = Number(cmd.at) || Date.now();
+          if (at > (await pauseAtSeen())) {
+            await markPauseAt(at);
+            await applyPause(cmd.on !== false);
+          }
+        }
+      } catch (e) {
+        /* 这一条没处理好：报一句、歇 3 秒、接着听——绝不把耳朵带出门 */
+        try { await report('⚠️ 指令没收好（耳朵接着听下一单）：' + ((e && e.message) || e)); } catch (_) {}
+        await new Promise((r2) => setTimeout(r2, 3000));
       }
-    } else if (cmd.type === 'run') {
-      await runWork(cmd);
     }
+  } finally {
+    earsOn = false;
   }
 }
 
 /* 这一单要不要开"干活专用窗口"（监听开关、自检不用开） */
 function needsWorkWindow(cmd) {
   if (cmd.kind === 'self_test') return false;
+  /* 去登录：开的是平台登录页给人扫码，不占干活窗口（窗口上锁反而碍事） */
+  if (cmd.kind === 'relogin') return false;
   if (cmd.kind === 'leads') {
     const p = cmd.params || {};
     return p.op === 'dm' || !!(p.person || (Array.isArray(p.people) && p.people.length));
@@ -408,12 +606,27 @@ function attachWorkStats(detail, stats) {
 }
 
 /* ── 干活：按档位放行，在本机浏览器里真跑 ── */
+/* 「手点这一轮」放行票（10-26 老板定）：只在老板亲手点的单上开，这一趟收工就收回。
+   票只管静默期与 09:00 后那段起床延迟——单休 / 日额度 / 干歇节拍 / 发布前 15 分钟照挡。 */
+async function setManualOnce(on) {
+  try {
+    if (typeof AccountGuard === 'undefined' || !AccountGuard) return false;
+    if (on) {
+      if (typeof AccountGuard.openOnce !== 'function') return false;
+      await AccountGuard.openOnce({ minutes: 180, reason: '手点开跑' });
+      return true;
+    }
+    if (typeof AccountGuard.clearOnce === 'function') await AccountGuard.clearOnce();
+  } catch (_) {}
+  return false;
+}
+
 async function runWork(cmd) {
   const st = await getState();
   if (st.status === 'killed') { await ack(cmd.id, false, '已被服务器熔断，没跑'); return; }
   if (st.status !== 'active') { await ack(cmd.id, false, '还没挂线，没跑'); return; }
   /* 档位以"服务器随单带来的"为准（服务器一改档，下一单立即生效，不用等心跳） */
-  if (cmd.tier && cmd.tier !== st.tier) await setState({ ...st, tier: cmd.tier, tierRank: cmd.tierRank });
+  if (cmd.tier && cmd.tier !== st.tier) await setState({ ...st, tier: cmd.tier, tierRank: cmd.tierRank, tierLabel: (cmd.edition && cmd.edition.tierLabel) || st.tierLabel || '' });
   const effTier = cmd.tier || st.tier;
   const effRank = (typeof cmd.tierRank === 'number') ? cmd.tierRank : (TIER_RANK[effTier] || 0);
   const need = KIND_NEED[cmd.kind] || 0;
@@ -432,14 +645,32 @@ async function runWork(cmd) {
     await ack(cmd.id, false, '免费档只到写稿——这单没真发（要发先开档位）');
     return;
   }
+  /* 全平台闸（2026-10-29）：抖音 / 视频号只在「全平台」档开。
+     服务器派活时已经剔过一遍，这里再兜一道——单子里还带着这两家就只留小红书 */
+  if (cmd.edition && cmd.edition.features && cmd.edition.features.multiPlatform === false) {
+    const pr = cmd.params || {};
+    if (cmd.kind === 'note_publish' && Array.isArray(pr.platforms)) {
+      const keep = pr.platforms.filter((x) => String((x && x.platform) || x || '') === 'xhs');
+      if (!keep.length) { await ack(cmd.id, false, '抖音 / 视频号要「全平台」档才发——这一单没跑'); return; }
+      pr.platforms = keep;
+      pr.platform = 'xhs';
+    } else if (cmd.kind === 'acquire') {
+      const skip = Array.isArray(pr.skipPlats) ? pr.skipPlats.map(String) : [];
+      if (!skip.includes('dy')) skip.push('dy');
+      pr.skipPlats = skip;
+    }
+  }
   if (running) { await ack(cmd.id, false, '上一趟还没跑完，这条先排着'); return; }
   /* 登录过期还在等扫码：平台不让人干活，这一单不跑，按「要扫码登录」回报（自检不碰平台，照跑） */
-  if (cmd.kind !== 'self_test' && WW && WW.isLoginWait && WW.isLoginWait()) {
+  /* 自检和「去登录」都不碰业务：不领配置/规则，也不被正在等扫码的登录页挡住（去登录要的就是它） */
+  const NO_RULES = cmd.kind === 'self_test' || cmd.kind === 'relogin';
+  if (!NO_RULES && WW && WW.isLoginWait && WW.isLoginWait()) {
     await ack(cmd.id, false, LOGIN_FAIL_NOTE, '', { needLogin: true });
     return;
   }
   /* 写稿/话术规则没领到就不硬干（自检不碰平台，也不需要规则） */
-  if (cmd.kind !== 'self_test') {
+  if (!NO_RULES) {
+    try { await ensureConfig(); } catch (e) { await ack(cmd.id, false, (e && e.message) || '配置没准备好'); return; }
     try { await ensureRules(); } catch (e) { await ack(cmd.id, false, (e && e.message) || '规则没准备好'); return; }
   }
 
@@ -509,6 +740,12 @@ async function runWork(cmd) {
   let ok = true;
   let noteText = '';
   let detail = '';
+  /* 手点这一轮：网页上那颗「开始 / 补开 / 塞一轮 / 现在就发」派下来的单带 manual:true。
+     开票后这一趟放静默期；收工在 finally 里收回，自动/定时派下来的单没有这标记、照旧挡。 */
+  const manualOnce = !!(cmd.params && cmd.params.manual === true) && await setManualOnce(true);
+  if (manualOnce) {
+    try { await report('🛡 这一轮是你手点的：静默期/单休都不拦（只这一趟，跑完照旧）'); } catch (_) {}
+  }
   try {
     detail = await execKind(cmd);
     /* 平台在干活途中弹了登录墙：这一单不算跑完，按登录过期回报 */
@@ -521,9 +758,12 @@ async function runWork(cmd) {
     detail = (e && e.exDetail) || '';
     if (abortNote) noteText = abortNote;
     else if (String(e && e.message) === 'STOPPED') noteText = '被"⏹ 停这一趟"中途叫停';
+    /* 账号安全挡下的不是"出错"，原话照着回报（网页上要看见为什么没跑） */
+    else if (/^🛡/.test(String((e && e.message) || ''))) noteText = String(e.message);
     else noteText = '跑的时候出错：' + (e && e.message);
   } finally {
     running = false;
+    if (manualOnce) await setManualOnce(false);   // 这一趟完了就收回：下一轮/自动跑的照旧 09:00 后才动
     /* AI客服（监听）是长驻的：下完令它就一直活着，别把状态栏改回"待命"；
        登录过期要留着那句提示（面板上看得见），也不改回"待命" */
     if (!keepActivity && !loginAbort) await setActivity('待命');
@@ -549,6 +789,7 @@ async function runWork(cmd) {
 /* ── 干活分流 ── */
 async function execKind(cmd) {
   if (cmd.kind === 'self_test') return await runSelfTest();
+  if (cmd.kind === 'relogin') return await runRelogin(cmd.params || {});
   if (cmd.kind === 'note_publish') return await runNotePublish(cmd.params || {});
   if (cmd.kind === 'batch_send') return await runBatchSend(cmd.params || {});
   if (cmd.kind === 'film') return await runFilm(cmd.params || {});
@@ -564,8 +805,7 @@ async function execKind(cmd) {
     return await runAcquire('acquire', cmd.params || {});
   }
   /* 日常浏览与获客走同一条路：都是"把机器人叫起来跑一轮队列"。
-     区别只在服务器随单带来的快照里放什么——日常浏览的 snapshot 里带的是
-     daily_browse_config ＋ 一条手插的日常项（方向），机器人照样从队首跑。 */
+     区别只在网页随单带来的 daily 项；配置统一由公网在动作前刷好，单里不带配置。 */
   if (cmd.kind === 'daily_browse') return await runAcquire(cmd.kind, cmd.params || {});
   /* AI客服（🛰 新消息监听）：这条不用宿主页——哨兵本来就住在后台（内核 exec-core.js 里），
      服务器下个开关令，这只手把内核的监听开关掰一下就行。
@@ -601,15 +841,17 @@ function b64ToU8(b64) {
   return u8;
 }
 
-/* 把随命令带来的素材摆进内核的"代发区"：账本里记 {n}，素材本体写进 xhsCase 仓（键 pub:<id>:<i>）。 */
+/* 把素材摆进内核的"代发区"：账本里记 {n}，素材本体写进 xhsCase 仓（键 pub:<id>:<i>）。
+   files 每件是 {name,mime,blob}（新路，本机仓/网页那页/服务器取回统一成 Blob）或 {name,mime,b64}（老路小料）。 */
 async function stageFiles(id, files) {
   const db = await _npPubBgCaseDb();
   await new Promise((resolve, reject) => {
     const tx = db.transaction(CASE_STORE, 'readwrite');
     const store = tx.objectStore(CASE_STORE);
     files.forEach((f, i) => {
-      const blob = new Blob([b64ToU8(f.b64)], { type: f.mime || 'application/octet-stream' });
-      try { blob.name = String(f.name || ('file' + i)); } catch (_) {}
+      const blob = (f && f.blob instanceof Blob) ? f.blob
+        : new Blob([b64ToU8((f && f.b64) || '')], { type: (f && f.mime) || 'application/octet-stream' });
+      try { blob.name = String((f && f.name) || ('file' + i)); } catch (_) {}
       store.put({ key: FILE_PREFIX + id + ':' + i, blob: blob });
     });
     tx.oncomplete = () => { try { db.close(); } catch (_) {} resolve(); };
@@ -620,46 +862,321 @@ async function stageFiles(id, files) {
   await chrome.storage.local.set({ np_pub_files: cur });
 }
 
-async function clearStaged(id) {
-  try {
-    const db = await _npPubBgCaseDb();
-    const n = Number(((await chrome.storage.local.get('np_pub_files')).np_pub_files || {})[id] && ((await chrome.storage.local.get('np_pub_files')).np_pub_files[id].n) || 0);
-    await new Promise((resolve) => {
-      const tx = db.transaction(CASE_STORE, 'readwrite');
-      const store = tx.objectStore(CASE_STORE);
-      for (let i = 0; i < Math.max(1, n); i++) store.delete(FILE_PREFIX + id + ':' + i);
-      tx.oncomplete = () => { try { db.close(); } catch (_) {} resolve(); };
-      tx.onerror = () => { try { db.close(); } catch (_) {} resolve(); };
-    });
-  } catch (_) {}
-  try {
-    const m = (await chrome.storage.local.get('np_pub_files')).np_pub_files || {};
-    delete m[id];
-    await chrome.storage.local.set({ np_pub_files: m });
-  } catch (_) {}
+/* ═══════════ 本机素材仓（2026-10-26 老板口径）═══════════
+ * 要发的东西先在执行器这台机器上留一份：代发时先看仓里有没有，有就直接用，一个字节都不走网络。
+ * 片子本体就存在执行器自己的 xhsCase/case（键 pub:<篇id>:<i>，跟网页那边同名但各存各的）；
+ * 台账写 chrome.storage.local['ex.lib']：{ [篇id]: { at, src, files:[{i,key,name,mime,size,blobId,at}] } }。
+ * 仓满自动清最久没用的：最多 30 篇 / 合计 1.5GB。 */
+const LIB_KEY = 'ex.lib';
+const LIB_KEEP_MAX = 30;
+const LIB_KEEP_BYTES = 1500 * 1024 * 1024;
+
+async function libMeta() {
+  try { return (await chrome.storage.local.get(LIB_KEY))[LIB_KEY] || {}; } catch (_) { return {}; }
+}
+async function libMetaSave(all) { try { await chrome.storage.local.set({ [LIB_KEY]: all }); } catch (_) {} }
+
+function libFileSame(rec, f) {
+  if (!rec || !f) return false;
+  const sz = Number(f.size) || 0, rsz = Number(rec.size) || 0;
+  if (sz && rsz && sz !== rsz) return false;
+  const bid = String(f.blobId || ''), rbid = String(rec.blobId || '');
+  if (bid && rbid && bid !== rbid) return false;
+  if (!sz && !rsz) {
+    const a = String(f.name || ''), b = String(rec.name || '');
+    if (a && b && a !== b) return false;
+  }
+  return true;
 }
 
-/* 素材两种来法，取回统一成 {name,mime,b64} 交给 stageFiles：
- *   老路＝命令里直接带 b64（网页手点的单）；排期路＝只带 blobId——素材托管在服务器
- *   data/blobs/（网页交料时存进去的），这只手凭挂线凭据从 /api/exec/blob 取原件。 */
-async function fetchCommandFiles(filesIn) {
-  const out = [];
-  for (const f of filesIn) {
-    if (f && f.b64) { out.push(f); continue; }
-    const blobId = String((f && f.blobId) || '').trim();
-    if (!blobId) continue;
-    const cred = await getCred();
-    if (!cred || !cred.server) throw new Error('还没挂线——取托管素材要连服务器');
-    let j = null;
-    try {
-      const r = await fetch(cred.server + '/api/exec/blob', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handId: cred.handId, token: cred.token, blobId }),
+/* 仓里这篇的料对得上（件数、大小 / 编号）就直接拿出来；有一件对不上就当没有 */
+async function libLookup(noteId, filesIn) {
+  if (!noteId || !filesIn || !filesIn.length) return null;
+  const all = await libMeta();
+  const ent = all[noteId];
+  if (!ent || !Array.isArray(ent.files) || ent.files.length !== filesIn.length) return null;
+  const db = await _npPubBgCaseDb();
+  try {
+    const out = [];
+    for (let i = 0; i < filesIn.length; i++) {
+      const rec = ent.files[i];
+      if (!libFileSame(rec, filesIn[i])) return null;
+      const key = rec.key || (FILE_PREFIX + noteId + ':' + i);
+      const got = await new Promise((res) => {
+        const tx = db.transaction(CASE_STORE, 'readonly');
+        const rq = tx.objectStore(CASE_STORE).get(key);
+        rq.onsuccess = () => res(rq.result || null);
+        rq.onerror = () => res(null);
       });
-      j = await r.json();
-    } catch (e) { throw new Error('取素材连不上服务器：' + ((e && e.message) || e)); }
-    if (!j || !j.ok) throw new Error((j && j.error) || '服务器没给到这个素材');
-    out.push({ name: j.name || (f && f.name) || '', mime: j.mime || (f && f.mime) || '', b64: String(j.b64 || '') });
+      if (!got || !got.blob) return null;
+      out.push({ name: got.blob.name || rec.name || filesIn[i].name || ('file' + i), mime: got.blob.type || rec.mime || filesIn[i].mime || '', blob: got.blob, blobId: rec.blobId || filesIn[i].blobId || '', size: got.blob.size });
+    }
+    return out;
+  } finally { try { db.close(); } catch (_) {} }
+}
+
+async function libDrop(noteId, metaObj) {
+  const all = metaObj || await libMeta();
+  const ent = all[noteId];
+  if (!ent) return;
+  try {
+    const db = await _npPubBgCaseDb();
+    await new Promise((res) => {
+      const tx = db.transaction(CASE_STORE, 'readwrite');
+      const st = tx.objectStore(CASE_STORE);
+      (ent.files || []).forEach((f, i) => st.delete(f.key || (FILE_PREFIX + noteId + ':' + i)));
+      tx.oncomplete = () => { try { db.close(); } catch (_) {} res(); };
+      tx.onerror = () => { try { db.close(); } catch (_) {} res(); };
+    });
+  } catch (_) {}
+  if (!metaObj) { delete all[noteId]; await libMetaSave(all); }
+}
+
+async function libSave(noteId, files, src) {
+  if (!noteId || !files || !files.length) return;
+  const all = await libMeta();
+  all[noteId] = {
+    at: Date.now(), src: String(src || ''),
+    files: files.map((f, i) => ({
+      i: i, key: FILE_PREFIX + noteId + ':' + i,
+      name: String(f.name || ''), mime: String(f.mime || ''),
+      size: (f.blob && f.blob.size) || Number(f.size) || 0,
+      blobId: String(f.blobId || ''), at: Date.now(),
+    })),
+  };
+  /* 仓满先腾最久没用的：最多 30 篇 / 合计 1.5GB */
+  const ids = Object.keys(all).sort((a, b) => (all[b].at || 0) - (all[a].at || 0));
+  const doomed = [];
+  let bytes = 0;
+  ids.forEach((id, idx) => {
+    const ent = all[id];
+    const sz = (ent.files || []).reduce((n, f) => n + (Number(f.size) || 0), 0);
+    if (idx >= LIB_KEEP_MAX || (idx > 0 && bytes + sz > LIB_KEEP_BYTES)) { doomed.push(id); return; }
+    bytes += sz;
+  });
+  for (const id of doomed) { await libDrop(id, all); delete all[id]; }
+  await libMetaSave(all);
+}
+
+/* 从网页那页直接接素材：网页和扩展在同一个浏览器里，片子就在网页那块存储
+ * （xhsCase/case 的 pub:<篇id>:<i> / film:<篇id>），本机直取，不走网络。
+ * 这段函数会被注入网页执行——只能用它自己拿到的东西，不能引用外面任何变量。 */
+function _xhsLibChunk(a) {
+  return new Promise((resolve) => {
+    try {
+      const rq = indexedDB.open('xhsCase', 1);
+      rq.onerror = () => resolve({ ok: false, err: '页面存储打不开' });
+      rq.onsuccess = () => {
+        const db = rq.result;
+        let tx = null;
+        try { tx = db.transaction('case', 'readonly'); } catch (e) { try { db.close(); } catch (_) {} resolve({ ok: false, err: '页面存储打不开' }); return; }
+        const g = tx.objectStore('case').get(String(a.key));
+        g.onsuccess = () => {
+          const rec = g.result;
+          if (!rec || !rec.blob) { try { db.close(); } catch (_) {} resolve({ ok: false, err: '这页里没有这条素材' }); return; }
+          const blob = rec.blob;
+          const off = Math.max(0, Number(a.off) || 0);
+          const len = Math.max(1, Number(a.len) || 1);
+          const part = blob.slice(off, off + len);
+          const fr = new FileReader();
+          fr.onload = () => {
+            try { db.close(); } catch (_) {}
+            const s = String(fr.result || '');
+            resolve({ ok: true, size: blob.size, type: blob.type || '', name: blob.name || '', b64: s.slice(s.indexOf(',') + 1) });
+          };
+          fr.onerror = () => { try { db.close(); } catch (_) {} resolve({ ok: false, err: '这一块读不出来' }); };
+          fr.readAsDataURL(part);
+        };
+        g.onerror = () => { try { db.close(); } catch (_) {} resolve({ ok: false, err: '读不到这条素材' }); };
+      };
+    } catch (e) { resolve({ ok: false, err: String((e && e.message) || e) }); }
+  });
+}
+
+async function findWebTab(server) {
+  try {
+    const u = new URL(String(server || ''));
+    const tabs = await chrome.tabs.query({ url: u.origin + '/*' });
+    return (tabs.find((t) => t.active) || tabs[0] || null);
+  } catch (_) { return null; }
+}
+
+async function _pageChunk(tabId, key, off, len) {
+  /* 网页那页正忙着（比如还在交文件）主线程可能卡住：8 秒不回话就认这页接不了，别把整单吊死 */
+  let timer = 0;
+  try {
+    const r = await Promise.race([
+      chrome.scripting.executeScript({ target: { tabId }, func: _xhsLibChunk, args: [{ key, off, len }] }),
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('网页那页 8 秒没回话')), 8000); }),
+    ]);
+    const v = r && r[0] && r[0].result;
+    if (!v || !v.ok) return { ok: false, err: (v && v.err) || '网页那页没回话' };
+    return v;
+  } catch (e) {
+    return { ok: false, err: String((e && e.message) || e) };
+  } finally { clearTimeout(timer); }
+}
+
+async function pullFromPage(tabId, noteId, filesIn, prog) {
+  const keys = filesIn.map((f, i) => String((f && f.localKey) || (FILE_PREFIX + noteId + ':' + i)));
+  /* 先探一遍：每条都在、对得上才开工——省得接到一半又回落服务器 */
+  const heads = [];
+  for (let i = 0; i < keys.length; i++) {
+    let h = await _pageChunk(tabId, keys[i], 0, 1);
+    if (!h.ok && i === 0) {
+      const h2 = await _pageChunk(tabId, 'film:' + noteId, 0, 1);
+      if (h2.ok) { keys[0] = 'film:' + noteId; h = h2; }
+    }
+    if (!h.ok) return null;
+    heads.push(h);
+  }
+  const CH = 2 * 1024 * 1024;
+  const total = heads.reduce((n, h) => n + (Number(h.size) || 0), 0);
+  let done = 0;
+  const out = [];
+  for (let i = 0; i < keys.length; i++) {
+    const size = Number(heads[i].size) || 0;
+    const parts = [];
+    for (let off = 0; off < Math.max(1, size); off += CH) {
+      if (await isStopping()) throw new Error('STOPPED');
+      const c = await _pageChunk(tabId, keys[i], off, Math.min(CH, Math.max(1, size - off)));
+      if (!c.ok) return null;
+      const bin = atob(String(c.b64 || ''));
+      const u8 = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+      parts.push(u8);
+      done += u8.length;
+      if (prog) prog({ src: 'page', done: done, total: total, i: i, n: keys.length, name: heads[i].name || filesIn[i].name || '' });
+    }
+    const mime = heads[i].type || (filesIn[i] && filesIn[i].mime) || '';
+    const blob = new Blob(parts, { type: mime });
+    try { blob.name = String(heads[i].name || (filesIn[i] && filesIn[i].name) || ('file' + i)); } catch (_) {}
+    out.push({ name: heads[i].name || (filesIn[i] && filesIn[i].name) || ('file' + i), mime: mime, blob: blob, size: blob.size });
+  }
+  return out;
+}
+
+/* 一件从服务器取：先试原始二进制口（/api/exec/blob-raw，老服务器没这口就回落老路），
+   两条路都把「取到多少」交出去——等着的人要看得见进度。 */
+async function _fetchOneFromServer(cred, f, onFrac) {
+  const blobId = String((f && f.blobId) || '').trim();
+  if (!blobId) throw new Error('这条素材没有编号，也没托管到服务器');
+  const want = Number(f && f.size) || 0;
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  try {
+    const r0 = await fetch(cred.server + '/api/exec/blob-raw', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl ? ctl.signal : undefined,
+      body: JSON.stringify({ handId: cred.handId, token: cred.token, blobId }),
+    });
+    const ct0 = String(r0.headers.get('content-type') || '');
+    if (r0.ok && ct0.indexOf('json') < 0 && r0.body && r0.body.getReader) {
+      const total = Number(r0.headers.get('content-length')) || want || 0;
+      const reader = r0.body.getReader();
+      const parts = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value && value.length) {
+          parts.push(value); got += value.length;
+          if (onFrac) onFrac(total ? Math.min(1, got / total) : 0, got);
+        }
+        if (await isStopping()) { try { await reader.cancel(); } catch (_) {} throw new Error('STOPPED'); }
+      }
+      const mime = r0.headers.get('content-type') || (f && f.mime) || '';
+      const blob = new Blob(parts, { type: mime });
+      try { blob.name = String((f && f.name) || 'file'); } catch (_) {}
+      return { name: (f && f.name) || '', mime: mime, blob: blob, blobId: blobId, size: blob.size };
+    }
+  } catch (e) {
+    if (String(e && e.message) === 'STOPPED') throw e;
+    /* 老服务器没这个口 / 半路断了：走下面的老路 */
+  }
+  let r = null;
+  try {
+    r = await fetch(cred.server + '/api/exec/blob', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handId: cred.handId, token: cred.token, blobId }),
+    });
+  } catch (e) { throw new Error('取素材连不上服务器：' + ((e && e.message) || e)); }
+  if (!r.ok) throw new Error('服务器回 ' + r.status);
+  const total = Number(r.headers.get('content-length')) || 0;
+  let text = '';
+  if (r.body && r.body.getReader) {
+    const reader = r.body.getReader();
+    const parts = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.length) {
+        parts.push(value); got += value.length;
+        if (onFrac) onFrac(total ? Math.min(1, got / total) : 0, got);
+      }
+      if (await isStopping()) { try { await reader.cancel(); } catch (_) {} throw new Error('STOPPED'); }
+    }
+    text = new TextDecoder().decode(await new Blob(parts).arrayBuffer());
+  } else {
+    text = await r.text();
+  }
+  let j = null;
+  try { j = JSON.parse(text); } catch (_) { throw new Error('服务器给的数据读不出来'); }
+  if (!j || !j.ok) throw new Error((j && j.error) || '服务器没给到这个素材');
+  const mime = j.mime || (f && f.mime) || '';
+  const blob = new Blob([b64ToU8(String(j.b64 || ''))], { type: mime });
+  try { blob.name = String(j.name || (f && f.name) || 'file'); } catch (_) {}
+  return { name: j.name || (f && f.name) || '', mime: mime, blob: blob, blobId: blobId, size: blob.size };
+}
+
+/* 素材三种来法，取回统一成 {name,mime,blob}：
+ *   ① 本机素材仓已经有（同一篇、大小/编号对得上）——直接用，不走网络；
+ *   ② 网页那页就开着——从它那块存储直接接过来（同一台电脑，本机直取）；
+ *   ③ 都不是——从服务器取（远端点 / 换电脑 / 网页那页没开），一路报进度。
+ * 老路（命令里直接带 b64 的小料，≤8MB）照旧直接用。 */
+async function fetchCommandFiles(filesIn, opts) {
+  const o = opts || {};
+  const noteId = String(o.noteId || '');
+  const prog = typeof o.onProg === 'function' ? o.onProg : function () {};
+  if (filesIn.every((f) => f && f.b64)) {
+    return filesIn.map((f) => ({ name: f.name || '', mime: f.mime || '', b64: String(f.b64 || ''), size: 0 }));
+  }
+
+  /* ① 本机仓 */
+  try {
+    const local = await libLookup(noteId, filesIn);
+    if (local && local.length) {
+      prog({ src: 'lib', done: local.reduce((n, x) => n + (x.size || 0), 0), total: local.reduce((n, x) => n + (x.size || 0), 0) });
+      return local;
+    }
+  } catch (_) {}
+
+  /* ② 网页那页（同一台电脑） */
+  const cred = await getCred();
+  const tab = await findWebTab(cred && cred.server);
+  if (tab) {
+    try {
+      const pulled = await pullFromPage(tab.id, noteId, filesIn, prog);
+      if (pulled && pulled.length === filesIn.length) return pulled;
+    } catch (e) {
+      if (String(e && e.message) === 'STOPPED') throw e;
+      /* 接不过来就往下走服务器那条 */
+    }
+  }
+
+  /* ③ 服务器 */
+  if (!cred || !cred.server) throw new Error('还没挂线——这台机器上没有这篇的素材，只能从服务器取');
+  const totalBytes = filesIn.reduce((n, f) => n + (Number(f && f.size) || 0), 0);
+  let doneBytes = 0;
+  const out = [];
+  for (let i = 0; i < filesIn.length; i++) {
+    const f = filesIn[i];
+    if (f && f.b64) { out.push({ name: f.name || '', mime: f.mime || '', b64: String(f.b64 || '') }); continue; }
+    const fsz = Number(f && f.size) || 0;
+    const one = await _fetchOneFromServer(cred, f, (frac) => {
+      prog({ src: 'server', frac: frac, doneBytes: doneBytes + fsz * frac, totalBytes: totalBytes, i: i, n: filesIn.length, name: (f && f.name) || '' });
+    });
+    doneBytes += (one.size || fsz || 0);
+    out.push(one);
   }
   return out;
 }
@@ -711,20 +1228,9 @@ async function runNotePublish(p) {
     if (g && g.ok === false) throw new Error('🛡 ' + g.text);
   }
 
-  await setActivity('取素材…');
-  await report(`📮 收到发笔记命令（${names.join('＋')}${sched ? '·排期到点' : ''}）：${filesIn.some((f) => f && !f.b64) ? '先从服务器取素材原件…' : '先把素材摆进代发区'}`);
-  const files = await fetchCommandFiles(filesIn);
-  if (!files.length) throw new Error('素材取空了——服务器没给到料');
-
-  await setActivity('摆素材…');
-  await stageFiles(id, files);
-
-  const form = String(note.form || '图文');
-  const fallbackAdapt = { title: note.title || '', body: note.draft || '', tags: [] };
-  if (await isStopping()) { await clearStaged(id); throw new Error('STOPPED'); }
-
-  /* 工作台实时条：一行一家。步骤/进度每变一次打服务器（节流），网页那边轮询着就能边跑边看 */
-  const rows = targets.map((t) => ({ p: t.platform, st: 'wait', step: '', pct: null }));
+  /* 工作台实时条：一行一家。步骤/进度每变一次打服务器（节流），网页那边轮询着就能边跑边看。
+     取素材这一段也算进来——等着的时候必须看得见「在等什么、等到哪了」。 */
+  const rows = targets.map((t) => ({ p: t.platform, st: 'prep', step: '取素材', pct: null }));
   const rowOf = (plat) => rows.find((r) => r.p === plat);
   const liveAt = Date.now();
   const cred0 = await getCred();
@@ -763,6 +1269,60 @@ async function runNotePublish(p) {
     if (pct !== undefined) r.pct = pct;
     kickLive();
   };
+  kickLive();
+
+  /* 取素材：本机仓 → 网页那页 → 服务器，每 4 秒报一次「在等什么、等到哪了」 */
+  const MB = (n) => (Math.max(0, Number(n) || 0) / 1048576).toFixed(1);
+  const totalWant = filesIn.reduce((n, f) => n + (Number(f && f.size) || 0), 0);
+  let progAt = 0, progPct = -1, srvAt = 0, paintAt = 0;
+  const matProg = (ev) => {
+    if (!ev) return;
+    let txt = '', pct = null;
+    if (ev.src === 'lib') {
+      pct = 100;
+      txt = '📦 素材就在本机仓里（' + MB(ev.total) + 'MB）——直接用，不走网络';
+    } else if (ev.src === 'page') {
+      pct = ev.total ? Math.min(100, Math.round(ev.done / ev.total * 100)) : null;
+      txt = '⏳ 正在从这台电脑的网页那页接素材' + (pct != null ? ' ' + pct + '%' : '') + '（' + MB(ev.done) + '/' + MB(ev.total) + 'MB）——本机直取，不走网络';
+    } else if (ev.src === 'server') {
+      const frac = Number(ev.frac) || 0;
+      pct = Math.round(frac * 100);
+      const done = Number(ev.doneBytes) || 0;
+      const total = Number(ev.totalBytes) || totalWant || 0;
+      if (!srvAt) srvAt = Date.now();
+      const secs = Math.max(1, (Date.now() - srvAt) / 1000);
+      const speed = done / secs;                       // 字节/秒
+      const leftMin = speed > 0 ? Math.max(0, (total - done) / speed / 60) : 0;
+      txt = '⏳ 本机仓和网页那页都没有，正在从服务器取素材 ' + pct + '%（' + MB(done) + '/' + MB(total) + 'MB）'
+        + (leftMin ? '——按当前网速约还要 ' + (leftMin >= 1 ? Math.round(leftMin) + ' 分钟' : '不到 1 分钟') : '');
+    }
+    /* 屏幕上的字 1 秒刷一次就够：取服务器的路上每几十 KB 就来一下，别把存储写爆 */
+    const now = Date.now();
+    if (txt && (now - paintAt >= 1000 || pct >= 100)) { paintAt = now; setActivity(txt); }
+    if (pct != null && Math.abs(pct - progPct) >= 3) {
+      progPct = pct;
+      targets.forEach((t) => setRow(t.platform, 'prep', '取素材' + (pct < 100 ? ' ' + pct + '%' : ''), pct));
+    }
+    if (txt && (now - progAt > 4000 || pct >= 100)) { progAt = now; report(txt).catch(() => {}); }
+  };
+
+  await setActivity('取素材…');
+  await report(`📮 收到发笔记命令（${names.join('＋')}${sched ? '·排期到点' : ''}）：先看本机有没有素材…`);
+  const files = await fetchCommandFiles(filesIn, { noteId: id, onProg: matProg });
+  if (!files.length) throw new Error('素材取空了——服务器没给到料');
+
+  await setActivity('摆素材…');
+  await stageFiles(id, files);
+  /* 存进本机仓：下次发同一篇（重发 / 没发成补发）直接用，不再取一遍 */
+  try { await libSave(id, files, files[0] && files[0].blob ? 'local' : 'inline'); } catch (_) {}
+  const bytesGot = files.reduce((n, f) => n + ((f.blob && f.blob.size) || (Number(f.size) || 0) || 0), 0);
+  await report('✅ 素材到手（' + MB(bytesGot || totalWant) + 'MB）——开始准备发' + names.join('＋')).catch(() => {});
+
+  const form = String(note.form || '图文');
+  const fallbackAdapt = { title: note.title || '', body: note.draft || '', tags: [] };
+  /* 叫停也不清料：素材留在本机仓，下趟重发直接用 */
+  if (await isStopping()) throw new Error('STOPPED');
+  targets.forEach((t) => setRow(t.platform, 'wait', '', null));
 
   const results = [];
   let sentAny = false;
@@ -770,15 +1330,17 @@ async function runNotePublish(p) {
   try {
     kickLive();
 
-    /* 两家同时干：第一家马上开，后一家随机错开 0.8~2.2 秒（别同时开两个页面，像人才像）；
-       每家各开各的标签页、各走各的填字/发布，谁先成谁先算，互不拖累。 */
-    const jobs = targets.map(async (t, i) => {
+    /* 一家一家来（2026-10-26 老板口径）：小红书整条发完 → 再发抖音 → 再发视频号。
+       同一时间只开一扇发布页，填字 / 传素材 / 点发布都走完这一家，才轮到下一家——
+       屏幕上看得到"现在在发哪一家"，也不会两家抢网、抢焦点。 */
+    for (let i = 0; i < targets.length; i++) {
+      const t = targets[i];
       const plat = t.platform;
-      if (i > 0) await _npPubBgSleep(800 + Math.round(Math.random() * 1400));
       if (await isStopping()) {
         setRow(plat, 'stopped', '', null);
         results.push({ platform: plat, ok: false, stopped: true });
-        return;
+        targets.slice(i + 1).forEach((t2) => setRow(t2.platform, 'stopped', '', null));
+        break;
       }
       setRow(plat, 'doing', 'page');
       await setActivity(`发${npPlatName(plat)}：开页面`);
@@ -790,12 +1352,16 @@ async function runNotePublish(p) {
           t.adapted || fallbackAdapt,
           {
             watch: hold, manual: true,
-            onStep: (step, pct) => {
+            onStep: (step, pct, detail) => {
               setRow(plat, 'doing', step || 'page', pct === undefined ? null : pct);
+              const secs = (step === 'upload' && typeof pct === 'number') ? pct : 0;
+              const elTxt = secs >= 3
+                ? '（已等 ' + (secs >= 60 ? Math.floor(secs / 60) + ' 分 ' + (secs % 60) + ' 秒' : secs + ' 秒') + (detail ? '，' + detail : '') + '）'
+                : '';
               const t2 = step === 'feed' ? `发${npPlatName(plat)}：传素材 ${pct || 0}%`
                 : step === 'fill' ? `发${npPlatName(plat)}：填字`
                 : step === 'send' ? `发${npPlatName(plat)}：点发布`
-                : step === 'upload' ? `发${npPlatName(plat)}：等平台转完`
+                : step === 'upload' ? `发${npPlatName(plat)}：等平台收素材${elTxt}`
                 : `发${npPlatName(plat)}：开页面`;
               setActivity(t2);
             },
@@ -813,6 +1379,7 @@ async function runNotePublish(p) {
         needVerify: !!res.needVerify,
         needLogin: !!res.needLogin,
         needPerm: !!res.needPerm,
+        skip: !!res.skip,   // 视频号发前没认上号：这一头跳过，别家照发（2026-10-26）
         msg: res.msg || '',
         tabId: res.tabId,
         windowId: res.windowId,
@@ -825,10 +1392,16 @@ async function runNotePublish(p) {
       else if (one.needVerify) setRow(plat, 'verify', '', null);
       else if (one.needLogin) setRow(plat, 'login', '', null);
       else if (one.needPerm) setRow(plat, 'perm', '', null);
+      else if (one.skip) setRow(plat, 'skip', '', null);
       else setRow(plat, 'fail', '', null);
       results.push(one);
+    }
+
+    /* 认号那一步就掉队的家（platDrop）：也记成「跳过」，回执里看得见是哪家、为什么没发 */
+    Object.keys(drop).forEach((plat) => {
+      if (!drop[plat] || targets.some((t) => t.platform === plat)) return;
+      results.push({ platform: plat, ok: false, skip: true, msg: String(drop[plat] || ''), at: new Date().toISOString() });
     });
-    await Promise.all(jobs);
 
     /* 同一篇里已经发成的家记额度；停旗只影响没轮到的，不影响已经发出去的 */
     const sentN = results.filter((r) => r.ok).length;
@@ -841,20 +1414,22 @@ async function runNotePublish(p) {
     const keepFiles = badList.some((r) => r.pending || r.needVerify || r.needLogin || r.needPerm);
 
     if (allOk) {
-      await clearStaged(id);
+      /* 料留在本机仓里不删：同一篇要重发 / 补发别家时直接拿来用（仓满自己会清最久没用的） */
       const links = results.filter((r) => r.ok && r.url).map((r) => npPlatName(r.platform) + '：' + r.url);
-      await report(`✅ 「${KIND_LABEL.note_publish}」${names.join('＋')}都发出去了${links.length ? '（' + links.join('；') + '）' : ''}`);
+      const skipTxt = results.filter((r) => r.skip).map((r) => npPlatName(r.platform) + '这头这次跳过').join('；');
+      await report(`✅ 「${KIND_LABEL.note_publish}」${names.join('＋')}都发出去了${links.length ? '（' + links.join('；') + '）' : ''}${skipTxt ? '；' + skipTxt : ''}`);
       return JSON.stringify({ kind: 'note_publish', ok: true, platforms: results, at: new Date().toISOString() });
     }
-    if (results.every((r) => r.stopped)) await clearStaged(id);
+    /* 全叫停也把料留在本机仓，不清 */
 
     /* 没发齐：把每家卡在哪说清楚（页面留着的那几种，工作台「等您接手」里能点） */
     const hasPending = badList.some((r) => r.pending);
     const pieces = badList.filter((r) => !r.pending).map((r) => {
       const nm = npPlatName(r.platform);
       if (r.needLogin) return nm + '没登录·等扫码';
-      if (r.needPerm) return nm + '差一次授权';
+      if (r.needPerm) return nm + '差一次授权——在这条回执/发布队列的那一行点「🔑 去授权」，弹框里点「允许」（一次就够，以后不用再点）';
       if (r.needVerify) return nm + '要手机验证码（页面留着）';
+      if (r.skip) return nm + '这头跳过了（' + (r.msg || '没认上号') + '）';
       return nm + '没上成（' + (r.msg || '未知原因') + '）';
     });
     if (hasPending) pieces.push('剩下备好停在发布按钮前，等您点发布');
@@ -884,11 +1459,11 @@ async function runNotePublish(p) {
 }
 
 /* ═══════════ 获客一轮（B 期真链）═══════════
- * 服务器当大脑：服务器按"到点/手插"下一轮命令，命令里带这一轮要的配置快照（词池 / 筛选 / 话术 / 设置）。
- * 这只手只做机器人的事——把快照铺进本机存储，把「干活宿主页」叫起来跑一轮，收结果回执。
+ * 服务器当大脑：服务器按"到点/手插"下一轮命令。配置不再随单下发——接单后先调 ensureConfig()
+ * 把公网那一份刷进本机缓存（本机只当缓存，不存独立配置），再叫「干活宿主页」跑一轮。
  * 机器人（auto-bot.js）住在宿主页 popup.html?aw=1 里（那是从扩展整份搬进来的工作台前台），
  * 碰平台的动作全在本机浏览器里跑（内核 exec-core.js 出存储/动作，宿主页负责把机器人叫起来）。
- * params：{ snapshot:{…要铺进存储的键…}, scope:'all'|'growing', pace:'once'|'interval' } */
+ * params：{ scope:'all'|'growing', pace:'once'|'interval' } */
 const WORK_PORT = 'aw-round';
 let workPort = null;      // 正在跑的宿主页端口（面板/熔断要喊停就走它）
 let workResolve = null;   // 等这一轮结果的 resolve
@@ -946,6 +1521,20 @@ try {
 function workStop() {
   try { if (workPort) workPort.postMessage({ ev: 'stop' }); } catch (_) {}
   try { if (filmPort) filmPort.postMessage({ ev: 'stop' }); } catch (_) {}
+}
+
+/* 「暂停 / 继续」：机器人本体在干活宿主页里，这里只把令转过去（和停令走同一条 port）。
+   宿主页那边调 AutoBot.pause()/resume()，停在下一个检查点，页面和队列进度都留在原地。 */
+async function applyPause(on) {
+  await setPauseOn(!!on);
+  let posted = false;
+  try { if (workPort) { workPort.postMessage({ ev: on ? 'pause' : 'resume' }); posted = true; } } catch (_) {}
+  await setActivity(on ? '已暂停（网页上点「继续」接着跑）' : '继续跑…');
+  if (posted || running) {
+    await report(on
+      ? '⏸ 已暂停：当前这一步做完就停下等（点「▶ 继续」接着跑，进度不丢）'
+      : '▶ 已继续，接着跑');
+  }
 }
 
 /* 把正在等的活当场叫醒（窗口被关时用）：runWork 拿到失败结果，照实回报，不干等超时 */
@@ -1048,30 +1637,18 @@ async function runHostOnce(qs, timeoutMs) {
   } catch (e) { throw new Error('打不开干活宿主页：' + (e && e.message)); }
   if (await isStopping()) { workStop(); }
   const r = await waitWorkResult(timeoutMs);
+  /* 这一趟收尾：暂停旗子落地（下一趟别一上线就停着）；顺手把这趟的评论/灌水明细传上去 */
+  await setPauseOn(false);
+  scheduleWaterPush(500);
   /* 窗口由 WorkWin 统一管（干完不关窗，下一趟复用同一扇）；没有 WorkWin 的兜底才手动收页 */
   if (!WW) { try { if (tab && tab.id != null) await chrome.tabs.remove(tab.id); } catch (_) {} }
   if (!loginAbort) await setActivity('待命');
   return r;
 }
 
-/* 快照只铺"配置"；本机跑出来的"运行态"（跑到几点 kwRuns、欠账/队列）要留住——
-   否则隔 N 小时的列会轮轮都被当"从没跑过"。 */
-async function laySnapshot(snapIn) {
-  if (!snapIn || typeof snapIn !== 'object') return;
-  const snap = Object.assign({}, snapIn);
-  if (snap.drain_scan_cfg && typeof snap.drain_scan_cfg === 'object') {
-    const cur = (await chrome.storage.local.get('drain_scan_cfg')).drain_scan_cfg || {};
-    const keep = {};
-    for (const k of ['kwRuns', 'lastScanAt', 'lastScanSummary']) if (cur[k] !== undefined) keep[k] = cur[k];
-    snap.drain_scan_cfg = Object.assign({}, snap.drain_scan_cfg, keep);
-  }
-  await chrome.storage.local.set(snap);
-}
-
 async function runAcquire(kind, p) {
   const isDaily = kind === 'daily_browse';
   const label = isDaily ? '日常浏览' : '获客';
-  await laySnapshot(p && p.snapshot);
   /* 「🌿 塞一轮日常流程」：网页把这一轮要跑的方向随单带来。本机的队列要自己插——
      网页那本账和执行器这本账是两本（配置从网页来，队列运行态在本机）。 */
   if (isDaily && p && p.daily && p.daily.k) {
@@ -1084,14 +1661,26 @@ async function runAcquire(kind, p) {
   const scope = p && p.scope === 'growing' ? 'growing' : 'all';
   const pace = p && p.pace === 'interval' ? 'interval' : 'once';
   const seq = String((p && p.seq) || '');
+  /* 服务器按平台暂停/没认号算出来的"这趟跳过哪几头"（xhs / dy）：带给宿主页，队列里那几趟这轮不取 */
+  const skip = Array.isArray(p && p.skipPlats)
+    ? p.skipPlats.map((x) => String(x || '')).filter((x) => x === 'xhs' || x === 'dy')
+    : [];
+  /* 人手点的「▶ 开始」＝现在就跑：宿主页发现队列里没有到点的活时，自动塞一轮日常浏览
+     （等同于「🌿 塞一轮日常流程」）。补开 / 塞一轮日常自己带活，不带这张票。 */
+  const plug = !isDaily && !!(p && p.manual === true);
+  /* 🎯 这次跑多少条评论（网页队列页填的，0=不限）：带到宿主页，机器人跑到数就收工 */
+  const runQuota = Math.max(0, Number(p && p.runQuota) || 0);
 
   await setActivity(`${label}：把机器人叫起来…`);
-  await report(`${isDaily ? '🌿' : '🌾'} 收到${label}命令：起机器人跑一轮${(p && p.kw) ? `（${p.kw}）` : ''}`);
+  await report(`${isDaily ? '🌿' : '🌾'} 收到${label}命令：起机器人跑一轮${(p && p.kw) ? `（${p.kw}）` : ''}` +
+    (skip.length ? `（这趟跳过：${skip.map((x) => (x === 'dy' ? '抖音' : '小红书')).join('、')}）` : ''));
 
   /* 定时轮会在项与项之间歇（默认 10 分钟一项），15 分钟的上限不够；一遍跑完仍按 15 分钟 */
   const waitMs = pace === 'interval' ? 2 * 60 * 60 * 1000 : 15 * 60 * 1000;
+  const ranAt = Date.now();
   const r = await runHostOnce(
-    `scope=${scope}&pace=${pace}&seq=${encodeURIComponent(seq)}`,
+    `scope=${scope}&pace=${pace}&seq=${encodeURIComponent(seq)}` + (skip.length ? `&skip=${encodeURIComponent(skip.join(','))}` : '') +
+    (plug ? '&plug=1' : '') + (runQuota > 0 ? '&quota=' + runQuota : ''),
     waitMs);
 
   const logTail = String((r && r.logTail) || '');
@@ -1102,9 +1691,22 @@ async function runAcquire(kind, p) {
     throw err;
   }
   const st = r.stats || {};
-  await report(`✅ ${label}跑完一轮：搜到 ${st.found || 0} 篇 · 评论 ${st.comments || 0} 条`);
+  /* 日常浏览那几篇也要报出来：只写「搜到 0 篇」会被读成"根本没刷"（老板 10-26 的疑问就出在这句） */
+  const _dn = Number(st.daily && st.daily.viewed) || 0;
+  const _dop = Number(st.daily && st.daily.opened) || 0;
+  const _dwhy = String((st.daily && st.daily.note) || '');
+  const dl = (st.daily && typeof st.daily === 'object')
+    ? (_dn
+      ? ` · 日常浏览「${String(st.daily.name || '')}」挑中 ${_dn} 张 · 点开 ${_dop} 篇${_dop ? '' : ('（' + (_dwhy || '点了没开') + '）')}`
+      : ` · 日常浏览「${String(st.daily.name || '')}」没刷到（${String(st.daily.note || '原因不明')}）`)
+    : '';
+  const _warn = (st.daily && typeof st.daily === 'object' && !_dn) ? '⚠️ ' : '✅ ';
+  await report(`${_warn}${label}跑完一轮：搜到 ${st.found || 0} 篇 · 评论 ${st.comments || 0} 条${st.leads ? ` · 抖音问价 ${st.leads} 个` : ''}${dl}`);
+  /* 🎵 这轮跑过抖音就把问价线索回传服务器（网页工作台「抖音」页签读它） */
+  await pushDyResults(ranAt);
   return JSON.stringify({
     kind: kind, ok: true, found: st.found || 0, comments: st.comments || 0, notes: st.notes || 0,
+    daily: st.daily || null,
     at: new Date().toISOString(), logTail: logTail.slice(-1500),
   });
 }
@@ -1148,7 +1750,6 @@ async function runSearch(p) {
   } catch (e) {
     if (e && String(e.message || '').indexOf('🛡') === 0) throw e;
   }
-  await laySnapshot(p && p.snapshot);
   const kw = String((p && p.kw) || '').trim();
   const profile = String((p && p.profile) || '').trim();
   const label = String((p && p.label) || '').trim();
@@ -1237,7 +1838,6 @@ async function runSearch(p) {
 /* 🧹 截流扫一轮：直接调内核那套来源扫描（它自己开专用小红书页逐词扫） */
 async function runDrainScan(p) {
   if (typeof handleDrainScan !== 'function') throw new Error('内核里没有截流扫描动作（exec-core 不是这个版本）');
-  await laySnapshot(p && p.snapshot);
   await setActivity('截流：扫一轮关键词来源…');
   await report('🧹 收到「截流扫一轮」命令');
   const r = await handleDrainScan({});
@@ -1250,7 +1850,6 @@ async function runDrainScan(p) {
 /* 🔁 补开本轮没打开的笔记（手动那颗，force 绕开自动开关） */
 async function runDrainBackfill(p) {
   if (typeof handleDrainReplenish !== 'function') throw new Error('内核里没有补开动作（exec-core 不是这个版本）');
-  await laySnapshot(p && p.snapshot);
   await setActivity('截流：补开没打开的…');
   await report('🔁 收到「补开未打开」命令');
   const r = await handleDrainReplenish({ round: true, force: true });
@@ -1509,23 +2108,32 @@ async function runSendDmBatch(p) {
 }
 
 async function ack(cmdId, ok, note, detail, extra) {
+  const key = String(cmdId || '');
+  if (key && ackedCmdIds.includes(key)) return;   // 同一单只回报一次（兜底补发的失败回执不许盖掉已记好的成功）
   const cred = await getCred();
   if (!cred) return;
   try {
-    await fetchT(cred.server + '/api/exec/ack', {
+    const r = await fetchT(cred.server + '/api/exec/ack', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         handId: cred.handId, token: cred.token, cmdId, ok,
         note: note || '', detail: detail || '', ...(extra || {}),
       }),
     }, 15000);
+    try {
+      const j = await r.json();
+      if (j && j.ok && key) {
+        ackedCmdIds.push(key);
+        if (ackedCmdIds.length > 60) ackedCmdIds.shift();
+      }
+    } catch (_) {}
   } catch { /* 服务器不在，回执丢了就丢了（下次心跳再补） */ }
   await report(`${ok ? '✅' : '⚠️'} ${note || (ok ? '干完了' : '没干成')}`);
 }
 
 /* 面板拿一份快照：账号/状态/活动/连通 + 两个平台各绑的号、最近一次认号结果 */
 async function snapshotData() {
-  const [cred, st, act, link] = await Promise.all([getCred(), getState(), get('ex.activity'), get('ex.link')]);
+  const [cred, st, act, link, cfgAt, cfgVer] = await Promise.all([getCred(), getState(), get('ex.activity'), get('ex.link'), get('ex.cfgAt'), get('ex.cfgVersion')]);
   let bindings = {}, bindState = {};
   if (AC) {
     try { [bindings, bindState] = await Promise.all([AC.getBindings(), AC.getState()]); } catch (_) {}
@@ -1535,22 +2143,24 @@ async function snapshotData() {
     cred: cred ? { server: cred.server, account: cred.account, serverName: cred.serverName } : null,
     state: st, activity: act || { text: '' }, link: link || null,
     bindings: bindings || {}, bindState: bindState || {},
+    cfg: { at: Number(cfgAt) || 0, version: String(cfgVer || '') },
   };
 }
 
 /* 面板点「认一下」：读一遍这个平台 → 空着就绑上 / 相同就刷新 / 不同就报错（换绑找老板）
-   小红书没登录：留扫码页等人，扫完自己认号（最多 10 分钟）；抖音不等 */
+   小红书没登录：留扫码页等人，扫完自己认号（最多 10 分钟）；视频号留后台页等人扫码；抖音不等 */
 async function bindNow(platform) {
   const p = String(platform || '');
   if (!AC) return { ok: false, error: '认号模块没装上（这个包太旧）' };
-  if (!['xhs', 'douyin'].includes(p)) return { ok: false, error: '不认识的平台：' + (p || '(空)') };
-  const label = p === 'xhs' ? '小红书' : '抖音';
+  if (!['xhs', 'douyin', 'channels'].includes(p)) return { ok: false, error: '不认识的平台：' + (p || '(空)') };
+  const label = { xhs: '小红书', douyin: '抖音', channels: '视频号' }[p];
   await setActivity('认号：读一遍' + label + '…');
   let res = null;
   try {
     res = await AC.bindPlatforms([p], {
       onStep: (t) => { setActivity(t); },
       waitMs: p === 'xhs' ? BIND_WAIT_MS : 0,
+      holdOnBad: p === 'channels',
       shouldStop: isStopping,
       onLoginWait: (on) => setLoginWait(on, 'bind'),
     });
@@ -1569,6 +2179,21 @@ async function bindNow(platform) {
   return { ok: false, error: why, result: r };
 }
 
+/* 网页点「去登录」（2026-11-04）：把平台页面开在这台电脑上等人扫码，号认上顺带报回服务器
+   —— 小红书留扫码页等最多 10 分钟，扫完自己认号，网页那颗红标跟着收；
+   —— 视频号留后台页等人扫；抖音只报当前状态（它本来不等扫码，扫完在面板点「认一下抖音」）。 */
+async function runRelogin(params) {
+  const p = String((params && params.platform) || 'xhs');
+  if (!['xhs', 'douyin', 'channels'].includes(p)) throw new Error('不认识的平台：' + (p || '(空)'));
+  const label = { xhs: '小红书', douyin: '抖音', channels: '视频号' }[p];
+  await report('🔐 网页让你重新登' + label + '——页面这就开在这台电脑上'
+    + (p === 'xhs' ? '（扫码页留着，最多等 10 分钟，扫上自己认号）' : '（扫完在面板点一下「认一下' + label + '」）'));
+  const r = await bindNow(p);
+  if (!r || !r.ok) throw new Error((r && r.error) || (label + '还是没认上'));
+  await report('✅ ' + label + '登好了：网页那头的提醒会自己收掉');
+  return JSON.stringify({ kind: 'relogin', platform: p, ok: true, at: new Date().toISOString() });
+}
+
 /* ── 面板专用通道 ──
    内核 exec-core 对所有 runtime 消息都会抢答一句「未知 action」，面板的挂线/状态回话会被它截胡。
    面板改走独立端口（内核不监听端口），这样「挂线成功/在线待命」才拿得到真回话。 */
@@ -1583,6 +2208,7 @@ chrome.runtime.onConnect.addListener((port) => {
       else if (m.type === 'ex.bind') data = await bindNow(m.platform);
       else if (m.type === 'ex.stop') { await setStopping(true); workStop(); data = { ok: true }; }
       else if (m.type === 'ex.snapshot') data = await snapshotData();
+      else if (m.type === 'ex.cfg') data = await ensureConfig();
       else data = { error: '未知 type: ' + m.type };
     } catch (e) {
       data = { error: (e && e.message) || String(e) };
@@ -1593,11 +2219,19 @@ chrome.runtime.onConnect.addListener((port) => {
 
 /* ── 面板来的消息 ── */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  /* 🤖 面板/干活页的日志回后台：走同一条「报进度」口，后台「流水」框读的就是它 */
+  if (msg && msg.type === 'ex.botlog') {
+    report('🤖 ' + String(msg.text || ''))
+      .catch(() => {})
+      .then(() => { try { sendResponse({ ok: true }); } catch (_) {} });
+    return true;
+  }
   if (msg && msg.type === 'ex.pair') { pair(msg.server, msg.code, msg.label).then(sendResponse); return true; }
   if (msg && msg.type === 'ex.logout') { logout().then(sendResponse); return true; }
   if (msg && msg.type === 'ex.bind') { bindNow(msg.platform).then(sendResponse); return true; }
   if (msg && msg.type === 'ex.stop') { setStopping(true).then(() => { workStop(); sendResponse({ ok: true }); }); return true; }
   if (msg && msg.type === 'ex.snapshot') { snapshotData().then(sendResponse); return true; }
+  if (msg && msg.type === 'ex.cfg') { ensureConfig().then(sendResponse); return true; }
   return false;
 });
 
@@ -1618,15 +2252,18 @@ async function boot() {
     }
     const st = await getState();
     await fetchRules(false).catch(() => {});
+    await fetchConfig(false).catch(() => {});
     await report(`🟢 执行器已就位（${st.status === 'killed' ? '服务器在熔断中，保持锁定' : '待命'}）`);
     earLoop();
+    /* 本机攒下的评论/灌水明细先补传一次（网页那两本折叠块靠它） */
+    scheduleWaterPush(5000);
   }
 }
 boot();
 
 /* MV3 服务工作线程闲 30 秒会被收走——20 秒碰一下浏览器 API 保持在线 */
 setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
-/* 心跳对账：每 15 秒问一句服务器，防漏收指令 */
-setInterval(heartbeatOnce, 15000);
+/* 心跳对账：每 15 秒问一句服务器，防漏收指令；顺手看一眼耳朵还在不在（掉了就重新挂上） */
+setInterval(() => { heartbeatOnce(); earLoop(); }, 15000);
 
 })();

@@ -210,8 +210,29 @@ const NPA_XHS_UPLOAD = function (args) {
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const name = k.split('|')[1] || 'file';
-      const mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
-      dt.items.add(new File([arr], name, { type: mime }));
+      /* 认真身，别信名字：出图那套内容是 JPEG、名字却被叫成 .png，照扩展名递过去平台静默不收
+         （2026-10-29 实踩：小红书缩略图 0/4、编辑器不出，等满 8 分钟）。只看头几个字节定：
+         JPEG FFD8FF / PNG 89504E47 / GIF / WEBP / MP4·MOV(ftyp)。 */
+      const real = (() => {
+        const u = arr;
+        if (u.length >= 12) {
+          if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'image/jpeg';
+          if (u[0] === 0x89 && u[1] === 0x50 && u[2] === 0x4E && u[3] === 0x47) return 'image/png';
+          if (u[0] === 0x47 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x38) return 'image/gif';
+          if (u[0] === 0x52 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x46 && u[8] === 0x57 && u[9] === 0x45 && u[10] === 0x42 && u[11] === 0x50) return 'image/webp';
+          if (u[4] === 0x66 && u[5] === 0x74 && u[6] === 0x79 && u[7] === 0x70) {
+            return /qt/i.test(String.fromCharCode(u[8], u[9], u[10], u[11])) ? 'video/quicktime' : 'video/mp4';
+          }
+        }
+        return '';
+      })();
+      let mime = real;
+      if (isVideo ? !/^video\//.test(mime) : !/^image\//.test(mime)) {
+        mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
+      }
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'video/quicktime': '.mov' })[mime] || '';
+      const fname = !ext ? name : (/\.[a-z0-9]{2,5}$/i.test(name) ? name.replace(/\.[a-z0-9]{2,5}$/i, ext) : name + ext);
+      dt.items.add(new File([arr], fname, { type: mime }));
       delete buf[k];
     }
     if (!dt.files.length) return { ok: false, msg: '文件分片没攒齐：' + missed.join(',') };
@@ -238,6 +259,26 @@ const NPA_XHS_FILL = function (args) {
   const { title, body, tags } = args;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  /* 小红书标题硬上限 20 字：超了页面拦「标题最多输入20字哦~」，发布按钮点了没反应。
+     优先收在标点/右引号后（保住前半句钩子），断点太靠前或没有才硬切。 */
+  const clip20 = (s) => {
+    const str = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (str.length <= 20) return str;
+    let units;
+    try { units = [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(str)].map(x => x.segment); }
+    catch (_) { units = Array.from(str); }
+    let out = '', cut = 0;
+    for (const u of units) {
+      if ((out + u).length > 20) break;
+      out += u;
+      if (/[。！？；：，、…—|·\s”’」』）】]/.test(u)) cut = out.length;
+    }
+    if (cut < 10) cut = out.length;
+    let head = out.slice(0, cut).replace(/[\s，、：；…—|·]+$/, '').trim();
+    const o = (head.match(/[“‘「『]/g) || []).length, c = (head.match(/[”’」』]/g) || []).length;
+    if (o > c) head = head.replace(/^[“‘「『]\s*/, '');
+    return head || out;
+  };
   /* 拟真点击（约定见文件头 5）；内联是注入约束决定的，别外提成公共函数 */
   const humanClick = async (el) => {
     const r = el.getBoundingClientRect();
@@ -278,7 +319,7 @@ const NPA_XHS_FILL = function (args) {
       await humanClick(ti);
       await sleep(400 + Math.random() * 800);   // 点进停一拍（四十三改）
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      setter.call(ti, String(title || ''));
+      setter.call(ti, clip20(title));
       ti.dispatchEvent(new Event('input', { bubbles: true }));
       ti.dispatchEvent(new Event('change', { bubbles: true }));
       await sleep(500 + Math.random() * 1000);  // 落完停一拍再挪去正文（四十三改）
@@ -358,6 +399,25 @@ const NPA_XHS_LONG = function (args) {
   const { title, body, tags } = args;
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.x >= 0 && r.y >= 0; };
+  /* 小红书标题硬上限 20 字（长文模式同限）：超了页面拦「标题最多输入20字哦~」 */
+  const clip20 = (s) => {
+    const str = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if (str.length <= 20) return str;
+    let units;
+    try { units = [...new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(str)].map(x => x.segment); }
+    catch (_) { units = Array.from(str); }
+    let out = '', cut = 0;
+    for (const u of units) {
+      if ((out + u).length > 20) break;
+      out += u;
+      if (/[。！？；：，、…—|·\s”’」』）】]/.test(u)) cut = out.length;
+    }
+    if (cut < 10) cut = out.length;
+    let head = out.slice(0, cut).replace(/[\s，、：；…—|·]+$/, '').trim();
+    const o = (head.match(/[“‘「『]/g) || []).length, c = (head.match(/[”’」』]/g) || []).length;
+    if (o > c) head = head.replace(/^[“‘「『]\s*/, '');
+    return head || out;
+  };
   const humanClick = async (el) => {
     const r = el.getBoundingClientRect();
     const tx = r.x + r.width / 2 + (r.width > 8 ? Math.random() * 4 - 2 : 0);
@@ -417,7 +477,7 @@ const NPA_XHS_LONG = function (args) {
     if (ti) {
       await humanClick(ti); await sleep(400 + Math.random() * 700);
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-      setter.call(ti, String(title || ''));
+      setter.call(ti, clip20(title));
       ti.dispatchEvent(new Event('input', { bubbles: true }));
       ti.dispatchEvent(new Event('change', { bubbles: true }));
     } else warn.push('标题框没找到');
@@ -712,8 +772,29 @@ const NPA_DY_UPLOAD = function (args) {
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       const name = k.split('|')[1] || 'file';
-      const mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
-      dt.items.add(new File([arr], name, { type: mime }));
+      /* 认真身，别信名字：出图那套内容是 JPEG、名字却被叫成 .png，照扩展名递过去平台静默不收
+         （2026-10-29 实踩：小红书缩略图 0/4、编辑器不出，等满 8 分钟）。只看头几个字节定：
+         JPEG FFD8FF / PNG 89504E47 / GIF / WEBP / MP4·MOV(ftyp)。 */
+      const real = (() => {
+        const u = arr;
+        if (u.length >= 12) {
+          if (u[0] === 0xFF && u[1] === 0xD8 && u[2] === 0xFF) return 'image/jpeg';
+          if (u[0] === 0x89 && u[1] === 0x50 && u[2] === 0x4E && u[3] === 0x47) return 'image/png';
+          if (u[0] === 0x47 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x38) return 'image/gif';
+          if (u[0] === 0x52 && u[1] === 0x49 && u[2] === 0x46 && u[3] === 0x46 && u[8] === 0x57 && u[9] === 0x45 && u[10] === 0x42 && u[11] === 0x50) return 'image/webp';
+          if (u[4] === 0x66 && u[5] === 0x74 && u[6] === 0x79 && u[7] === 0x70) {
+            return /qt/i.test(String.fromCharCode(u[8], u[9], u[10], u[11])) ? 'video/quicktime' : 'video/mp4';
+          }
+        }
+        return '';
+      })();
+      let mime = real;
+      if (isVideo ? !/^video\//.test(mime) : !/^image\//.test(mime)) {
+        mime = isVideo ? (/\.mov$/i.test(name) ? 'video/quicktime' : 'video/mp4') : (/\.png$/i.test(name) ? 'image/png' : /\.webp$/i.test(name) ? 'image/webp' : 'image/jpeg');
+      }
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'video/quicktime': '.mov' })[mime] || '';
+      const fname = !ext ? name : (/\.[a-z0-9]{2,5}$/i.test(name) ? name.replace(/\.[a-z0-9]{2,5}$/i, ext) : name + ext);
+      dt.items.add(new File([arr], fname, { type: mime }));
       delete buf[k];
     }
     if (!dt.files.length) return { ok: false, msg: '文件分片没攒齐' };

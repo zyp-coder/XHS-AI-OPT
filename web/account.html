@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>登录 / 领号 · 小红书运营助手</title>
+<title>登录 / 领号 · AI运营工具</title>
 <!-- ============================================================
   账号页（2026-10-18 落地；10-18 三入口 + 随便逛逛改版）
   ------------------------------------------------------------
@@ -201,7 +201,7 @@
       <button type="button" class="choice" data-pick="signup">
         <span class="tag">我还没号</span>
         <h3>领一个号</h3>
-        <p>一个手机号领一个号，不用短信验证。领完先去填 7 道题，把账号底子建起来。</p>
+        <p>一个手机号领一个号，不用短信验证；新号自动送 30 天全功能试用。领完先去填 7 道题，把账号底子建起来。</p>
         <div class="go">去领号</div>
       </button>
       <button type="button" class="choice choice-demo" data-pick="demo">
@@ -215,7 +215,7 @@
     <div id="formBox"></div>
     <div id="demoBox" class="hidden"></div>
 
-    <div class="page-foot">装执行器（三步）在 <a href="setup.html">这一页</a>；已经登录的人再打开本页会被直接放行，不会再问登录。各档位功能对照在新手引导里。</div>
+    <div class="page-foot">装执行器（四步）在 <a href="setup.html">这一页</a>，每一步点哪里看 <a href="tutorial.html">图文教程</a>；已经登录的人再打开本页会被直接放行，不会再问登录。各档位功能对照在新手引导里。</div>
   </div>
 
 </div>
@@ -255,7 +255,7 @@
         <div class="form-title">${login ? '登录你的号' : '领一个号'}</div>
         <div class="form-sub">${login
           ? '用领号时的手机号和密码登录，之前的东西都在。'
-          : '不用短信验证，一个手机号一个号；领完先去填 7 道题。'}</div>
+          : '不用短信验证，一个手机号一个号；新号自动送 30 天全功能试用，领完先去填 7 道题。'}</div>
         <div class="err hidden" id="formErr"></div>
         <form id="acctForm" novalidate>
           <div class="fields">

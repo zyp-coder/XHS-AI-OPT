@@ -22,6 +22,7 @@ export const TIER_AI_QUOTA = {
   '基础':   { text: 150, image: 150, dh: 2 },
   '升级':   { text: 150, image: 150, dh: 2 },
   '全功能': { text: 150, image: 150, dh: 2 },
+  '全平台': { text: 150, image: 150, dh: 2 },
 };
 export const PACK = { price: 30, text: 150, image: 30, dh: 2, maxPerMonth: 2, days: 30 };
 export const AI_KINDS = ['text', 'image', 'dh'];

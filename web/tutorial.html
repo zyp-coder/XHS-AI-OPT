@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>装执行器 · 图文教程 · AI运营工具</title>
+<!-- ============================================================
+  装执行器图文教程页（/tutorial）——2026-10-26 新增
+  ------------------------------------------------------------
+  干什么：把「四步装机」讲到不用问人。每一步写三样：
+          要做什么 / 看到什么算对 / 卡住了看哪条。
+  怎么跑：纯静态，不读接口、不依赖登录（没登录也能看，方便先发给客户）。
+          从 setup.html、guide.html、后台装机消息链过来。
+          同一份文件会以「装机教程.html」打进客户包（离线也能看），
+          离线时靠 body.offline 把跳回网页的链接藏掉。
+  ============================================================ -->
+<style>
+  :root {
+    --ink: #1f2329; --ink2: #5b6472; --ink3: #8a929e;
+    --line: #e5e8ee; --bg: #f5f6f8; --card: #fff;
+    --ok: #0a7b5a; --err: #c62828; --warn: #c77700;
+    --brand: #1f2329; --brand-soft: #f0f1f3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; padding: 26px 18px 60px; }
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  .top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .top h1 { font-size: 20px; font-weight: 700; }
+  .top .ver { font-size: 11px; color: var(--ink2); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .top .gobig { font-size: 13px; color: var(--ink2); text-decoration: none; border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 7px 13px; white-space: nowrap; }
+  .top .gobig:hover { background: var(--brand-soft); }
+  .sub { color: var(--ink2); font-size: 13px; margin-bottom: 14px; }
+  .sub b { color: var(--ink); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .card h2 .sec { color: var(--ink3); font-weight: 400; font-size: 12.5px; margin-left: 8px; }
+
+  /* 只在网页上出现的东西（离线那份会藏掉） */
+  .online-only { display: inline-block; }
+  body.offline .online-only { display: none !important; }
+
+  .need { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); }
+  .need div { flex: 1 1 210px; background: #fafbfc; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .need b { color: var(--ink); display: block; margin-bottom: 2px; font-size: 13px; }
+
+  /* 一步一块 */
+  .tstep { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; background: #fff; }
+  .tstep-h { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tstep-h .no { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--brand); color: #fff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .tstep-h b { font-size: 14.5px; }
+  .tstep-h .sec { color: var(--ink3); font-size: 12px; }
+  .tstep-d { font-size: 13.5px; color: var(--ink2); line-height: 1.8; }
+  .tstep-d b { color: var(--ink); }
+  .tstep-d + .tstep-d { margin-top: 4px; }
+  .check { margin-top: 8px; font-size: 12.5px; color: var(--ok); background: #f2f9f5; border: 1px solid #d8ece2; border-radius: 8px; padding: 7px 10px; line-height: 1.7; }
+  .check b { color: var(--ok); }
+  .tip { margin-top: 8px; font-size: 12.5px; color: var(--warn); background: #fffaf0; border: 1px solid #f2e4c6; border-radius: 8px; padding: 7px 10px; line-height: 1.7; }
+  kbd { background: var(--brand-soft); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; font-size: 12.5px; font-family: inherit; }
+  code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: var(--brand-soft); border-radius: 5px; padding: 1px 5px; }
+
+  /* 示意图（不是真截图，位置对得上就行） */
+  .mock { border: 1px solid #d7dbe2; border-radius: 12px; background: #fff; overflow: hidden; margin: 10px 0 2px; }
+  .mock-bar { display: flex; align-items: center; gap: 6px; background: #eef0f4; padding: 7px 10px; border-bottom: 1px solid #dfe3e9; font-size: 11.5px; color: var(--ink3); }
+  .mock-bar i { width: 8px; height: 8px; border-radius: 50%; background: #d3d7dd; display: inline-block; }
+  .mock-bar span { margin-left: 6px; }
+  .mock-body { padding: 12px 13px 14px; font-size: 12.5px; color: var(--ink2); }
+  .mock-title { font-weight: 700; color: var(--ink); font-size: 13px; margin-bottom: 8px; }
+  .mrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; }
+  .mrow + .mrow { border-top: 1px dashed #e3e6ec; }
+  .mrow .grow { margin-left: auto; }
+  .num { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--err); color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+  .tag { flex: none; border-radius: 999px; background: var(--err); color: #fff; font-size: 11px; font-weight: 700; padding: 1px 7px; white-space: nowrap; }
+  .mbtn { border: 1px solid #dfe3e9; border-radius: 7px; padding: 5px 10px; background: #fff; font-size: 12px; color: var(--ink2); white-space: nowrap; }
+  .mbtn.hot { border-color: #9fb4c9; background: #f2f7fc; color: var(--ink); font-weight: 700; box-shadow: 0 0 0 3px rgba(80,130,180,.10); }
+  .msw { width: 34px; height: 18px; border-radius: 999px; background: var(--ok); position: relative; flex: none; }
+  .msw::after { content: ''; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+  .msw.off { background: #c9ced6; }
+  .msw.off::after { right: auto; left: 2px; }
+  .mext { border: 1px solid #e3e6ec; border-radius: 9px; padding: 9px 10px; margin-top: 6px; background: #fbfcfd; }
+  .mext .name { color: var(--ink); font-weight: 600; font-size: 12.5px; }
+  .mext .id { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ink3); word-break: break-all; }
+  .mpath { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: #fff8e6; border: 1px solid #f0dfb8; border-radius: 6px; padding: 4px 7px; color: #7a5a00; word-break: break-all; }
+  .mpanel { border: 1px solid #d7dbe2; border-radius: 11px; padding: 12px; background: #fff; width: 100%; max-width: 330px; }
+  .mpanel .prow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; padding: 5px 0; }
+  .mpanel .prow span.k { flex: none; width: 62px; color: var(--ink3); }
+  .mpanel .prow span.v { color: var(--ink); font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; background: #f6f7f9; border: 1px solid #e6e9ee; border-radius: 6px; padding: 2px 7px; }
+  .mgo { margin-top: 8px; background: var(--brand); color: #fff; border-radius: 8px; text-align: center; padding: 8px; font-size: 13px; font-weight: 700; }
+  .monline { margin-top: 8px; font-size: 12.5px; color: var(--ok); font-weight: 700; }
+  .mock-note { font-size: 11.5px; color: var(--ink3); margin-top: 6px; }
+
+  details { border-top: 1px dashed var(--line); padding: 10px 0 2px; }
+  details:first-of-type { border-top: none; }
+  summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+  details .a { color: var(--ink2); font-size: 13px; padding: 7px 0 3px 2px; line-height: 1.8; }
+  details .a b { color: var(--ink); }
+
+  .acts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+  .btn { display: inline-block; border: none; border-radius: 10px; padding: 11px 20px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; text-decoration: none; }
+  .btn.primary { background: var(--brand); color: #fff; }
+  .btn.ghost { background: #fff; border: 1px solid var(--line); color: var(--ink2); font-weight: 500; font-size: 13px; }
+
+  .foot { color: var(--ink3); font-size: 12px; margin-top: 14px; line-height: 1.8; }
+  .foot b { color: var(--ink2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <h1>装执行器 · 图文教程</h1><span class="ver">照着做，四步</span>
+    <div class="top-right">
+      <a class="gobig online-only" href="setup.html">去下载我的安装包</a>
+      <a class="gobig" href="start.html">回起始页</a>
+    </div>
+  </div>
+  <div class="sub">下面每一步都写了三件事：<b>做什么</b>、<b>看到什么算对</b>、<b>卡住了看哪条</b>。
+    图是示意图（画出了按钮的位置），你屏幕上长得差不多就对了。</div>
+
+  <section class="card">
+    <h2>开始之前<span class="sec">三件事先确认</span></h2>
+    <div class="need">
+      <div><b>浏览器</b>只能用 Chrome 或 Edge。360、QQ、搜狗、夸克这些装不了。</div>
+      <div><b>安装包</b>登录装机页就能下到你专属那份，配对号已经填在里面，不用抄。</div>
+      <div><b>时间</b>顺利的话 2 分钟；卡在找按钮，多半是下面「卡住了」里的第一条。</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>四步装完</h2>
+
+    <!-- 1 -->
+    <div class="tstep">
+      <div class="tstep-h"><span class="no">1</span><b>登录，下载你自己那份安装包</b><span class="sec">约 1.4 MB</span></div>
+      <p class="tstep-d">打开装机页，用领号时的手机号登录，点「<b>⬇️ 下载我的安装包（zip）</b>」。
+        这个包只给你这台电脑用，配对号已经在里面了。</p>
+      <div class="check">看到这个就对：文件列表里多出一个 <b>小红书助手-执行器.zip</b>（文件名可能带你的名字）。</div>
+      <div class="tip">别去问别人要包——每人的包不一样，用错包会挂到别人的号上。</div>
+    </div>
+
+    <!-- 2 -->
+    <div class="tstep">
+      <div class="tstep-h"><span class="no">2</span><b>先解锁，再解压，双击「装我.bat」</b><span class="sec">窗口先别关</span></div>
+      <p class="tstep-d">右键这个 zip →「<b>属性</b>」→ 窗口最下面勾上「<b>解除锁定</b>」→「<b>确定</b>」，<b>再</b>解压。
+        不勾这一步，解压出来的「装我.bat」会带着“来自网络”的记号，被 Windows 拦一下。</p>
+      <p class="tstep-d">右键包 →「<b>全部解压</b>」，进到解压出来的文件夹，双击 <b>装我.bat</b>。
+        它会自己把程序放好、把文件夹路径复制到剪贴板，再把扩展页打开。</p>
+      <p class="tstep-d">弹「<b>Windows 已保护你的电脑</b>」就点「更多信息」→「<b>仍要运行</b>」。
+        弹的是「<b>智能应用控制已阻止</b>」这种、只有“不运行”没有“仍要运行”的，见下面第 <b>⑦</b> 条（换一条不用双击的装法）。</p>
+      <div class="check">看到这个就对：小黑窗里写着「<b>已放好：…\XhsHand\你的代号</b>」，浏览器自动跳到扩展页。</div>
+      <div class="tip">这个小黑窗别急着关——第 4 步选文件夹时，路径就是从它这里粘过去的。</div>
+      <div class="mock">
+        <div class="mock-bar"><i></i><i></i><i></i><span>装我.bat</span></div>
+        <div class="mock-body">
+          <div class="mrow"><span class="num">1</span><span>[1/4] 放到固定位置……</span></div>
+          <div class="mrow"><span class="num">2</span><span>已放好：…\AppData\Local\XhsHand\你的代号</span></div>
+          <div class="mrow"><span class="num">3</span><span>文件夹路径已经复制到剪贴板。</span></div>
+          <div class="mrow"><span class="num">4</span><span>接下来只有两下（在马上打开的扩展页里做）……</span></div>
+        </div>
+      </div>
+      <div class="mock-note">示意图：窗口里出现「已放好」就说明文件这半边成了。</div>
+    </div>
+
+    <!-- 3 -->
+    <div class="tstep">
+      <div class="tstep-h"><span class="no">3</span><b>在扩展页里做两下</b><span class="sec">开发者模式 → 加载解压缩 → 选文件夹</span></div>
+      <p class="tstep-d">① 打开页面<b>右上角</b>的「<b>开发者模式</b>」开关（变成蓝色就是开了）。</p>
+      <p class="tstep-d">② 点页面上出现的「<b>加载解压缩的扩展程序</b>」→ 在弹出的窗口里按 <kbd>Ctrl</kbd>+<kbd>V</kbd>（第 2 步已经帮你复制好路径）→ 点「<b>选择文件夹</b>」。</p>
+      <div class="check">看到这个就对：扩展列表里出现一张「<b>小红书助手 · 执行器</b>」的卡片，带一长串 ID。</div>
+      <div class="tip">找不到「开发者模式」：它在扩展页<b>右上角</b>，不在菜单里；窗口太窄按钮会被挤下去，把浏览器拉宽一点。</div>
+      <div class="mock">
+        <div class="mock-bar"><i></i><i></i><i></i><span>扩展程序</span></div>
+        <div class="mock-body">
+          <div class="mrow"><span class="mock-title">扩展程序</span><span class="grow"></span>
+            <span>开发者模式</span><span class="msw"></span><span class="num">①</span></div>
+          <div class="mrow"><span class="mbtn hot">加载解压缩的扩展程序</span><span class="num">②</span>
+            <span class="grow"></span><span class="mbtn">打包扩展程序</span><span class="mbtn">更新</span></div>
+          <div class="mext">
+            <div class="name">小红书助手 · 执行器</div>
+            <div class="id">ID: 一长串字母（装好后才有）</div>
+          </div>
+        </div>
+      </div>
+      <div class="mock-note">示意图：开发者模式在右上角；打开后才会出现「加载解压缩的扩展程序」。</div>
+      <div class="mock">
+        <div class="mock-bar"><i></i><i></i><i></i><span>选择扩展程序的目录</span></div>
+        <div class="mock-body">
+          <div class="mrow"><span>文件夹:</span><span class="mpath">…\AppData\Local\XhsHand\你的代号</span><span class="tag">Ctrl+V</span></div>
+          <div class="mrow"><span>此电脑 › … › XhsHand › 你的代号</span><span class="grow"></span><span class="mbtn hot">选择文件夹</span><span class="tag">点这里</span></div>
+        </div>
+      </div>
+      <div class="mock-note">示意图：粘进去的路径最后一段是你的代号；这个文件夹里直接就有 <code>manifest.json</code>。</div>
+      <div class="tip">列表里没出现卡片：多半是<b>选错层级</b>了——选到的文件夹里必须直接能看见 <code>manifest.json</code>，不是它的上一层，也不是里面某个子文件夹。选错了就点卡片上的「移除」，再重来一次。</div>
+    </div>
+
+    <!-- 4 -->
+    <div class="tstep">
+      <div class="tstep-h"><span class="no">4</span><b>点执行器图标，点「挂上」</b><span class="sec">配对号已经填好</span></div>
+      <p class="tstep-d">点浏览器<b>工具栏</b>上的执行器图标（找不到就点右上角的拼图🧩，把它钉到工具栏），
+        面板里服务器和配对号都已经填好，直接点「<b>🔗 挂上</b>」。</p>
+      <div class="check">看到这个就对：面板上出现 <b>🟢 在线待命</b>；回装机页刷新，也显示「在线待命」。</div>
+      <div class="tip">点完变红或提示连不上：先确认装执行器这个浏览器没关、网络正常；还是不行，把红字原话发给我。</div>
+      <div class="mock">
+        <div class="mpanel">
+          <div class="prow"><span class="k">服务器</span><span class="v">http://8.222.157.6/</span><span class="tag">已填</span></div>
+          <div class="prow"><span class="k">配对号</span><span class="v">XHD-XXXX</span><span class="tag">已填</span></div>
+          <div class="mgo">🔗 挂上</div>
+          <div class="monline">● 在线待命</div>
+        </div>
+      </div>
+      <div class="mock-note">示意图：两个框都是灰底已填好，你只需要点「挂上」。</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>装完怎么确认<span class="sec">两个地方都能看</span></h2>
+    <div class="gd" style="display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px;">
+      <div style="flex:none;width:150px;font-weight:600;">执行器面板</div>
+      <div style="color:var(--ink2);font-size:12.5px;line-height:1.75;">停在那行字：<b style="color:var(--ok)">● 在线待命</b>。变灰或变红就是掉线了。</div>
+    </div>
+    <div class="gd" style="display:flex;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px;">
+      <div style="flex:none;width:150px;font-weight:600;">装机页</div>
+      <div style="color:var(--ink2);font-size:12.5px;line-height:1.75;">刷新一下，最上面显示 <b style="color:var(--ok)">🟢 在线待命</b>，还会写上次几点报到。</div>
+    </div>
+    <div class="gd" style="display:flex;gap:10px;padding:9px 0;font-size:13px;">
+      <div style="flex:none;width:150px;font-weight:600;">要一直开着</div>
+      <div style="color:var(--ink2);font-size:12.5px;line-height:1.75;">装执行器的这个浏览器别关；关了就不干活，网页上派的单会排着，回来接着跑。</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>卡住了看这里<span class="sec">七种最常见的</span></h2>
+    <details>
+      <summary>① 找不到「开发者模式」开关</summary>
+      <div class="a">它在扩展页的<b>右上角</b>，不在右上角那三个点里。地址栏直接敲 <kbd>chrome://extensions</kbd>（Edge 是 <kbd>edge://extensions</kbd>）就能到这一页。
+        窗口太窄时按钮会被挤到下面，把浏览器拉宽或按 <kbd>Ctrl</kbd>+<kbd>-</kbd> 缩小一点。</div>
+    </details>
+    <details>
+      <summary>② 列表里没出现执行器 / 提示清单文件缺失</summary>
+      <div class="a">这是<b>选错文件夹</b>了。你选的那个文件夹里必须直接能看见 <code>manifest.json</code>——
+        不是它的上一层，也不是里面的 <code>lib</code> 之类子文件夹。最稳的办法：回到第 2 步的小黑窗，
+        它写着「<b>已放好：</b>」后面那一整条路径，原样粘进去就是对的。</div>
+    </details>
+    <details>
+      <summary>③ 双击装我.bat 被 Windows 拦下来</summary>
+      <div class="a">分两种，看弹窗上有没有「<b>更多信息</b>」：
+        <br>① 有「更多信息」→ 点它 →「<b>仍要运行</b>」，这就是普通下载拦截，一次就过。
+        <br>② 写的是「<b>智能应用控制已阻止</b>」、按钮只有“不运行”、根本找不到“仍要运行”——这种关不掉，别硬试，照第 <b>⑦</b> 条走。
+        <br>另外，<b>解压前先右键 zip → 属性 → 勾「解除锁定」</b>，能省掉一大半这种拦截。</div>
+    </details>
+    <details>
+      <summary>④ 双击后闪一下就没了 / 提示没找到浏览器</summary>
+      <div class="a">说明这台电脑上没装 Chrome 或 Edge，或者被杀毒软件拦了。先装 Chrome（推荐），再双击一次；
+        如果杀软弹窗问，选「允许」。还不行，把窗口里的原话拍给我。</div>
+    </details>
+    <details>
+      <summary>⑤ 点「挂上」变红、提示连不上</summary>
+      <div class="a">依次看三样：① 面板里「服务器」那格是不是 <b>http://8.222.157.6/</b>；② 电脑能上网、没开公司代理；
+        ③ 这个号是不是还在档位里（免费档不能挂）。三样都对还红，把红字原话发我。</div>
+    </details>
+    <details>
+      <summary>⑥ 用几天后扩展变灰 / 被浏览器停用了</summary>
+      <div class="a">这是 <b>Edge 的老毛病</b>——它会把手动装的扩展偷偷禁掉。两个办法：
+        <b>换 Chrome</b>（最省事，一样的装法、没这毛病）；或者把 Edge 完全关掉 → 双击装好的那个文件夹里的
+        「<b>Edge-防禁用.bat</b>」→ 再打开浏览器。装到哪了：第 2 步小黑窗里写着那个路径。</div>
+    </details>
+    <details>
+      <summary>⑦ 智能应用控制拦死了，双击根本不弹「仍要运行」</summary>
+      <div class="a">这是 Windows 11 的<b>智能应用控制</b>在拦：它一旦是“开”的状态，设置里是关不掉的，只能重装系统才恢复可关。
+        所以这类机器<b>不要走双击</b>，改成手动搬一下，四步，一样能用：
+        <br><b>① 解压、改名</b>：把 zip 解压到桌面，把解压出来的文件夹改名成你的<b>代号</b>（就是安装包文件名去掉 <code>.zip</code> 那一串）。
+        <br><b>② 搬进固定位置</b>：地址栏粘 <code>%LOCALAPPDATA%\XhsHand\</code> 回车（提示找不到就先在这个位置新建一个 XhsHand 文件夹），把改好名的文件夹拖进去。
+        <br><b>③ 加载扩展</b>：打开扩展页（Edge 是 <code>edge://extensions</code>，Chrome 是 <code>chrome://extensions</code>）→ 右上角「开发者模式」打开 →「加载解压缩的扩展程序」→ 粘 <code>%LOCALAPPDATA%\XhsHand\你的代号</code> →「选择文件夹」。
+        <br><b>④ 挂上</b>：点工具栏上的执行器图标 →「挂上」，变绿就好。
+        <br>这么装的<b>没设开机自启</b>：要设就在地址栏粘 <code>shell:startup</code> 回车，把文件夹里的 <code>boot-start.vbs</code> 拖进去。
+        <br><b>更新</b>：新包解压后把里面的文件全选、复制，粘进 <code>%LOCALAPPDATA%\XhsHand\你的代号</code> 覆盖，再到扩展页点「重新加载」。
+        <br><b>不用了</b>：删掉那个文件夹，扩展页里点「移除」。</div>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2>掉线、换电脑、不用了</h2>
+    <details open>
+      <summary>面板变灰 / 显示离线</summary>
+      <div class="a">打开装执行器的那个浏览器，点执行器图标，重新点「挂上」。如果提示登录过期，按它说的<b>扫码登一下小红书</b>，再点挂上。</div>
+    </details>
+    <details>
+      <summary>换一台电脑</summary>
+      <div class="a">新电脑照这四步装一遍、挂上就行——<b>一个号挂一台</b>，旧的那台自动作废（正在跑的活会停下）。
+        装机页登录同一个号，下载的仍然是你的专属包。</div>
+    </details>
+    <details>
+      <summary>不用了，怎么退干净</summary>
+      <div class="a">在扩展页找到「小红书助手 · 执行器」，点「<b>移除</b>」；再双击装好的文件夹里的「<b>卸载.bat</b>」把文件删掉。两步都做完就干净了。</div>
+    </details>
+    <details>
+      <summary>我们这边发了新版本</summary>
+      <div class="a">装机页下载新的包 → 双击包里的「<b>更新.bat</b>」（覆盖文件，配对号不掉）→ 回扩展页点一下卡片上的「重新加载」。</div>
+    </details>
+  </section>
+
+  <div class="acts">
+    <a class="btn primary online-only" href="setup.html">去下载我的安装包 →</a>
+    <a class="btn ghost online-only" href="executor.html">装好能干什么 →</a>
+    <a class="btn ghost" href="start.html">回起始页</a>
+  </div>
+
+  <div class="foot">
+    <b>还是卡住</b>：把报错原话（截图更好）发给给你开通的人，一看就知道。<br>
+    我们不会问你要小红书密码；执行器只干网页上派的活，全在你这台浏览器里跑。
+  </div>
+
+</div>
+<script>
+/* 离线那份（打进客户包的「装机教程.html」）里，跳回网页的链接点了会打不开——直接藏掉。 */
+(function () {
+  'use strict';
+  if (location.protocol === 'file:') document.body.classList.add('offline');
+})();
+</script>
+</body>
+</html>

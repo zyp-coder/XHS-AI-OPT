@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>小红书运营助手</title>
+<title>AI运营工具</title>
 <!-- ============================================================
   起始页（一屏简版问卷）——客户进门第一页（2026-10-14 起 / 直接指这里）
   ------------------------------------------------------------
@@ -150,7 +150,7 @@
 <div class="wrap">
 
   <div class="top">
-    <h1>小红书运营助手</h1><span class="ver">7 道题 · 约 1 分钟</span>
+    <h1>AI运营工具</h1><span class="ver">7 道题 · 约 1 分钟</span>
     <div class="top-right">
       <button id="skipBtn" class="btn ghost" type="button">跳过，先进工作台 →</button>
       <button id="genBtn" class="gobig">生成我的账号底子</button>
@@ -305,10 +305,16 @@
     const row = $('acctRow');
     if (!me) { row.classList.add('hidden'); row.innerHTML = ''; return; }
     const q = quotaText();
-    const tier = (me.edition && me.edition.tierLabel) || me.tier || '';
-    const tierTxt = tier ? '　当前档位：<b>' + esc(tier) + '</b>' : '';
-    const code = me.pairCode ? '　<span class="pcode-box" id="acctCodeBox" title="点一下复制配对号">配对号 <span class="pcode">' + esc(me.pairCode) + '</span></span>' : '';
     const ed = me.edition || {};
+    const tier = ed.tierLabel || me.tier || '';
+    const trialTxt = ed.onTrial ? '（试用中 · 剩 ' + (Number(ed.trialDays) || 0) + ' 天）'
+      : (ed.trialExpired ? '（试用已到期）' : '');
+    /* 付费号按月：本期剩几天 / 已到期落回免费 */
+    const planTxt = (!ed.onTrial && ed.paidUntil)
+      ? (ed.planExpired ? '（本期已到期，按免费档开）' : '（本期剩 ' + (Number(ed.planDays) || 0) + ' 天）')
+      : '';
+    const tierTxt = tier ? '　当前档位：<b>' + esc(tier) + '</b>' + trialTxt + planTxt : '';
+    const code = me.pairCode ? '　<span class="pcode-box" id="acctCodeBox" title="点一下复制配对号">配对号 <span class="pcode">' + esc(me.pairCode) + '</span></span>' : '';
     const paid = (me.tier && me.tier !== '免费') || !!(ed.label && ed.label !== '免费');
     const goSetup = '　<a class="acct-go" href="setup.html">' + (paid ? '我的执行器' : '执行器怎么开') + '</a>';
     row.innerHTML = '👤 <b>' + esc(me.name) + '</b> · 尾号' + esc(me.phoneTail) + tierTxt + q + code + goSetup + '　<a id="acctOut">退出/换账号</a>';

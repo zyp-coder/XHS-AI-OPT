@@ -4,8 +4,15 @@
  * 跑法：node scripts/dev/test-exec-chain.mjs
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createExecChannel } from '../../server/exec-channel.mjs';
 import { createExecSched } from '../../server/exec-sched.mjs';
+
+/* 版本闸对着发出去的包比，桩里跟着 web/download/executor.version 走 */
+const HAND_VER = (() => {
+  try { return readFileSync(new URL('../../web/download/executor.version', import.meta.url), 'utf8').trim(); }
+  catch (_) { return '1.3.5'; }
+})();
 
 const REAL_NOW = Date.now;
 let clock = new Date(2026, 9, 23, 15, 0, 0, 0).getTime();   // 15:00 · 不在静默期
@@ -91,7 +98,7 @@ async function tick() {
 try {
   /* 0) 挂线 */
   const pair = await call('/api/exec/pair', {
-    code: 'XHD-TEST', label: '测试机', version: '1.3.5', caps: ['acquire', 'acquire:search'],
+    code: 'XHD-TEST', label: '测试机', version: HAND_VER, caps: ['acquire', 'acquire:search'],
   });
   assert.equal(pair.ok, true, pair.error);
   cred = { handId: pair.handId, token: pair.token };

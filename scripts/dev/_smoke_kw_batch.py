@@ -60,9 +60,9 @@ with tempfile.TemporaryDirectory(prefix='xhs-kwbatch-') as profile, sync_playwri
         if page.locator('#fsClose').is_visible():
             page.locator('#fsClose').click()
         page.locator('#tabHuoke').click()
-        # 任务配置已并进「队列 → ⚙️ 配置」，词池在「🔎 跑什么」卡里且默认展开（2026-10-24）
+        # 任务配置已并成队列页右上角「⚙️ 批量」，词池在「🔎 跑什么」卡里且默认展开（2026-10-28 v2）
         page.locator('#tabQueue').click()
-        page.locator('#queueTabs .q-tab[data-qtab="config"]').click()
+        page.locator('#qBulkBtn').click()
         cfg = page.locator('#drainCfgContent')
         expect(cfg.locator('#sxKwAdd')).to_be_visible(timeout=20000)
 
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='xhs-kwbatch-') as profile, sync_playwri
         expect(heads).to_have_count(2)
         expect(heads.nth(0)).to_contain_text('默认')
         expect(heads.nth(1)).to_contain_text('B批')
-        assert cfg.locator('select[data-poolbatch]').count() == 0, '没点卡头不该铺出词表'
+        assert cfg.locator('.sx-kwgrp .sx-word').count() == 0, '没点卡头不该铺出词表'
 
         # 2) 点 B批 卡头 → 展开词表，该行成为当前批
         heads.nth(1).click()
@@ -102,12 +102,17 @@ with tempfile.TemporaryDirectory(prefix='xhs-kwbatch-') as profile, sync_playwri
         box.click()
         expect(cfg.locator('.sx-kwgrp').nth(0).locator('.sx-kwgrp-head')).to_contain_text('启用 2')
 
-        # 5) 行末小下拉把 词A 划去 B批 → 词离开默认组、进 B批 组
-        cfg.locator('.sx-kwgrp').nth(0).locator('select[data-poolbatch]').first.select_option('B批')
-        expect(cfg.locator('.sx-kwgrp').nth(1).locator('.sx-word')).to_have_count(3)
+        # 5) 行末不再有批次小下拉（2026-10-28 v2 撤掉），只留 ✕ 移除；换批走拖拽
+        assert cfg.locator('select[data-poolbatch]').count() == 0, '行末批次下拉该已撤掉'
+        assert cfg.locator('.sx-t-del [data-pooldel]').count() >= 1, '行末该有 ✕ 移除'
+
+        # 5b) 拖拽换批：把 词A 拖到 B批 卡头上
+        cfg.locator('.sx-kwgrp').nth(0).locator('[data-poolrow]').first.drag_to(
+            cfg.locator('.sx-kwgrp').nth(1).locator('.sx-kwgrp-head'))
+        expect(cfg.locator('.sx-kwgrp').nth(1).locator('.sx-word')).to_have_count(3, timeout=8000)
         assert '词A@B批' in ';'.join(pool(sw)['kw']), pool(sw)
 
-        # 5b) 拖拽换批：把默认组剩下的 词D 拖到 B批 卡头上
+        # 5c) 默认组剩下的 词D 也拖过去
         cfg.locator('.sx-kwgrp').nth(0).locator('[data-poolrow]').first.drag_to(
             cfg.locator('.sx-kwgrp').nth(1).locator('.sx-kwgrp-head'))
         expect(cfg.locator('.sx-kwgrp').nth(1).locator('.sx-word')).to_have_count(4, timeout=8000)
@@ -141,6 +146,6 @@ with tempfile.TemporaryDirectory(prefix='xhs-kwbatch-') as profile, sync_playwri
         expect(cfg.locator('.sx-kwgrp').nth(1).locator('.sx-word')).to_have_count(2)
 
         assert not errors, errors
-        print('PASS: 词池批次手风琴（展开/当前批/回车落批/弹窗预挑/行内划批/拖拽换批/删批退回默认/新弹窗建批配排期）全通过')
+        print('PASS: 批量页词池批次手风琴（展开/当前批/回车落批/弹窗预挑/行末只剩移除叉/拖拽换批/删批退回默认/新弹窗建批配排期）全通过')
     finally:
         ctx.close()

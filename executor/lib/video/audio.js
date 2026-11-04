@@ -37,6 +37,11 @@
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+  /* 豆包念不成（没配凭据 / 本月字数用完 / 网络抽风）就换回微软免费那条，出片不卡住；
+     换过一次这趟剩下的幕都按免费那条念，别每句都去撞一次墙。 */
+  const providerOf = v => (g.VOICES && g.VOICES.providerOf ? g.VOICES.providerOf(v) : (/bigtts$/.test(String(v || '')) ? 'doubao' : 'edge'));
+  const FALLBACK_VOICE = 'zh-CN-XiaoxiaoNeural';
+
   /* 逐幕念。回 AudioBuffer 数组（在内存里，不落盘）+ 每幕秒数。 */
   async function speak(scenes, o) {
     o = o || {};
@@ -46,11 +51,23 @@
     const AC = g.AudioContext || g.webkitAudioContext;
     const ac = new AC({ sampleRate: sr });
     const parts = [], secs = [];
+    let voice = o.voice, fellBack = false;
     try {
       for (let i = 0; i < scenes.length; i++) {
         const text = (scenes[i].text || (scenes[i].lines || []).join('')).trim();
         if (!text) { parts.push(ac.createBuffer(1, Math.round(gap * sr), sr)); secs.push(gap); continue; }
-        const mp3 = await EdgeTTS.synth(text, { voice: o.voice, rate });
+        let mp3;
+        if (!fellBack && providerOf(voice) === 'doubao') {
+          try { mp3 = await g.DoubaoTTS.synth(text, { voice, rate }); }
+          catch (e) {
+            fellBack = true;
+            voice = FALLBACK_VOICE;
+            if (o.onNote) o.onNote(String((e && e.message) || e) + '——这一趟换回免费声音「晓晓」念完。');
+            mp3 = await g.EdgeTTS.synth(text, { voice, rate });
+          }
+        } else {
+          mp3 = await g.EdgeTTS.synth(text, { voice, rate });
+        }
         parts.push(await ac.decodeAudioData(mp3.buffer.slice(0)));
         secs.push(parts[parts.length - 1].duration);
         if (o.onProgress) o.onProgress(i + 1, scenes.length);
@@ -58,7 +75,7 @@
     } finally {
       try { await ac.close(); } catch (e) { /* 关不掉也不影响出片 */ }
     }
-    return { parts, secs, sampleRate: sr };
+    return { parts, secs, sampleRate: sr, voice, fellBack };
   }
 
   /* 拿真实秒数把幕重排一遍：幕 i 从「片头 + 前面几幕 + 中间静默」开始。 */

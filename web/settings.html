@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <script src="chrome-shim.js"></script>
-  <title>智慧运维 — 设置</title>
+  <title>AI运营工具 — 设置</title>
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="settings.css">
   <script src="theme.js"></script>
@@ -14,15 +14,15 @@
     <nav class="sidebar">
       <div class="sidebar-header">
         <span class="logo"><svg class="ic ic-lg"><use href="#i-spark"></use></svg></span>
-        <span>智慧运维 · 设置</span>
+        <span>AI运营工具 · 设置</span>
       </div>
       <ul class="tab-list">
-        <li class="tab-item active" data-tab="tenant"><svg class="ic ic-sm"><use href="#i-building"></use></svg>租户 / 产品</li>
+        <li class="tab-item active" data-tab="tenant"><svg class="ic ic-sm"><use href="#i-building"></use></svg>产品</li>
         <li class="tab-item" data-tab="ai"><svg class="ic ic-sm"><use href="#i-bot"></use></svg>AI 模型配置</li>
         <li class="tab-item" data-tab="guard"><svg class="ic ic-sm"><use href="#i-shield"></use></svg>账号安全</li>
         <!-- 拟人化与频率：② 升级版起（随获客开通），归到 获客 → ⚙️ 设置（applyEditionToSettings 里删掉这条侧栏）；
              没开通获客的档（① 基础版 / 自定义包）留在这里兜底，否则那档没地方改节奏 -->
-        <li class="tab-item" data-tab="delays"><svg class="ic ic-sm"><use href="#i-clock"></use></svg>拟人化与频率</li>
+        <li class="tab-item" data-tab="delays"><svg class="ic ic-sm"><use href="#i-clock"></use></svg>跑活节奏</li>
         <li class="tab-item" data-tab="theme"><svg class="ic ic-sm"><use href="#i-palette"></use></svg>界面主题</li>
         <li class="tab-item" data-tab="logs"><svg class="ic ic-sm"><use href="#i-pulse"></use></svg>日志统计</li>
         <li class="tab-item" data-tab="backup"><svg class="ic ic-sm"><use href="#i-shield"></use></svg>整机备份 / 恢复</li>
@@ -43,11 +43,11 @@
         </div>
       </details>
 
-      <!-- ── Tab: 租户/产品 ── -->
+      <!-- ── Tab: 产品 ── -->
       <section id="tab-tenant" class="tab-panel active">
         <div class="panel-header">
           <!-- 这一页的说明挂在问号上（内嵌进弹窗时 applyTenantIntro 改写 data-tip，指到顶栏下拉框） -->
-          <h2>租户 / 产品 <span class="qhelp" tabindex="0" id="tenantIntro" data-tip="一个租户 = 一个产品。切换租户后，产品信息、AI 配置、知识库、话术、提示词、已灌水/已回复记录都会整套切换，彼此彻底隔离。新建的租户是一张白纸（空知识库 / 默认提示词），建完去各 Tab 填这个产品的配置。">?</span></h2>
+          <h2>产品 <span class="qhelp" tabindex="0" id="tenantIntro" data-tip="一个产品一套资料。切换后，产品信息、AI 配置、知识库、话术、提示词、已灌水/已回复记录都会整套切换，互不串。新建的产品是一张白纸（空知识库 / 默认提示词），建完去各页填这个产品的配置。">?</span></h2>
         </div>
         <div class="form-group">
           <label>新建租户</label>
@@ -178,10 +178,10 @@
       </section>
 
       <!-- ── Tab: 账号安全（🛡 行为层加固：总挡位 / 额度墙 / 静默期 / 单休 / 体检卡）── -->
-      <!-- 与「拟人化与频率」页各管各的：那边管每一步停多久，这边管一天能干多少、什么时候不许干 -->
+      <!-- 与「跑活节奏」页各管各的：那边管每一步停多久，这边管一天能干多少、什么时候不许干 -->
       <section id="tab-guard" class="tab-panel">
         <div class="panel-header">
-          <h2>🛡 账号安全 · 这一天怎么动、什么时候不跑 <span class="qhelp" tabindex="0" data-tip="把一天所有自动化按总账封顶（保守 / 谨慎 / 正常），加静默期、每周单休、干歇节拍——管的是执行节奏，不碰稿子本身。所有功能（灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发布台）跑之前都过这一道闸。">?</span></h2>
+          <h2>🛡 账号安全 · 这一天怎么动、什么时候不跑 <span class="qhelp" tabindex="0" data-tip="把一天所有自动化按总账封顶（保守 / 谨慎 / 正常），加静默期、每周单休、干歇节拍——管的是执行节奏，不碰稿子本身。所有功能（灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发笔记）跑之前都过这一道闸。">?</span></h2>
         </div>
         <div id="guardBody" style="padding:0 12px 12px;"></div>
       </section>
@@ -213,12 +213,12 @@
         <div id="logList" class="log-list"></div>
       </section>
 
-      <!-- 拟人化与频率（全系统一套口径）：节奏/停留存 delay_config，灌水上限存 note_trend_config，默认全 0 = 最快。
+      <!-- 跑活节奏（全系统一套口径）：节奏/停留存 delay_config，灌水上限存 note_trend_config，默认全 0 = 最快。
            入口：已开通获客的档在 获客 → ⚙️ 设置（弹窗内嵌的 #delays）；其余档走左侧这条侧栏。
            私信/触达场合的渠道基调与成交引导 2026-09-25 拆出去，归 线索 → 任务配置（#tab-leadtask） -->
       <section id="tab-delays" class="tab-panel">
         <div class="panel-header">
-          <h2>🤖 拟人化与频率 <span class="qhelp" tabindex="0" data-tip="这页只有 一个旋钮：挡位——拖到哪档就是哪档的节奏，拖完即生效（不用点保存），评论灌水/回复、私信(DM)发送、通知页获取与回复、消息/会话读取都按它走。挡位只管「每一步停多久 / 隔多久」，不管「一天能跑多少」：灌水上限、防重复冷却、每一步停留这些细项都按稳妥值内置好了，真要逐项改才点下面的「⚙️ 高级配置」。">?</span></h2>
+          <h2>🤖 跑活节奏 <span class="qhelp" tabindex="0" data-tip="这页只有一个旋钮：挡位——拖到哪档就是哪档的节奏，拖完立刻生效（不用点保存），评论灌水/回复、私信发送、通知页获取与回复、消息读取都按它走。挡位只管「每一步停多久 / 隔多久」，不管「一天能跑多少」；灌水上限、防重复冷却这些细项已按稳妥值内置，要逐项改才点下面的「⚙️ 高级配置」。">?</span></h2>
         </div>
 
         <div style="border:1px solid #e3e7f0;border-radius:10px;padding:14px 16px;background:#f8fafd;">
@@ -250,7 +250,7 @@
       <div class="modal" id="delayAdvModal" style="display:none;">
         <div class="modal-box" style="width:760px;">
           <div class="modal-header">
-            <h3>⚙️ 高级配置 · 拟人化与频率</h3>
+            <h3>⚙️ 高级配置 · 跑活节奏</h3>
             <button class="modal-close" id="delayAdvClose" title="关闭">✕</button>
           </div>
           <p style="font-size:11px;color:#888;margin:-6px 0 12px;line-height:1.7;">这里的改动存本机、立即生效。停留/间隔那两组是区域下拉的「底片」：<b>下次拖挡位会整组覆盖</b>，所以调完别再拖挡位。</p>
@@ -262,8 +262,8 @@
             <p style="font-size:11px;color:#888;margin:0 0 10px;">挑哪篇、跑多久在插件弹窗的「队列」页选（口径：全部未灌过 / 只追涨势 × 节奏：一遍跑完 / 定时轮）。这里是各口径共用的上限与冷却，改完点下面「保存」。</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:560px;">
               <div>
-                <label style="font-size:12px;color:#555;">每轮最多处理（篇）<span style="font-size:11px;color:#999;"> · 0=不限</span></label>
-                <input type="number" id="ntMaxPerRound" min="0" max="20" title="灌水与循环计划共用的每轮篇数；0=不限（以每日评论上限为准）" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+                <label style="font-size:12px;color:#555;">每个词最多打开（篇）<span style="font-size:11px;color:#999;"> · 0=不限</span></label>
+                <input type="number" id="ntMaxPerRound" min="0" max="100" title="搜一个词之后，最多打开几篇来做定位：打开就算（没发出评论也算），已灌过的直接跳过、不占名额；满这个数就换队列里的下一个词；0=不限" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
               </div>
               <div>
                 <label style="font-size:12px;color:#555;">每篇笔记最多总评论（次）</label>
@@ -359,6 +359,14 @@
               <input type="number" id="dl_batchItemGap_max" min="0" max="600000" step="500" value="0" style="flex:1;">
             </div>
           </div>
+          <div class="form-group">
+            <label>📄 上一篇跑完 → 下一篇打开前·间隔 <span style="font-size:11px;color:#999;">（建议 5000-8000）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_noteGap_min" min="0" max="300000" step="500" value="5000" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_noteGap_max" min="0" max="300000" step="500" value="8000" style="flex:1;">
+            </div>
+          </div>
         </div>
 
         <div class="panel-header" style="margin-top:24px;">
@@ -388,7 +396,7 @@
       <!-- ── Tab: 界面主题（整个扩展的配色；将来抖音那条线切一套预设就是换个租户） ── -->
       <section id="tab-theme" class="tab-panel">
         <div class="panel-header">
-          <h2>界面主题 <span class="qhelp" tabindex="0" data-tip="整个扩展的配色。选完立刻生效（已经开着的弹窗、字效编辑器也跟着变，不用重开）。主题跟着「租户 / 产品」走，也进加密备份。">?</span></h2>
+          <h2>界面主题 <span class="qhelp" tabindex="0" data-tip="整个扩展的配色。选完立刻生效（已经开着的弹窗、字效编辑器也跟着变，不用重开）。主题跟着「产品」走，也进加密备份。">?</span></h2>
         </div>
         <div class="form-group">
           <label>预设 <span style="font-weight:400;color:var(--c-ink-4);">（鼠标停在色块上看这一套的说法）</span></label>
@@ -426,7 +434,7 @@
           <h2>🤖 扫描节奏：多久看一次新线索、要不要早点知道 <span class="qhelp" tabindex="0" data-tip="两件事：多久整轮扫一次新线索（扫进来的进「AI客服」清单，每天最多主动触达 10 条）和 要不要开新消息监听（对方刚回就早点知道）。私信 / 触达场合 AI 说话带什么去向在「🔔 AI客服 → 📮 任务配置」；评论里的承接在「👥 获客 → 📮 任务配置 → 🎯 推广目标」。">?</span></h2>
         </div>
 
-        <!-- 卡框与 获客 → ⚙️ 设置（拟人化与频率）同一套：标题行右侧挂状态、控件在卡里、细则收卡脚灰字。
+        <!-- 卡框与 获客 → ⚙️ 设置（跑活节奏）同一套：标题行右侧挂状态、控件在卡里、细则收卡脚灰字。
              2026-09-25 三十一改：原来是一个光秃秃的功能块，两页观感对不上 -->
         <div style="border:1px solid #e3e7f0;border-radius:10px;padding:14px 16px;background:#f8fafd;">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">

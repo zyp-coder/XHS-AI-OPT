@@ -6,8 +6,8 @@
   <link rel="stylesheet" href="ui.css">
   <link rel="stylesheet" href="settings.css">
   <script src="hand-mode.js"></script>
-  <script src="hand-cover.js"></script>
-  <script src="theme.js"></script>
+<script src="hand-cover.js"></script>
+<script src="theme.js"></script>
 </head>
 <body>
   <div class="app">
@@ -263,8 +263,8 @@
             <p style="font-size:11px;color:#888;margin:0 0 10px;">挑哪篇、跑多久在插件弹窗的「队列」页选（口径：全部未灌过 / 只追涨势 × 节奏：一遍跑完 / 定时轮）。这里是各口径共用的上限与冷却，改完点下面「保存」。</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:560px;">
               <div>
-                <label style="font-size:12px;color:#555;">每轮最多处理（篇）<span style="font-size:11px;color:#999;"> · 0=不限</span></label>
-                <input type="number" id="ntMaxPerRound" min="0" max="20" title="灌水与循环计划共用的每轮篇数；0=不限（以每日评论上限为准）" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
+                <label style="font-size:12px;color:#555;">每个词最多打开（篇）<span style="font-size:11px;color:#999;"> · 0=不限</span></label>
+                <input type="number" id="ntMaxPerRound" min="0" max="100" title="搜一个词之后，最多打开几篇来做定位：打开就算（没发出评论也算），已灌过的直接跳过、不占名额；满这个数就换队列里的下一个词；0=不限" style="width:100%;padding:6px 8px;font-size:13px;border:1px solid #ddd;border-radius:4px;margin-top:4px;">
               </div>
               <div>
                 <label style="font-size:12px;color:#555;">每篇笔记最多总评论（次）</label>
@@ -358,6 +358,14 @@
               <input type="number" id="dl_batchItemGap_min" min="0" max="600000" step="500" value="0" style="flex:1;">
               <span style="font-size:11px;color:#999;">至</span>
               <input type="number" id="dl_batchItemGap_max" min="0" max="600000" step="500" value="0" style="flex:1;">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>📄 上一篇跑完 → 下一篇打开前·间隔 <span style="font-size:11px;color:#999;">（建议 5000-8000）</span></label>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <input type="number" id="dl_noteGap_min" min="0" max="300000" step="500" value="5000" style="flex:1;">
+              <span style="font-size:11px;color:#999;">至</span>
+              <input type="number" id="dl_noteGap_max" min="0" max="300000" step="500" value="8000" style="flex:1;">
             </div>
           </div>
         </div>

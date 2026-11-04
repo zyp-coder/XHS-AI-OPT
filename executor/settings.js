@@ -9,6 +9,48 @@ if (/[?&]embed=1/.test(location.search)) document.documentElement.dataset.embed 
 // 内嵌时禁用本页的「切换租户」：切换只在弹窗顶栏那个下拉框里做（避免两处入口各切一半）
 const _EMBED = document.documentElement.dataset.embed === '1';
 
+/* ── 执行器：配置只读 ──
+ * 客户机的配置只有一个真源：公网。本机这份只是缓存，每个动作开跑前会整份刷新。
+ * 所以在这一页（客户唯一能碰到的配置界面）挡住所有配置写回，并关掉整机备份导入/导出；
+ * 要改产品、人设、知识库、获客设置，去公网网页改。 */
+const _EXEC_RO = (() => { try { return /执行器/.test(chrome.runtime.getManifest().name); } catch (_) { return false; } })();
+const _EXEC_RO_KEYS = new Set([
+  'config', 'knowledge_base', 'script_library', 'note_plan', 'note_columns',
+  'delay_config', 'account_guard', 'ui_theme', 'drain_scan_cfg', 'auto_water_config', 'daily_browse_config',
+]);
+const _EXEC_RO_MSG = '执行器上的配置是只读的：请到公网网页改；下一次动作前会自动刷新';
+if (_EXEC_RO) {
+  const _origSet = chrome.storage.local.set.bind(chrome.storage.local);
+  chrome.storage.local.set = function (items, cb) {
+    const hit = Object.keys(items || {}).filter((k) => _EXEC_RO_KEYS.has(k));
+    if (hit.length) {
+      if (typeof cb === 'function') { setTimeout(cb, 0); return; }
+      return Promise.reject(new Error(_EXEC_RO_MSG));
+    }
+    return typeof cb === 'function' ? _origSet(items, cb) : _origSet(items);
+  };
+  const _origSend = chrome.runtime.sendMessage.bind(chrome.runtime);
+  chrome.runtime.sendMessage = function (msg, ...rest) {
+    const a = String((msg && msg.action) || '');
+    if (/^(saveAiCsConfig|importAiCsConfig|importAllData|updateConfig|setPersona|clearPersona|switchTenant|createTenant|renameTenant|deleteTenant)$/.test(a)) {
+      const reply = { ok: false, error: _EXEC_RO_MSG };
+      const cb = rest.find((x) => typeof x === 'function');
+      if (cb) { setTimeout(() => cb(reply), 0); return; }
+      return Promise.resolve(reply);
+    }
+    return _origSend(msg, ...rest);
+  };
+  window.addEventListener('DOMContentLoaded', () => {
+    const main = document.querySelector('.main') || document.body;
+    if (!main || document.getElementById('execReadonlyBanner')) return;
+    const b = document.createElement('div');
+    b.id = 'execReadonlyBanner';
+    b.textContent = '🔒 执行器上的配置是只读的：这里只显示状态。要改产品、人设、知识库、获客设置，请到公网网页改——每次动作前会自动把最新配置拉过来。';
+    b.style.cssText = 'margin:0 0 12px;padding:10px 12px;border:1px solid #fcd34d;background:#fffbeb;color:#92400e;border-radius:8px;font-size:12.5px;line-height:1.7;';
+    main.insertBefore(b, main.firstChild);
+  });
+}
+
 // 本会话内是否已完成账号绑定验证（成功即置位，防止验证后仍判断为未验证）
 let _accountVerifiedInSession = false;
 
@@ -137,7 +179,7 @@ function deepMerge(base, over) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「诊断&配置 → 基础配置」；
+// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「账号规划 → 基础配置」；
 // 评论区承接 2026-09-25 又搬去「获客 → 任务配置 → 🎯 推广目标」），
 // 产品名称/卖点在诊断里维护，这里不再有任何入口与读写
 // ══════════════════════════════════════════════════════════════
@@ -607,7 +649,7 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 上限存 note_trend_config（与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）；排序/类型归「任务配置·关键词池」，
 // 搜索页不再勾「未看过」筛选（去重靠笔记池的冷却/复核）
 // ══════════════════════════════════════════════════════════════
-const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
+const NT_DEFAULT_CONFIG = { maxPerRound: 20, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
 const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
 // 「每轮最多处理」现在住在「⚙️ 高级配置」弹窗里：主页面那行「每轮处理」在弹窗关着时读这份缓存
 let _ntRoundCache = NT_DEFAULT_CONFIG.maxPerRound;
@@ -634,7 +676,7 @@ async function loadWaterFreq() {
 // ══════════════════════════════════════════════════════════════
 // 停留时间（delay_config：区间随机 min~max，单位毫秒，默认 = 技术下限：能跑通的最快值）
 // ══════════════════════════════════════════════════════════════
-const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0} };
+const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0}, noteGap: {min:5000,max:8000} };
 const DELAY_KEYS = Object.keys(DELAY_DEFAULT);
 
 // ═══ 拟人化挡位（0~5）：表在 lib/delay-presets.js（与弹窗顶部选择器同一张） ═══
@@ -777,12 +819,12 @@ function _presetLevel() {
   const n = (v === '' || v === undefined || v === null) ? NaN : Number(v);
   return _presetLevelFromTable(n) ? n : _closestPreset(_presetCfgFromInputs());
 }
-// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=条间）
+// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=上一篇→下一篇的间隔）
 function _estimateRoundSec(cfg, nr) {
   const sec = k => _mid(cfg[k]) / 1000;
   const per = sec('noteOpenBuffer') + sec('browseDwell') + sec('lazyLoadWait') + 3 + sec('typingCharDelay') + sec('preSendGap') + 0.7;
   const r = Math.max(1, Math.floor(nr || 10));
-  return per * r + sec('batchItemGap') * (r - 1);
+  return per * r + sec('noteGap') * (r - 1);
 }
 // 「每轮最多处理」在「⚙️ 高级配置」里：弹窗关着时读不到输入框，用 loadWaterFreq 缓存的那份
 function _roundPerValue() {
@@ -1223,6 +1265,15 @@ TAB_MOUNT.backup = renderBackup;
 
 function renderBackup() {
   const box = document.getElementById('backupBody'); if (!box) return;
+  if (_EXEC_RO) {
+    box.innerHTML = `
+      <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#92400e;line-height:1.8;">
+        🔒 <b>执行器上不提供整机备份导入/导出。</b><br>
+        客户机的配置以公网为准，本机只留缓存；下一次动作开跑前会自动刷新，导入旧备份也不会改变机器人实际用的配置。<br>
+        要改产品、人设、知识库、获客设置，请到<b>公网网页</b>改。
+      </div>`;
+    return;
+  }
   box.innerHTML = `
     <div style="background:var(--c-brand-soft);border:1px solid var(--c-brand-line);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--c-brand-ink);line-height:1.7;margin-bottom:12px;">
       ⚠️ 备份文件包含 <b>API Key、账号绑定信息、获客清单/私信历史</b> 等敏感数据，导出时用你设置的<b>口令整体加密</b>，恢复时要输入同一口令；<b>口令无法找回</b>，请连同文件一起妥善保存、不要外传。

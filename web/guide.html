@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>新手引导 · 小红书运营助手</title>
+<title>新手引导 · AI运营工具</title>
 <!-- ============================================================
   新手引导页（/guide）· 2026-10-15 改版（老板四点改单；确认单 资料/新手引导改版-确认单.md）
   · 2026-10-17 二次（老板测试反馈六条）：两个折叠头改成可点条＋「展开/收起」胶囊；右上「下一步」改主色高亮；
@@ -19,7 +19,7 @@
     框二「怎么用、怎么收费」＝两层摊开（第一层新用户免费：50 次 AI 文本＋10 张图，用完填自己的 Key 接着免费、或买 30 元算力包；
       第二层按档位：239 真发笔记＋🎭IP玩法 / 399 获客·日常浏览 / 539 AI客服，都先免费试用 1 个月，每月 150 次文本＋150 张图＋2 条数字人）
       ＋「算力包」一张卡（30 元/份，＋150/30/2，30 天，每月最多 2 份，数字人改稿重做再扣 1 条）
-      ＋「扩展功能与安装」折叠（默认收起；两段＝怎么安装（路线＋一台挂一个）→ 装执行器三步＋按钮）。
+      ＋「扩展功能与安装」折叠（默认收起；两段＝怎么安装（路线＋一台挂一个）→ 装执行器四步＋按钮）。
     账号规划与设置不在这页展开；收费只在框二讲一次；两个折叠用同款样式（.fold-hd＋chev＋fadeIn）。
   · 2026-10-17 六次（测试反馈三条）：框一三块下拉通高；收费三档名右缩 12px；页尾标题改「想升级使用，请联系我」，
     导航③与页尾说明同步补「升级」口径。
@@ -35,7 +35,7 @@
     「看过」按号记 localStorage 'xhs_guide_seen:<账号id>'（没登录记 :anon），换号重新弹。
   出口（右上角，按来路动态）：从进门弹出来的 →「下一步：登录 / 领号」→ account.html（账号页，
     已登录会直接跳过账号页，按问卷进度去问卷或工作台）；
-    从工作台顶栏回看的（?from=bar）→「了解，开始进入系统。」→ popup.html?mode=big；「装执行器（三步）」→ setup.html
+    从工作台顶栏回看的（?from=bar）→「了解，开始进入系统。」→ popup.html?mode=big；「装执行器（四步）」→ setup.html
   ============================================================ -->
 <script src="gate.js"></script>
 <style>
@@ -150,7 +150,7 @@
   .tier li b { color: var(--ink); }
   .paid-hd { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; font-weight: 800; margin: 14px 0 9px; }
   .paid-hd span { font-size: 11.5px; font-weight: 400; color: var(--warn); background: #fdf6e7; border-radius: 5px; padding: 1px 7px; }
-  .tier-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tier-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
   .tier-grid .tier { display: flex; flex-direction: column; gap: 7px; }
   .quota-strip { margin: 0 0 9px; border: 1px solid #f0dfb8; background: #fffdf6; border-radius: 9px; padding: 8px 12px; font-size: 12px; color: var(--ink2); line-height: 1.8; }
   .quota-strip b { color: var(--ink); }
@@ -333,13 +333,24 @@
         </div>
       </div>
       <div class="mpage">
-        <div class="mk">发布台</div>
+        <div class="mk">笔记规划</div>
         <div class="mv">
-          <p>排 + 发一条线。</p>
+          <p>哪天发、发什么，一周一排。</p>
           <ul>
-            <li><b>发布队列</b>：按每周排法滚 3 周；点「＋ 排一篇」从档案挑，标「代发」自动进最早空位。</li>
-            <li><b>到点自己发</b>：到点自动发；视频篇发三家、图文篇两家。</li>
-            <li><b>笔记规划</b>：每周几篇、分几阶段、每阶段讲什么，AI 帮排。</li>
+            <li><b>一天一篇</b>：周几发知识 / 引流 / 案例，点一下定下来，再点换一类，再点＝这天休。</li>
+            <li><b>凌晨备稿</b>：每天 02:00 按当天方向自动写好一篇，进「笔记档案」标「代发」。</li>
+            <li><b>到点自己发</b>：配图在档案里出，料齐了按你定的时间自动发；电脑没开＝当天第一次打开时补写。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="mpage">
+        <div class="mk">工作台</div>
+        <div class="mv">
+          <p>发的时候在干什么，一眼看见。</p>
+          <ul>
+            <li><b>实时进度</b>：第几篇、哪家、到哪一步（改稿 / 开页面 / 传素材 / 点发布）。</li>
+            <li><b>等您接手</b>：过目、验证码、扫码、没上成，卡住的钉在最下面。</li>
+            <li><b>最近发过</b>：发成的链接都留着，没成的就地重试。</li>
           </ul>
         </div>
       </div>
@@ -363,7 +374,7 @@
           </ul>
         </div>
       </div>
-      <div class="muse"><b>从头走一遍：</b>定基调 → 新建笔记、挑样稿 → 定稿（多平台各改写一版）→ 出图/出片 → 发布台排期 → 到点发 → 复盘。</div>
+      <div class="muse"><b>从头走一遍：</b>定基调 → 新建笔记、挑样稿 → 定稿（多平台各改写一版）→ 出图/出片 → 笔记规划排哪天 → 到点发 → 复盘。</div>
     </div>
 
     <div class="mod-panel" data-mod="huoke">
@@ -373,7 +384,7 @@
         <div class="mv">
           <p>告诉系统去哪找、找什么样的人。</p>
           <ul>
-            <li><b>词池</b>：搜什么词、跑哪几类笔记、多久跑一次。</li>
+            <li><b>词池与排班</b>：搜什么词、挂在哪几个玩法下、一周哪天跑、每天挑几个。</li>
             <li><b>盯的账号</b>：同行/对标主页放进来，也跟着刷。</li>
             <li><b>推广目标与承接</b>：评论区接话带什么去向。</li>
           </ul>
@@ -485,8 +496,8 @@
       </ul>
     </div>
 
-    <div class="paid-hd">要系统替你真干活 · 按档开通 <span>三档都先免费试用 1 个月</span></div>
-    <div class="quota-strip">三档每月都一样：<b>150 次 AI 文本 ＋ 150 张图 ＋ 2 条数字人视频（每条 30 秒）</b>。发笔记、到点发布不扣次数。</div>
+    <div class="paid-hd">要系统替你真干活 · 按档开通 <span>四档都先免费试用 1 个月</span></div>
+    <div class="quota-strip">四档每月都一样：<b>150 次 AI 文本 ＋ 150 张图 ＋ 2 条数字人视频（每条 30 秒）</b>。发笔记、到点发布不扣次数。</div>
     <div class="tier-grid">
       <div class="tier">
         <div class="tier-name"><div class="tn">239 · 基础</div></div>
@@ -511,6 +522,14 @@
           <li><b>AI客服</b>：新评论、新私信自动收进来，AI 照话术拟好回复，你过一眼发出去</li>
         </ul>
       </div>
+      <div class="tier">
+        <div class="tier-name"><div class="tn">699 · 全平台</div></div>
+        <ul>
+          <li>全功能那些全有</li>
+          <li><b>多平台</b>：发笔记能发抖音、视频号，获客也能跑抖音</li>
+          <li>前三档只做小红书</li>
+        </ul>
+      </div>
     </div>
     <div class="tier pack">
       <div class="tier-name"><div class="tn">算力包 <span class="tag">不限档位 · 免费号也能买</span></div><div class="tp">30 元 / 份</div></div>
@@ -521,7 +540,7 @@
       </ul>
     </div>
     <div class="tier-foot">开通 / 试用到期：加我微信（二维码在本页最下方）。不开第二层，第一层的写稿、出图、出片照样能用。</div>
-    <div class="fold-note">第二层这些活得在你电脑上真跑，靠一个小插件（执行器）：<b>怎么装、装完怎么挂线，点开下面这块</b>。三档都先免费试用 1 个月，开通后你账号那行就会长出<b>配对号</b>。</div>
+    <div class="fold-note">第二层这些活得在你电脑上真跑，靠一个小插件（执行器）：<b>怎么装、装完怎么挂线，点开下面这块</b>。四档都先免费试用 1 个月，开通后你账号那行就会长出<b>配对号</b>。</div>
 
     <div class="fold" id="foldCard">
       <div class="fold-hd sub-hd" id="foldHd">
@@ -532,20 +551,22 @@
       </div>
       <div class="fold-body">
       <h3 class="fold-sec">怎么安装<span class="sec">扩展功能不用单独装——装好执行器它就通了</span></h3>
-      <div class="gd-line"><div class="k">路线</div><div class="v">① 加我微信开通档位（二维码在本页最下方）→ ② 你账号那行长出<b>配对号</b>（一串码）→ ③ 把执行器装进浏览器 → ④ 填配对号挂线，变 <b>🟢 在线待命</b>。装在哪台电脑就在哪台跑，干活时别关那个浏览器。</div></div>
-      <div class="gd-line"><div class="k">一台挂一个</div><div class="v">同一个配对号只能挂一台；换电脑就在新机照下面三步装好、填同一个码，旧的那台自动作废。</div></div>
+      <div class="gd-line"><div class="k">路线</div><div class="v">① 加我微信开通档位（二维码在本页最下方）→ ② 你账号那行长出<b>配对号</b>（一串码）→ ③ 把执行器装进浏览器 → ④ 点「挂上」，变 <b>🟢 在线待命</b>。装在哪台电脑就在哪台跑，干活时别关那个浏览器。</div></div>
+      <div class="gd-line"><div class="k">一台挂一个</div><div class="v">同一个配对号只能挂一台；换电脑就在新机照下面四步装好、用同一份安装包，旧的那台自动作废。</div></div>
 
-      <h3 class="fold-sec">装执行器（三步）</h3>
+      <h3 class="fold-sec">装执行器（四步）</h3>
       <div class="steps">
-        <div class="step"><div class="no">1</div><div><div class="t">下载解压</div><div class="d">下载执行器包，解压到一个固定文件夹。</div></div></div>
-        <div class="step"><div class="no">2</div><div><div class="t">浏览器里加载</div><div class="d">地址栏输 <kbd>edge://extensions/</kbd>（Chrome 用 <kbd>chrome://extensions/</kbd>）→ 开发者模式 → 加载解压缩的扩展。</div></div></div>
-        <div class="step"><div class="no">3</div><div><div class="t">填配对号挂线</div><div class="d">点执行器图标 → 填<b>你的配对号</b> → 变成 🟢 在线待命 就是挂上了。<span class="dim">（配对号在起始页你账号那一行（头图下面），点一下能复制。）</span></div></div></div>
+        <div class="step"><div class="no">1</div><div><div class="t">解压，双击「装我.bat」</div><div class="d">用发你的那份安装包；<b>解压前先右键 zip →「属性」→ 勾「解除锁定」</b>，它就少被 Windows 拦。<span class="dim">（弹「Windows 已保护你的电脑」就点「更多信息」→「仍要运行」；弹「智能应用控制已阻止」、没有“仍要运行”，就照装机教程第 ⑦ 条手动装。）</span></div></div></div>
+        <div class="step"><div class="no">2</div><div><div class="t">扩展页里两下</div><div class="d">打开「开发者模式」→ 点「加载解压缩的扩展程序」→ 在选文件夹的窗口按 <kbd>Ctrl</kbd>+<kbd>V</kbd> → 点「选择文件夹」。</div></div></div>
+        <div class="step"><div class="no">3</div><div><div class="t">点执行器图标，点「挂上」</div><div class="d">配对号已经填好 → 变成 🟢 在线待命 就是挂上了。<span class="dim">（配对号在你账号那一行（头图下面），点一下能复制。）</span></div></div></div>
+        <div class="step"><div class="no">4</div><div><div class="t">这个浏览器别关</div><div class="d">关了就不干活，单会排着，回来接着跑。只能用 Chrome 或 Edge；360、QQ 浏览器装不了。</div></div></div>
       </div>
       <div class="actions">
-        <a class="btn primary" href="setup.html">装执行器（三步）→</a>
+        <a class="btn primary" href="setup.html">装执行器（四步）→</a>
+        <a class="btn ghost" href="tutorial.html">图文教程（每步点哪里）→</a>
         <a class="btn ghost" href="executor.html">装好能干什么（按档位看哪几格开着）→</a>
       </div>
-      <div class="foot"><b>提一句</b>：执行器只认服务器——服务器一熔断，它当场全停；不挂线不干活。它只干网页上派的活，全在你家浏览器里跑，<b>不碰你的账号密码</b>。常见问题（Edge 把扩展偷偷禁掉、配对号填不对）在「装执行器」那页。</div>
+      <div class="foot"><b>提一句</b>：执行器只认服务器——服务器一熔断，它当场全停；不挂线不干活。它只干网页上派的活，全在你家浏览器里跑，<b>不碰你的账号密码</b>。装的时候找不到按钮、扩展被 Edge 偷偷禁掉这些，<a href="tutorial.html">图文教程</a>里一条条写着。</div>
       </div>
     </div>
   </section>

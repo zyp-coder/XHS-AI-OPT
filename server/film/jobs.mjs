@@ -13,6 +13,21 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { speakScenes, VOICES, voiceName, probe as ttsProbe } from './tts.mjs';
 import { renderFilm, buildVoice, timelineOf, findBrowser, findFFmpeg } from './render.mjs';
+import { DOUBAO_VOICES, isDoubaoVoice, ttsReady, synthDoubao } from '../tts-doubao.mjs';
+import { voiceTake, voiceGiveBack } from '../voice-quota.mjs';
+import { spawnSync } from 'node:child_process';
+
+const DOUBAO_NAME = new Map(DOUBAO_VOICES.map(v => [v.id, v.name]));
+const labelOf = (v) => voiceName(v) || DOUBAO_NAME.get(v) || v;
+
+/* 豆包回的 mp3 交给剪辑工具之前先量出真实秒数（时间轴按它排，不靠字数估） */
+function mp3Secs(fp) {
+  const exe = process.env.FILM_FFPROBE || 'ffprobe';
+  const r = spawnSync(exe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', fp], { encoding: 'utf8' });
+  const v = parseFloat(String(r.stdout || '').trim());
+  if (!(v > 0)) throw new Error('量不出这一幕配音的长度（ffprobe 没回数）');
+  return v;
+}
 
 export const STATE_LABEL = {
   queued: '云端排队中', running: '云端出片中', ready: '云端待取',
@@ -83,7 +98,7 @@ export function createFilmJobs(ctx) {
       dur: j.dur || 0, outSize: j.outSize || 0, hasOut: !!(j.outPath && fs.existsSync(j.outPath)),
       canTake: j.state === 'ready' || j.state === 'taken', canCancel: j.state === 'queued',
       takeUrl: j.token ? `/api/film/out/${j.id}?t=${j.token}` : '',
-      voiceLabel: voiceName(j.voice) || j.voice, cfg: j.cfg || '',
+      voiceLabel: labelOf(j.voice), cfg: j.cfg || '',
     };
   }
 
@@ -131,7 +146,10 @@ export function createFilmJobs(ctx) {
     const left = k.daily - usedToday(acc.id);
     if (left <= 0) return { ok: false, error: `今天云端出片的额度用完了（一天 ${k.daily} 条）——明天再来，或在设置里开「云端出不了时改用本机出片」` };
 
-    const voice = VOICES.some(v => v[0] === body.voice) ? body.voice : 'zh-CN-XiaoxiaoNeural';
+    const voice = (VOICES.some(v => v[0] === body.voice) || isDoubaoVoice(body.voice)) ? body.voice : 'zh-CN-XiaoxiaoNeural';
+    if (isDoubaoVoice(voice) && !ttsReady(readEnv())) {
+      return { ok: false, error: '这台服务器还没配豆包语音的凭据——云端出片先选免费声音，或让管理员配上再来' };
+    }
     const rate = /^[+-]\d{1,3}%$/.test(String(body.rate || '')) ? String(body.rate) : '+20%';
     const id = newId();
     const j = {
@@ -248,10 +266,42 @@ export function createFilmJobs(ctx) {
 
     const lines = j.scenes.map(s => s.text);
     await mark(j, '配音', 0.06);
-    const vo = await speakScenes(lines, {
-      voice: j.voice, rate: j.rate, dir,
-      onProgress: (i, n) => { mark(j, `配音 ${i}/${n}`, 0.06 + i / n * 0.14).catch(() => {}); },
-    });
+    let vo;
+    if (isDoubaoVoice(j.voice)) {
+      /* 豆包那条：一处一处念、落成 mp3，再用剪辑工具量真实秒数。字数在开跑时一次性扣，
+         重跑不重复扣（j.voiceCharged 留着），配音本身失败才退回。 */
+      const acc = (store.accounts || {})[j.acc];
+      const chars = lines.reduce((a, t) => a + Array.from(String(t || '')).length, 0);
+      if (!j.voiceCharged) {
+        const take = voiceTake(store, acc, chars);
+        if (!take.ok) throw new Error(take.error);
+        j.voiceCharged = chars;
+        await persist();
+      }
+      vo = { files: [], secs: [] };
+      try {
+        for (let i = 0; i < lines.length; i++) {
+          const t = String(lines[i] || '').trim();
+          if (!t) { vo.files.push(''); vo.secs.push(0.5); continue; }
+          const r = await synthDoubao(t, { voice: j.voice, rate: j.rate, env: readEnv(), accId: j.acc });
+          const f = `db${i}.mp3`;
+          fs.writeFileSync(path.join(dir, f), r.audio);
+          vo.files.push(f);
+          vo.secs.push(mp3Secs(path.join(dir, f)));
+          await mark(j, `配音 ${i + 1}/${lines.length}`, 0.06 + (i + 1) / lines.length * 0.14);
+        }
+      } catch (e) {
+        voiceGiveBack(store, acc, j.voiceCharged);
+        j.voiceCharged = 0;
+        await persist();
+        throw e;
+      }
+    } else {
+      vo = await speakScenes(lines, {
+        voice: j.voice, rate: j.rate, dir,
+        onProgress: (i, n) => { mark(j, `配音 ${i}/${n}`, 0.06 + i / n * 0.14).catch(() => {}); },
+      });
+    }
     const tl = timelineOf(j.scenes, vo.secs);
     j.dur = tl.dur; j.tl = { head: tl.head, gap: tl.gap, tail: tl.tail, dur: tl.dur, scenes: tl.scenes.map(s => ({ label: s.label, start: s.start, end: s.end })) };
     if (tl.dur > k.maxSecs) throw new Error(`这条片出来 ${tl.dur.toFixed(0)} 秒，超过云端一条 ${k.maxSecs} 秒的上限——稿子删短些，或分两篇出`);
@@ -409,8 +459,63 @@ export function createFilmJobs(ctx) {
     console.log('[film] 云端出片工人上岗：先来后到，一次跑 ' + knobs().conc + ' 条，每人每天 ' + knobs().daily + ' 条');
   }
 
+  /* ── 念稿（非 Edge 客户机拼片用）：POST {lines:[...], voice, rate} → 每段 mp3(base64) + 每段秒数。
+      云端那台本来就装着念稿库（出片工人同一个 speakScenes），这里只是把声音单独回给浏览器；
+      不排队、不占出片额度——念一段几秒，跟着拼片那一下用完就删。 ── */
+  async function tts(body, req) {
+    const acc = who(body, req);
+    if (!acc) return { ok: false, error: '先登录（或把执行器挂上线）才能取配音' };
+    const lines = (Array.isArray(body.lines) ? body.lines : []).map(t => String(t || ''));
+    if (!lines.length) return { ok: false, error: '没有要念的稿子' };
+    if (lines.length > 120) return { ok: false, error: '这次太多段了（' + lines.length + ' 段，最多 120 段）' };
+    if (lines.some(t => t.length > 800)) return { ok: false, error: '有一段太长了（超 800 字）' };
+    const voice = (VOICES.some(v => v[0] === body.voice) || isDoubaoVoice(body.voice)) ? body.voice : 'zh-CN-XiaoxiaoNeural';
+    const rate = /^[+-]\d{1,3}%$/.test(String(body.rate || '')) ? String(body.rate) : '+0%';
+    const dir = path.join(JOB_DIR, 'tts-' + randomBytes(6).toString('hex'));
+    let charged = 0;
+    try {
+      let r;
+      if (isDoubaoVoice(voice)) {
+        if (!ttsReady(readEnv())) return { ok: false, error: '这台服务器还没配豆包语音的凭据——先用免费声音' };
+        fs.mkdirSync(dir, { recursive: true });
+        const chars = lines.reduce((a, t) => a + Array.from(String(t || '')).length, 0);
+        const take = voiceTake(store, acc, chars);
+        if (!take.ok) return { ok: false, error: take.error };
+        charged = chars;
+        r = { files: [], secs: [] };
+        for (let i = 0; i < lines.length; i++) {
+          const t = String(lines[i] || '').trim();
+          if (!t) { r.files.push(''); r.secs.push(0); continue; }
+          const one = await synthDoubao(t, { voice, rate, env: readEnv(), accId: acc.id });
+          const f = `db${i}.mp3`;
+          fs.writeFileSync(path.join(dir, f), one.audio);
+          r.files.push(f);
+          r.secs.push(mp3Secs(path.join(dir, f)));
+        }
+      } else {
+        r = await speakScenes(lines, { voice, rate, dir, timeout: 300000 });
+      }
+      const audio = (r.files || []).map(f => {
+        if (!f) return '';
+        const full = path.join(dir, f);
+        return fs.existsSync(full) ? fs.readFileSync(full).toString('base64') : '';
+      });
+      const total = audio.reduce((a, s) => a + s.length, 0);
+      if (total > 12 * 1024 * 1024) {
+        if (charged) { voiceGiveBack(store, acc, charged); charged = 0; }
+        return { ok: false, error: '这批配音太大了——少念几段再试' };
+      }
+      return { ok: true, voice, rate, audio, secs: r.secs || [] };
+    } catch (e) {
+      if (charged) { voiceGiveBack(store, acc, charged); charged = 0; }
+      return { ok: false, error: '云端配音没成：' + String((e && e.message) || e) };
+    } finally {
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
   return {
     start,
-    api: { submit, status, listMine, cancel, handleOut, envProbe, knobs, pump: () => pump(), sweep: () => sweep(), brief, normScenes, STATE_LABEL },
+    api: { submit, status, listMine, cancel, handleOut, tts, envProbe, knobs, pump: () => pump(), sweep: () => sweep(), brief, normScenes, STATE_LABEL },
   };
 }

@@ -1,7 +1,7 @@
-/* 🌿 日常流程 × 队列 离线冒烟（2026-09-27 修「手插一轮被总开关跳掉」的回归）
+/* 🌿 日常流程 × 队列 离线冒烟（2026-09-27 起；11-03 按现行口径重写：只有一档「日常浏览」，没有方向/时段/配额）
    1) 队列派生：日常浏览关着时，手插的一轮照样进待跑、排最前；没手插就不排它（关＝只停自动排）
    2) 执行器拿到的项带 manual（＝force 的来源），_dailySkipReason 对手插项放行、对自动项照旧拦
-   3) 方向停用 / 今日配额满：手插也拦（这两个是硬门槛）
+   3) 手插项欠账后下一趟仍是手插项（不会被总开关跳掉）
    用法：node scripts/dev/_smoke_daily_queue.js */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -41,7 +41,7 @@ function methodSource(name) {
   assert.ok(m, '找不到 AutoBot 方法: ' + name);
   return m[0].replace(/,\s*$/, '');
 }
-const AutoBot = $('({' + methodSource('_dailySkipReason') + ',\n' + methodSource('_dailyUsed') + '})');
+const AutoBot = $('({' + methodSource('_dailySkipReason') + '})');
 
 const planOf = async () => $('drainQueuePlan')(await $('drainGetScanCfg')(), await $('drainGetQueue')(), Date.now(), await $('drainDailyCtx')());
 const pad = (n) => String(n).padStart(2, '0');
@@ -50,7 +50,8 @@ const pad = (n) => String(n).padStart(2, '0');
   // 起手：日常浏览默认就是关的（老板踩到的正是这个状态）；种一个到点的获客格子
   const cfgOff = await DailyBrowse.getConfig();
   assert.equal(cfgOff.enabled, false, '默认总开关是关的');
-  store.drain_scan_cfg = { v: 4, keywords: [{ k: '测试词', on: true, types: { latest: true } }], typeRun: { latest: { mode: 'each' }, top: { mode: 'off' }, local: { mode: 'off' }, pain: { mode: 'off' }, rival: { mode: 'off' } } };
+  // 词要排过周几才进队列（2026-10-29 定：未排＝不跑），这里排「每天」
+  store.drain_scan_cfg = { v: 9, keywords: [{ k: '测试词', on: true, types: { latest: true }, days: [0, 1, 2, 3, 4, 5, 6] }], typeRun: { latest: { mode: 'each' }, top: { mode: 'off' }, local: { mode: 'off' }, pain: { mode: 'off' } } };
   store.drain_queue = { manual: [], carry: [], done: [], dailyMark: { sinceN: 0, lastAt: 0 } };
 
   // 1) 关着 + 没手插 → 队列里没有日常流程这一项
@@ -65,7 +66,7 @@ const pad = (n) => String(n).padStart(2, '0');
   const dItems = p.todo.filter(x => x.daily);
   assert.equal(dItems.length, 1, '手插的一轮在待跑里');
   assert.equal(dItems[0].manual, true, '带「手插」标记');
-  assert.equal(dItems[0].label, '随便刷刷', '显示方向名');
+  assert.equal(dItems[0].label, '日常浏览', '显示的就是「日常浏览」这一档');
   assert.equal(p.todo[0].scenario, 'daily', '手插项排最前');
 
   // 3) 执行器取队首：拿到的就是它，且 manual=true（force 的来源）
@@ -73,20 +74,15 @@ const pad = (n) => String(n).padStart(2, '0');
   assert.equal(got.scenario, 'daily', '队首＝日常流程');
   assert.equal(got.manual, true, '执行器拿到的项带 manual');
 
-  // 4) 判定：总开关关 / 不在时段 → 自动项跳过，手插项照跑；方向停用 / 配额满 → 手插也拦
-  const dir = DailyBrowse.dirById(cfgOff, 'd1');
-  const day0 = { byDirection: {} };
-  assert.match(AutoBot._dailySkipReason(cfgOff, day0, dir, false), /日常浏览已关/, '自动项：关着就跳过');
-  assert.equal(AutoBot._dailySkipReason(cfgOff, day0, dir, true), '', '手插项：关着也照跑');
-  assert.match(AutoBot._dailySkipReason(cfgOff, day0, DailyBrowse.normDirection({ id: 'd1', name: '随便刷刷', enabled: false }, 0), true), /停用/,
-    '方向停用：手插也拦');
-  assert.match(AutoBot._dailySkipReason(cfgOff, { byDirection: { d1: 40 } }, dir, true), /刷满/, '配额满：手插也拦');
-
+  // 4) 判定：总开关关 → 自动项跳过、手插项照跑；开着就都放行
+  assert.match(AutoBot._dailySkipReason(cfgOff, false), /日常浏览已关/, '自动项：关着就跳过');
+  assert.equal(AutoBot._dailySkipReason(cfgOff, true), '', '手插项：关着也照跑');
   const cfgOn = await DailyBrowse.saveConfig({ enabled: true });
-  const h = (new Date().getHours() + 5) % 24;
-  const dirWin = DailyBrowse.normDirection({ id: 'd2', name: '时段方向', windows: [{ start: pad(h) + ':00', end: pad((h + 1) % 24) + ':00' }] }, 0);
-  assert.match(AutoBot._dailySkipReason(cfgOn, day0, dirWin, false), /不在时段/, '自动项：不在时段跳过');
-  assert.equal(AutoBot._dailySkipReason(cfgOn, day0, dirWin, true), '', '手插项：不在时段也照跑');
+  assert.equal(AutoBot._dailySkipReason(cfgOn, false), '', '开着：自动项放行');
+  assert.equal(AutoBot._dailySkipReason(cfgOn, true), '', '开着：手插项也放行');
+  const autoDir = DailyBrowse.pickDirection(cfgOn);
+  assert.equal(autoDir.id, 'd1', '开着时自动排的就是「日常浏览」这一档');
+  assert.equal(DailyBrowse.pickDirection(cfgOff), null, '关着时不自动排');
   await DailyBrowse.saveConfig({ enabled: false });
 
   // 5) 手插项没跑完（欠账）→ 下一趟仍按手插跑（别被总开关跳掉）
@@ -99,6 +95,6 @@ const pad = (n) => String(n).padStart(2, '0');
   assert.equal((await $('drainQueueTake')({})).manual, true, '下一趟取到的还是手插项');
 
   console.log('✅ 关着也照跑：手插一轮进待跑 / 排最前 / 执行器放行；自动排这条线仍然断着');
-  console.log('✅ 硬门槛仍在：方向停用、今日配额满 → 手插也拦');
+  console.log('✅ 开着就都放行：自动排的就是「日常浏览」这一档');
   console.log('\n🎉 日常流程 × 队列离线冒烟全部通过');
 })().catch(e => { console.error('❌ 冒烟失败:', e.message); process.exit(1); });

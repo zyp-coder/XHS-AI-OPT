@@ -137,7 +137,7 @@ function deepMerge(base, over) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「诊断&配置 → 基础配置」；
+// 产品 & 引导 & 同城挡位：整页已撤（2026-09-25 并进「账号规划 → 基础配置」；
 // 评论区承接 2026-09-25 又搬去「获客 → 任务配置 → 🎯 推广目标」），
 // 产品名称/卖点在诊断里维护，这里不再有任何入口与读写
 // ══════════════════════════════════════════════════════════════
@@ -607,7 +607,7 @@ document.getElementById('clearLogsBtn')?.addEventListener('click', async () => {
 // 上限存 note_trend_config（与 popup 侧 lib/note-trend.js 共用同一 key 与默认值）；排序/类型归「任务配置·关键词池」，
 // 搜索页不再勾「未看过」筛选（去重靠笔记池的冷却/复核）
 // ══════════════════════════════════════════════════════════════
-const NT_DEFAULT_CONFIG = { maxPerRound: 3, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
+const NT_DEFAULT_CONFIG = { maxPerRound: 20, maxPerNote: 2, cooldownHours: 24, checkedHours: 2, scanIntervalMin: 10 };
 const NT_EL_IDS = { maxPerRound: 'ntMaxPerRound', maxPerNote: 'ntMaxPerNote', cooldownHours: 'ntCooldownHours', checkedHours: 'ntCheckedHours', scanIntervalMin: 'ntScanIntervalMin' };
 // 「每轮最多处理」现在住在「⚙️ 高级配置」弹窗里：主页面那行「每轮处理」在弹窗关着时读这份缓存
 let _ntRoundCache = NT_DEFAULT_CONFIG.maxPerRound;
@@ -634,7 +634,7 @@ async function loadWaterFreq() {
 // ══════════════════════════════════════════════════════════════
 // 停留时间（delay_config：区间随机 min~max，单位毫秒，默认 = 技术下限：能跑通的最快值）
 // ══════════════════════════════════════════════════════════════
-const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0} };
+const DELAY_DEFAULT = { browseDwell: {min:0,max:0}, typingCharDelay: {min:0,max:0}, likeGap: {min:0,max:0}, lazyLoadWait: {min:300,max:300}, retryBackWait: {min:300,max:300}, retryOpenWait: {min:800,max:800}, noteOpenBuffer: {min:300,max:300}, preSendGap: {min:500,max:500}, batchItemGap: {min:0,max:0}, noteGap: {min:5000,max:8000} };
 const DELAY_KEYS = Object.keys(DELAY_DEFAULT);
 
 // ═══ 拟人化挡位（0~5）：表在 lib/delay-presets.js（与弹窗顶部选择器同一张） ═══
@@ -777,12 +777,12 @@ function _presetLevel() {
   const n = (v === '' || v === undefined || v === null) ? NaN : Number(v);
   return _presetLevelFromTable(n) ? n : _closestPreset(_presetCfgFromInputs());
 }
-// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=条间）
+// 预计灌完时间（cfg 配置，nr 每轮篇数）→ 秒（单篇=打开+浏览+懒加载+AI估算3s+打字+发前+发后0.7；篇间=上一篇→下一篇的间隔）
 function _estimateRoundSec(cfg, nr) {
   const sec = k => _mid(cfg[k]) / 1000;
   const per = sec('noteOpenBuffer') + sec('browseDwell') + sec('lazyLoadWait') + 3 + sec('typingCharDelay') + sec('preSendGap') + 0.7;
   const r = Math.max(1, Math.floor(nr || 10));
-  return per * r + sec('batchItemGap') * (r - 1);
+  return per * r + sec('noteGap') * (r - 1);
 }
 // 「每轮最多处理」在「⚙️ 高级配置」里：弹窗关着时读不到输入框，用 loadWaterFreq 缓存的那份
 function _roundPerValue() {
@@ -896,7 +896,7 @@ async function applyEditionToSettings() {
     document.getElementById('tab-leadtask')?.remove();
   }
 
-  // 拟人化与频率：② 升级版起（随获客开通），入口在 获客 → ⚙️ 设置，
+  // 跑活节奏：② 升级版起（随获客开通），入口在 获客 → ⚙️ 设置，
   // 设置页这条侧栏撤掉；没开通获客的档（① 基础版 / 自定义包）留着兜底，否则那档没地方改节奏
   if (ed.features && ed.features.autoWater) {
     document.querySelector('.tab-item[data-tab="delays"]')?.remove();
@@ -933,7 +933,7 @@ function lockSettingsTab(o) {
       if (list) { list.style.opacity = '0.5'; list.style.pointerEvents = 'none'; }
     }
   }
-  // 若被锁 Tab 原本是激活态，改为激活「租户 / 产品」（settings 页里唯一恒在的一页）
+  // 若被锁 Tab 原本是激活态，改为激活「产品」（settings 页里唯一恒在的一页）
   if (tabItem && tabItem.classList.contains('active')) {
     tabItem.classList.remove('active');
     if (panel) panel.classList.remove('active');
@@ -1061,7 +1061,7 @@ function showSettingsExpiredMask(edition) {
 init().catch(console.error);
 
 // ═════════════════════════════════════════════════════════
-// 租户 / 产品管理
+// 产品管理
 // ═════════════════════════════════════════════════════════
 let _tenants = [], _currentTenantId = null;
 
@@ -1708,7 +1708,7 @@ async function renderGuardSettings() {
     '<div class="gd-sec"><h4>🌙 静默期 21:00 – 09:00 · 一律不跑</h4>' +
     '<div class="gd-tl"><span class="seg-off" style="flex:0 0 37.5%;"></span><span class="seg-on" style="flex:1;"></span><span class="seg-off" style="flex:0 0 12.5%;"></span></div>' +
     '<div class="gd-tlx"><span style="left:0;">00:00</span><span style="left:37.5%;transform:translateX(-50%);">09:00 · 开工（再随机等 0~40 分钟才动）</span><span style="left:87.5%;transform:translateX(-50%);">21:00 · 收工</span><span style="right:0;">24:00</span></div>' +
-    '<div class="gd-note">到 21:00 自动停下，早上 9 点前一律不动。<b>发布队列到点撞上静默期 → 自动顺延到第二天 9 点后</b>（工作台回执注明「因静默期顺延」）；存量功能里超出的时段（如日常浏览）自动钳进 09:00–21:00。</div>' +
+    '<div class="gd-note">到 21:00 自动停下，早上 9 点前一律不动。<b>排好的篇到点撞上静默期 → 自动顺延到第二天 9 点后</b>（工作台回执注明「因静默期顺延」）；存量功能里超出的时段（如日常浏览）自动钳进 09:00–21:00。</div>' +
     '<div class="gd-note">白天也不是一直动：<b>每小时最多自动动 30 分钟</b>，剩下半小时歇着——「连着干」比「干得多」更扎眼。</div></div>' +
     '<div class="gd-sec"><h4>🛌 每周单休 · 点一天就是那天的休息日</h4>' +
     '<div class="gd-days">' + days + '</div>' +
@@ -1717,7 +1717,7 @@ async function renderGuardSettings() {
     recs +
     '<div style="margin-top:10px;"><button class="btn-primary btn-sm" id="gdRecOpen">＋ 记一笔</button></div>' +
     '<div class="gd-note">收到警告 / 限流：挡位自动降一级；收到处罚：直接落到「保守」；已在「保守」再收到 → 红字提醒（建议先停几天）。<b>恢复要手动</b>——觉得稳了想跑多点，到上面点卡自己调。</div></div>' +
-    '<div class="gd-foot">这一页和「拟人化与频率」页各管各的：那边管每一步停多久，这边管一天能干多少、什么时候不许干。所有功能（灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发布台）跑之前都过这一道闸：额度没了等明天，静默 / 休息日顺延。</div>' +
+    '<div class="gd-foot">这一页和「跑活节奏」页各管各的：那边管每一步停多久，这边管一天能干多少、什么时候不许干。所有功能（灌水 / 获客 / 截流 / 日常浏览 / 私信 / 发笔记）跑之前都过这一道闸：额度没了等明天，静默 / 休息日顺延。</div>' +
     // 记一笔弹层（默认收着；.modal 自带 display:flex，用行内 none 盖掉）
     '<div class="modal" id="gdRecModal" style="display:none;">' +
       '<div class="modal-box">' +

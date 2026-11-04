@@ -124,6 +124,7 @@
   // ===== 全局操作锁：防止上一条评论没发完，第二条就开始定位/输入，导致“评论自己”/错位 =====
   let _operationLock = false;      // 当前是否有操作正在进行
   let _operationLockTime = 0;      // 上锁时间戳（用于死锁自愈）
+  let _operationLockLabel = '';    // 谁占着锁（日志里要说清是「上一条」哪一步在跑）
 
   // ===== 防重复闸：记录上一条“成功发送”的目标，若下一条打开的回复框还是上一条那个目标
   //       （说明定位卡在上一条没挪动），而本次想发的是另一个人，就直接放弃，绝不重复发 =====
@@ -144,27 +145,31 @@
     } catch (_) {}
   }
 
-  // 获取操作锁：若已有操作在进行，每 5s 重试一次，最多重试 3 次（共15s）就放弃；持锁超 30s 判为死锁强制释放
-  async function acquireLock(label) {
+  // 获取操作锁：若已有操作在进行，每 5s 重试一次，默认最多等 15s 就放弃；持锁超 30s 判为死锁强制释放。
+  // 一级评论这种"等不到就白跑一篇"的操作用 opts.waitMs 单独放宽，别被上一轮的扫描挤掉。
+  async function acquireLock(label, opts) {
     const RETRY_INTERVAL = 5000;   // 每次重试间隔 5s
-    const MAX_RETRIES = 3;         // 最多重试 3 次
+    const waitMs = Math.max(RETRY_INTERVAL, Number(opts && opts.waitMs) || 15000);
+    const t0 = Date.now();
     let retries = 0;
     while (_operationLock) {
       if (Date.now() - _operationLockTime > 30000) {
-        console.warn('[操作锁] ❗ 检测到超时死锁，强制释放');
+        console.warn('[操作锁] ❗ 检测到超时死锁，强制释放（原持锁：' + (_operationLockLabel || '未知') + '）');
         _operationLock = false;
+        _operationLockLabel = '';
         break;
       }
-      if (retries >= MAX_RETRIES) {
-        console.warn('[操作锁] ⏱ 重试 ' + MAX_RETRIES + ' 次仍被占用，放弃本次操作:', label);
+      if (Date.now() - t0 >= waitMs) {
+        console.warn('[操作锁] ⏱ 等了 ' + Math.round((Date.now() - t0) / 1000) + 's，「' + (_operationLockLabel || '别的操作') + '」还没跑完，放弃本次操作:', label);
         return false;
       }
       retries++;
-      console.log('[操作锁] ⏳ 锁被占用，5s 后重试（' + retries + '/' + MAX_RETRIES + '）:', label);
-      await sleepWithCountdown(RETRY_INTERVAL, `⚙️ 上一个操作还没完，排队中（${retries}/${MAX_RETRIES}）`);
+      console.log('[操作锁] ⏳ 锁被「' + (_operationLockLabel || '?') + '」占着，5s 后重试（第 ' + retries + ' 次，最多等 ' + Math.round(waitMs / 1000) + 's）:', label);
+      await sleepWithCountdown(RETRY_INTERVAL, `⚙️ 上一步「${_operationLockLabel || '操作'}」还没跑完，排队中`);
     }
     _operationLock = true;
     _operationLockTime = Date.now();
+    _operationLockLabel = label;
     console.log('[操作锁] 🔒 获得锁:', label);
     _broadcastLockState(true, label);
     return true;
@@ -172,6 +177,7 @@
 
   function releaseLock(label) {
     _operationLock = false;
+    _operationLockLabel = '';
     console.log('[操作锁] 🔓 释放锁:', label);
     _broadcastLockState(false, label);
   }
@@ -396,27 +402,98 @@
     try { await _verifyOwnProfile(); } catch (_) {}
   }
 
-  /** 本人主页链接：优先登录缓存 xhsu（页面自己的登录账号），其次顶栏头像链接。
-   *  认号用它进「我的」页——绝不用推荐流里别人的主页链接。 */
-  function _ownProfileUrl() {
+
+  /** 页面上的「编辑资料」按钮——只有本人在自己的主页才会出现 */
+  function _hasEditBtn() {
     try {
-      const u = localStorage.getItem('xhsu');
-      if (u) {
-        const o = JSON.parse(u);
-        if (o && o.id) return 'https://www.xiaohongshu.com/user/profile/' + o.id;
+      const t = document.body ? document.body.innerText : '';
+      return t.includes('编辑资料') || t.includes('编辑个人资料');
+    } catch (_) { return false; }
+  }
+
+  /** 别人的主页有「关注 / 私信」按钮，自己的主页没有（只认按钮，避开统计里的「关注 12」） */
+  function _hasFollowBtn() {
+    try {
+      for (const el of document.querySelectorAll('button')) {
+        const t = String(el.textContent || '').replace(/\s+/g, '');
+        if (t === '关注' || t === '已关注' || t === '互相关注' || t === '私信' || t === '发消息') return true;
       }
     } catch (_) {}
-    const anchors = [...document.querySelectorAll('a[href*="/user/profile/"]')];
-    for (const a of anchors) {
-      const img = a.querySelector('img');
-      if (img && /avatar|head|photo/i.test(String(img.className || '') + ' ' + String(a.className || ''))) {
-        return a.href.split('?')[0];
+    return false;
+  }
+
+  /** 这一页看起来是不是本人的：有「编辑资料」，或者没有关注/私信按钮又写着小红书号。
+   *  新版主页不一定渲染「编辑资料」，所以留这条旁证；给不给绑还要看页面 id 对不对得上（见 exec-acct-check）。 */
+  function _looksOwnPage() {
+    if (!_isProfileUrl()) return false;
+    if (_hasEditBtn()) return true;
+    try {
+      const text = document.body ? document.body.innerText : '';
+      return /小红书号\s*[:：]?\s*[A-Za-z0-9_-]{4,}/.test(text) && !_hasFollowBtn();
+    } catch (_) { return false; }
+  }
+
+  /** 站内「我」入口指向的 id（站点按当前登录会话渲染，最可信） */
+  function _mineLinkUid() {
+    try {
+      const anchors = [...document.querySelectorAll('a[href*="/user/profile/"]')];
+      for (const a of anchors) {
+        const t = String(a.textContent || '').replace(/\s+/g, '');
+        if (t === '我' || t === '我的') {
+          const href = String(a.getAttribute('href') || '');
+          const m = href.match(/\/user\/profile\/([^/?#]+)/);
+          if (m) return m[1];
+        }
       }
-    }
+    } catch (_) {}
     return '';
   }
 
-  /** 认号：当前页是不是本人主页 / 读到的小红书号与内部 id / 本人主页链接 / 是否被送到登录页 */
+  /** 登录缓存里的本人 id */
+  function _cachedUid() {
+    try {
+      const u = localStorage.getItem('xhsu');
+      if (!u) return '';
+      const o = JSON.parse(u);
+      return o && o.id ? String(o.id) : '';
+    } catch (_) { return ''; }
+  }
+
+  /** 认自己：站内「我」入口 → 当前本人主页 → 登录缓存。
+   *  三处都拿不到就返回空串——绝不拿推荐流里别人的主页链接顶替。
+   *  src 说明这个 id 有多硬：nav（站点给当前登录画的入口）/ edit（本人主页上的编辑按钮）/ cache（登录缓存）。 */
+  function _selfUidInfo() {
+    const mine = _mineLinkUid();
+    if (mine) return { uid: mine, src: 'nav' };
+    if (_isProfileUrl() && _hasEditBtn()) {
+      const m = location.pathname.match(/\/user\/profile\/([^/?#]+)/);
+      if (m) return { uid: m[1], src: 'edit' };
+    }
+    const cached = _cachedUid();
+    if (cached) return { uid: cached, src: 'cache' };
+    return { uid: '', src: '' };
+  }
+  function _selfUid() { return _selfUidInfo().uid; }
+
+  /** 是否为本人主页：页面像本人的，且 uid 与站内「我」入口/登录缓存一致（缓存可缺）。
+   *  （主本旧版只要页面上出现「小红书号」就算本人——那会把别人的主页认成自己，2026-10-25 已撤；
+   *   这里后声明同名函数把它覆盖掉，sync 后务必确认文件里有两处声明、后一处是本段。） */
+  function _isSelfProfile() {
+    if (!_looksOwnPage()) return false;
+    const m = location.pathname.match(/\/user\/profile\/([^/?#]+)/);
+    const uid = m ? m[1] : '';
+    const mine = _mineLinkUid() || _cachedUid();
+    if (!mine) return _hasEditBtn();       // 只有硬标记时，没有旁证可对
+    return !!uid && uid === mine;
+  }
+
+  /** 本人主页链接：只由 _selfUid 推出来；认不出就是空串，由执行器提示手动开主页 */
+  function _ownProfileUrl() {
+    const uid = _selfUid();
+    return uid ? 'https://www.xiaohongshu.com/user/profile/' + uid : '';
+  }
+
+  /** 认号：当前页是不是本人主页 / 读到的小红书号与内部 id / 本人 id / 是否被送到登录页 */
   function whoAmI() {
     const onOwn = _isSelfProfile();
     const prof = extractUserProfile();
@@ -427,6 +504,11 @@
       ok: true,
       onOwn,
       needLogin,
+      editBtn: _hasEditBtn(),
+      followBtn: _hasFollowBtn(),
+      looksOwn: _looksOwnPage(),
+      selfUid: _selfUidInfo().uid,
+      selfSrc: _selfUidInfo().src,
       xhsId: prof.xhsId || '',
       uid: m ? m[1] : '',
       name: prof.name || '',
@@ -436,10 +518,10 @@
   }
 
   // 串行执行包装：同一时刻只允许一个变更类操作（发送/定位）运行
-  async function runExclusive(label, fn) {
-    const ok = await acquireLock(label);
+  async function runExclusive(label, fn, opts) {
+    const ok = await acquireLock(label, opts);
     if (!ok) {
-      return { success: false, error: '上一条操作仍在进行中，本次已跳过（防止评论错位）' };
+      return { success: false, busy: true, error: '等不到页面操作口（「' + (_operationLockLabel || '别的操作') + '」一直占着），本次已跳过（防止评论错位）' };
     }
     try {
       return await fn();
@@ -459,6 +541,12 @@
   }
   // ===== 消息监听 =====
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+
+    // ── 认号（平台绑定 2026-10-23）：返回本人主页 / 小红书号 / 内部 id / 本人 id / 是否被送到登录页 ──
+    if (request.action === 'whoAmI') {
+      try { sendResponse(whoAmI()); } catch (e) { sendResponse({ ok: false, error: e.message }); }
+      return true;
+    }
     // ── 轻量页面类型预检（不滚动、不采集）：popup 扫描前先判断是不是笔记详情页，错页立刻重试省时间 ──
     if (request.action === 'checkPageType') {
       const cardLinkCount = document.querySelectorAll('a[href*="/explore/"], a[href*="/search_result/"], a[href*="/discovery/item/"]').length;
@@ -684,11 +772,6 @@
       _verifyOwnProfile().then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: e.message }));
       return true;
     }
-    // ── 认号（平台绑定 2026-10-23）：返回本人主页 / 小红书号 / 内部 id / 本人主页链接 ──
-    if (request.action === 'whoAmI') {
-      try { sendResponse(whoAmI()); } catch (e) { sendResponse({ ok: false, error: e.message }); }
-      return true;
-    }
     // ── 首条私信前置甄别：抓"来访者"主页的简介 + 笔记（只读），供 AI 判购买意向 ──
     if (request.action === 'extractGuestProfile') {
       extractGuestProfile().then(r => sendResponse(r)).catch(e => sendResponse({ ok: false, error: e.message }));
@@ -824,7 +907,8 @@
     if (request.action === 'sendNoteComment') {
       _interactGuard(request.text, 'comment', '笔记评论').then(g => {
         if (!g.ok) { sendResponse({ success: false, blocked: true, error: g.error }); return; }
-        runExclusive('✍️ 一级评论', () => sendNoteComment(request))
+        // 一级评论是"等到就发、等不到这篇就白跑"：上一轮的扫描还没收尾时多等一会儿（最多 60s），别 15s 就放弃
+        runExclusive('✍️ 一级评论', () => sendNoteComment(request), { waitMs: 60000 })
           .then(r => sendResponse(r))
           .catch(e => sendResponse({ success: false, error: (e && e.message) || String(e) }));
       });
@@ -3909,7 +3993,7 @@ async function sendDmOnProfile(userLink, text) {
       mask.style.cssText =
         'position:fixed;z-index:99999;pointer-events:none;' +
         'border:4px solid #ff2442;background:rgba(255,36,66,.15);' +
-        'box-shadow:0 0 0 9999px rgba(0,0,0,.45);transition:box-shadow .2s;' +
+        'box-shadow:0 0 0 9999px rgba(0,0,0,.2);transition:box-shadow .2s;' +
         'left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;height:' + r.height + 'px;';
       document.body.appendChild(mask);
       const tag = document.createElement('div');
@@ -5408,9 +5492,107 @@ async function sendDmOnProfile(userLink, text) {
     }
     return !_dbIsNoteOpen();
   }
-  // 打开一篇笔记并停留阅读；返回 { opened, dwellMs }
-  async function _dbOpenAndRead(card, dwellMinS, dwellMaxS) {
-    const out = { opened: false, dwellMs: 0 };
+  // 打开着的这篇是视频还是图文：先找压在页面最上层的详情弹层，再看它里面有没有播放器。
+  // 只看「够大的播放器」＋「在最上层」，信息流里的小视频卡片会被弹层盖住，不会误认。
+  function _dbNoteMediaKind() {
+    const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
+    const bigVideo = (root) => {
+      try {
+        for (const v of (root || document).querySelectorAll('video')) {
+          if (!v.offsetParent) continue;
+          const r = v.getBoundingClientRect();
+          if (r.width < vw * 0.25 || r.height < vh * 0.25) continue;
+          if (r.bottom < 100 || r.top > vh - 60) continue;
+          return true;
+        }
+      } catch (_) {}
+      return false;
+    };
+    try {
+      const pts = [[0.5, 0.45], [0.5, 0.3], [0.35, 0.5]];
+      for (const p of pts) {
+        const stack = document.elementsFromPoint(Math.round(vw * p[0]), Math.round(vh * p[1])) || [];
+        for (const el of stack) {
+          const r = el.getBoundingClientRect();
+          if (r.width < vw * 0.55 || r.height < vh * 0.55) continue;
+          if (bigVideo(el)) return 'video';
+          // 点到的这块本身压着播放器（图层里就有 video）也算视频
+          if (stack.some(n => n.tagName === 'VIDEO')) return 'video';
+          return 'image';
+        }
+      }
+    } catch (_) {}
+    return bigVideo(null) ? 'video' : 'image';
+  }
+  // 打开后怎么看法：按概率先摇一档（秒退 / 看完 / 正常看，2026-10-30 老板定）
+  function _dbViewMode(bounceRate, fullRate) {
+    const r = Math.random() * 100;
+    if (r < bounceRate) return 'skip';
+    if (r < bounceRate + fullRate) return 'full';
+    return 'normal';
+  }
+  // 秒退：打开 2~5 秒就退（真人不爱看的就直接划走）
+  function _dbBounceSeconds() { return _dbRand(2, 5); }
+  // 正常看：图文走区间前半段（翻得快），视频从区间中点起、最多到上限的 1.6 倍（封顶 2 分钟）
+  function _dbDwellSeconds(kind, minS, maxS) {
+    const span = Math.max(0, maxS - minS);
+    if (kind === 'video') {
+      const lo = minS + span * 0.5;
+      const hi = Math.max(lo, Math.min(maxS * 1.6, 120));
+      return _dbRand(lo, hi);
+    }
+    return _dbRand(minS, minS + span * 0.45);
+  }
+  // 看完用的播放器：够大、在可视区里的那个 video
+  function _dbBigVideoEl() {
+    const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;
+    try {
+      for (const v of document.querySelectorAll('video')) {
+        if (!v.offsetParent) continue;
+        const r = v.getBoundingClientRect();
+        if (r.width < vw * 0.25 || r.height < vh * 0.25) continue;
+        if (r.bottom < 100 || r.top > vh - 60) continue;
+        return v;
+      }
+    } catch (_) {}
+    return null;
+  }
+  // 看完：视频等播到结尾、图文往下翻到底；卡住不动就提前收；各自封顶（视频 2 分钟 / 图文 60 秒）
+  async function _dbWatchToEnd(kind) {
+    const t0 = Date.now();
+    const CAP = kind === 'video' ? 120000 : 60000;
+    if (kind === 'video') {
+      let v = _dbBigVideoEl();
+      let lastT = -1, stall = 0;
+      while (Date.now() - t0 < CAP) {
+        _touchLock();
+        await _dbSleep(1000);
+        if (!v) { v = _dbBigVideoEl(); continue; }
+        if (!isFinite(v.duration) || v.duration <= 0) continue;
+        if (v.ended || v.currentTime >= v.duration - 1) break;
+        if (v.currentTime <= lastT + 0.05) { stall++; if (stall >= 8) break; }   // 暂停/卡住 8 秒 → 不当成能看完
+        else stall = 0;
+        lastT = v.currentTime;
+      }
+    } else {
+      let stuck = 0;
+      while (Date.now() - t0 < CAP) {
+        _touchLock();
+        const sc = getNoteScroller();
+        if (!sc) { await _dbSleep(800); if (++stuck >= 3) break; continue; }
+        const before = sc.scrollTop;
+        try { sc.scrollBy({ top: Math.round(_dbRand(280, 520)), behavior: 'smooth' }); } catch (_) {}
+        await _dbSleep(_dbRand(1500, 2600));
+        const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8;
+        if (atBottom && Math.abs(sc.scrollTop - before) < 12) { if (++stuck >= 2) break; }
+        else stuck = 0;
+      }
+    }
+    return Math.min(CAP, Date.now() - t0);
+  }
+  // 打开一篇笔记并停留阅读；mode: skip（秒退）/ full（看完）/ normal（正常看）
+  async function _dbOpenAndRead(card, dwellMinS, dwellMaxS, mode) {
+    const out = { opened: false, dwellMs: 0, view: mode || 'normal' };
     try {
       card.el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       await _dbSleep(_dbRand(300, 700));
@@ -5422,17 +5604,30 @@ async function sendDmOnProfile(userLink, text) {
       await _dbSleep(400);
     }
     if (!out.opened) return out;   // 点了没开（卡片重排/被吞）：不硬撑，退回信息流继续
-    const dwellMs = Math.round(_dbRand(dwellMinS, dwellMaxS) * 1000);
+    const kind = _dbNoteMediaKind();
+    out.kind = kind;
+    if (out.view === 'full') {
+      const used = await _dbWatchToEnd(kind);
+      // 至少看够 6 秒，别让「看完」比「正常看」还短（加载慢/内容短的情况）
+      if (used < 6000) { _touchLock(); await _dbSleep(6000 - used); }
+      out.dwellMs = Math.max(used, 6000);
+      try { console.log('[日常浏览] ' + (kind === 'video' ? '视频' : '图文') + '看到底：停留 ' + Math.round(out.dwellMs / 1000) + ' 秒'); } catch (_) {}
+      return out;
+    }
+    const skip = out.view === 'skip';
+    const dwellMs = Math.round((skip ? _dbBounceSeconds() : _dbDwellSeconds(kind, dwellMinS, dwellMaxS)) * 1000);
     const steps = Math.max(1, Math.round(dwellMs / 12000));
     for (let i = 0; i < steps; i++) {
       _touchLock();
       await _dbSleep(dwellMs / steps);
+      if (skip || kind === 'video') continue;   // 秒退就是扫一眼就走；看视频也别往下乱扒
       try {
         const sc = getNoteScroller();
         if (sc) sc.scrollBy({ top: Math.round(_dbRand(180, 520)), behavior: 'smooth' });
       } catch (_) {}
     }
     out.dwellMs = dwellMs;
+    try { console.log('[日常浏览] ' + (skip ? '扫一眼就走' : (kind === 'video' ? '视频笔记，看久一点' : '图文笔记，翻快一点')) + '：停留 ' + Math.round(dwellMs / 1000) + ' 秒'); } catch (_) {}
     return out;
   }
   // 点赞 / 收藏当前打开的笔记
@@ -5452,7 +5647,7 @@ async function sendDmOnProfile(userLink, text) {
     if (kind === 'collect') await _dbDismissDialog();
     return { ok, clicked: true };
   }
-  /* ── 🌿 日常浏览 · 顺手互动（P1 评论 / P2 回复 / P3 关注）──
+  /* ── 🌿 日常浏览 · 顺手互动（评论〔含回别人一句〕/ 关注作者）──
      隔离口径：只在本轮返回的计数里记账，绝不写获客台账（见设计文档 §五）。
      两条硬规矩：
        ① 动作一律**函数直调**（sendNoteComment / sendReplyToComment / followUser）——
@@ -5497,11 +5692,21 @@ async function sendDmOnProfile(userLink, text) {
   function _dbPoolPick(pool) {
     return '';
   }
-  // P1 顺手评论：AI 独立提示词生成一句 → 没有就跳过（不再取本地句池，2026-10-01）
+  /* 顺手评论（一项管两种说法）：
+     一次概率摇号 → 一半机会去回评论区里某个人一句，回不成（没合适的 / AI 没给 / 发失败）
+     就回落成发一条新评论。不再单列「回复别人」的第二道概率（2026-10-30）。 */
   async function _dbTryComment(opts, st) {
     const c = opts.comment || {};
-    if (!(st.commentLeft > 0)) return '';
+    if (st.commentLeft === 0) return '';
     if (Math.random() * 100 >= (Number(c.rate) || 0)) return '';
+    if (Math.random() < 0.5) {
+      const rep = await _dbReplyOne();
+      if (rep) {
+        st.replies++; if (st.commentLeft > 0) st.commentLeft--;
+        console.log('[日常浏览] 🌿 顺手回了 @' + rep.author + ' 一句：' + rep.text);
+        return { kind: 'reply', author: rep.author, text: rep.text };
+      }
+    }
     const meta = _dbNoteMeta();
     let text = '';
     const r = await _dbAiAsk('aiDailyComment', { title: meta.title, excerpt: meta.desc }, 25000);
@@ -5513,13 +5718,12 @@ async function sendDmOnProfile(userLink, text) {
     catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
     _hideStatus();
     if (!res || !res.success) { console.log('[日常浏览] 顺手评论没发出去：' + ((res && res.error) || '未知原因')); return ''; }
-    st.comments++; st.commentLeft--;
+    st.comments++; if (st.commentLeft > 0) st.commentLeft--;
     console.log('[日常浏览] 🌿 顺手评论已发：' + text);
-    return text;
+    return { kind: 'note', text: text };
   }
-  // P2 回复别人的评论：取评论 → AI 挑一条「值得回」的并给一句自然回复 → 直调 sendReplyToComment
-  async function _dbTryReply(opts, st) {
-    if (!(st.replyLeft > 0)) return null;
+  // 回别人的评论：取评论 → AI 挑一条「值得回」的并给一句自然回复 → 直调 sendReplyToComment
+  async function _dbReplyOne() {
     let page = null;
     try { page = extractPageData(); } catch (_) { return null; }
     const flat = (page && page.comments) || [];
@@ -5547,14 +5751,12 @@ async function sendDmOnProfile(userLink, text) {
     } catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
     _hideStatus();
     if (!res || !res.success) { console.log('[日常浏览] 顺手回复没发出去：' + ((res && res.error) || '未知原因')); return null; }
-    st.replies++; st.replyLeft--;
-    console.log('[日常浏览] 🌿 顺手回复已发给 @' + target.author + '：' + text);
     return { author: target.author, text: text };
   }
   // P3 关注作者：按概率关注当前笔记的作者（已关注/找不到就跳过）
   async function _dbTryFollow(opts, st) {
     const c = opts.follow || {};
-    if (!(st.followLeft > 0)) return false;
+    if (st.followLeft === 0) return false;
     if (Math.random() * 100 >= (Number(c.rate) || 0)) return false;
     const author = _dbNoteMeta().author;
     if (!author) return false;
@@ -5563,31 +5765,36 @@ async function sendDmOnProfile(userLink, text) {
     try { r = await followUser(author); } catch (e) { r = { success: false, error: (e && e.message) || String(e) }; }
     _hideStatus();
     if (!r || !r.success) { console.log('[日常浏览] 关注没完成：' + ((r && r.error) || '未知原因')); return false; }
-    st.follows++; st.followLeft--;
+    st.follows++; if (st.followLeft > 0) st.followLeft--;
     console.log('[日常浏览] 🌿 已关注 @' + author);
     return true;
   }
   // 一轮日常浏览：count 篇；每篇结果顺手落到 daily_browse_last（后台被杀也能对账）
   async function browseRound(opts) {
     opts = opts || {};
-    const count = Math.max(1, Math.min(8, parseInt(opts.count, 10) || 1));
+    const count = Math.max(1, Math.min(40, parseInt(opts.count, 10) || 1));
     const dwellMinS = Math.max(2, Number(opts.dwellMin) || 8);
     const dwellMaxS = Math.max(dwellMinS, Number(opts.dwellMax) || 25);
     const openRate = Math.max(0, Math.min(100, Number(opts.openRate)) || 0);
     const likeRate = Math.max(0, Math.min(100, Number(opts.likeRate)) || 0);
     const collectRate = Math.max(0, Math.min(100, Number(opts.collectRate)) || 0);
+    /* 打开后怎么看法：秒退 / 看完 / 余下正常看（老配置没这两项 → 都按 0，等于全走正常看） */
+    const bounceRate = Math.max(0, Math.min(100, Number(opts.bounceRate) || 0));
+    const fullRate = Math.max(0, Math.min(100 - bounceRate, Number(opts.fullRate) || 0));
     const roundId = opts.roundId || ('r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
     const startedAt = Date.now();
-    const maxMs = count * ((dwellMaxS + 30) * 1000) + 60000;   // 本轮硬上限，防止异常卡死
+    const dwellMaxVideoS = Math.max(dwellMaxS, Math.min(dwellMaxS * 1.6, 120));   // 正常看时视频最长停留（与 _dbDwellSeconds 同口径）
+    const perNoteCeilS = Math.max(dwellMaxVideoS, fullRate > 0 ? 120 : 0) + 30;   // 一篇最多可能占用的秒数（有「看完」时按 2 分钟封顶算）
+    const maxMs = count * (perNoteCeilS * 1000) + 60000;   // 本轮硬上限，防止异常卡死
     const items = [];
     const picked = new Set();
-    // 顺手互动的本轮预算（由执行器按"今日还剩多少"给下来）＋本轮已做几条
+    // 顺手互动：只按概率走。left：-1＝不限（现在都是 -1），0＝这个动作不做
+    const _left = (v) => { const n = parseInt(v, 10); return isFinite(n) ? n : 0; };
     const st = {
       card: null,
       comments: 0, replies: 0, follows: 0,
-      commentLeft: Math.max(0, parseInt((opts.comment || {}).left, 10) || 0),
-      replyLeft: Math.max(0, parseInt((opts.reply || {}).left, 10) || 0),
-      followLeft: Math.max(0, parseInt((opts.follow || {}).left, 10) || 0),
+      commentLeft: _left((opts.comment || {}).left),
+      followLeft: _left((opts.follow || {}).left),
     };
     const _persist = async (done) => {
       try {
@@ -5607,7 +5814,7 @@ async function sendDmOnProfile(userLink, text) {
     // ★ 心跳补密：一轮持锁要 1~3 分钟，中间"点了笔记没打开"那段能有 20 多秒空档 → 定时刷新持锁时间
     const hb = setInterval(() => { try { _touchLock(); } catch (_) {} }, 3000);
     try {
-    console.log('[日常浏览] 开始一轮：' + (opts.dirName ? '「' + opts.dirName + '」' : '') + '目标 ' + count + ' 篇，停留 ' + dwellMinS + '~' + dwellMaxS + 's，打开 ' + openRate + '%，赞 ' + likeRate + '%，藏 ' + collectRate + '%');
+    console.log('[日常浏览] 开始一轮：' + (opts.dirName ? '「' + opts.dirName + '」' : '') + '目标 ' + count + ' 篇，正常看 ' + dwellMinS + '~' + dwellMaxS + 's（图文快半段 / 视频久一截），秒退 ' + bounceRate + '%，看完 ' + fullRate + '%，打开 ' + openRate + '%，赞 ' + likeRate + '%，藏 ' + collectRate + '%');
     await _persist(false);   // 先落"开跑"标记：执行器靠它对账（不用等长消息返回）
     for (let i = 0; i < count; i++) {
       if (Date.now() - startedAt > maxMs) { console.warn('[日常浏览] 本轮超过时间上限，提前收尾'); break; }
@@ -5631,21 +5838,24 @@ async function sendDmOnProfile(userLink, text) {
       picked.add(card.noteId);
       st.card = card;
       const item = { noteId: card.noteId, title: card.title, opened: false, liked: false, collected: false, dwellMs: feedDwell, ts: Date.now() };
-      // 3) 按概率打开笔记 → 停留阅读 → 按概率点赞/收藏 → 顺手评论/回复/关注 → 退回信息流
+      // 3) 按概率打开笔记 → 停留阅读 → 按概率点赞/收藏 → 顺手评论（含回别人一句）/关注 → 退回信息流
       if (Math.random() * 100 < openRate) {
-        const r = await _dbOpenAndRead(card, dwellMinS, dwellMaxS);
+        const view = _dbViewMode(bounceRate, fullRate);
+        const r = await _dbOpenAndRead(card, dwellMinS, dwellMaxS, view);
         item.opened = !!r.opened;
+        if (r.opened) { item.kind = r.kind; item.view = r.view; }
         item.dwellMs = feedDwell + (r.dwellMs || 0);
-        if (r.opened) {
+        if (r.opened && r.view !== 'skip') {   // 秒退＝看一眼就划走，不点赞/收藏/评论/关注
           if (Math.random() * 100 < likeRate) { const lk = await _dbEngage('like'); item.liked = !!(lk && lk.ok); }
           if (Math.random() * 100 < collectRate) { const cl = await _dbEngage('collect'); item.collected = !!(cl && cl.ok); }
-          // 🌿 顺手互动（P1 评论 / P2 回复 / P3 关注）：只记自己的账，不进获客台账
+          // 🌿 顺手互动（评论〔含回别人一句〕/ 关注作者）：只记自己的账，不进获客台账
           if (!(await _stopped())) {
             const cmt = await _dbTryComment(opts, st);
-            if (cmt) { item.commented = cmt; item.acts = (item.acts || 0) + 1; await _persist(false); }
-            if (!(await _stopped())) {
-              const rep = await _dbTryReply(opts, st);
-              if (rep) { item.repliedTo = rep.author; item.acts = (item.acts || 0) + 1; await _persist(false); }
+            if (cmt) {
+              item.commented = cmt.text;
+              if (cmt.kind === 'reply') item.repliedTo = cmt.author;
+              item.acts = (item.acts || 0) + 1;
+              await _persist(false);
             }
             if (!(await _stopped())) {
               if (await _dbTryFollow(opts, st)) { item.followed = true; item.acts = (item.acts || 0) + 1; }
@@ -5657,7 +5867,7 @@ async function sendDmOnProfile(userLink, text) {
       items.push(item);
       await _persist(false);
       console.log('[日常浏览] 第 ' + (i + 1) + '/' + count + ' 篇：' + (card.title || card.noteId) +
-        (item.opened ? '（已打开 ' + Math.round(item.dwellMs / 1000) + 's）' : '（仅停留）') +
+        (item.opened ? '（已打开 ' + Math.round(item.dwellMs / 1000) + 's' + (item.view === 'skip' ? ' · 秒退' : item.view === 'full' ? ' · 看完' : '') + '）' : '（仅停留）') +
         (item.liked ? ' 👍' : '') + (item.collected ? ' ⭐' : '') +
         (item.commented ? ' 💬' : '') + (item.repliedTo ? ' ↩' : '') + (item.followed ? ' ➕' : ''));
     }
@@ -5669,13 +5879,15 @@ async function sendDmOnProfile(userLink, text) {
       ok: true, roundId, items,
       viewed: items.length,
       openedCount: items.filter(x => x.opened).length,
+      skipCount: items.filter(x => x.view === 'skip').length,
+      fullCount: items.filter(x => x.view === 'full').length,
       likedCount: items.filter(x => x.liked).length,
       collectedCount: items.filter(x => x.collected).length,
       comments: st.comments, replies: st.replies, follows: st.follows,
       ms: Date.now() - startedAt,
     };
-    console.log('[日常浏览] 本轮结束：浏览 ' + summary.viewed + ' 篇，打开 ' + summary.openedCount + ' 篇，点赞 ' + summary.likedCount +
-      '，收藏 ' + summary.collectedCount + '，评论 ' + summary.comments + '，回复 ' + summary.replies + '，关注 ' + summary.follows);
+    console.log('[日常浏览] 本轮结束：浏览 ' + summary.viewed + ' 篇，打开 ' + summary.openedCount + ' 篇（秒退 ' + summary.skipCount + ' / 看完 ' + summary.fullCount + '），点赞 ' + summary.likedCount +
+      '，收藏 ' + summary.collectedCount + '，评论 ' + (summary.comments + summary.replies) + '（其中回别人 ' + summary.replies + '），关注 ' + summary.follows);
     return summary;
   }
 
