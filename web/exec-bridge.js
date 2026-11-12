@@ -141,8 +141,9 @@
     lastInflight = true;      // 先当"在跑"：连点两下也别又发一单
     if (b) { b.running = true; b.paused = false; try { b._updateUI(true); } catch (_) {} }
     benchNotice('已把这一轮派给执行器，等它接……');
-    /* manual:true＝老板亲手点的这一下：执行器给这一趟开「手点放行」，静默期也跑（只这一趟） */
-    const r = await order('acquire', { scope: scope, pace: pace, manual: true, runQuota: runQuota });
+    /* manual:true＝老板亲手点的这一下：静默期也跑（只这一趟）
+       queueBehind:true＝机器正忙时点的那一下：排到队尾，等手上这一小段跑完接着跑（不会打断正在跑的） */
+    const r = await order('acquire', { scope: scope, pace: pace, manual: true, queueBehind: true, runQuota: runQuota });
     if (!r.ok) {
       lastInflight = false;
       if (b) { b.running = false; try { b._updateUI(false); } catch (_) {} }
@@ -150,7 +151,11 @@
       say('下单没成：' + r.error, 'error');
       return r;
     }
-    const msg = r.delivered ? '执行器在线，当场开跑（进度看下面）' : '执行器不在线——单排着了，等它上线就跑';
+    const msg = r.delivered
+      ? '执行器在线，当场开跑（进度看下面）'
+      : (r.ahead > 0
+        ? `已排队，前面还有 ${r.ahead} 段——手上这段跑完就接着跑`
+        : '执行器不在线——单排着了，等它上线就跑');
     benchNotice(msg, 'success');
     say(msg, 'success');
     return r;
@@ -837,7 +842,7 @@
     const { panel, count } = benchEls();
     if (!panel || !count) return;
     const n = panel.querySelectorAll('.log-entry').length;
-    count.textContent = n ? '（今天 ' + n + ' 条 · 服务器留最近 400 条）' : '';
+    count.textContent = n ? '（今天 ' + n + ' 条 · 点顶栏「📜 运行日志」能按天往回翻）' : '';
   }
 
   function panelScrollTail() {
@@ -896,29 +901,57 @@
     if (n) logCountPaint();
   }
 
-  /* 把一叠回执读出「跑到哪」：队列项、当前打开哪篇、刚发了什么、下一个到点、这一轮的战果 */
+  /* 日志里「打开笔记」那行：老写法是 (N/M)；2026-11-10 起执行器报的是
+     (这一趟第 N 篇 · 本屏 X/Y)——本屏会翻屏、X 会从 1 重数，所以「第几篇」按这一趟算。 */
+  function noteOpenMatch(x) {
+    const t = String(x || '');
+    let m = t.match(/^📄\s*打开(?:增长)?笔记\s*"(.+)"\s*\(\s*这一趟第\s*(\d+)\s*篇\s*·\s*本屏\s*(\d+)\/(\d+)\s*\)/);
+    if (m) return { title: m[1], idx: Number(m[2]), total: Number(m[4]), screen: Number(m[3]), screenTotal: Number(m[4]) };
+    m = t.match(/^📄\s*打开(?:增长)?笔记\s*"(.+)"\s*\((\d+)\/(\d+)\)/);
+    return m ? { title: m[1], idx: Number(m[2]), total: Number(m[3]) } : null;
+  }
+
+  /* 把一叠回执读出「跑到哪」：队列项、当前打开哪篇、刚发了什么、下一个到点、这一轮的战果
+     （2026-11-05 改：只报「这一趟」——遇到开跑那句或第 1 项就从零算；
+       收人分「这一趟 / 今天」；另算一句「现在这一步」，跑的时候卡片直接显示） */
   function readProgress(reports) {
     const out = {
       pos: null, nextAt: '', summary: null, last: null, badLine: null, tailBad: false,
-      note: null,   // 当前打开的那篇：{ title, idx, total, t }
+      note: null,   // 这一趟最后打开的那篇：{ title, idx, total, t }
       said: null,   // 刚发出去的那句：{ kind:'note'|'reply'|'bad', text, t, bad }
       lastAt: 0,    // 今天最后一条回执的时刻（毫秒）——没有队单时靠它判断「本机手点开的这趟还在不在动」
       waits: null,  // 正在等下一项到点：{ at:'19:50', t }
       paused: null, // 点了暂停：{ t }
       ended: false, endedOk: false,   // 最后一句是收尾（🏁 跑完 / ⏹ 停了）
+      step: null,             // 现在这一步：{ text, t }
+      runCount: null,         // 这一趟跑了几项（🏁 那句里带的「本次跑了 X 项」）
+      runHadPos: false,       // 这一趟有没有见到「第 N 项」
+      collectedRun: 0,        // 这一趟收进清单几个人
+      collectedDay: 0,        // 今天一共收进清单几个人
     };
-    const collected = new Set();
+    const collectedRun = new Set();
+    const collectedDay = new Set();
     const today = dayKey(new Date());
+    /* 开跑：上一趟的笔记 / 评语 / 战果都不再算「现在」 */
+    const runStart = () => {
+      collectedRun.clear();
+      out.pos = null; out.note = null; out.said = null; out.step = null;
+      out.summary = null; out.runCount = null; out.runHadPos = false;
+      out.ended = false; out.endedOk = false; out.waits = null; out.paused = null; out.nextAt = '';
+    };
     (Array.isArray(reports) ? reports : []).forEach((r) => {
       const rt = reportTime(r);
       if (rt.day !== today) return;
       if (rt.at > out.lastAt) out.lastAt = rt.at;
       reportLines(r).forEach((ln) => {
         const x = ln.text;
+        if (/^=+\s*自动灌水启动/.test(x)) runStart();
         out.last = { t: rt.tm, text: x };
         let m = x.match(/^▶ 第 (\d+)(?: 项| 次搜索| 次主页扫描| 轮)：(.+?) × 「(.+?)」/);
         if (m) {
+          if (Number(m[1]) === 1 && out.runHadPos) runStart();
           out.pos = { seq: Number(m[1]), kind: stripIco(m[2]), kw: m[3], t: rt.tm };
+          out.runHadPos = true;
           out.nextAt = ''; out.waits = null; out.paused = null; out.ended = false; out.endedOk = false;
         }
         m = x.match(/^⏳ 第 \d+ 项跑完。队列里的下一项将于 (\d{1,2}:\d{2}) 自动开始/);
@@ -927,8 +960,10 @@
         else if (/^▶ 已继续/.test(x)) out.paused = null;
         else if (/^🏁/.test(x)) { out.ended = true; out.endedOk = true; out.waits = null; out.paused = null; }
         else if (/^⏹|^⏸ =====|^🛑|^❌|^🔴/.test(x)) { out.ended = true; out.endedOk = false; out.waits = null; out.paused = null; }
-        if ((m = x.match(/^📄 打开笔记\s*"(.+)"\s*\((\d+)\/(\d+)\)/))) {
-          out.note = { title: m[1], idx: Number(m[2]), total: Number(m[3]), t: rt.tm };
+        if ((m = x.match(/本次跑了\s*(\d+)\s*项/))) out.runCount = Number(m[1]);
+        const openM = noteOpenMatch(x);
+        if (openM) {
+          out.note = { title: openM.title, idx: openM.idx, total: openM.total, t: rt.tm };
           out.said = null;   // 换了篇：上一篇的评语不再算「刚发」
         } else if ((m = x.match(/^✅ 已发一级评论(?:（(.+?)）)?：(.+)$/))) {
           out.said = { kind: 'note', run: m[1] || '', text: m[2], t: rt.tm, bad: false };
@@ -937,16 +972,48 @@
         } else if ((m = x.match(/^✅\s*@(.+?)\s*发送成功$/))) {
           out.said = { kind: 'reply', who: m[1], text: '已回复 @' + m[1], t: rt.tm, bad: false };
         }
-        if ((m = x.match(/^🕵️\s*已收进获客清单：@(.+?)(?:（|$)/))) collected.add(m[1]);
+        if ((m = x.match(/^🕵️\s*已收进获客清单：@(.+?)(?:（|$)/))) { collectedRun.add(m[1]); collectedDay.add(m[1]); }
         m = x.match(/(?:获客|日常浏览)跑完一轮：搜到 (\d+) 篇 · 评论 (\d+) 条/);
         if (m) out.summary = { found: Number(m[1]), comments: Number(m[2]), t: rt.tm };
         if (/^⚠️|^⏸|^⏹|^🛑|^❌|^🔴/.test(x)) out.badLine = { t: rt.tm, text: x };
+        const st = stepOf(x);
+        if (st) out.step = { text: st, t: rt.tm };
       });
     });
-    if (out.summary) out.summary.collected = collected.size;
+    out.collectedRun = collectedRun.size;
+    out.collectedDay = collectedDay.size;
+    if (out.summary) { out.summary.collectedRun = out.collectedRun; out.summary.collectedDay = out.collectedDay; }
     /* 最后落的一句话是「⚠️ / ⏸」那类：这一趟其实是停住了，别报「跑完」 */
     out.tailBad = !!(out.last && /^⚠️|^⏸|^🛑|^❌|^🔴/.test(out.last.text));
     return out;
+  }
+
+  /* 日志里最后一句 → 一句「现在在干什么」。看不懂的句子不硬编，卡片就不显示这一步 */
+  function stepOf(x) {
+    const t = String(x || '');
+    let m;
+    if ((m = t.match(/^🔍\s*搜「(.+?)」的\s*(.+)$/))) return '正在搜「' + m[1] + '」· ' + stripIco(m[2]).slice(0, 18);
+    if (/等这一轮搜索真跑完/.test(t)) return '正在等搜索结果回来';
+    if (/^🔎\s*「.+?」×.+?：排序已点上/.test(t)) return '正在按排序挑笔记';
+    if (/排序没点上/.test(t)) return '排序没点上，按页面顺序继续';
+    if (/换词没成功|换词后页面/.test(t)) return '换词没成功，这一行先跳过';
+    if ((m = t.match(/搜索完成，这一轮名单\s*(\d+)\s*篇/))) return '搜到 ' + m[1] + ' 篇，准备打开第一篇';
+    const om = noteOpenMatch(t);
+    if (om) {
+      if (om.screen) return '正在打开第 ' + om.idx + ' 篇（本屏 ' + om.screen + '/' + om.screenTotal + '）';
+      return '正在打开第 ' + om.idx + '/' + om.total + ' 篇';
+    }
+    if (/笔记已打开/.test(t)) return '笔记已打开，正在读正文和评论区';
+    if (/返回列表/.test(t)) return '正在返回列表';
+    if (/^✅\s*已发一级评论/.test(t)) return '刚发了一条一级评论';
+    if ((m = t.match(/^✅\s*@(.+?)\s*发送成功/))) return '刚回复了 @' + m[1];
+    if ((m = t.match(/^🕵️\s*已收进获客清单：@(.+?)(?:（|$)/))) return '正在收人进清单（刚收 @' + m[1] + '）';
+    if (/处理完毕/.test(t)) return '这一篇处理完了';
+    if (/所有笔记处理完成/.test(t)) return '这一行的笔记都处理完了';
+    if ((m = t.match(/^⏭\s*(.+)$/))) return '跳过一篇：' + cutTitle(m[1], 26);
+    if (/已滚动到搜索底部/.test(t)) return '搜索列表翻到底了';
+    if (/滚动加载下一屏/.test(t)) return '正在加载下一屏笔记';
+    return '';
   }
 
   /* 条上第二人行：标题超过 22 个字截断，鼠标停上去看全（(3/16) 单独一截，不跟着截） */
@@ -973,8 +1040,16 @@
     const fresh = !!d.lastAt && d.lastAt > orderAt + 1000 && (Date.now() - d.lastAt < 10 * 60000);
 
     let cls = '', st = '', side = '', now = null, go = false;
-    let noteRow = null;   // { title, idx, total }
+    let noteRow = null;   // { title, idx, total, stale }——stale＝上一趟开的那篇，标「上次打开」
+    let stepRow = null;   // 现在这一步：{ text, tm }
     let sayRow = null;    // { text, tm, bad, plain, icon }
+    const staleNote = (n) => (n ? Object.assign({}, n, { stale: true }) : null);
+    /* 收尾时摆什么：这一趟一项都没跑到就不要摆「搜到 0 篇 · 评论 0 条」 */
+    const finishNow = () => {
+      const noWork = d.runCount === 0 || (!d.runHadPos && !d.pos);
+      if (noWork) return { type: 'none' };
+      return d.summary ? { type: 'summary', summary: d.summary } : null;
+    };
     if (!h.paired || !h.online) {
       st = '这个号的执行器没在线';
       sayRow = { text: h.paired ? '挂着线但没回话——去它那台电脑上看一眼' : '装上执行器、登录挂线后，这里就会显示它在干什么', plain: true, icon: '🖐' };
@@ -989,7 +1064,7 @@
       cls = 'is-wait';
       st = d.paused ? '已暂停' : '在等时间';
       side = who + ' · 在线' + (cur && cur.state === 'sent' && d.nextAt ? ' · 下一项 ' + d.nextAt : '') + (j.killed ? ' · 🔴熔断中' : '');
-      noteRow = d.waits ? d.note : null;
+      noteRow = d.waits ? staleNote(d.note) : null;
       sayRow = {
         text: d.paused ? '你点了暂停，点工作台上的「▶ 继续」接着跑' : ('这一项跑完了，' + d.waits.at + ' 自动接着跑'),
         tm: (d.paused || d.waits).t,
@@ -1001,15 +1076,18 @@
       cls = d.endedOk ? 'is-done' : 'is-stop';
       st = d.endedOk ? '这一趟跑完了' : '这一趟停在半路';
       side = who + ' · 在线' + (j.killed ? ' · 🔴熔断中' : '');
-      noteRow = d.note;
+      noteRow = staleNote(d.note);
+      if (d.endedOk) now = finishNow();
       const eb = !d.endedOk && ((d.badLine && d.badLine.text) || (d.last && d.last.text));
       if (eb) sayRow = { text: eb, tm: (d.badLine && d.badLine.t) || (d.last && d.last.t) || '', bad: true, plain: true };
-      else if (d.last) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
+      else if (d.last && !(now && now.type === 'none')) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
     } else if (cur && cur.state === 'sent') {
       cls = 'is-run'; st = '正在跑';
       if (d.pos) now = { type: 'pos', pos: d.pos };
       side = who + ' · 在线' + (d.nextAt ? ' · 下一个约 ' + d.nextAt : '') + (j.killed ? ' · 🔴熔断中' : '');
       noteRow = d.note;
+      if (d.step) stepRow = d.step;
+      else if (!d.note) stepRow = { text: '刚开跑，正在准备第一项', icon: '👉' };
       if (d.said) sayRow = { text: d.said.text, tm: d.said.t, bad: d.said.bad };
       else if (!d.note) sayRow = { text: '跑起来了，等它报第一句', plain: true, icon: '💬' };
     } else if (!cur && fresh && (d.paused || d.waits)) {
@@ -1017,7 +1095,7 @@
       cls = 'is-wait';
       st = d.paused ? '已暂停' : '在等时间';
       side = who + (h.online ? ' · 在线' : ' · 离线') + (d.waits ? ' · 下一项 ' + d.waits.at : '');
-      noteRow = d.waits ? d.note : null;
+      noteRow = d.waits ? staleNote(d.note) : null;
       sayRow = {
         text: d.paused ? '你点了暂停，点工作台上的「▶ 继续」接着跑' : ('这一项跑完了，' + d.waits.at + ' 自动接着跑'),
         tm: (d.paused || d.waits).t,
@@ -1030,6 +1108,8 @@
       if (d.pos) now = { type: 'pos', pos: d.pos };
       side = who + (h.online ? ' · 在线' : ' · 离线');
       noteRow = d.note;
+      if (d.step) stepRow = d.step;
+      else if (!d.note) stepRow = { text: '刚开跑，正在准备第一项', icon: '👉' };
       if (d.said) sayRow = { text: d.said.text, tm: d.said.t, bad: d.said.bad };
       else if (!d.note) sayRow = { text: '跑起来了，等它报第一句', plain: true, icon: '💬' };
     } else if (!cur && d.ended && d.lastAt > orderAt) {
@@ -1037,30 +1117,30 @@
       cls = d.endedOk ? 'is-done' : 'is-stop';
       st = d.endedOk ? '这一趟跑完（' + hhmm(d.lastAt) + '）' : '这一趟停住了';
       side = who + (h.online ? ' · 在线' : ' · 离线');
-      noteRow = d.note;
-      if (d.endedOk && d.summary) now = { type: 'summary', summary: d.summary };
+      noteRow = staleNote(d.note);
+      if (d.endedOk) now = finishNow();
       const b = !d.endedOk && ((d.badLine && d.badLine.text) || (d.last && d.last.text));
       if (b) sayRow = { text: b, tm: (d.badLine && d.badLine.t) || (d.last && d.last.t) || '', bad: true, plain: true };
       else if (d.said) sayRow = { text: d.said.text, tm: d.said.t, bad: d.said.bad };
-      else if (d.last) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
+      else if (d.last && !(now && now.type === 'none')) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
     } else if (last && last.state === 'done' && last.ok && d.tailBad) {
       /* 单子记的是「跑完」，可最后一句是 ⚠️/⏸/⏹（跑太久收尾、队列停在半路…）——照实说停，别报完成 */
       cls = 'is-stop'; st = '这一趟停住了';
       side = who + (h.online ? ' · 在线' : ' · 离线');
-      noteRow = d.note;
+      noteRow = staleNote(d.note);
       const b = (d.badLine && d.badLine.text) || (d.last && d.last.text) || '没报原因';
       sayRow = { text: b, tm: (d.badLine && d.badLine.t) || (d.last && d.last.t) || '', bad: true, plain: true };
     } else if (last && last.state === 'done' && last.ok) {
       cls = 'is-done'; st = '这一趟跑完' + (last.doneAt ? '（' + hhmm(last.doneAt) + '）' : '');
       side = who + (h.online ? ' · 在线' : ' · 离线');
-      noteRow = d.note;
-      if (d.summary) now = { type: 'summary', summary: d.summary };
+      noteRow = staleNote(d.note);
+      now = finishNow();
       if (d.said) sayRow = { text: d.said.text, tm: d.said.t, bad: d.said.bad };
-      else if (d.last) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
+      else if (d.last && !(now && now.type === 'none')) sayRow = { text: d.last.text, tm: d.last.t, plain: true };
     } else if (last && last.state === 'failed') {
       cls = 'is-stop'; st = '停了';
       side = who + (h.online ? ' · 在线' : ' · 离线');
-      noteRow = d.note;
+      noteRow = staleNote(d.note);
       /* 没跑成：回执自己写的 note 最准（如「浏览器被占用」），没写才拿日志里最后那句坏话 */
       sayRow = {
         text: last.note || (d.badLine && d.badLine.text) || '没跑成，原因没回',
@@ -1079,7 +1159,7 @@
     }
 
     const sig = [cls, st, side, now ? JSON.stringify(now) : '', noteRow ? JSON.stringify(noteRow) : '',
-      sayRow ? JSON.stringify(sayRow) : '', go].join('|');
+      stepRow ? JSON.stringify(stepRow) : '', sayRow ? JSON.stringify(sayRow) : '', go].join('|');
     if (sig === liveSig) return;
     liveSig = sig;
 
@@ -1098,6 +1178,10 @@
       nowEl.appendChild(kw);
       nowEl.appendChild(document.createTextNode(' × ' + pos.kind));
       row.appendChild(nowEl);
+    } else if (now && now.type === 'none') {
+      const nowEl = document.createElement('span'); nowEl.className = 'bl-now';
+      nowEl.textContent = '这一趟没有到点的活（0 项）';
+      row.appendChild(nowEl);
     } else if (now && now.type === 'summary') {
       const s = now.summary;
       const nowEl = document.createElement('span'); nowEl.className = 'bl-now';
@@ -1107,10 +1191,13 @@
       nowEl.appendChild(document.createTextNode(' · 评论 '));
       const b = document.createElement('b'); b.textContent = s.comments + ' 条';
       nowEl.appendChild(b);
-      if (s.collected) {
+      if (s.collectedRun || s.collectedDay) {
         nowEl.appendChild(document.createTextNode(' · 收进清单 '));
-        const c = document.createElement('b'); c.textContent = s.collected + ' 人';
+        const c = document.createElement('b'); c.textContent = '这一趟 ' + (s.collectedRun || 0) + ' 人';
         nowEl.appendChild(c);
+        nowEl.appendChild(document.createTextNode(' · 今天 '));
+        const c2 = document.createElement('b'); c2.textContent = (s.collectedDay || 0) + ' 人';
+        nowEl.appendChild(c2);
       }
       row.appendChild(nowEl);
     }
@@ -1126,12 +1213,12 @@
     }
     box.appendChild(row);
 
-    /* 第二段：机器现在开着哪篇笔记、这一项里的第几篇 */
+    /* 第二段：机器现在开着哪篇笔记、这一项里的第几篇；收尾后留着就标「上次打开」 */
     if (noteRow && noteRow.title) {
-      const nr = document.createElement('div'); nr.className = 'bl-note';
-      const ic = document.createElement('span'); ic.className = 'ico'; ic.textContent = '📄';
+      const nr = document.createElement('div'); nr.className = 'bl-note' + (noteRow.stale ? ' is-stale' : '');
+      const ic = document.createElement('span'); ic.className = 'ico'; ic.textContent = noteRow.stale ? '🕘' : '📄';
       const tx = document.createElement('span'); tx.className = 'tx';
-      tx.textContent = cutTitle(noteRow.title, 22);
+      tx.textContent = (noteRow.stale ? '上次打开：' : '') + cutTitle(noteRow.title, 22);
       tx.title = noteRow.title;
       nr.appendChild(ic); nr.appendChild(tx);
       if (noteRow.total) {
@@ -1142,7 +1229,24 @@
       box.appendChild(nr);
     }
 
-    /* 第三段：刚发出去的那句话（回复评论者只有 @谁，正文客户机没回传） */
+    /* 第三段：现在这一步（只在「正在跑」时出现） */
+    if (stepRow && stepRow.text) {
+      const sr = document.createElement('div');
+      sr.className = 'bl-step';
+      const ic = document.createElement('span'); ic.className = 'ico';
+      ic.textContent = stepRow.icon || '👉';
+      const tx = document.createElement('span'); tx.className = 'tx';
+      tx.textContent = '现在：' + stepRow.text;
+      tx.title = stepRow.text;
+      sr.appendChild(ic); sr.appendChild(tx);
+      if (stepRow.tm) {
+        const tm = document.createElement('span'); tm.className = 'tm'; tm.textContent = stepRow.tm;
+        sr.appendChild(tm);
+      }
+      box.appendChild(sr);
+    }
+
+    /* 第四段：刚发出去的那句话（回复评论者只有 @谁，正文客户机没回传） */
     if (sayRow) {
       const sr = document.createElement('div');
       sr.className = 'bl-say' + (sayRow.bad ? ' is-bad' : '');
@@ -1173,7 +1277,21 @@
   let lastBenchJ = null;          // 最近一次轮询拿到的单子（从评论视图切回记录时照着它重画）
 
   function parseDetail(raw) {
-    const lines = String(raw || '').split('\n')
+    let src = String(raw || '');
+    let meta = null;
+    const head = src.trim().slice(0, 1);
+    if (head === '{' || head === '[') {
+      /* 机器那份（JSON）：能解开就只拿里面的日志尾巴；解不开（服务器只留 2000 字、被截断过的）
+         就一个字都不摊——老板要看的是「干了什么」，不是一段代码 */
+      try {
+        const o = JSON.parse(src);
+        meta = (o && typeof o === 'object' && !Array.isArray(o)) ? o : null;
+        src = String((meta && (meta.logTail || meta.log)) || '');
+      } catch (_) {
+        return { blocks: [], tail: [], work: [], sentTo: new Set(), meta: null };
+      }
+    }
+    const lines = src.split('\n')
       .map((s) => s.replace(/\s+$/, '').trim())
       .filter((s) => s && !/^操作日志将显示在这里/.test(s));
     const items = lines.map((s) => {
@@ -1192,9 +1310,10 @@
     items.forEach((it) => {
       const x = it.text;
       let m;
-      if ((m = x.match(/^📄\s*打开笔记\s*"(.+)"\s*\((\d+)\/(\d+)\)/))) {
+      const om = noteOpenMatch(x);
+      if (om) {
         const b = open(it);
-        b.title = m[1]; b.idx = Number(m[2]); b.total = Number(m[3]);
+        b.title = om.title; b.idx = om.idx; b.total = om.total;
         pendingWho = ''; pendingCopy = null;
         return;
       }
@@ -1220,7 +1339,7 @@
       if (/^干活窗口：/.test(x)) { work.push({ tm: it.tm, text: x }); return; }
       cur.rows.push({ tm: it.tm, text: x, cls: /⚠️|失败/.test(x) ? 'bad' : '' });
     });
-    return { blocks, tail, work, sentTo };
+    return { blocks, tail, work, sentTo, meta };
   }
 
   /* 最近这一趟是哪一单：有在跑的（等接 / 已送到）就是它，否则拿最近跑完或失败的那单 */
@@ -1266,8 +1385,9 @@
         out.head = { seq: Number(m[1]), kind: m[2].trim(), kw: m[3] };
         return;
       }
-      if ((m = x.match(/^📄 打开笔记\s*"(.+)"\s*\((\d+)\/(\d+)\)/))) {
-        card = { tm: ln.tm, title: m[1], idx: Number(m[2]), total: Number(m[3]), rows: [], says: [], copies: [], bad: false };
+      const om = noteOpenMatch(x);
+      if (om) {
+        card = { tm: ln.tm, title: om.title, idx: om.idx, total: om.total, rows: [], says: [], copies: [], bad: false };
         out.cards.push(card);
         return;
       }
@@ -1307,8 +1427,9 @@
       else out.misc.push(ln);
     });
 
-    /* ② 话术全文：从最近一单回执的日志尾巴里拆，按标题贴回对应的卡 */
-    const raw = String((a.done && a.done.detail) || '');
+    /* ② 话术全文：从最近一单回执的日志尾巴里拆，按标题贴回对应的卡
+       （新执行器把给人看的那段另放 log；老单只有 detail——里面是 JSON 的话 parseDetail 自己会剥） */
+    const raw = String((a.done && (a.done.log || a.done.detail)) || '');
     if (raw.trim()) {
       const d = parseDetail(raw);
       d.blocks.forEach((b) => {
@@ -1332,6 +1453,15 @@
       });
       if (!out.hasAny && d.blocks.length) out.hasAny = true;   // 回执圈被挤掉了：光凭明细也照铺
       if (!out.startTm && d.blocks[0] && d.blocks[0].tm) out.startTm = d.blocks[0].tm;
+      /* 回执 JSON 里带着这一趟的总账：实时播报被挤掉时，拿它把抬头和战果补齐 */
+      if (d.meta) {
+        if (!out.head && prog.pos) out.head = { seq: prog.pos.seq, kind: '搜索', kw: prog.pos.kw };
+        out.found = out.found || Number(d.meta.found) || 0;
+        out.comments = out.comments || Number(d.meta.comments) || 0;
+        if (!out.summary && (out.found || out.comments)) {
+          out.summary = { found: out.found, comments: out.comments };
+        }
+      }
     }
     /* 报告的和明细的两路拼在一起，按时刻把每张卡里的行顺回来 */
     out.cards.forEach((c) => {
@@ -1723,9 +1853,9 @@
     });
   }
 
-  /* 这几块只在「工作台 · 小红书」这一页出现。
-     在不在工作台看二级 tab（tabCommentAssistant 带 active）——记录视图下 mainContent 是藏着的，
-     不能再拿它的显隐当判断；平台页签没开的账号（只有小红书这一份）当作小红书。 */
+  /* 这几块只在「队列 → 🧐 工作台 · 小红书」这一格出现。
+     在不在这一格看：队列页带 active，且页内横签停在 work（window.__xhsDqTab）；
+     记录视图下 mainContent 是藏着的，不能拿它的显隐当判断；平台页签没开的账号当作小红书。 */
   function benchPlat() {
     const bar = document.getElementById('wbPlatBar');
     if (!bar || bar.style.display === 'none') return 'xhs';
@@ -1734,10 +1864,18 @@
   }
 
   function benchPageOn() {
-    const t = document.getElementById('tabCommentAssistant');
-    if (t) return t.classList.contains('active');
+    /* 2026-11-12：工作台并进「获客 → 队列」第三格——队列页且停在工作台那格才算在；
+       基础版没有队列页，工作台还是单独一屏，认平台页签露没露 */
+    const t = document.getElementById('tabQueue');
+    if (t && t.classList.contains('active')) return window.__xhsDqTab === 'work';
     const bar = document.getElementById('wbPlatBar');
     return !!(bar && bar.style.display !== 'none');
+  }
+
+  /* 队列页（2026-11-12）：队列条从工作台搬到了「获客 → 队列」，显隐跟着那条二级页走 */
+  function queuePageOn() {
+    const t = document.getElementById('tabQueue');
+    return !!(t && t.classList.contains('active'));
   }
 
   function syncBenchChrome() {
@@ -1752,7 +1890,8 @@
     if (sl) { sl.classList.toggle('wb-rec', rec); sl.classList.toggle('wb-drill', drill); }
     const rc = document.getElementById('benchRecord');
     if (rc) rc.style.display = on ? '' : 'none';      // 两种模式都占着中间那块
-    if (qbar) qbar.style.display = on ? '' : 'none';  // 队列条（今天跑到哪 / 开始暂停）
+    /* 队列页三个页内横签：切到周历 / 工作台就别再把今天的清单放出来 */
+    if (qbar) qbar.style.display = (queuePageOn() && !window.__xhsDqWeek && window.__xhsDqTab !== 'work') ? '' : 'none';
     if (box) box.style.display = on ? '' : 'none';
     if (noticeEl) noticeEl.style.display = (on && noticeWanted) ? '' : 'none';   // 点了有没有用那条提示
     if (wrap) wrap.style.display = on ? '' : 'none';
@@ -1766,7 +1905,7 @@
     const { wrap } = benchEls();
     const foldBtn = document.getElementById('logFoldBtn');
     if (wrap) wrap.classList.toggle('is-folded', logFolded);
-    if (foldBtn) foldBtn.textContent = logFolded ? '▴ 展开日志' : '▾ 收起日志';
+    if (foldBtn) foldBtn.textContent = logFolded ? '▴ 展开全部日志' : '▾ 收起日志';
   }
 
   function wireBenchChrome() {
@@ -1815,16 +1954,17 @@
       new MutationObserver(syncBenchChrome).observe(pb,
         { attributes: true, attributeFilter: ['class', 'style'], subtree: true });
     }
-    const tc = document.getElementById('tabCommentAssistant');
-    if (tc && window.MutationObserver && !tc.dataset.benchWired) {
-      tc.dataset.benchWired = '1';
-      new MutationObserver(syncBenchChrome).observe(tc, { attributes: true, attributeFilter: ['class'] });
+    const tq = document.getElementById('tabQueue');
+    if (tq && window.MutationObserver && !tq.dataset.benchWired) {
+      tq.dataset.benchWired = '1';
+      new MutationObserver(syncBenchChrome).observe(tq, { attributes: true, attributeFilter: ['class'] });
     }
     const mc = document.getElementById('mainContent');
     if (mc && window.MutationObserver && !mc.dataset.benchWired) {
       mc.dataset.benchWired = '1';
       new MutationObserver(syncBenchChrome).observe(mc, { attributes: true, attributeFilter: ['style'] });
     }
+    window.__xhsBenchSync = syncBenchChrome;   // 队列页切内外横签时，popup 那头喊一声重算
     syncBenchChrome();
   }
 
@@ -1909,6 +2049,23 @@
        工作台那边拿它画顶行和后面几类；这里拿它的停手原因弹横幅。 */
     const chain = j.chain || null;
     window.__xhsChain = chain;
+    /* 队列跑动摘要（2026-11-10）：客户机那本队列账只在本机，公网这边靠执行器捎上来。
+       变了才重画队列条（8 秒一轮，别每次轮询都重建 DOM）。 */
+    const bench = (j.bench && typeof j.bench === 'object') ? j.bench : null;
+    const benchSig = bench
+      ? JSON.stringify(bench.running || null) + '|' + (Array.isArray(bench.done) ? bench.done.length : 0)
+        + '|' + ((bench.done && bench.done[0] && bench.done[0].at) || 0) + '|' + (bench.at || 0)
+      : '';
+    if (window.__xhsExecBenchSig !== benchSig) {
+      window.__xhsExecBenchSig = benchSig;
+      window.__xhsExecBench = bench;
+      window.__xhsBenchPainted = false;
+    }
+    /* 队列那块要晚一拍才加载：等它在了再画；画过一次就等下次摘要变了再画 */
+    if (!window.__xhsBenchPainted && typeof window.renderBenchQueueBar === 'function') {
+      window.__xhsBenchPainted = true;
+      try { window.renderBenchQueueBar(); } catch (_) {}
+    }
     const chainStop = (chain && chain.status === 'stopped' && chain.stopKind && chain.stopKind !== 'manual') ? chain : null;
     /* 认号红条：停手原因优先显示搜索链的；没有就显示错号/没登录（只停那一个平台） */
     const loginCmd = !chainStop
@@ -2044,8 +2201,396 @@
     paintGuide(h.online);
   }
 
+  /* ── 📜 运行日志（2026-11-05）──
+     顶栏那颗「📜 运行日志」开它：把 /api/exec/orders 里的 reports 按天往回翻，
+     点类别筛（搜索/打开/评论/跳过/失败），失败标红，整段能复制。
+     只读服务器那本账，不碰执行器、也不另存一份。 */
+  const RL = { open: false, reports: [], snaps: [], day: '', filter: 'all', timer: 0, openIds: new Set(), full: {} };
+  const RL_FILTERS = [
+    { k: 'all', name: '全部' },
+    { k: 'notes', name: '📝 逐篇记录' },
+    { k: 'search', name: '搜索' },
+    { k: 'open', name: '打开' },
+    { k: 'comment', name: '评论' },
+    { k: 'skip', name: '跳过' },
+    { k: 'fail', name: '失败' },
+  ];
+  const rlEl = (id) => document.getElementById(id);
+
+  function rlDayOf(r) { return reportTime(r).day; }
+
+  function rlDayName(d) {
+    if (d === dayKey(new Date())) return '今天';
+    if (d === dayKey(new Date(Date.now() - 86400000))) return '昨天';
+    if (d === dayKey(new Date(Date.now() - 172800000))) return '前天';
+    return String(d || '').length >= 10 ? d.slice(5) : d;
+  }
+
+  function rlMatch(t) {
+    const f = RL.filter;
+    if (f === 'all') return true;
+    if (f === 'fail') return /^❌|^🔴|^🛑|^⚠️|失败|超时|没跑|打不开|没点上/.test(t);
+    if (f === 'search') return /搜索|换词|排序|搜到|关键词/.test(t);
+    if (f === 'open') return /打开/.test(t);
+    if (f === 'comment') return /评论|回复/.test(t);
+    if (f === 'skip') return /跳过|⏭/.test(t);
+    return true;
+  }
+
+  /* 选中的那一天 → 一行一条（执行器会把几句凑在一条里，拆开才看得清） */
+  function rlLines() {
+    const out = [];
+    (RL.reports || []).forEach((r) => {
+      if (!r || rlDayOf(r) !== RL.day) return;
+      const tm = reportTime(r).tm;
+      reportLines(r).forEach((ln) => {
+        if (!rlMatch(ln.text)) return;
+        out.push({ tm: tm, src: ln.src, text: ln.text, type: logLineType(ln.text) });
+      });
+    });
+    return out;
+  }
+
+  /* ── 逐篇记录（2026-11-05）：执行器每跑完一篇，回传「读到的正文 + 读到的评论 + 为什么这么决定」。
+     老板要按篇回看、自己判断哪些该评——所以这里不加工，把读到的原样摊开。 */
+  const rlDayOfSnap = (s) => {
+    const at = Number(s && s.at) || Number(s && s.ts) || 0;
+    return at ? dayKey(new Date(at)) : '';
+  };
+  const rlSnapList = () => (RL.snaps || [])
+    .filter((s) => s && rlDayOfSnap(s) === RL.day)
+    .sort((a, b) => (Number(a.at) || Number(a.ts) || 0) - (Number(b.at) || Number(b.ts) || 0));
+  const RL_MODE_NAME = { note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' };
+  const rlModeText = (m) => RL_MODE_NAME[m] || m || '—';
+  /* 每篇的「笔记层结论」：大V/竞对 · 刚起来 · 本篇怎么做 */
+  const RL_ACT = { grab: '抢首评', comment: '值得评', reply: '只回评论', collect: '只收人', skip: '跳过' };
+  function rlReviewText(rv) {
+    if (!rv || typeof rv !== 'object') return '';
+    const who = rv.matched === 'highv' ? '👑 大V' : rv.matched === 'rival' ? '🕵️ 竞对' : '';
+    const fresh = rv.fresh ? '⏱ 刚起来' : '';
+    const act = rv.fallback ? '没判成·按玩法' : (RL_ACT[rv.action] || (rv.verdict === 'blocked' ? '跳过' : ''));
+    return [who, fresh, act].filter(Boolean).join(' · ');
+  }
+  function rlReviewTip(rv) {
+    if (!rv || typeof rv !== 'object') return '';
+    return [
+      rv.freshWhy ? ('判成「刚起来」：' + rv.freshWhy) : '',
+      rv.reason ? ('AI 判断：' + rv.reason) : '',
+      rv.why ? ('这一篇这么做：' + rv.why) : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  function rlSnapEl(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function rlRenderFull(holder, full) {
+    holder.textContent = '';
+    holder.appendChild(rlSnapEl('div', 'rl-note-body', (full && full.body) || '（没读到正文）'));
+    const fcs = (full && Array.isArray(full.comments)) ? full.comments : [];
+    if (fcs.length) {
+      const ol = rlSnapEl('ol', 'rl-note-cm');
+      fcs.forEach((c) => {
+        const li = rlSnapEl('li', c && c.hot ? 'hot' : '', '');
+        li.textContent = (c && c.hot ? '🔥 ' : '') + '@' + ((c && c.a) || '用户')
+          + (c && c.l ? '（' + c.l + '）' : '') + '：' + ((c && c.t) || '');
+        ol.appendChild(li);
+      });
+      holder.appendChild(ol);
+    } else {
+      holder.appendChild(rlSnapEl('div', 'rl-note-meta', '（这一篇没读到评论）'));
+    }
+  }
+
+  function rlPaintSnaps(list) {
+    const arr = rlSnapList();
+    if (!arr.length) {
+      list.appendChild(rlSnapEl('div', 'rl-empty', '这一天还没有逐篇记录（新版执行器跑完一篇才会记；之前那些篇没留）'));
+      return;
+    }
+    arr.forEach((s) => {
+      const sent = Number(s.sent) || 0;
+      const card = rlSnapEl('div', 'rl-note' + (sent > 0 ? ' sent' : ''));
+      const h = rlSnapEl('div', 'rl-note-h');
+      h.appendChild(rlSnapEl('span', 'rl-note-tm', reportTime(s).tm));
+      h.appendChild(rlSnapEl('span', 'rl-note-title', s.title || '（没读到标题）'));
+      h.appendChild(rlSnapEl('span', 'rl-note-badge', sent > 0 ? ('已发 ' + sent + ' 条') : '没发'));
+      card.appendChild(h);
+      const rvTxt = rlReviewText(s.noteReview);
+      if (rvTxt) {
+        const rv = rlSnapEl('div', 'rl-note-meta', '🧠 ' + rvTxt);
+        const rvTip = rlReviewTip(s.noteReview);
+        if (rvTip) rv.title = rvTip;
+        card.appendChild(rv);
+      }
+      card.appendChild(rlSnapEl('div', 'rl-note-dec', '🖊 ' + (s.decide || '（这版执行器没记决定）') + (s.reason ? '（原因：' + s.reason + '）' : '')));
+      card.appendChild(rlSnapEl('div', 'rl-note-meta',
+        '策略：' + rlModeText(s.mode) + ' · 正文 ' + (Number(s.bodyLen) || 0) + ' 字 · 评论共 ' + (Number(s.totalComments) || 0) + ' 条'
+        + (s.readErr ? ' · 读取有状况：' + s.readErr : '')));
+
+      /* 正文/评论不塞进 8 秒一次的轮询里（慢网会被拖死）：点开这一篇再去服务器取全文 */
+      const det = document.createElement('details');
+      const storedN = Math.min(10, Number(s.totalComments) || 0);
+      det.appendChild(rlSnapEl('summary', '', '展开看正文' + (storedN ? '和前 ' + storedN + ' 条评论' : '')));
+      const holder = rlSnapEl('div', 'rl-note-full', '');
+      det.appendChild(holder);
+      if (RL.full[s.id]) rlRenderFull(holder, RL.full[s.id]);
+      det.addEventListener('toggle', async () => {
+        if (!det.open) { RL.openIds.delete(s.id); return; }
+        RL.openIds.add(s.id);
+        if (RL.full[s.id]) { rlRenderFull(holder, RL.full[s.id]); return; }
+        if (det.dataset.loaded) return;
+        det.dataset.loaded = '1';
+        holder.textContent = '正在取这一篇的正文和评论…';
+        try {
+          const r = await fetch('api/exec/notesnap/get', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: s.id }),
+          });
+          const j = await r.json();
+          if (!j || !j.ok) throw new Error((j && j.error) || '取不到');
+          RL.full[s.id] = j.snap || {};
+          rlRenderFull(holder, RL.full[s.id]);
+        } catch (e) {
+          det.dataset.loaded = '';
+          holder.textContent = '这次没取到：' + ((e && e.message) || e) + '（收起再点开试一次）';
+        }
+      });
+      card.appendChild(det);
+      if (RL.openIds.has(s.id)) det.open = true;   // 每 8 秒重画一次，展开着的这篇别给合上
+      list.appendChild(card);
+    });
+  }
+
+  /* 逐篇记录的样式：挂在执行桥里就地注入，不用改 popup.html（那份网页还有别的改动在并行，少碰一处少一处冲突） */
+  function rlEnsureStyle() {
+    if (document.getElementById('rlNoteStyle')) return;
+    const st = document.createElement('style');
+    st.id = 'rlNoteStyle';
+    st.textContent = [
+      '.rl-note{border:1px solid #ece3df;border-left:3px solid #c41d3c;border-radius:8px;background:#fff;padding:8px 10px;margin:0 0 8px;font-size:12px;line-height:1.6}',
+      '.rl-note.sent{border-left-color:#2e9e5b}',
+      '.rl-note-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}',
+      '.rl-note-tm{color:#999;font-variant-numeric:tabular-nums}',
+      '.rl-note-title{font-weight:700;color:#222}',
+      '.rl-note-badge{font-size:11px;padding:1px 6px;border-radius:9px;background:#fdecef;color:#c41d3c}',
+      '.rl-note.sent .rl-note-badge{background:#eaf7ef;color:#1f7a45}',
+      '.rl-note-dec{color:#333;margin-top:2px;font-weight:600}',
+      '.rl-note-meta{color:#999;font-size:11px;margin-top:2px}',
+      '.rl-note details{margin-top:6px;border-top:1px dashed #efe6e2;padding-top:6px}',
+      '.rl-note summary{cursor:pointer;color:#8a6b62;font-size:11px;font-weight:600}',
+      '.rl-note-body{white-space:pre-wrap;word-break:break-word;background:#faf7f5;border-radius:6px;padding:6px 8px;margin:6px 0;color:#444}',
+      '.rl-note-cm{margin:4px 0 0;padding-left:18px;color:#444}',
+      '.rl-note-cm li{margin:2px 0}',
+      '.rl-note-cm li.hot{color:#b3163a;font-weight:600}',
+      '.rl-note-tip{background:#fff7f4;border:1px dashed #e7c9bf;border-radius:6px;padding:6px 9px;margin:0 0 8px;font-size:12px;color:#8a4a3a}',
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  function rlPaint() {
+    const box = rlEl('rlDays');
+    const chips = rlEl('rlChips');
+    const list = rlEl('rlList');
+    const sub = rlEl('rlSub');
+    if (!box || !chips || !list) return;
+    const days = Array.from(new Set(
+      (RL.reports || []).map(rlDayOf).concat((RL.snaps || []).map(rlDayOfSnap))
+    ).filter(Boolean)).sort().reverse();
+    if (!days.length) days.push(dayKey(new Date()));
+    if (days.indexOf(RL.day) < 0) RL.day = days[0];
+    box.innerHTML = '';
+    days.forEach((d) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rl-day' + (d === RL.day ? ' on' : '');
+      b.dataset.d = d;
+      b.textContent = rlDayName(d);
+      b.title = d;
+      box.appendChild(b);
+    });
+    chips.innerHTML = '';
+    RL_FILTERS.forEach((f) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'rl-chip' + (f.k === RL.filter ? ' on' : '');
+      b.dataset.k = f.k;
+      b.textContent = f.name;
+      chips.appendChild(b);
+    });
+    const lines = rlLines();
+    if (sub) {
+      const head = rlDayName(RL.day) + (RL.day && RL.day !== rlDayName(RL.day) ? '（' + RL.day + '）' : '');
+      sub.textContent = (RL.paired === false)
+        ? '这台电脑还没挂上执行器'
+        : head + (RL.filter === 'notes'
+          ? ' · 共 ' + rlSnapList().length + ' 篇'
+          : ' · 共 ' + lines.length + ' 条 · 逐篇 ' + rlSnapList().length + ' 篇 · 服务器留着最近几天，更早的会被顶掉');
+    }
+    list.innerHTML = '';
+    if (RL.filter === 'notes') { rlPaintSnaps(list); return; }
+    /* 不在「逐篇记录」这栏时，也给一句入口提示——不然老板不知道每一篇的正文/评论记在哪儿 */
+    const snapN = rlSnapList().length;
+    if (snapN) list.appendChild(rlSnapEl('div', 'rl-note-tip',
+      '📝 这一天记了 ' + snapN + ' 篇：每一篇读到的正文、读到的评论、为什么评/不评——点上面「📝 逐篇记录」按篇展开'));
+    if (!lines.length) {
+      const e = document.createElement('div');
+      e.className = 'rl-empty';
+      e.textContent = RL.filter === 'all' ? '这一天还没有日志' : '这个类别下这一天没有日志';
+      list.appendChild(e);
+      return;
+    }
+    lines.forEach((l) => {
+      const d = document.createElement('div');
+      d.className = 'rl-line ' + l.type;
+      const tm = document.createElement('span');
+      tm.className = 't';
+      tm.textContent = l.tm || '';
+      const sc = document.createElement('span');
+      sc.className = 't';
+      sc.textContent = l.src || '';
+      const tx = document.createElement('span');
+      tx.textContent = l.text;
+      d.appendChild(tm); d.appendChild(sc); d.appendChild(tx);
+      list.appendChild(d);
+    });
+    list.scrollTop = list.scrollHeight;
+  }
+
+  async function rlFetch() {
+    const list = rlEl('rlList');
+    try {
+      const r = await fetch('api/exec/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const j = await r.json();
+      if (!j || !j.ok) throw new Error((j && j.error) || '取不到日志');
+      RL.reports = Array.isArray(j.reports) ? j.reports : [];
+      RL.snaps = Array.isArray(j.noteSnaps) ? j.noteSnaps : [];
+      RL.paired = !!(j.hand && j.hand.paired);
+      rlPaint();
+    } catch (e) {
+      if (!list) return;
+      list.innerHTML = '';
+      const d = document.createElement('div');
+      d.className = 'rl-empty';
+      d.textContent = '这次没取到日志：' + ((e && e.message) || e) + '（网络不稳就点「↻ 刷新」再试）';
+      list.appendChild(d);
+    }
+  }
+
+  function rlOpen() {
+    const m = rlEl('runLogModal');
+    if (!m) return;
+    m.style.display = 'flex';
+    RL.open = true;
+    rlFetch();
+    if (!RL.timer) {
+      RL.timer = setInterval(() => { if (RL.open) rlFetch(); }, 8000);
+    }
+  }
+
+  function rlClose() {
+    const m = rlEl('runLogModal');
+    if (m) m.style.display = 'none';
+    RL.open = false;
+    if (RL.timer) { clearInterval(RL.timer); RL.timer = 0; }
+  }
+
+  function rlCopyFallback(txt, done) {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (_) { say('复制没成功，可以手动选中日志再复制', 'warn'); }
+    ta.remove();
+  }
+
+  async function rlCopy() {
+    /* 逐篇记录这栏：复制成「标题 / 决定 / 正文 / 评论」的纯文本，老板拿去做分析好喂给别的工具。
+       正文和评论不在轮询里，所以这一下现去服务器取全文（只点一次才取）。 */
+    if (RL.filter === 'notes') {
+      const list = rlSnapList();
+      if (!list.length) { say('这一天没有逐篇记录', 'warn'); return; }
+      say('正在取这一天的正文和评论…', 'info');
+      let arr = list;
+      try {
+        const r = await fetch('api/exec/notesnap/get', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: 1 }),
+        });
+        const j = await r.json();
+        if (j && j.ok && Array.isArray(j.snaps) && j.snaps.length) {
+          const want = new Set(list.map((s) => s.id));
+          const got = j.snaps.filter((s) => s && want.has(s.id));
+          if (got.length) arr = got;
+        }
+      } catch (_) {}
+      const txt = arr.map((s) => [
+        '《' + (s.title || '') + '》 ' + reportTime(s).tm + (Number(s.sent) > 0 ? '（已发 ' + s.sent + ' 条）' : '（没发）'),
+        '决定：' + (s.decide || '') + (s.reason ? '（' + s.reason + '）' : ''),
+        '正文：' + (s.body || ''),
+        '评论（共 ' + (Number(s.totalComments) || (s.comments || []).length) + ' 条，列出前 ' + ((s.comments || []).length) + ' 条）：',
+        (s.comments || []).map((c, i) => (i + 1) + '. ' + (c && c.hot ? '[商机] ' : '') + '@' + ((c && c.a) || '') + '：' + ((c && c.t) || '')).join('\n'),
+      ].join('\n')).join('\n\n----------\n\n');
+      const done = () => say('逐篇记录已复制（' + arr.length + ' 篇）', 'success');
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).then(done).catch(() => rlCopyFallback(txt, done));
+          return;
+        }
+      } catch (_) {}
+      rlCopyFallback(txt, done);
+      return;
+    }
+    const lines = rlLines();
+    const txt = lines.map((l) => (l.tm ? l.tm + ' ' : '') + l.text).join('\n');
+    if (!txt) { say('这一天没有可复制的日志', 'warn'); return; }
+    const done = () => say('日志已复制（' + lines.length + ' 条）', 'success');
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(done).catch(() => rlCopyFallback(txt, done));
+        return;
+      }
+    } catch (_) {}
+    rlCopyFallback(txt, done);
+  }
+
+  function wireRunLog() {
+    rlEnsureStyle();
+    const btn = rlEl('hdrRunLogBtn');
+    if (btn && !btn.dataset.rlBound) {
+      btn.dataset.rlBound = '1';
+      btn.addEventListener('click', rlOpen);
+    }
+    const m = rlEl('runLogModal');
+    if (!m || m.dataset.rlBound) return;
+    m.dataset.rlBound = '1';
+    m.addEventListener('click', (e) => { if (e.target === m) rlClose(); });
+    const x = rlEl('rlClose'); if (x) x.addEventListener('click', rlClose);
+    const rf = rlEl('rlRefresh'); if (rf) rf.addEventListener('click', rlFetch);
+    const cp = rlEl('rlCopy'); if (cp) cp.addEventListener('click', rlCopy);
+    const days = rlEl('rlDays');
+    if (days) days.addEventListener('click', (e) => {
+      const b = e.target.closest('.rl-day');
+      if (!b || !b.dataset.d) return;
+      RL.day = b.dataset.d;
+      rlPaint();
+    });
+    const chips = rlEl('rlChips');
+    if (chips) chips.addEventListener('click', (e) => {
+      const b = e.target.closest('.rl-chip');
+      if (!b || !b.dataset.k) return;
+      RL.filter = b.dataset.k;
+      rlPaint();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && RL.open) rlClose(); });
+  }
+
   /* ── 挂线与轮询 ── */
   function boot() {
+    wireRunLog();
     if (NO_STRIP) {
       log('出片页桥已就位：只挂出片下单口');
       return;

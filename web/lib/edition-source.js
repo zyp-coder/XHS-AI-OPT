@@ -171,7 +171,7 @@ window.XhsEdition = (() => {
     }
 
     /* 获客：没开就把整块收掉——连「获客」这扇门一起收，工作台只活在获客下面 */
-    const WATER_IDS = ['panelLeft', 'divider', 'subTabs', 'tabQueue', 'tabPool', 'tabHuokeCfg', 'huokeCfgContent', 'tabCommentAssistant'];
+    const WATER_IDS = ['panelLeft', 'divider', 'subTabs', 'tabPlan', 'tabQueue', 'tabPool', 'tabHuokeCfg', 'huokeCfgContent', 'dqTabs'];
     const huoke = byId('tabHuoke');
     const banner = document.querySelector('.right-toolbar .toolbar-title');
     const delaysTab = document.querySelector('#setTabs [data-stab="delays"]');

@@ -58,10 +58,20 @@
       z-index: 10;
     }
     .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .brand-txt { display: flex; align-items: center; min-width: 0; }
     .brand-name {
       font-size: var(--fs-lg); font-weight: 700; letter-spacing: .2px;
       color: var(--c-ink); white-space: nowrap;
     }
+    .brand-slogan {
+      display: none;
+      margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--c-line);
+      font-size: var(--fs-xs); line-height: 1.3; letter-spacing: .2px;
+      color: var(--c-ink-3); white-space: nowrap;
+    }
+    /* 短句只在大窗（?mode=big）露面：640 小窗顶栏右边已经排到 513px，塞进去就把「今天」那颗挤走 */
+    body[data-mode="big"] .brand-slogan { display: inline-block; }
+    @media (max-width: 1080px) { body[data-mode="big"] .brand-slogan { display: none; } }
     .logo-dot {
       display: inline-flex; align-items: center; justify-content: center;
       width: 26px; height: 26px; border-radius: var(--r-sm);
@@ -80,7 +90,7 @@
       min-width: 0; max-width: 138px; color: var(--c-ink);
       font: 600 var(--fs-sm)/1.4 var(--font-ui);
     }
-    /* 顶栏两条文字入口：⬇️ 执行器（→装执行器页）/ ❓ 新手引导 */
+    /* 顶栏文字入口：❓ 帮助说明（运行日志已收进「今天」那一排） */
     .hdr-link {
       display: inline-flex; align-items: center;
       height: 28px; padding: 0 11px;
@@ -111,20 +121,14 @@
       font: 700 12.5px/1.4 var(--font-ui); white-space: nowrap;
     }
     .hdr-acct:hover { border-color: var(--c-brand-line); background: var(--c-brand-soft); }
+    /* 试用中／本期到期／快到期：整颗胶囊描一圈橙边，顶栏不再写文字提醒 */
+    .hdr-acct.trial { border-color: #fdba74; background: #fff7ed; }
     .hdr-acct-ava {
       width: 20px; height: 20px; border-radius: 50%; flex: none;
       display: inline-flex; align-items: center; justify-content: center;
       background: var(--c-brand); color: var(--c-brand-on); font-size: 11px; font-weight: 800;
     }
     .hdr-acct-nm { max-width: 84px; overflow: hidden; text-overflow: ellipsis; }
-    .hdr-acct-tier {
-      font-size: 10.5px; font-weight: 800; color: var(--c-brand-ink);
-      background: var(--c-brand-soft); border: 1px solid var(--c-brand-line);
-      border-radius: 999px; padding: 0 6px;
-    }
-    .hdr-acct-tier.free { color: #9a3412; background: #fff7ed; border-color: #fdba74; }
-    .hdr-acct-tier.trial { color: #9a3412; background: #fff7ed; border-color: #fdba74; }
-    .hdr-acct-tier.demo { color: #7a5a00; background: #fdf6e7; border-color: #f0e0b8; }
     .hdr-acct-menu { top: 34px; right: 0; min-width: 320px; max-height: calc(100vh - 96px); overflow-y: auto; }
     .hdr-acct-menu .pop-item { padding: 6px 10px; }
     .hdr-acct-menu .pop-hd { padding: 4px 10px 2px; }
@@ -153,12 +157,12 @@
     .hdr-acct .pl[data-s="ok"] i { background: #0f9d58; }
     .hdr-acct .pl[data-s="bad"] i { background: #e0a12b; }
     .hdr-acct .pl[data-s="off"] i { background: #c3c9d2; }
-    /* 窄窗把名字/档位/灯收掉，换成一颗「已绑 2/3」小标 */
+    /* 窄窗把名字/灯收掉，换成一颗「已绑 2/3」小标 */
     .hdr-acct-cnt {
       display: none; font-size: 10.5px; font-weight: 800; padding: 0 6px; border-radius: 999px;
       background: var(--c-bg-2); border: 1px solid var(--c-line-2); color: var(--c-ink-2); line-height: 18px;
     }
-    /* 菜单第一行：谁 ＋ 档位/尾号 ＋ 配对号（点一下复制） */
+    /* 菜单第一行：谁 ＋ 尾号/剩几天 ＋ 配对号（点一下复制）；档位名不写，鼠标放在顶栏那颗上看 */
     .acct-who { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-size: var(--fs-md); }
     .acct-who b { white-space: nowrap; flex: none; }
     .acct-who .t { font-size: 11.5px; color: var(--c-ink-3); min-width: 0; line-height: 1.35; }
@@ -175,7 +179,7 @@
     .acct-plat .st.off { color: #9aa3af; }
     .acct-bind-go { display: flex; align-items: center; padding: 5px 0 1px; font-size: 12px; font-weight: 700; color: var(--c-brand-ink); cursor: pointer; }
     .acct-bind-go:hover { text-decoration: underline; }
-    /* 没登录时顶栏那颗兜底：点开去新手引导看档位 / 登录 */
+    /* 没登录时顶栏那颗兜底：点开去帮助说明看档位 / 登录 */
     .hdr-login {
       display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 11px;
       border: 1px solid var(--c-line-2); border-radius: var(--r-sm); background: var(--c-surface);
@@ -183,7 +187,7 @@
     }
     .hdr-login:hover { border-color: var(--c-brand-line); color: var(--c-brand-ink); background: var(--c-brand-soft); }
     /* 🔴 掉登录红标（2026-11-04）：机器人那台电脑上的号退了 / 登错了，活跑不了——主提醒就挂在顶栏右侧、
-       挨着「❓ 新手引导」：实心红底白字＋呼吸光圈，点它＝让装执行器的那台电脑把登录页打开等你扫码。
+       挨着「❓ 帮助说明」：实心红底白字＋呼吸光圈，点它＝让装执行器的那台电脑把登录页打开等你扫码。
        谁该亮、写哪几个字，全由 popup.js 的 paintLoginAlert 按 bindState 填（执行器桥每 5 秒刷一次）。 */
     .hdr-alert {
       display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 13px;
@@ -222,10 +226,7 @@
     }
     @media (max-width: 899px) {
       .hdr-acct-nm, .hdr-acct-lights { display: none; }
-      /* 试用 / 到期：小窗也把这颗徽标留着（替掉「已绑 x/y」，不然顶栏挤） */
-      .hdr-acct-tier { display: none; }
-      .hdr-acct-tier.trial { display: inline-block; padding: 0 5px; }
-      .hdr-acct.trial .hdr-acct-cnt { display: none; }
+      /* 窄窗顶栏只留「头像＋已绑 x/y」；试用／到期靠胶囊那圈橙边提醒，不占字位 */
       .hdr-acct-cnt { display: inline-flex; }
       .hdr-acct { padding: 0 4px; }
     }
@@ -303,6 +304,8 @@
     .today-links { display: flex; align-items: center; gap: 14px; padding: 8px 13px; }
     .today-link { font-size: 12px; font-weight: 700; color: var(--c-brand-ink); cursor: pointer; }
     .today-link:hover { text-decoration: underline; }
+    /* 运行日志并入这一排：按钮得跟旁边的链接同一副样子，抹掉浏览器给的框和底色 */
+    button.today-link { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
     .today-foot { padding: 0 13px 10px; font-size: 11px; color: var(--c-ink-3); line-height: 1.6; }
     @media (max-width: 899px) {
       /* 小窗（默认 640 宽）：字「今天」必须留着，只收掉箭头和内边距 */
@@ -997,15 +1000,6 @@
     .refresh-btn:hover { background: var(--primary-bg); }
     .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    /* 获客助手：找商机目的的紧凑条（只在该 Tab 出现） */
-    .purpose-bar {
-      display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-      padding: 0 14px 6px; font-size: 11px; color: #8a8f99; flex-shrink: 0;
-    }
-    .purpose-bar select {
-      font-size: 11px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px;
-      background: #fff; color: var(--ink); cursor: pointer; outline: none; max-width: 200px;
-    }
     
     .batch-send-btn {
           padding: 5px 14px;
@@ -1080,6 +1074,12 @@
     .bench-live .bl-note .ico { flex-shrink: 0; }
     .bench-live .bl-note .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     .bench-live .bl-note .cnt { color: var(--sub); font-weight: 400; font-family: var(--font-num); font-size: 11.5px; flex-shrink: 0; }
+    .bench-live .bl-note.is-stale .tx { color: var(--sub); font-weight: 400; }
+    /* 「现在这一步」：跑的时候一句人话，说明机器人眼下在干什么（2026-11-05） */
+    .bench-live .bl-step { margin-top: 2px; font-size: 12.5px; color: #0a7b5a; display: flex; gap: 6px; align-items: baseline; }
+    .bench-live .bl-step .ico { flex-shrink: 0; }
+    .bench-live .bl-step .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .bench-live .bl-step .tm { font-family: var(--font-num); font-size: 11.5px; color: var(--c-ink-4); flex-shrink: 0; }
     .bench-live .bl-say { margin-top: 2px; font-size: 12.5px; color: var(--sub); display: flex; gap: 6px; align-items: baseline; }
     .bench-live .bl-say .ico { flex-shrink: 0; }
     .bench-live .bl-say .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1134,6 +1134,14 @@
     .bench-qbar .bq-grp:first-child { margin-top: 0; }
     .bq-empty { padding: 14px 8px; text-align: center; font-size: 12px; color: var(--sub); line-height: 2; }
     .bq-empty a { color: var(--c-brand-text); font-weight: 600; }
+    /* 队列页整页版队列条（2026-11-12 从工作台搬到队列页）：占满这一屏，清单摊开 */
+    .bench-qbar-main { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; border: 0; border-radius: 0; }
+    .bench-qbar-main #bqBody { max-height: none; flex: 1; min-height: 0; overflow-y: auto; }
+    /* 工作台上只留一行摘要 + 跳去队列 */
+    .bench-qmini { display: flex; align-items: center; gap: 8px; padding: 6px 14px; flex-shrink: 0; font-size: 12px; color: var(--sub); border-bottom: 1px solid var(--c-line); background: #fcfdfe; }
+    .bench-qmini a { margin-left: auto; color: var(--c-brand-text); font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .q-pagefoot { flex: none; padding: 8px 14px; border-top: 1px solid var(--c-line); background: #fcfdfe; font-size: 11.5px; color: var(--sub); }
+    .q-pagefoot a { color: var(--c-brand-text); font-weight: 600; text-decoration: none; }
 
     .log-wrap { flex-shrink: 0; border-top: 1px solid var(--line); background: #fff; }
     .log-head { display: flex; align-items: center; gap: 8px; padding: 6px 14px; background: #fafbfc; border-bottom: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--ink); }
@@ -1147,7 +1155,10 @@
     /* 日志默认收着：只留一条标题栏，跟着滚／清屏两颗跟着一起藏（收着的时候按它们没意义）。
        用 !important 压过 popup.js 写进面板的内联 display——那边每来一句日志都会把它设成 block */
     .log-wrap.is-folded .log-hide-folded { display: none; }
-    .log-wrap.is-folded .log-panel { display: none !important; }
+    /* 收起时不再整块藏掉：留最近 3 条（老板 2026-11-05 定），想看全的点「展开全部日志」 */
+    .log-wrap.is-folded .log-panel { height: auto !important; max-height: none; overflow: visible; padding-top: 4px; }
+    .log-wrap.is-folded .log-panel .log-entry { display: none !important; }
+    .log-wrap.is-folded .log-panel .log-entry:nth-last-of-type(-n+3) { display: block !important; }
     /* 窗口矮的时候把日志让出一点高度，别把「工作台」顶上那根条挤出去 */
     @media (max-height: 720px) { .log-panel { height: 210px; } }
     .log-entry.info { color: var(--primary); }
@@ -1230,15 +1241,13 @@
     .offline-tip { font-size: 12px; color: var(--sub); background: #f7f8fa; border: 1px dashed var(--c-line-2);
       border-radius: 8px; padding: 5px 10px; margin: 2px 0 8px; }
 
-    /* 记录视图：右栏那套「评论助手」的工具栏 / 状态条 / 评论目的先收起来，整块让给记录 */
+    /* 记录视图：右栏那套「评论助手」的工具栏 / 状态条先收起来，整块让给记录 */
     .panel-right.wb-rec .right-toolbar,
-    .panel-right.wb-rec #purposeBar,
     .panel-right.wb-rec #noteInfo,
     .panel-right.wb-rec #cqBar,
     .panel-right.wb-rec #statusBar,
     .panel-right.wb-rec #mainContent { display: none !important; }
     /* 点开一篇之后：工具栏留着（要用那颗「🔄 评论刷新」），评论助手自己那套正文收起来 */
-    .panel-right.wb-drill #purposeBar,
     .panel-right.wb-drill #noteInfo,
     .panel-right.wb-drill #cqBar,
     .panel-right.wb-drill #statusBar,
@@ -1711,6 +1720,19 @@
       background: linear-gradient(180deg, #fbfbfc, #f7f8fa);
     }
     #drainQueueContent { overflow: hidden; }
+    /* 队列页三个页内横签（2026-11-12）：▶ 现在这趟 / 📅 周历 / 🧐 工作台。
+       横签挂在 .work-area 顶上，队列清单和工作台两头都看得见 */
+    .dq-tabs {
+      flex: none; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      margin: 10px 14px 0; padding: 4px;
+      background: #f6f8fa; border: 1px solid var(--line, #eceef0); border-radius: 10px;
+    }
+    .dq-tabs button {
+      border: 0; background: transparent; border-radius: 8px; padding: 7px 14px;
+      font: inherit; font-size: 13px; font-weight: 700; color: #4b5563; cursor: pointer;
+    }
+    .dq-tabs button:hover { background: rgba(255, 255, 255, .7); }
+    .dq-tabs button.on { background: #fff; color: #0a6b8a; box-shadow: 0 1px 3px rgba(16, 24, 40, .08); }
     #queueBar #leftBotSlot { flex: 1 1 260px; }
     #queueCaps { flex-basis: 100%; font-size: 12.5px; color: #6b7280; line-height: 1.7; }
     #queueBody { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; }
@@ -1914,6 +1936,12 @@
     .np-dir-eff b { font-size: 13px; color: var(--c-ink, #1f2937); }
     .np-dir-eff .np-dir-eff-d { margin: 5px 0 0; min-height: 38px; font-size: 12px; color: var(--c-ink-3, #8b95a3); line-height: 1.6; }
     .np-dir-eff .np-dir-eff-lv { display: inline-block; font-size: 10px; color: #1f4e8c; background: #eef4ff; border-radius: 6px; padding: 1px 6px; }
+    /* 🧩 选题表那一屏：表头钉住、表身自己滚（41 条一屏摆不下） */
+    .np-dir-tbl { max-height: 50vh; overflow: auto; border: 1px solid var(--line, #eceef0); border-radius: 10px; }
+    .np-dir-tbl thead th { position: sticky; top: 0; z-index: 1; background: #f7f9fb; padding: 6px 8px; border-bottom: 1px solid var(--line, #eceef0); font-weight: 700; white-space: nowrap; }
+    .np-dir-tbl tbody td { padding: 7px 8px; border-bottom: 1px solid #f4f6f8; vertical-align: top; }
+    .np-dir-tbl tbody tr:hover { background: #fafcfe; }
+    .np-dir-tbl tr.np-dir-done { background: #fbfcfd; }
 
     /* 🎭 玩法三步向导（2026-10-19 玩法合并·批2）：引流笔记新建＝第 1 步定玩法 → 第 2 步定出口 → 第 3 步写稿。
        一张卡＝玩法表的一行（名＋只摆数的账＋默认出口），一次摊 7 张；镜像 tmp/玩法合并-demo.html */
@@ -2118,6 +2146,91 @@
     .npc-stage-note { font-size: var(--fs-xs); color: var(--c-ink-3); }
     .npc-edit-link { color: var(--c-brand-text); cursor: pointer; font-weight: 700; }
     .npc-edit-link:hover { text-decoration: underline; }
+    /* ── 案例新链：改正文整页＋出片台左字右片（2026-11-10） ── */
+    .npc-fsteps { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+    .npc-fstep { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--c-line);
+      background: var(--c-surface); color: var(--c-ink-2); border-radius: var(--r-full);
+      font-size: var(--fs-sm); font-weight: 700; padding: 4px 11px; cursor: pointer; font-family: var(--font-ui); }
+    .npc-fstep i { width: 16px; height: 16px; border-radius: 50%; background: var(--c-bg-2); color: var(--c-ink-3);
+      font-style: normal; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+    .npc-fstep:hover { border-color: var(--c-brand-line); color: var(--c-brand-ink); }
+    .npc-fstep.on { border-color: var(--c-brand); background: var(--c-brand-soft); color: var(--c-brand-text); }
+    .npc-fstep.on i { background: var(--c-brand); color: var(--c-brand-on); }
+    .npc-sc-head { margin: 0 0 10px; }
+    .npc-sc-head h2 { font-size: var(--fs-lg); font-weight: 800; color: var(--c-ink); margin: 0 0 2px; }
+    .npc-sc-head p { font-size: var(--fs-xs); color: var(--c-ink-3); margin: 0; }
+    .npc-film-grid { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+    .npc-film-main { flex: 1 1 520px; min-width: 0; }
+    .npc-film-side { flex: 0 0 300px; min-width: 0; }
+    @media (max-width: 900px) { .npc-film-side { flex: 1 1 100%; } }
+    .npc-scblock { border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface);
+      margin-bottom: 10px; overflow: hidden; }
+    .npc-scblock .hd { display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+      padding: 7px 10px; background: var(--c-bg-2); border-bottom: 1px solid var(--c-line); }
+    .npc-scblock .hd b { font-size: var(--fs-sm); color: var(--c-ink); }
+    .npc-scblock .hd .sp { flex: 1; }
+    .npc-scblock .tag { font-size: 10px; border: 1px solid var(--c-line); border-radius: 5px;
+      padding: 0 5px; color: var(--c-ink-3); background: var(--c-surface); }
+    .npc-scblock .tag.main { border-color: var(--c-brand-line); background: var(--c-brand-soft);
+      color: var(--c-brand-text); font-weight: 700; }
+    .npc-scblock .tag2 { font-size: 10px; color: var(--c-ink-3); }
+    .npc-scblock .hint { padding: 5px 10px; font-size: 10.5px; color: var(--c-ink-3);
+      border-top: 1px dashed var(--c-line); line-height: 1.7; }
+    .npc-scrow { padding: 7px 10px; font-size: 12.5px; line-height: 1.8; color: var(--c-ink-2);
+      border-bottom: 1px solid var(--c-bg-2); cursor: pointer; }
+    .npc-scrow:last-child { border-bottom: none; }
+    .npc-scrow:hover { background: var(--c-bg-2); }
+    .npc-scrow.on { background: var(--c-brand-soft); color: var(--c-brand-ink); font-weight: 600; }
+    .npc-scpanel { padding: 8px 10px; background: var(--c-brand-soft); border-bottom: 1px solid var(--c-brand-line); }
+    .npc-scpanel .t1 { font-size: 11px; font-weight: 800; color: var(--c-brand-text); margin-bottom: 4px; }
+    .npc-scpanel .old { font-size: 12px; color: var(--c-ink-3); text-decoration: line-through; line-height: 1.7; }
+    .npc-scpanel .new { font-size: 12.5px; color: var(--c-ok); background: var(--c-ok-soft);
+      border: 1px solid var(--c-ok-line); border-radius: 8px; padding: 6px 8px; margin: 6px 0; line-height: 1.75; }
+    .npc-scpanel .ops { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .npc-scpanel input { flex: 1; min-width: 140px; box-sizing: border-box; padding: 5px 8px;
+      border: 1px solid var(--c-brand-line); border-radius: 8px; font-size: 12px; font-family: var(--font-ui); }
+    .npc-scpanel .msg { font-size: 10.5px; color: var(--c-ink-3); margin-top: 4px; }
+    .npc-scpanel .msg.err { color: var(--c-danger); }
+    .npc-sc-ta { display: block; width: 100%; box-sizing: border-box; border: none; padding: 8px 10px;
+      font-size: 12.5px; line-height: 1.8; resize: vertical; min-height: 84px;
+      font-family: var(--font-ui); color: var(--c-ink-2); outline: none; }
+    .npc-sc-empty { padding: 10px; font-size: 11px; color: var(--c-ink-3); line-height: 1.8; }
+    .npc-scut { display: flex; gap: 8px; padding: 7px 8px; border: 1px solid var(--c-line);
+      border-radius: 10px; background: var(--c-surface); margin-bottom: 6px; cursor: pointer; }
+    .npc-scut:hover { border-color: var(--c-brand-line); }
+    .npc-scut.on { border-color: var(--c-brand); background: var(--c-brand-soft); }
+    .npc-scut .thumb { flex: none; width: 54px; height: 32px; border-radius: 6px;
+      background: linear-gradient(135deg, #d6efe9, #e6f1fb); color: var(--c-brand-text);
+      font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+      text-align: center; line-height: 1.2; overflow: hidden; }
+    .npc-scut .tx { min-width: 0; flex: 1; }
+    .npc-scut .tx b { font-size: 11px; color: var(--c-ink); }
+    .npc-scut .tx .s { font-size: 11px; color: var(--c-ink-2); line-height: 1.6; margin-top: 2px; }
+    .npc-scut .tx .m { font-size: 10px; color: var(--c-ink-3); margin-top: 3px; }
+    .npc-sccuts { max-height: 380px; overflow: auto; padding-right: 2px; }
+    .npc-scbar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center;
+      gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 8px 10px; border: 1px solid var(--c-brand-line);
+      border-radius: 12px; background: rgba(255,255,255,.97); box-shadow: 0 -8px 22px rgba(30,40,60,.08); }
+    .npc-scbar .sp { flex: 1; }
+    .npc-schint { font-size: var(--fs-xs); color: var(--c-ink-3); }
+    .npc-phone { width: 270px; height: 480px; max-width: 100%; margin: 6px auto 0; border-radius: 18px;
+      overflow: hidden; background: #0d1117; border: 1px solid #1f2937;
+      box-shadow: 0 10px 26px rgba(15,23,42,.18); position: relative; }
+    .npc-phone:fullscreen { width: 100vw; height: 100vh; border-radius: 0; border: none; background: #000; }
+    .npc-film-stage { width: 100%; height: 100%; }
+    .npc-film-stage canvas, .npc-film-stage video { width: 100%; height: 100%; display: block;
+      object-fit: contain; background: #000; }
+    .npc-phone-ov { position: absolute; left: 0; right: 0; bottom: 0; padding: 7px 10px; font-size: 11px;
+      font-weight: 700; color: #fff; background: linear-gradient(180deg, rgba(13,17,23,0), rgba(13,17,23,.78)); }
+    .npc-phone-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .npc-phone-hd b { font-size: var(--fs-sm); color: var(--c-ink); }
+    .npc-phone-hd .chip { margin-left: auto; font-size: 10px; }
+    .npc-phone-ops { display: flex; gap: 6px; justify-content: center; margin-top: 8px; flex-wrap: wrap; }
+    .npc-phone-meta { font-size: 10.5px; color: var(--c-ink-3); text-align: center; margin-top: 6px; line-height: 1.7; }
+    .npc-film-cut { margin-top: 12px; border: 1px solid var(--c-line); border-radius: var(--r-md);
+      background: var(--c-surface); padding: 8px 10px; }
+    .npc-film-cut summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 700; color: var(--c-ink-2); }
+    .npc-film-cut .npc-sccuts { margin-top: 8px; max-height: none; }
   </style>
 </head>
 <body>
@@ -2125,7 +2238,7 @@
   <div id="wbLoadOverlay">
     <div class="wb-load-card">
       <span class="wb-load-spin"></span>
-      <div class="wb-load-t1">正在打开工作台…</div>
+      <div class="wb-load-t1">小来正在打开工作台…</div>
       <div class="wb-load-t2">第一次打开要下载一批程序文件，网络慢的时候大约要十几秒到半分钟。<br>下载过的机器第二次打开就快了。</div>
       <div class="wb-load-bar"><i></i></div>
       <div class="wb-load-pct">准备中…</div>
@@ -2134,10 +2247,11 @@
   <div class="header">
     <div class="brand">
       <span class="logo-dot"><svg class="ic ic-sm"><use href="#i-spark"></use></svg></span>
-      <span class="brand-name">AI运营工具</span>
+      <span class="brand-txt">
+        <span class="brand-name">客满来</span>
+        <span class="brand-slogan">评论区里寻线索，好店自有满客来</span>
+      </span>
       <span class="badge" id="statusBadge">检查中…</span>
-      <!-- 🛡 账号安全小标（只读）：当前挡位「🛡 保守」；悬停看今日总账 / 单休 / 静默（由 renderGuardBadge 填） -->
-      <span class="badge" id="guardBadge" style="display:none;">🛡 —</span>
     </div>
     <div class="hdr-right">
       <!-- 产品下拉：2026-10-29 先藏起来（换产品改走 设置 → 产品 →「用这一个」），留着备万一要放回来 -->
@@ -2179,6 +2293,7 @@
             </div>
           </div>
           <div class="today-links">
+            <button type="button" class="today-link" id="hdrRunLogBtn" title="运行日志：每趟干了什么、哪一步失败，按天往回翻">📜 运行日志</button>
             <span class="today-link" id="todayGoQueue">去配获客的词 →</span>
             <span class="today-link" id="todayGoCard">这一页怎么用 →</span>
           </div>
@@ -2189,7 +2304,6 @@
         <button type="button" class="hdr-acct" id="hdrAcctBtn" title="当前账号：平台登录灯 / 配对号 / 执行器 / 退出换账号">
           <span class="hdr-acct-ava" id="hdrAcctAva">我</span>
           <span class="hdr-acct-nm" id="hdrAcctNm"></span>
-          <span class="hdr-acct-tier" id="hdrAcctTier"></span>
           <span class="hdr-acct-lights" id="hdrAcctLights"></span>
           <span class="hdr-acct-cnt" id="hdrAcctCnt"></span>
         </button>
@@ -2200,6 +2314,9 @@
           <div id="hdrAcctLoginRow"></div>
           <div class="acct-plats" id="hdrAcctPlats"></div>
           <div class="pop-item static" id="hdrAcctExecRow"></div>
+          <!-- ⬇️ 专属执行器包（只给付费号摆）：点了直接下 download/customers/<账号id>.zip，
+               那边缺包会自己现打，所以「最新」不用这边操心 -->
+          <div class="pop-item" id="hdrAcctDlRow" style="display:none;"></div>
           <div class="hdr-acct-ops" id="hdrExecOps" style="display:none;"></div>
           <div class="pop-item" id="hdrAcctOwnRow" style="display:none;"><span id="hdrAcctOwn" class="hdr-acct-go">开一个自己的号 →</span></div>
           <div class="pop-sep"></div>
@@ -2211,7 +2328,7 @@
       <!-- 🔴 掉登录红标：机器人在的那台电脑退登 / 登错号就亮，点它＝派「登录机器人」给那台电脑，
            由它把小红书登录页打开等你扫码（网页这边不自己开登录页）。字与显示由 paintLoginAlert 管 -->
       <button type="button" class="hdr-alert" id="hdrLoginAlert" style="display:none;" title=""></button>
-      <a class="hdr-link" id="hdrGuideLink" href="guide.html" title="新手引导：工作台五块、各页干啥、哪些是扩展功能">❓ 新手引导</a>
+      <a class="hdr-link" id="hdrGuideLink" href="guide.html" title="帮助说明：工作台五块、各页干啥、哪些是扩展功能">❓ 帮助说明</a>
       <span id="hdrMore">
         <button class="btn btn-icon btn-sm" id="hdrMoreBtn" title="更多：大窗 / 拟人化挡位 / 设置">
           <svg class="ic"><use href="#i-more"></use></svg>
@@ -2236,12 +2353,12 @@
 
   <!-- 页头渐变带：当前页名 ＋ 一句这页干啥的（文字由 popup.js 从选中的导航项现取，窄窗只留页名） -->
   <div class="page-hero" id="pageHero">
-    <span class="ph-name" id="phName">AI运营工具</span>
+    <span class="ph-name" id="phName">客满来</span>
     <span class="ph-sub" id="phSub"></span>
   </div>
 
   <!-- 左侧导航栏：一级 4 个（诊断&配置 / 获客 / 线索 / 发笔记，设置独立在最下），各自下挂二级
-       （诊断&配置 6 节点 / 发笔记：笔记规划·笔记档案·工作台·素材·复盘（素材页内两签：切片台 / 素材库） / 获客：任务配置·队列·工作台·笔记池·设置 / 线索：任务配置·通知·消息·设置 / 设置：系统级几页）
+       （诊断&配置 6 节点 / 发笔记：笔记规划·笔记档案·工作台·素材·复盘（素材页内两签：切片台 / 素材库） / 获客：获客规划·队列·复盘·设置；获客的工作台收进「队列 → 🧐 工作台」那第三格 / 线索：任务配置·通知·消息·设置 / 设置：系统级几页）
        窄窗（默认 640 弹窗）只 58px 宽——竖着排省下原来两行 Tab 的高度；窗宽 ≥900 自动展成带文字的整栏 -->
   <div class="app-row">
     <aside class="rail" id="rail">
@@ -2255,12 +2372,12 @@
           <button id="tabNoteBench" class="sub-tab" title="素材：切原片、整理成素材。页内两签——「切片台」导入这一批、挑片切段、整批放进素材文件夹；「素材库」放整理好的文件夹和段，按标签 / 名字 / 说明搜，跨文件夹也能找到。切完就在旁边，直接来用"><span class="rail-emo">📚</span><span class="rail-tx">素材</span></button>
           <button id="tabNoteReview" class="sub-tab" title="复盘：选题盘点（按知识库类看讲过 / 没讲过）+ 已发复盘（抓主页数字趋势）"><span class="rail-emo">📈</span><span class="rail-tx">复盘</span></button>
         </nav>
-        <button id="tabHuoke" class="main-tab active" title="获客：队列（看进度 / 配怎么跑：搜什么词·盯谁·日常浏览·推广目标）+ 工作台（评论分析/商机）+ 笔记池 + 设置（跑活节奏）"><span class="rail-emo">🔥</span><span class="rail-tx">获客</span></button>
+        <button id="tabHuoke" class="main-tab active" title="获客：获客规划（搜什么词·盯谁·怎么评）+ 队列（现在这趟 / 周历 / 工作台）+ 复盘 + 设置（跑活节奏）"><span class="rail-emo">🔥</span><span class="rail-tx">获客</span></button>
         <!-- 二级导航：挂在「获客」正下方，跟着它展开收起（切到别的 Tab 这组就没了） -->
         <nav id="subTabs" class="rail-group" style="display:none;">
-          <button id="tabQueue" class="sub-tab" title="队列：看这轮要跑什么、跑到哪（正在跑 / 待跑 / 还没到点 / 已完成）；「⚙️ 配置」里改搜什么词、盯谁、日常浏览、推广目标"><span class="rail-emo">📜</span><span class="rail-tx">队列</span></button>
-          <button id="tabCommentAssistant" class="sub-tab active" title="工作台：当前笔记的评论分析 / 商机挖掘 / 一键回复"><span class="rail-emo">🧐</span><span class="rail-tx">工作台</span></button>
-          <button id="tabPool" class="sub-tab" title="笔记池：扫进来的笔记都在这（按类型判状态）——点开去截流评论，扫描一轮 / 补开 / 评论记录也在这页"><span class="rail-emo">📥</span><span class="rail-tx">笔记池</span></button>
+          <button id="tabPlan" class="sub-tab" title="获客规划：去哪儿找（词 · 排班 · 盯号 · 同城搜索）｜怎么评（笔记类型表 · 场景卡）"><span class="rail-emo">🗂</span><span class="rail-tx">获客规划</span></button>
+          <button id="tabQueue" class="sub-tab" title="队列：今天跑什么、跑到哪（现在这趟 / 周历），跑的时候的工作台（评论分析 · 商机 · 操作日志）也在这页"><span class="rail-emo">📜</span><span class="rail-tx">队列</span></button>
+          <button id="tabPool" class="sub-tab" title="复盘：扫进来的笔记都在这（按类型判状态）——点开去截流评论，扫描一轮 / 补开 / 评论记录也在这页；最近 3 天发的评论逐条摊在表格里，建议就在表格上方"><span class="rail-emo">📥</span><span class="rail-tx">复盘</span></button>
           <button id="tabHuokeCfg" class="sub-tab" title="设置：跑活节奏 —— 灌水跑多少 / 多久不重复、操作节奏挡位、每一步停多久、关注这类互动行为"><span class="rail-emo">🕒</span><span class="rail-tx">设置</span></button>
         </nav>
         <button id="tabProspect" class="main-tab" title="AI客服：谁来了、谁该去聊。通知＝平台消息（评论/赞藏/关注），消息＝私信往来"><span class="rail-emo">💬</span><span class="rail-tx">AI客服</span></button>
@@ -2293,8 +2410,10 @@
         <nav id="setTabs" class="rail-group" style="display:none;">
           <button class="sub-tab" data-stab="tenant" title="产品：一个产品一套资料，新建 / 改名 / 删除在这里；切换当前产品用顶栏的下拉框"><span class="rail-emo">🏢</span><span class="rail-tx">产品</span></button>
           <button class="sub-tab" data-stab="ai" title="AI 模型配置：用哪家模型、Key、以及各场景的模型档位"><span class="rail-emo">🧠</span><span class="rail-tx">AI 模型配置</span></button>
-          <!-- 🛡 账号安全（2026-10-11 行为层加固）：一天所有自动化的总账 + 静默期 + 每周单休 + 体检卡；自动化任何时候先过这里 -->
-          <button class="sub-tab" data-stab="guard" title="账号安全：一天所有自动化的总账（保守 / 谨慎 / 正常）+ 静默期 21:00–09:00 + 每周单休 + 账号体检卡。排好的篇到点撞静默 / 休息日会自动顺延"><span class="rail-emo">🔐</span><span class="rail-tx">账号安全</span></button>
+          <!-- 写稿禁忌（2026-11-11）：写案例正文时按这份清单生成——不能说的话 / 孩子起不起小名 / 默认写法 -->
+          <button class="sub-tab" data-stab="taboo" title="写稿禁忌：写案例时不能说的话（删一条＝允许写一条）、孩子起不起小名、默认写法"><span class="rail-emo">✍</span><span class="rail-tx">写稿禁忌</span></button>
+          <!-- 🛡 账号安全（2026-10-11 行为层加固）：一天所有自动化的总账 + 静默期 + 体检卡；自动化任何时候先过这里 -->
+          <button class="sub-tab" data-stab="guard" title="账号安全：一天所有自动化的总账（保守 / 谨慎 / 正常）+ 静默期 21:00–09:00 + 账号体检卡。排好的篇到点撞静默会自动顺延"><span class="rail-emo">🔐</span><span class="rail-tx">账号安全</span></button>
           <!-- 拟人化与频率：② 升级版起（随获客开通），在 获客 → ⚙️ 设置 里（applyEditionToPopup 会删掉这条）；
                没开通获客的档（① 基础版 / 自定义包）用它兜底，否则那档没地方改节奏 -->
           <button class="sub-tab" data-stab="delays" title="跑活节奏：灌水跑多少/多久不重复 + 操作节奏挡位、每一步停多久、互动行为"><span class="rail-emo">🚶</span><span class="rail-tx">跑活节奏</span></button>
@@ -2305,8 +2424,10 @@
       </nav>
     </aside>
 
-  <!-- 工作区：平台页签只在「获客 · 工作台」这一页露（别的页 switchMainTab 会把它收掉） -->
+  <!-- 工作区：平台页签只在「获客 · 队列 → 工作台」这一格露（别的页 switchMainTab 会把它收掉） -->
   <div class="work-area">
+    <!-- 队列页三个页内横签：现在这趟 / 周历 / 工作台（内容由 lib/scenario-drain.js 的 renderDrainQueue 画） -->
+    <div id="dqTabs" class="dq-tabs" style="display:none;"></div>
     <!-- 工作台的平台页签：只切「看哪边」，配置不跟着切 ——
          小红书＝原来的评论助手（左列表＋右评论）；抖音＝执行器跑回来的问价线索；视频号先灰着占位 -->
     <div class="wb-plat-bar" id="wbPlatBar" style="display:none;">
@@ -2392,52 +2513,13 @@
           </div>
           </div>
       </div>
-      <!-- 找商机：这批商机评论按什么目的写（决定打法优先级），随扫描使用 -->
-      <div id="purposeBar" class="purpose-bar" style="display:none;">
-        <span>🎯 评论目的</span>
-        <select id="purposeSel" title="这批商机评论按什么目的写、优先用哪些打法。改完立即保存，下次扫描即用"></select>
-        <span id="purposeMsg" style="color:#0a7b5a;"></span>
-      </div>
       <div id="lockBanner" style="display:none;align-items:center;gap:8px;padding:8px 12px;margin:0;background:linear-gradient(90deg,var(--c-brand-soft),var(--c-brand-soft2));color:var(--c-brand-ink);font-size:12px;font-weight:600;border-bottom:1px solid #ffd1da;">
         <span class="loading-spinner" style="border-top-color:#c9930a;"></span>
         <span id="lockBannerText">🔒 操作进行中，请稍候…（防止评论错位，正在串行发送）</span>
       </div>
       <div id="noteInfo" class="note-info" style="display:none"></div>
       <div id="cqBar" class="cq-bar" style="display:none;"></div>
-      <!-- 获客 · 工作台队列条（2026-10-29 确认单）：默认收成一行「今天 6 个词 · 14 项 · 正在跑第 3 个…」，
-           点 ▾ 展开清单①（一行一个关键词）；开始 / 暂停 / 这次跑N条 / 口径 / 节奏 都搬在这条上。
-           内容由 web/lib/scenario-drain.js 的 renderBenchQueueBar 画，显示/收起由 exec-bridge 跟着「在不在工作台」管。 -->
-      <div id="benchQueueBar" class="bench-qbar" style="display:none;">
-        <div id="bqHead" class="bq-head">
-          <button type="button" id="bqTri" class="bq-tri" title="展开 / 收起今天的清单">▾</button>
-          <span id="bqSummary" class="bq-sum">今天的队列</span>
-          <span class="bq-acts">
-            <!-- 灌水执行器：口径 × 节奏两个参数直给（原「🧊冷启动 / 🔄循环计划」即这两参数的两个组合），按队列串行跑 -->
-            <span id="leftBotSlot">
-              <!-- 口径说明里的跳过口径 2026-09-25 三十一改跟着改：工作台的「👀 已打开」标已撤，
-                   现在跳的是「已灌水」与「队列里已跑过」两种（执行器 auto-bot.js 的 _roundAll 同源） -->
-              <select id="botScopeSel" class="bot-param" title="口径：全部未灌过=看到就灌（已灌过 / 队列里已跑过的跳过）；只追涨势=只挑点赞增长中的笔记（无视已灌水标记，受「灌水频率与去重」上限/冷却约束）">
-                <option value="all">全部未灌过</option>
-                <option value="growing">只追涨势</option>
-              </select>
-              <select id="botPaceSel" class="bot-param" title="节奏：定时轮=每「扫描间隔」跑一项，把额度摊开到一天（默认，间隔约 10 分钟，在「🎯 获客 → ⚙️ 设置 → ⚙️ 高级配置」里改）；一遍跑完=从队首连跑到队尾">
-                <option value="interval" selected>定时轮</option>
-                <option value="once">一遍跑完</option>
-              </select>
-              <label title="这次点「开始」要发多少条评论：填 0 或留空＝不限。跑到这个数就收工；下次再点「开始」按那时填的数重新算。" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#555;white-space:nowrap;">这次跑<input id="botRunQuota" type="number" min="0" max="999" placeholder="0" inputmode="numeric" style="width:56px;padding:3px 4px;font-size:12px;border:1px solid #ddd;border-radius:4px;text-align:center;">条评论</label>
-              <button id="botPauseBtn" class="bot-toggle" style="display:none;" title="暂停：当前这一步做完就停下等，点「继续」接着跑（进度不丢）"><svg class="ic ic-sm"><use href="#i-pause"></use></svg>暂停</button>
-              <button id="botToggleBtn" class="bot-toggle" title="按队列串行跑：跑一项（词 × 类型）→ 记一笔已完成 → 接着下一项"><svg class="ic ic-sm"><use href="#i-play"></use></svg>开始</button>
-            </span>
-            <button id="bqDailyBtn" class="btn btn-sm" title="往队列里塞 1 趟日常浏览：点一下排到最前面，下次开跑先刷这一轮">🌿 塞一趟</button>
-            <button id="bqManualBtn" class="btn btn-sm" title="手动那条路：搜词 → 看评论 → 自己发。点开回到原来的搜索栏和评论视图">🖐 手动</button>
-          </span>
-        </div>
-        <div id="bqBody" style="display:none;">
-          <div id="queueBody"></div>
-          <div id="queueCaps" style="padding:2px 2px 6px;"></div>
-        </div>
-      </div>
-      <!-- 获客 · 工作台：现在在干（2026-10-28 确认单）——一句话说清队列跑到哪：
+      <!-- 获客 · 工作台（队列 → 🧐 工作台）：现在在干（2026-10-28 确认单）——一句话说清队列跑到哪：
            第几项×词×类型 / 最近一个动作＋几点 / 执行器在不在线、下一个到点时间。
            句子全部取自执行器自己回传的日志，网页这边只做归拢和排版。只在「工作台」这一页出现。 -->
       <div id="benchLive" class="bench-live" style="display:none;"></div>
@@ -2473,11 +2555,9 @@
         <nav class="audit-tabs">
           <button class="audit-tab active" data-atab="topics" title="选题盘点：按知识库类看没写过、撞过的、已发的">📋 选题盘点与规划</button>
           <button class="audit-tab" data-atab="sent" title="已发复盘：基于抓主页的 stats 数据，没抓的可以现场抓">📈 已发复盘</button>
-          <button class="audit-tab" data-atab="play" title="玩法效果：IP 玩法篇按招牌归堆，拿评论对账号平均——哪招带得动、哪招该换">🎭 玩法效果</button>
         </nav>
         <div id="auditTopicsPane" class="audit-pane"></div>
         <div id="auditSentPane" class="audit-pane" style="display:none;"></div>
-        <div id="auditPlayPane" class="audit-pane" style="display:none;"></div>
       </div>
       <!-- 发笔记：字效编辑器（口播稿 → 分幕 → 配音 → 本机出片）。
            这一页有自己的一套外壳，跟「挑知识／改稿」那几页同画法：
@@ -2512,19 +2592,21 @@
       <div id="leadTaskCfgContent" class="content" style="display:none;padding:0;overflow:hidden;position:relative;">
         <iframe id="leadTaskCfgFrame" title="AI客服任务配置" style="position:absolute;inset:0;width:100%;height:100%;border:0;"></iframe>
       </div>
-      <!-- 笔记池独立视图：监控池 + 扫描，打开笔记去当前笔记上做截流评论 -->
+      <!-- 笔记池独立视图：监控池 + 扫描，打开笔记去当前笔记上做截流评论；最近 3 天的评论复盘也并在这张表里 -->
       <div id="drainContent" class="content" style="display:none;"></div>
       <!-- 🔁 队列页（2026-10-29 确认单）：只做配置——🎯 玩法排班（五列：玩法 / 周几 / 评论策略 / 出词策略 / 今天）
            ＋ 📚 关键词（词池大表 ＋ 投放平台两个标签）＋ 👤 盯的账号 / 🌿 日常浏览 两颗入口。
            正在跑什么、开始按钮全在工作台；顶上那两行灰字（指路 + 今天/明天排几次）2026-11-04 撤了，改完存一次在右上角报一句。 -->
-      <div id="drainQueueContent" class="content" style="display:none;flex-direction:column;padding:0;">
+      <!-- 🗂 获客规划（2026-11-12）：demo 里拆出来的那半——去哪儿找 / 怎么评两个横签都在这里。
+           配置表、评论节奏都归这一页；队列页只管今天跑什么。 -->
+      <div id="drainPlanContent" class="content" style="display:none;flex-direction:column;padding:0;">
         <div id="drainCfgContent" style="display:none;flex:1;min-height:0;overflow-y:auto;padding:12px 14px;"></div>
-        <!-- 📖 评论节奏：配置类，留在队列页底下（原第三个横签，2026-10-24 收进来） -->
+        <!-- 📖 评论节奏：配置类，跟着规划页走（这条队列在评论 / 回复里怎么说话） -->
         <details id="qStratWrap" style="display:none;margin:10px 14px 16px;border:1px solid var(--c-line,#eceef0);border-radius:10px;background:#fff;">
           <summary style="list-style:none;cursor:pointer;user-select:none;padding:9px 12px;font-size:12.5px;font-weight:700;color:#1f2937;">📖 评论节奏 <span style="font-weight:400;color:#6b7280;font-size:11px;">这条队列在评论 / 回复里怎么说话</span></summary>
           <div class="strat-panel" id="qStrat" style="padding:0 12px 12px;"><div class="strat-h"></div><div class="strat-b"></div></div>
         </details>
-        <!-- 👤 盯的账号 / 🌿 日常浏览：两个弹窗（队列页自己的口子，不再铺在配置页里） -->
+        <!-- 👤 盯的账号 / 🌿 日常浏览：两个弹窗（去哪找那半边的口子，归规划页管） -->
         <div class="modal-mask" id="qAcctModal"><div class="modal-box" style="max-width:540px;">
           <h3>👤 盯的账号 <span style="font-weight:400;font-size:11px;color:#6b7280;">进他的主页扒最近笔记，不拿名字去搜</span></h3>
           <div id="qAcctBody"></div>
@@ -2536,6 +2618,39 @@
           <div class="modal-footer"><button type="button" id="qBrowseClose">关闭</button></div>
         </div></div>
       </div>
+      <div id="drainQueueContent" class="content" style="display:none;flex-direction:column;padding:0;">
+        <!-- 今天的队列（2026-11-12 搬回队列页）：一行到点跑什么、正在跑哪一项、跑完什么。
+            开始 / 暂停 / 这次跑N条 / 口径 / 节奏 都在这条上；内容由 renderBenchQueueBar 画。 -->
+        <div id="benchQueueBar" class="bench-qbar bench-qbar-main" style="display:none;">
+          <div id="bqHead" class="bq-head">
+            <button type="button" id="bqTri" class="bq-tri" title="展开 / 收起今天的清单">▾</button>
+            <span id="bqSummary" class="bq-sum">今天的队列</span>
+            <span class="bq-acts">
+              <span id="leftBotSlot">
+                <select id="botScopeSel" class="bot-param" title="口径：全部未灌过=看到就灌（已灌过 / 队列里已跑过的跳过）；只追涨势=只挑点赞增长中的笔记（无视已灌水标记，受「灌水频率与去重」上限/冷却约束）">
+                  <option value="all">全部未灌过</option>
+                  <option value="growing">只追涨势</option>
+                </select>
+                <select id="botPaceSel" class="bot-param" title="节奏：定时轮=每「扫描间隔」跑一项，把额度摊开到一天（默认，间隔约 10 分钟，在「获客 → 设置 → 高级配置」里改）；一遍跑完=从队首连跑到队尾">
+                  <option value="interval" selected>定时轮</option>
+                  <option value="once">一遍跑完</option>
+                </select>
+                <label title="这次点「开始」要发多少条评论：填 0 或留空＝不限。跑到这个数就收工；下次再点「开始」按那时填的数重新算。" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;color:#555;white-space:nowrap;">这次跑<input id="botRunQuota" type="number" min="0" max="999" placeholder="0" inputmode="numeric" style="width:56px;padding:3px 4px;font-size:12px;border:1px solid #ddd;border-radius:4px;text-align:center;">条评论</label>
+                <button id="botPauseBtn" class="bot-toggle" style="display:none;" title="暂停：当前这一步做完就停下等，点「继续」接着跑（进度不丢）"><svg class="ic ic-sm"><use href="#i-pause"></use></svg>暂停</button>
+                <button id="botToggleBtn" class="bot-toggle" title="按队列串行跑：跑一项（词 × 类型）→ 记一笔已完成 → 接着下一项"><svg class="ic ic-sm"><use href="#i-play"></use></svg>开始</button>
+              </span>
+              <button id="bqDailyBtn" class="btn btn-sm" title="往队列里塞 1 趟日常浏览：点一下排到最前面，下次开跑先刷这一轮">🌿 塞一趟</button>
+              <button id="bqManualBtn" class="btn btn-sm" title="手动那条路：搜词 → 看评论 → 自己发。点开回到原来的搜索栏和评论视图">🖐 手动</button>
+            </span>
+          </div>
+          <div id="bqBody">
+            <div id="queueBody"></div>
+            <div id="queueCaps" style="padding:2px 2px 6px;"></div>
+          </div>
+        </div>
+        <!-- 脚注：今天跑什么由获客规划那张表决定，这里给一条回去改的路 -->
+        <div class="q-pagefoot">今天跑什么，由【获客规划】的排班和词决定。 <a href="#" id="qGoPlan">去获客规划改 →</a></div>
+      </div>
       <!-- 获客 · 工作台：操作日志（2026-10-28 放大）——执行器干活时每 1.5 秒往回凑一句，
            这里按条补齐、带时间，能看到在打开哪篇笔记、评论了几条。三颗：跟着滚 / 清屏 / 收起。
            只在「工作台」这一页出现（切走由 exec-bridge 收起来）。 -->
@@ -2546,7 +2661,7 @@
           <span class="log-acts">
             <button type="button" id="logFollowBtn" class="on log-hide-folded" title="关掉之后，新日志来了也不把你翻到的位置拽走">↓ 跟着滚</button>
             <button type="button" id="logClearBtn" class="log-hide-folded" title="只清掉这一屏显示，服务器那本账不动">🗑 清屏</button>
-            <button type="button" id="logFoldBtn" title="日志默认收着，点开看每一句">▴ 展开日志</button>
+            <button type="button" id="logFoldBtn" title="收起时只露最近 3 条，点开看每一句">▴ 展开全部日志</button>
           </span>
         </div>
         <div id="logPanel" class="log-panel">
@@ -2666,7 +2781,7 @@
         bar.style.width = p + '%';
         var sec = Math.round((Date.now() - t0) / 1000);
         var extra = '';
-        if (done === HREFS.length) extra = '（文件已下齐，正在打开工作台）';
+        if (done === HREFS.length) extra = '（文件已下齐，小来正在打开工作台）';
         else if (pending.length === 1 && pending[0] === 'popup.js') extra = '（正在下主程序，最大一块）';
         pct.textContent = '已完成 ' + done + ' / ' + HREFS.length + ' 个文件 · 已等 ' + sec + ' 秒' + extra;
         if (sec > 25 && !t2.dataset.warned) {
@@ -2686,6 +2801,49 @@
     tick();
   })();
   </script>
+  <!-- 📜 运行日志（2026-11-05）：执行器每趟的回执按天往回翻，点类别筛，失败标红，能整段复制。
+       数据走 /api/exec/orders 里的 reports；开关在「今天」点开那一排的「📜 运行日志」 -->
+  <style>
+    #hdrRunLogBtn { font-family: inherit; cursor: pointer; }
+    .rl-mask { position: fixed; inset: 0; background: rgba(15,23,42,.38); z-index: 9000; display: flex; align-items: center; justify-content: center; }
+    .rl-card { width: min(780px, 94vw); max-height: 86vh; background: #fff; border-radius: 12px; box-shadow: 0 18px 50px rgba(15,23,42,.28); display: flex; flex-direction: column; overflow: hidden; }
+    .rl-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .rl-t { font-weight: 700; font-size: 14px; color: var(--ink); }
+    .rl-sub { font-size: 12px; color: var(--sub); flex: 1; }
+    .rl-x { border: 0; background: transparent; font-size: 15px; color: var(--sub); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+    .rl-x:hover { background: #f2f4f7; }
+    .rl-days { display: flex; gap: 6px; padding: 10px 14px 0; flex-wrap: wrap; }
+    .rl-day { font-size: 12px; padding: 4px 10px; border-radius: 14px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+    .rl-day.on { background: var(--c-brand); border-color: var(--c-brand); color: #fff; }
+    .rl-chips { display: flex; gap: 6px; padding: 8px 14px; flex-wrap: wrap; }
+    .rl-chip { font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--line); background: #fafbfc; color: var(--ink); cursor: pointer; }
+    .rl-chip.on { background: #eef6f4; border-color: var(--c-brand); color: var(--c-brand); font-weight: 700; }
+    .rl-list { flex: 1; overflow: auto; padding: 4px 14px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; line-height: 1.65; color: #333; background: #fff; }
+    .rl-line { display: flex; gap: 8px; padding: 1px 0; }
+    .rl-line .t { color: #98a2b3; flex-shrink: 0; }
+    .rl-line.error { color: #c41d3c; font-weight: 700; }
+    .rl-line.warn { color: #b45309; }
+    .rl-line.success { color: #0a7d33; }
+    .rl-line.dim { color: #98a2b3; }
+    .rl-empty { color: var(--sub); text-align: center; padding: 30px 0; font-family: inherit; }
+    .rl-ft { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid var(--line); background: #fafbfc; }
+  </style>
+  <div class="rl-mask" id="runLogModal" style="display:none;">
+    <div class="rl-card">
+      <div class="rl-hd">
+        <span class="rl-t">📜 运行日志</span>
+        <span class="rl-sub" id="rlSub"></span>
+        <button type="button" class="rl-x" id="rlClose" title="关掉">✕</button>
+      </div>
+      <div class="rl-days" id="rlDays"></div>
+      <div class="rl-chips" id="rlChips"></div>
+      <div class="rl-list" id="rlList"><div class="rl-empty">正在取日志…</div></div>
+      <div class="rl-ft">
+        <button type="button" class="btn btn-sm" id="rlRefresh">↻ 刷新</button>
+        <button type="button" class="btn btn-sm" id="rlCopy">📋 复制这一天</button>
+      </div>
+    </div>
+  </div>
   <script src="lib/icons.js"></script>
   <script src="lib/crypto-box.js"></script>
   <script src="lib/data-privacy.js"></script>
@@ -2697,7 +2855,11 @@
   <script src="lib/platforms.js"></script>
   <script src="lib/visual-motif.js"></script>
   <script src="lib/asset-kinds.js"></script>
+  <script src="lib/asset-groups.js"></script>
+  <script src="lib/asset-ledger.js"></script>
+  <script src="lib/photo-text.js"></script>
   <script src="lib/note-plan.js"></script>
+  <script src="lib/topic-table.js"></script>
   <script src="lib/account-guard.js"></script>
   <script src="lib/video/tts-edge.js"></script>
   <script src="lib/video/voices.js"></script>
@@ -2714,7 +2876,7 @@
      要用到已拆出去的那页，走 popup.js 里的 wbGate('包名', 干活的函数)——文件到了再画。 */
   (function () {
     var FILES = {
-      huoke: ['lib/scenario-drain.js', 'auto-water-app.js', 'auto-bot.js'],
+      huoke: ['lib/scenario-drain.js', 'auto-water-app.js', 'auto-bot.js', 'lib/acquire-review.js'],
       diag: ['lib/pg-diag.js'],
       state: ['lib/pg-state.js']
     };

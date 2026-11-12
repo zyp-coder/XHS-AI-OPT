@@ -3,10 +3,11 @@
  * 同时被 background 与 popup 使用：
  *  - background.js importScripts：提供 SCENARIO_DRAIN 话术库 + handleDrainComment（调 AI）
  *  - popup <script>：获客分组下渲染——
- *      · renderDrainQueue(container)          「🗂 队列」：📜 队列 / ⚙️ 配置 两个横排三级 tab（配置＝三张卡：跑什么 / 日常浏览 / 推广目标·承接）
+ *      · renderDrainPlan(container)           「🗂 获客规划」：去哪儿找（词 · 排班 · 盯号 · 同城搜索）｜怎么评（笔记类型表 · 场景卡）
+ *      · renderDrainQueue(container)          「📜 队列」：今天跑什么、跑到哪（清单由 renderBenchQueueBar 画）
  *      · renderScenarioDrain(container)       「📋 笔记列表」：笔记监控列表（顶栏带 🔁 补开未打开）
  *
- * 任务配置原来是个独立二级页，2026-10-24 并进「队列 → ⚙️ 配置」：一个入口，不再有第四级横签。
+ * 任务配置原来是个独立二级页，2026-10-24 并进配置表；2026-11-12 配置那半边搬到「获客规划」页。
  *
  * 模型：一个关键词 × 不同搜索筛选条件 → 不同类型的笔记 → 各自不同的评论/维护方式
  *   1. 最新笔记(latest)：筛选「最新」。定时看点赞涨没涨，涨了就赶去评论（抢前排）。
@@ -732,7 +733,6 @@ function drainSolicitWords(cfg) {
 /* 哪一行的话术编辑块是展开的（整页重绘后还留着，比如点了周几） */
 let _drainTalkOpen = null;
 /* 周日历看的是本周还是下周（0＝本周，1＝下周）：只影响预览，不影响真跑 */
-let _drainWeekOff = 0;
 /* 老 v8 的四步＋示范 → 拼成三行；只在读老数据时用 */
 function _drainTalkFromSteps(raw) {
   const st = (raw && raw.steps && typeof raw.steps === 'object') ? raw.steps : null;
@@ -2380,6 +2380,7 @@ let _poolSel = new Set();  // 全部词表：勾了「批量删除」的词，�
 let _cfgWant = null; // 跳过来时要展开的候选区：'ai' | 'topic'（页面还没渲染完也认）
 let _cfgSec = 'run';  // 配置页横签：现在只剩「run 跑什么」一张卡（推广目标 2026-11-09 已撤）
 let _cfgPlanTab = 'find';  // 获客规划页内横签：find＝去哪儿找 / rate＝怎么评（2026-11-12）
+let _ntCands = null;       // 🧩 复盘补卡（2026-11-12）：{busy}|{err}|{stats:{missed},cards:[{card,srcN,state}],tip}，只在本页内存里，点「加入」才落表
 const _dbDetOpen = { round: false, social: false };  // 🌿 日常浏览里两个折叠块（一轮怎么刷 / 顺手互动）的展开状态，切 tab 重渲染后照旧
 let _lastScanInfo = null;   // 本轮扫描结果 { text, warn }：配置页顶栏下方那行 / 笔记池的提示行
 /* 表格里类型下拉的短标签（列窄，完整名放进 title） */
@@ -2388,13 +2389,13 @@ const DRAIN_TYPE_SHORT = { latest: '本地泛搜', top: 'TOP', local: '同城本
 /* ⚙️ 配置：队列页的一个横签（跑什么）。统一走 renderScenarioDrain(container,'cfg')，
    任务配置那个独立二级页 2026-10-24 已并进队列页 */
 
-/* 「去配置」统一入口：切到队列页的 ⚙️ 配置 横签（配置文件也被 background.js importScripts，SW 里没有 window） */
+/* 「去配置」统一入口：切到获客规划页（配置文件也被 background.js importScripts，SW 里没有 window） */
 function _goCfg() {
   if (typeof window === 'undefined') return;
   try {
-    const box = document.getElementById('drainQueueContent');
+    const box = document.getElementById('drainPlanContent');
     if (box) box._qTab = 'bulk';
-    if (typeof window.switchMainTab === 'function') window.switchMainTab('queue');
+    if (typeof window.switchMainTab === 'function') window.switchMainTab('plan');
   } catch (_) {}
 }
 
@@ -2698,7 +2699,7 @@ async function renderBenchQueueBar() {
   /* ── 顶部那一行：几个词、几次搜索、跑到哪（2026-11-03 拆行） ── */
   let sum = '';
   if (!kwRows.length && !wordsOn.length && !(cfg.accounts || []).length) {
-    sum = '<span class="bq-sub">还没配关键词：</span><a href="#" id="bqToCfg">去队列页加词</a>';
+    sum = '<span class="bq-sub">还没配关键词：</span><a href="#" id="bqToCfg">去获客规划加词</a>';
   } else if (!total) {
     const why = drainQueueEmptyWhy(cfg, now);
     sum = '<span class="bq-sub">今天一项都没排' + (why ? '：' + escHtml(why) : '') + '</span>';
@@ -2721,6 +2722,13 @@ async function renderBenchQueueBar() {
     sum += '<span style="display:block;font-size:11.5px;color:#b45309;font-weight:600;margin-top:2px;">⚠️ 配置改过了：今天的清单已经按新配置重排（跑完的不重跑）</span>';
   }
   sumEl.innerHTML = sum;
+  /* 工作台上那一行摘要（2026-11-12）：清单主体在队列页，这里只说一句、点「去队列看」过去 */
+  const mini = document.getElementById('bqMiniSummary');
+  if (mini) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = sum;
+    mini.textContent = (tmp.textContent || '').replace(/\s+/g, ' ').trim() || '今天的队列';
+  }
 
   /* ── 清单①：一行一次搜索（一个词名下 TOP 三行、咨询帖四行，各写筛选条件） ── */
   const icoOf = (it) => it.daily ? '🌿' : (it.acct ? '👤' : (drainScenarioDef(it.scenario).icon || ''));
@@ -2865,7 +2873,7 @@ async function renderBenchQueueBar() {
     ? bodyHtml
     : '<div class="bq-empty">' + (wordsOn.length || (cfg.accounts || []).length
       ? '今天没有排到点的搜索' + (p.waiting.length ? ' · 计划里还有 ' + p.waiting.length + ' 次搜索' : '')
-      : '还没配关键词<br><a href="#" id="bqToCfg2">去队列页加词</a>') + '</div>') + _pendHtml + _redHtml;
+      : '还没配关键词<br><a href="#" id="bqToCfg2">去获客规划加词</a>') + '</div>') + _pendHtml + _redHtml;
 
   /* ── 底下那行：今日评论额度 / 待跑数 / ⏰ 每周自动跑 ── */
   if (capsEl) {
@@ -2889,8 +2897,8 @@ async function renderBenchQueueBar() {
       '<span>⏰ 自己跑：' + escHtml(qaTxt) + '（在顶上「今天」里改）</span></div>';
   }
 
-  /* 空态那颗「去队列页加词」/ 点关键词行 → 回队列页 */
-  const toCfg = () => { try { if (typeof switchMainTab === 'function') switchMainTab('queue'); } catch (_) {} };
+  /* 空态那颗「去加词」/ 点关键词行 → 回获客规划页 */
+  const toCfg = () => { try { if (typeof switchMainTab === 'function') switchMainTab('plan'); } catch (_) {} };
   bodyEl.querySelectorAll('#bqToCfg, #bqToCfg2').forEach(a => a.onclick = (e) => { e.preventDefault(); toCfg(); });
   host.querySelectorAll('#bqToCfg').forEach(a => a.onclick = (e) => { e.preventDefault(); toCfg(); });
   /* ⤴ 拎到最前 / ✕ 从今天这份撤掉（只动今天这一份，不回写配置） */
@@ -2979,10 +2987,10 @@ async function drainInsertBrowseOnce() {
   return 'ok';
 }
 
-async function renderDrainQueue(container) {
+async function renderDrainPlan(container) {
   if (!container) return;
-  /* 2026-10-29 确认单：运行清单（正在跑 / 待跑 / 计划 / 已完成）搬到工作台，这页只剩配置。
-     运行清单那两个节点已经在工作台里（#benchQueueBar 底下），这里只画配置那一块。 */
+  /* 2026-11-12：获客规划页＝配置那一半（去哪儿找 / 怎么评）。
+     运行清单（正在跑 / 还没跑 / 跑完了 / 之前没跑完）在队列页，由 renderDrainQueue + renderBenchQueueBar 画。 */
   if (!container.querySelector('#drainCfgContent')) return;
   container._qTab = 'bulk';
   /* ⚙️ 批量那一屏：进来才画（配置页自己管卡的展开/收起）。同一次进入只画一次——
@@ -3045,16 +3053,540 @@ async function renderDrainQueue(container) {
   }
 
   async function render() {
-    /* 运行清单搬去工作台（2026-10-29 确认单）：这页只画配置那一块 + 评论策略；
-       工作台那条队列条自己算自己的（renderBenchQueueBar），两边不互相刷 */
+    /* 2026-11-12：这页画配置那一块 + 评论策略；
+       队列那条清单自己算自己的（renderBenchQueueBar），配完顺手让它对一遍 */
     paintView();
     const sw = container.querySelector('#qStratWrap');
     if (sw) sw.style.display = '';
     await drainPaintStrategy(container.querySelector('#qStrat'));
     try { if (typeof window.renderBenchQueueBar === 'function') await window.renderBenchQueueBar(); } catch (_) {}
   }
-  container._qRender = render;   // 让「批量」保存后 / 切回队列时能就地重算（网页版没有存储变更回推）
+  container._qRender = render;   // 让「批量」保存后 / 切回规划页时能就地重算（网页版没有存储变更回推）
   await render();
+}
+
+/* 队列页（2026-11-12）：两个页内横签——▶ 现在这趟（今天那一份清单）/ 📅 周历（这一周怎么排）。
+   清单渲染在 renderBenchQueueBar；周历只读，改周几和词仍回获客规划。 */
+let _dqTab = 'now';
+function drainPbRotNoteHtml(cfg) {
+  const lines = [];
+  DRAIN_PB_WORD.forEach(s => {
+    const st = drainPbRotStat(cfg, s);
+    if (!st || !st.N) return;
+    const def = drainScenarioDef(s);
+    const head = def.icon + ' ' + escHtml(def.label);
+    if (st.off) lines.push({ warn: false, text: head + '：这周没排日子，一个词都不跑' });
+    else if (st.overflow > 0) lines.push({ warn: true, text: head + '：一周 ' + st.slots + ' 个槽、有 ' + st.N + ' 个词，这一周跑到第 ' + st.slots + ' 个，还有 ' + st.overflow + ' 个排不上；下周从第 ' + (st.slots + 1) + ' 个接着往下，约 ' + st.weeks + ' 周轮完一圈' });
+    else if (st.N < st.slots) lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、只有 ' + st.N + ' 个词，跑完会绕回去，把前面的词再跑一遍' });
+    else lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、' + st.N + ' 个词，刚好一圈跑完' });
+  });
+  if (!lines.length) return '';
+  return '<div class="pbp-rotbox">' + lines.map(x => '<div class="pbp-rot' + (x.warn ? ' warn' : '') + '">' + x.text + '</div>').join('') + '</div>';
+}
+function drainWeekCardHtml(cfg, off) {
+  off = off ? 1 : 0;
+  const now = Date.now();
+  const wk = drainPbWeek(cfg, now + off * 7 * 24 * 3600 * 1000);
+  const t0 = new Date(now);
+  const todayWd = t0.getDay();
+  const acctN = (s) => (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === s).length;
+  const sameDay = (ts) => {
+    const d = new Date(ts);
+    return !off && d.getFullYear() === t0.getFullYear() && d.getMonth() === t0.getMonth() && d.getDate() === t0.getDate();
+  };
+  return `<style>
+    .pbp-weekcard-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+    .pbp-weekcard-h .t{font-size:12.5px;font-weight:700;color:#1f2937;white-space:nowrap;}
+    .pbp-weekcard-h .x{font-size:11px;color:#9ca3af;}
+    .pbp-weekwrap{overflow-x:auto;}
+    .pbp-wkseg{display:inline-flex;border:1px solid #e5e7eb;border-radius:7px;overflow:hidden;background:#fff;}
+    .pbp-wkseg button{border:0;background:#fff;font:inherit;font-size:11px;color:#4b5563;padding:3px 10px;cursor:pointer;}
+    .pbp-wkseg button+button{border-left:1px solid #eef0f3;}
+    .pbp-wkseg button.on{background:var(--c-brand-soft,#f2f8fd);color:var(--c-brand-ink,#0a6b8a);font-weight:700;}
+    .pbp-wkwarn{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:20px;padding:0 6px;line-height:1.7;vertical-align:1px;}
+    .pbp-rotbox{margin-top:9px;padding:8px 10px;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;}
+    .pbp-rot{font-size:11.5px;line-height:1.85;color:#4b5563;}
+    .pbp-rot.warn{color:#b45309;}
+    .pbp-week{width:100%;min-width:760px;border-collapse:collapse;table-layout:fixed;font-size:12px;}
+    .pbp-week th,.pbp-week td{border:1px solid #eef0f3;padding:9px 10px;vertical-align:top;text-align:left;}
+    .pbp-week th{background:#f8fafc;color:#6b7280;font-weight:700;text-align:center;font-size:11.5px;padding:9px 8px;}
+    .pbp-week th.today{color:#b45309;background:#fffbeb;}
+    .pbp-week td.pbp-wk-name{font-weight:700;color:#374151;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pbp-week td.today{background:#f2fbf9;}
+    .pbp-week tbody tr:hover td{background:#fcfdfe;}
+    .pbp-week tbody tr:hover td.today{background:#effaf7;}
+    .pbp-wchip{display:inline-block;background:#f3f4f6;border-radius:8px;padding:3px 8px;margin:2px 2px 0 0;font-size:11.5px;line-height:1.6;color:#4b5563;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:top;}
+    .pbp-wempty{color:#d1d5db;font-size:12px;}
+  </style>
+  <div>
+    <div class="pbp-weekcard-h">
+      <span class="t">📅 周历</span>
+      <span class="sx-count">${off ? '下周' : '这一周'}每个玩法跑哪些词</span>
+      <span style="flex:1;"></span>
+      <span class="pbp-wkseg">
+        <button type="button" class="${off ? '' : 'on'}" data-dqwkoff="0">本周</button>
+        <button type="button" class="${off ? 'on' : ''}" data-dqwkoff="1">下周（接着轮）</button>
+      </span>
+      <span class="x">按排班轮出来的，停用的词不进来</span>
+    </div>
+    <div class="sx-hint" style="margin:0 0 8px;line-height:1.7;">按「关键词配置」里的排班和「每天挑几个」轮着算出来的；停用的词不进来。词比一周的槽多时，下一周从这周停下的地方接着往下，不会每周都从头。手插和欠账不受排班限制。</div>
+    <div class="pbp-weekwrap">
+      <table class="pbp-week">
+        <thead><tr><th style="width:150px;">玩法</th>${DRAIN_WEEK_ORDER.map(d => `<th${!off && d === todayWd ? ' class="today"' : ''}>${WK_LABELS[d]}</th>`).join('')}</tr></thead>
+        <tbody>${DRAIN_PB_ORDER.map(s => {
+          const def = drainScenarioDef(s);
+          const n = acctN(s);
+          const rs = drainPbRotStat(cfg, s);
+          return `<tr><td class="pbp-wk-name">${def.icon} ${escHtml(def.label)}${rs && rs.overflow ? `<span class="pbp-wkwarn" title="${escAttr('一周只有 ' + rs.slots + ' 个槽，排不上 ' + rs.overflow + ' 个词；下周接着往下轮')}">⚠ ${rs.overflow}</span>` : ''}</td>${wk[s].map(cell => {
+            const words = cell.words || [];
+            if (words.length) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>${words.map(w => `<span class="pbp-wchip" title="${escAttr(w)}">${escHtml(w)}</span>`).join('')}</td>`;
+            if (s === 'highv' && n && drainPbOnDay(cfg, s, cell.at)) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>👤 ${n} 个号</td>`;
+            return `<td${sameDay(cell.at) ? ' class="today"' : ''}><span class="pbp-wempty">—</span></td>`;
+          }).join('')}</tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+    ${drainPbRotNoteHtml(cfg)}
+    <div class="sx-hint" style="margin:10px 0 0;">要改周几和词，去「获客规划 → 🔑 关键词配置」。 <a href="#" id="dqGoPlan" style="color:var(--c-brand-ink,#0a6b8a);font-weight:700;">去关键词配置 →</a></div>
+  </div>`;
+}
+
+/* ================= 🧩 评论场景表（2026-11-12 就地嵌进「💬 评论配置」） =================
+   原来只给一颗「打开场景表 →」跳独立页；现在整张表摊在配置页里，卡片可就地改。
+   数据层还是 lib/comment-cards.js（网页和后台同一份）；独立页 comment-cards.html 留着给老入口。 */
+let _ccFolded = {};
+let _ccEditId = '';
+const CCB_ANGLE_STYLE = {
+  '共情接住': 'background:#fff4e5;border-color:#f2d3a4;color:#9a5b00;',
+  '案例带人': 'background:#e8f1fd;border-color:#c3d8f5;color:#1d4f91;',
+  '方法拆解': 'background:#e6f5f3;border-color:#b5ddd7;color:#0a7067;',
+  '数据实证': 'background:#ecebfd;border-color:#cfcdf0;color:#4b3fa3;',
+  '专业判断': 'background:#eef1f5;border-color:#d5dbe4;color:#3f4a5c;',
+  '避坑提醒': 'background:#fdeeee;border-color:#f2c7c7;color:#a52a2a;',
+  '对比取舍': 'background:#f6ebfb;border-color:#e3c8f0;color:#74358f;',
+  '随口搭话': 'background:#f1f3f6;border-color:#dfe4ea;color:#5b6472;',
+};
+const CCB_CSS = `
+<style>
+.ccb-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 9px;}
+.ccb-q{width:280px;max-width:100%;border:1px solid #dfe3e8;border-radius:8px;padding:5px 9px;font:inherit;font-size:12px;outline:none;}
+.ccb-q:focus{border-color:#0a6b8a;}
+.ccb-list{border:1px solid #eceef0;border-radius:10px;overflow:hidden;background:#fff;}
+.ccb-card{border-bottom:1px solid #f1f3f5;}
+.ccb-card:last-child{border-bottom:0;}
+.ccb-h{display:flex;align-items:center;gap:8px;padding:9px 12px;}
+.ccb-h:hover{background:#fafbfc;}
+.ccb-no{width:22px;flex:none;font-size:11px;color:#9ca3af;font-variant-numeric:tabular-nums;}
+.ccb-main{flex:1;min-width:0;}
+.ccb-t{font-size:12.5px;font-weight:700;color:#1f2937;}
+.ccb-w{font-size:11.5px;color:#6b7280;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ccb-n{flex:none;font-size:10.5px;color:#6b7280;background:#f3f4f6;border-radius:20px;padding:1px 8px;}
+.ccb-nt{display:inline-block;border-radius:20px;padding:1px 7px;font-size:10.5px;background:#f2f8fd;border:1px solid #cfe4f5;color:#0a6b8a;margin-right:4px;}
+.ccb-nt.general{background:#f3f4f6;border-color:#e5e7eb;color:#6b7280;}
+.ccb-b{padding:4px 12px 12px 42px;background:#fbfcfd;border-top:1px dashed #eceef0;}
+.ccb-line{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:11px;color:#9ca3af;margin-top:9px;line-height:1.8;}
+.ccb-line b{flex:none;color:#6b7280;font-size:11px;}
+.ccb-chip{display:inline-block;border-radius:20px;padding:1px 7px;font-size:10.5px;background:#f3f4f6;border:1px solid #e5e7eb;color:#6b7280;}
+.ccb-br{background:#fff;border:1px solid #eceef0;border-radius:8px;padding:8px 11px;margin-top:7px;}
+.ccb-brh{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;font-size:12px;color:#1f2937;}
+.ccb-brh .goal{font-size:11px;color:#0a6b8a;}
+.ccb-who{display:inline-block;border-radius:20px;padding:0 7px;font-size:10.5px;background:#eef7fb;border:1px solid #d5e6f2;color:#0a6b8a;font-weight:700;}
+.ccb-says{margin-top:6px;display:flex;flex-direction:column;gap:4px;}
+.ccb-say{display:flex;align-items:flex-start;gap:7px;font-size:12px;color:#1f2937;background:#fafbfc;border:1px solid #eceef0;border-radius:6px;padding:5px 8px;line-height:1.7;}
+.ccb-say>span:nth-child(2){flex:1;}
+.ccb-sn{flex:none;width:16px;height:16px;border-radius:50%;background:#eef5fb;color:#0a6b8a;font-size:10px;display:inline-flex;align-items:center;justify-content:center;margin-top:2px;}
+.ccb-angle{display:inline-block;border-radius:20px;padding:0 7px;font-size:10.5px;font-weight:700;border:1px solid #d5dbe4;background:#eef1f5;color:#3f4a5c;}
+.ccb-empty{padding:26px 16px;text-align:center;color:#9ca3af;font-size:12px;background:#fff;}
+.ccb-br-edit{border:1px solid #eceef0;border-radius:8px;padding:9px 11px;margin-bottom:8px;background:#fbfcfd;}
+.ccb-sayrow{display:flex;gap:6px;align-items:flex-start;margin-bottom:5px;}
+.ccb-sayrow select{width:104px;flex:none;}
+.ccb-sayrow input{flex:1;}
+.ccb-draft{background:#f2f8fd;border:1px solid #cfe4f5;border-radius:8px;padding:11px 12px;}
+.ccb-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+</style>`;
+function ccbCards() { return (window.DrainCards && window.DrainCards.getCards) ? window.DrainCards.getCards() : Promise.resolve([]); }
+function ccbAngles() { return (window.DrainCards && window.DrainCards.ANGLES) || ['共情接住', '案例带人', '方法拆解', '数据实证', '专业判断', '避坑提醒', '对比取舍', '随口搭话']; }
+function ccbWhos() { return (window.DrainCards && window.DrainCards.WHO_OPTS) || ['不限', '家长本人', '同行', '老师', '路人']; }
+function ccbNoteTypes() { return (window.DrainCards && window.DrainCards.NOTE_TYPES) || []; }
+function ccbAngleChip(a) {
+  if (!a) return '';
+  return '<span class="ccb-angle" style="' + (CCB_ANGLE_STYLE[a] || '') + '">' + escHtml(a) + '</span>';
+}
+function ccbTypeChips(c) {
+  const map = {};
+  ccbNoteTypes().forEach(t => { map[t.id] = t.name; });
+  const ids = (c && Array.isArray(c.types)) ? c.types : [];
+  if (!ids.length) return '<span class="ccb-nt general">通用（什么帖都能用）</span>';
+  return ids.map(id => '<span class="ccb-nt">' + escHtml(map[id] || id) + '</span>').join('');
+}
+function ccbCardHtml(c, idx) {
+  const folded = !!_ccFolded[c.id];
+  const brs = c.branches || [];
+  let says = 0;
+  brs.forEach(b => { says += (b.say || []).length; });
+  const head = '<div class="ccb-h">'
+    + '<span class="ccb-no">' + (idx < 9 ? '0' : '') + (idx + 1) + '</span>'
+    + '<div class="ccb-main"><div class="ccb-t">' + escHtml(c.name) + '</div>'
+    + '<div class="ccb-w">' + ccbTypeChips(c) + '什么时候用：' + escHtml(c.when || '（还没写）') + '</div></div>'
+    + '<span class="ccb-n">' + brs.length + ' 种情况 · ' + says + ' 句</span>'
+    + '<button type="button" class="btn btn-sm" data-ccbedit="' + escAttr(c.id) + '">编辑</button>'
+    + '<button type="button" class="btn btn-sm" data-ccbcopy="' + escAttr(c.id) + '">复制</button>'
+    + '<button type="button" class="btn btn-sm" data-ccbdel="' + escAttr(c.id) + '" style="color:#a52a2a;border-color:#f2c7c7;">删</button>'
+    + '<button type="button" class="btn btn-sm" data-ccbfold="' + escAttr(c.id) + '">' + (folded ? '展开 ▾' : '收起 ▴') + '</button>'
+    + '</div>';
+  if (folded) return '<div class="ccb-card" data-ccbid="' + escAttr(c.id) + '">' + head + '</div>';
+  const exs = (c.ex || []).length
+    ? '<div class="ccb-line"><b>真实评论例子</b>' + c.ex.map(x => '<span class="ccb-chip">' + escHtml(x) + '</span>').join('') + '</div>'
+    : '';
+  const body = brs.map((b, i) => {
+    const say = (b.say || []).map((s, j) => '<div class="ccb-say"><span class="ccb-sn">' + (j + 1) + '</span><span>' + escHtml(s.text) + '</span>' + ccbAngleChip(s.angle) + '</div>').join('');
+    return '<div class="ccb-br"><div class="ccb-brh"><b>情况 ' + (i + 1) + '</b>'
+      + (b.who && b.who !== '不限' ? '<span class="ccb-who">对方：' + escHtml(b.who) + '</span>' : '')
+      + '<span>' + escHtml(b.cond || '（没写条件）') + '</span>'
+      + (b.goal ? '<span class="goal">→ ' + escHtml(b.goal) + '</span>' : '') + '</div>'
+      + '<div class="ccb-says">' + (say || '<div class="ccb-line">还没写现成说法</div>') + '</div></div>';
+  }).join('');
+  const tail = (c.mat || c.forbid || (c.src || []).length)
+    ? '<div class="ccb-line"><b>必须用</b>' + escHtml(c.mat || '（不需要 / 还没填）')
+      + '<b>不能说</b>' + escHtml(c.forbid || '（还没写）')
+      + (c.src || []).map(x => '<span class="ccb-chip">' + escHtml(x) + '</span>').join('') + '</div>'
+    : '';
+  return '<div class="ccb-card" data-ccbid="' + escAttr(c.id) + '">' + head
+    + '<div class="ccb-b">' + exs + (body || '<div class="ccb-line">还没分情况</div>') + tail + '</div></div>';
+}
+/* 编辑弹窗里的一行「现成说法」 */
+function ccbSayRowHtml(angle, text) {
+  return '<div class="ccb-sayrow">'
+    + '<select data-s="angle">' + ccbAngles().map(a => '<option value="' + escAttr(a) + '"' + (a === angle ? ' selected' : '') + '>' + escHtml(a) + '</option>').join('') + '</select>'
+    + '<input data-s="text" value="' + escAttr(text || '') + '" placeholder="现成说法；AI 会参考改写，不照抄">'
+    + '<button type="button" class="btn btn-sm" data-ccbdelsay="1">✕</button>'
+    + '</div>';
+}
+function ccbBranchHtml(b) {
+  b = b || {};
+  const whos = ccbWhos();
+  const who = whos.indexOf(b.who) >= 0 ? b.who : '不限';
+  return '<div class="ccb-br-edit">'
+    + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><b style="font-size:12px;">情况</b><span style="flex:1;"></span>'
+    + '<button type="button" class="btn btn-sm" data-ccbdelbr="1">删这种情况</button></div>'
+    + '<div class="ccb-grid2">'
+    + '<div class="profile-field"><label>对方是谁</label><select data-b="who">' + whos.map(w => '<option value="' + escAttr(w) + '"' + (w === who ? ' selected' : '') + '>' + escHtml(w) + '</option>').join('') + '</select></div>'
+    + '<div class="profile-field"><label>什么条件</label><input data-b="cond" value="' + escAttr(b.cond || '') + '" placeholder="例：只是抱怨一句，没问具体问题"></div>'
+    + '</div>'
+    + '<div class="profile-field"><label>怎么回</label><input data-b="goal" value="' + escAttr(b.goal || '') + '" placeholder="例：先接住，再问几岁"></div>'
+    + '<div class="ccb-says">' + ((b.say || []).map(s => ccbSayRowHtml(s.angle, s.text)).join('') || ccbSayRowHtml('共情接住', '')) + '</div>'
+    + '<button type="button" class="btn btn-sm" data-ccbaddsay="1" style="margin-top:5px;">＋ 加一句</button>'
+    + '</div>';
+}
+async function ccbInit(root) {
+  if (!root) return;
+  const D = window.DrainCards;
+  const listEl = root.querySelector('#ccbList');
+  if (!listEl) return;
+  const statEl = root.querySelector('#ccbStat');
+  const qEl = root.querySelector('#ccbQ');
+  let cards = [];
+  let q = '';
+
+  const matchCard = (c, s) => {
+    if (!s) return true;
+    let hay = [c.name, c.when, c.mat, c.forbid, (c.src || []).join(' ')].join(' ');
+    (c.ex || []).forEach(x => { hay += ' ' + x; });
+    (c.branches || []).forEach(b => {
+      hay += ' ' + (b.who || '') + ' ' + b.cond + ' ' + b.goal;
+      (b.say || []).forEach(x => { hay += ' ' + x.angle + ' ' + x.text; });
+    });
+    return hay.toLowerCase().indexOf(s.toLowerCase()) >= 0;
+  };
+  const paint = () => {
+    let brN = 0, sayN = 0;
+    cards.forEach(c => { brN += (c.branches || []).length; (c.branches || []).forEach(b => { sayN += (b.say || []).length; }); });
+    if (statEl) statEl.innerHTML = cards.length + ' 张卡 · ' + brN + ' 种情况 · ' + sayN + ' 句现成说法';
+    const show = cards.filter(c => matchCard(c, q.trim()));
+    if (!show.length) {
+      listEl.innerHTML = '<div class="ccb-empty">' + (q.trim() ? '没搜到匹配的场景' : '表里还没有卡') + '</div>';
+      return;
+    }
+    listEl.innerHTML = show.map((c, i) => ccbCardHtml(c, i)).join('');
+    const byId = (id) => cards.filter(x => x.id === id)[0] || null;
+    listEl.querySelectorAll('[data-ccbfold]').forEach(b => b.onclick = () => {
+      const id = b.getAttribute('data-ccbfold');
+      if (_ccFolded[id]) delete _ccFolded[id]; else _ccFolded[id] = 1;
+      paint();
+    });
+    listEl.querySelectorAll('[data-ccbedit]').forEach(b => b.onclick = () => openEditor(byId(b.getAttribute('data-ccbedit'))));
+    listEl.querySelectorAll('[data-ccbcopy]').forEach(b => b.onclick = async () => {
+      const c = byId(b.getAttribute('data-ccbcopy'));
+      if (!c || !(D && D.saveCards)) return;
+      const cp = JSON.parse(JSON.stringify(c));
+      cp.id = ccbUniqueId(cp.id);
+      cp.name = c.name + '（副本）';
+      cards = await D.saveCards(cards.concat([cp]));
+      paint();
+      drainToast('已复制一张，改完记得点「编辑」保存');
+    });
+    listEl.querySelectorAll('[data-ccbdel]').forEach(b => b.onclick = async () => {
+      const c = byId(b.getAttribute('data-ccbdel'));
+      if (!c || !(D && D.saveCards)) return;
+      if (!confirm('删掉「' + c.name + '」？删了就少一张卡，可以点「恢复默认」找回来。')) return;
+      cards = await D.saveCards(cards.filter(x => x.id !== c.id));
+      paint();
+      drainToast('已删掉一张');
+    });
+    return show;
+  };
+  const ccbUniqueId = (base) => {
+    let id = String(base || 'card').replace(/[^a-zA-Z0-9_\-]/g, '') || 'card';
+    if (!cards.some(c => c.id === id)) return id;
+    let i = 2;
+    while (cards.some(c => c.id === id + '_' + i)) i++;
+    return id + '_' + i;
+  };
+
+  /* ── 编辑弹窗 ── */
+  const mask = root.querySelector('#ccbEditMask');
+  const edBranches = root.querySelector('#ccbEdBranches');
+  const renumber = () => {
+    edBranches.querySelectorAll('.ccb-br-edit').forEach((el, i) => {
+      const t = el.querySelector('div b');
+      if (t) t.textContent = '情况' + (i + 1);
+    });
+  };
+  const openEditor = (card) => {
+    if (!mask) return;
+    _ccEditId = card ? card.id : '';
+    mask.querySelector('#ccbEdTitle').textContent = card ? '改这张卡' : '新建场景卡';
+    mask.querySelector('#ccbEdName').value = card ? card.name : '';
+    const cur = (card && Array.isArray(card.types)) ? card.types : [];
+    mask.querySelector('#ccbEdTypes').innerHTML = ccbNoteTypes().map(t =>
+      '<label style="display:inline-flex;align-items:center;gap:4px;margin:0 14px 6px 0;font-size:12px;color:#333;">'
+      + '<input type="checkbox" data-nt="' + escAttr(t.id) + '"' + (cur.indexOf(t.id) >= 0 ? ' checked' : '') + '>' + escHtml(t.name) + '</label>'
+    ).join('') || '<span style="font-size:11.5px;color:#9ca3af;">场景表组件没加载</span>';
+    mask.querySelector('#ccbEdWhen').value = card ? (card.when || '') : '';
+    mask.querySelector('#ccbEdEx').value = card ? (card.ex || []).join('\n') : '';
+    mask.querySelector('#ccbEdMat').value = card ? (card.mat || '') : '';
+    mask.querySelector('#ccbEdForbid').value = card ? (card.forbid || '') : '';
+    mask.querySelector('#ccbEdSrc').value = card ? (card.src || []).join(', ') : '';
+    edBranches.innerHTML = ((card && card.branches && card.branches.length) ? card.branches : [{}]).map(ccbBranchHtml).join('');
+    renumber();
+    mask.classList.add('open');
+    setTimeout(() => { const n = mask.querySelector('#ccbEdName'); if (n) n.focus(); }, 30);
+  };
+  const closeEditor = () => { if (mask) mask.classList.remove('open'); };
+  const collectEditor = () => {
+    const branches = Array.from(edBranches.querySelectorAll('.ccb-br-edit')).map(el => ({
+      who: (el.querySelector('[data-b="who"]') || {}).value || '不限',
+      cond: ((el.querySelector('[data-b="cond"]') || {}).value || '').trim(),
+      goal: ((el.querySelector('[data-b="goal"]') || {}).value || '').trim(),
+      say: Array.from(el.querySelectorAll('.ccb-sayrow')).map(row => ({
+        angle: (row.querySelector('[data-s="angle"]') || {}).value || '',
+        text: ((row.querySelector('[data-s="text"]') || {}).value || '').trim(),
+      })).filter(s => s.text),
+    })).filter(b => b.cond || b.say.length);
+    return {
+      id: _ccEditId || ccbUniqueId('c'),
+      name: (mask.querySelector('#ccbEdName').value || '').trim(),
+      types: Array.from(mask.querySelectorAll('#ccbEdTypes input[data-nt]')).filter(el => el.checked).map(el => el.getAttribute('data-nt')),
+      when: (mask.querySelector('#ccbEdWhen').value || '').trim(),
+      ex: (mask.querySelector('#ccbEdEx').value || '').split('\n').map(x => x.trim()).filter(Boolean),
+      branches,
+      mat: (mask.querySelector('#ccbEdMat').value || '').trim(),
+      forbid: (mask.querySelector('#ccbEdForbid').value || '').trim(),
+      src: (mask.querySelector('#ccbEdSrc').value || '').split(/[,，]/).map(x => x.trim()).filter(Boolean),
+    };
+  };
+  const saveEditor = async () => {
+    if (!(D && D.saveCards)) { drainToast('场景表组件没加载，刷新一下页面', 'warn'); return; }
+    const card = collectEditor();
+    if (!card.name) { drainToast('先写场景名', 'warn'); mask.querySelector('#ccbEdName').focus(); return; }
+    if (!card.branches.length) { drainToast('至少写一种情况', 'warn'); return; }
+    const next = cards.slice();
+    const i = next.findIndex(x => x.id === card.id);
+    if (i >= 0) next[i] = card; else next.push(card);
+    cards = await D.saveCards(next);
+    closeEditor();
+    paint();
+    drainToast(i >= 0 ? '已存进表，改完立刻生效' : '已新建一张，改完立刻生效');
+  };
+
+  if (mask) {
+    mask.querySelector('#ccbEdClose').onclick = closeEditor;
+    mask.querySelector('#ccbEdSave').onclick = saveEditor;
+    mask.onclick = (ev) => { if (ev.target === mask) closeEditor(); };
+    mask.querySelector('#ccbEdTypes') && (mask.querySelector('#ccbEdAddBranch').onclick = () => {
+      edBranches.insertAdjacentHTML('beforeend', ccbBranchHtml({}));
+      renumber();
+      const all = edBranches.querySelectorAll('.ccb-br-edit');
+      const last = all[all.length - 1];
+      if (last) { const inp = last.querySelector('[data-b="cond"]'); if (inp) inp.focus(); }
+    });
+    edBranches.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('[data-ccbdelbr]')) {
+        const br = t.closest('.ccb-br-edit');
+        if (br) br.remove();
+        renumber();
+        return;
+      }
+      if (t.closest('[data-ccbaddsay]')) {
+        const box = t.closest('.ccb-br-edit').querySelector('.ccb-says');
+        if (box) box.insertAdjacentHTML('beforeend', ccbSayRowHtml('方法拆解', ''));
+        return;
+      }
+      if (t.closest('[data-ccbdelsay]')) {
+        const row = t.closest('.ccb-sayrow');
+        const box = row && row.parentNode;
+        if (row) row.remove();
+        if (box && !box.querySelector('.ccb-sayrow')) box.insertAdjacentHTML('beforeend', ccbSayRowHtml('共情接住', ''));
+      }
+    });
+  }
+
+  /* ── AI 起草弹窗 ── */
+  const dmask = root.querySelector('#ccbDraftMask');
+  let draft = null;
+  const closeDraft = () => { if (dmask) dmask.classList.remove('open'); };
+  if (dmask) {
+    dmask.querySelector('#ccbDrClose').onclick = closeDraft;
+    dmask.onclick = (ev) => { if (ev.target === dmask) closeDraft(); };
+    dmask.querySelector('#ccbDrGo').onclick = async () => {
+      const idea = (dmask.querySelector('#ccbDrIdea').value || '').trim();
+      const comments = (dmask.querySelector('#ccbDrComments').value || '').split('\n').map(x => x.trim()).filter(Boolean);
+      if (!idea && !comments.length) { drainToast('先写一句想补什么场景，或贴几条真评论', 'warn'); return; }
+      const btn = dmask.querySelector('#ccbDrGo');
+      btn.disabled = true;
+      dmask.querySelector('#ccbDrState').textContent = 'AI 在起草…（约 20～40 秒）';
+      let r = null;
+      try { r = await chrome.runtime.sendMessage({ action: 'commentCardsDraft', data: { idea: idea, comments: comments } }); } catch (e) { r = { ok: false, error: e.message }; }
+      btn.disabled = false;
+      if (!r || r.ok === false) { dmask.querySelector('#ccbDrState').textContent = '没起草出来：' + ((r && r.error) || '服务器没回话'); return; }
+      draft = r.card;
+      dmask.querySelector('#ccbDrState').textContent = '起草好了；点「收下」才进表。';
+      dmask.querySelector('#ccbDrAccept').disabled = false;
+      const c = r.card || {};
+      dmask.querySelector('#ccbDrPreview').innerHTML = '<div class="ccb-draft"><h3 style="margin:0 0 6px;font-size:13px;">' + escHtml(c.name) + '</h3>'
+        + '<div style="font-size:11.5px;color:#6b7280;margin-bottom:7px;">' + escHtml(c.when) + '</div>'
+        + (c.ex || []).map(x => '<span class="ccb-chip">' + escHtml(x) + '</span> ').join('')
+        + (c.branches || []).map((b, i) => '<div class="ccb-br"><div class="ccb-brh"><b>情况' + (i + 1) + '</b><span>' + escHtml(b.cond) + '</span>'
+          + (b.goal ? '<span class="goal">→ ' + escHtml(b.goal) + '</span>' : '') + '</div>'
+          + (b.say || []).map(s => '<div class="ccb-say"><span style="flex:1;">' + escHtml(s.text) + '</span>' + ccbAngleChip(s.angle) + '</div>').join('')
+          + '</div>').join('')
+        + (c.forbid ? '<div class="ccb-line" style="color:#a52a2a;">🚫 ' + escHtml(c.forbid) + '</div>' : '')
+        + '</div>';
+    };
+    dmask.querySelector('#ccbDrAccept').onclick = async () => {
+      if (!draft || !(D && D.saveCards)) return;
+      const card = JSON.parse(JSON.stringify(draft));
+      card.id = ccbUniqueId(card.id || 'ai');
+      card.src = ['AI 起草·你收下'];
+      cards = await D.saveCards(cards.concat([card]));
+      closeDraft();
+      paint();
+      drainToast('已收下，进表了；先拿 5～10 条真评论重放看效果');
+    };
+  }
+
+  /* ── 工具条 ── */
+  if (qEl) qEl.oninput = () => { q = qEl.value; paint(); };
+  const newBtn = root.querySelector('#ccbNew');
+  if (newBtn) newBtn.onclick = () => openEditor(null);
+  const draftBtn = root.querySelector('#ccbDraft');
+  if (draftBtn) draftBtn.onclick = () => {
+    if (!dmask) return;
+    draft = null;
+    dmask.querySelector('#ccbDrIdea').value = '';
+    dmask.querySelector('#ccbDrComments').value = '';
+    dmask.querySelector('#ccbDrState').textContent = '';
+    dmask.querySelector('#ccbDrPreview').innerHTML = '';
+    dmask.querySelector('#ccbDrAccept').disabled = true;
+    dmask.classList.add('open');
+  };
+  const resetBtn = root.querySelector('#ccbReset');
+  if (resetBtn) resetBtn.onclick = async () => {
+    if (!(D && D.resetCards)) return;
+    if (!confirm('恢复默认 14 张？你自己改过、加过的卡会被清掉。')) return;
+    await D.resetCards();
+    cards = await D.getCards();
+    paint();
+    drainToast('已恢复默认 14 张');
+  };
+  const openPage = root.querySelector('#ccbOpenPage');
+  if (openPage) openPage.onclick = (e) => { e.preventDefault(); window.open('comment-cards.html', '_blank'); };
+
+  try { cards = D ? await D.getCards() : []; } catch (_) { cards = []; }
+  paint();
+}
+
+async function renderDrainQueue(container) {
+  if (!container) return;
+  _bqOpen = true;
+  /* 横签挂在 .work-area 顶上（popup.html 里那颗 #dqTabs）：队列清单和工作台两头都看得见，
+     切到「🧐 工作台」时它也不会跟着队列内容一起被收走 */
+  let tabs = document.getElementById('dqTabs');
+  if (!tabs) {
+    tabs = document.createElement('div');
+    tabs.id = 'dqTabs';
+    tabs.className = 'dq-tabs';
+    container.insertBefore(tabs, container.firstChild);
+  }
+  tabs.innerHTML = `<button type="button" data-dqtab="now">▶ 现在这趟</button>
+    <button type="button" data-dqtab="week">📅 周历</button>
+    <button type="button" data-dqtab="work">🧐 工作台</button>
+    <span style="flex:1;"></span><span style="font-size:11px;color:#9ca3af;padding:0 8px;">现在这趟＝今天跑什么、跑到哪；周历＝这一周怎么排；工作台＝跑的时候看什么（评论 / 商机 / 日志）</span>`;
+  let wkBox = container.querySelector('#dqWeek');
+  if (!wkBox) {
+    wkBox = document.createElement('div');
+    wkBox.id = 'dqWeek';
+    wkBox.style.cssText = 'display:none;flex:1;min-height:0;overflow-y:auto;padding:12px 14px;';
+    const bar = container.querySelector('#benchQueueBar');
+    if (bar && bar.nextSibling) container.insertBefore(wkBox, bar.nextSibling);
+    else container.appendChild(wkBox);
+  }
+  const paintTabs = () => {
+    tabs.querySelectorAll('[data-dqtab]').forEach(b => b.classList.toggle('on', b.getAttribute('data-dqtab') === _dqTab));
+  };
+  const weekOff = { v: 0 };
+  const paintWeek = async () => {
+    const cfg = await drainGetScanCfg();
+    wkBox.innerHTML = drainWeekCardHtml(cfg, weekOff.v);
+    wkBox.querySelectorAll('[data-dqwkoff]').forEach(b => b.onclick = () => {
+      weekOff.v = Number(b.getAttribute('data-dqwkoff')) ? 1 : 0;
+      paintWeek();
+    });
+    const go = wkBox.querySelector('#dqGoPlan');
+    if (go) go.onclick = (e) => { e.preventDefault(); try { if (typeof switchMainTab === 'function') switchMainTab('plan'); } catch (_) {} };
+  };
+  const paint = async (tab) => {
+    _dqTab = tab === 'week' ? 'week' : (tab === 'work' ? 'work' : 'now');
+    /* 队列条（#benchQueueBar）的显隐 exec-bridge 每回同步顶栏都会重设一次，光改内联值会被它翻回来；
+       这里挂个全局标记，那边只在「▶ 现在这趟」时才把队列条放出来。「工作台」那一格由 dqWorkTab 摆平。 */
+    window.__xhsDqTab = _dqTab;
+    window.__xhsDqWeek = _dqTab === 'week';
+    paintTabs();
+    if (typeof window.dqWorkTab === 'function') window.dqWorkTab(_dqTab === 'work');
+    if (_dqTab === 'work') { wkBox.style.display = 'none'; return; }
+    const host = container.querySelector('#benchQueueBar');
+    const foot = container.querySelector('.q-pagefoot');
+    if (_dqTab === 'week') {
+      if (host) host.style.display = 'none';
+      if (foot) foot.style.display = 'none';
+      wkBox.style.display = '';
+      await paintWeek();
+    } else {
+      wkBox.style.display = 'none';
+      if (foot) foot.style.display = '';
+      if (host) host.style.display = '';
+      try {
+        if (typeof window.renderBenchQueueBar === 'function') await window.renderBenchQueueBar();
+      } catch (_) {}
+    }
+  };
+  tabs.querySelectorAll('[data-dqtab]').forEach(b => b.onclick = () => paint(b.getAttribute('data-dqtab')));
+  /* 从别处点进来的（比如复盘点「打开」→ 队列 → 工作台）：想停哪一格由 __xhsDqTab 说了算 */
+  window.__xhsDqGoTab = (t) => paint(t);
+  if (window.__xhsDqTab === 'week' || window.__xhsDqTab === 'work' || window.__xhsDqTab === 'now') _dqTab = window.__xhsDqTab;
+  await paint(_dqTab);
 }
 
 /* ================= 👤 盯的账号 / 🌿 日常浏览 两个弹窗（2026-10-28 v2） =================
@@ -3075,7 +3607,7 @@ async function renderAcctPanel(root) {
   const save = async (next, msg) => {
     await drainSaveScanCfg(Object.assign({}, cfg, next));
     if (msg) drainToast(msg);
-    const qb = document.getElementById('drainQueueContent');
+    const qb = document.getElementById('drainPlanContent');
     if (qb && typeof qb._qRender === 'function') await qb._qRender();
     await renderAcctPanel(root);
   };
@@ -3269,7 +3801,7 @@ async function renderDailyPanel(root) {
     try { await DailyBrowse.saveConfig(patch); }
     catch (e) { drainToast('保存失败：' + ((e && e.message) || e), 'warn'); return; }
     if (msg) drainToast(msg);
-    const qb = document.getElementById('drainQueueContent');
+    const qb = document.getElementById('drainPlanContent');
     if (qb && typeof qb._qRender === 'function') await qb._qRender();
   };
   const on = root.querySelector('#qDbOn');
@@ -3340,9 +3872,9 @@ if (typeof window !== 'undefined') {
   window.drainOpenCandidates = async (kind) => {
     _cfgSec = 'run';
     _cfgWant = (kind === 'topic') ? 'topic' : 'ai';
-    // 落到队列页的「⚙️ 配置」那一签（切页会重渲染，意图在渲染尾取走）
-    try { const box = document.getElementById('drainQueueContent'); if (box) box._qTab = 'bulk'; } catch (_) {}
-    if (typeof window.switchMainTab === 'function') window.switchMainTab('queue');
+    // 落到获客规划页的配置表（切页会重渲染，意图在渲染尾取走）
+    try { const box = document.getElementById('drainPlanContent'); if (box) box._qTab = 'bulk'; } catch (_) {}
+    if (typeof window.switchMainTab === 'function') window.switchMainTab('plan');
   };
 }
 
@@ -3585,6 +4117,14 @@ async function renderScenarioDrain(container, mode) {
       .kwp-batchdel:disabled{opacity:.5;cursor:default;}
       .kwp-findcell{display:flex;flex-direction:column;gap:4px;align-items:flex-start;}
       .kwp-percell{vertical-align:middle;}
+      /* 🔑 关键词配置合表（2026-11-12）：六列挤在一行里，格子留白收一点，出词策略停在 3 行内 */
+      .kwp-merge{min-width:980px;}
+      .kwp-merge td{padding:8px 9px;}
+      .kwp-merge .kwp-tools{gap:4px;padding-top:6px;}
+      .kwp-merge .kwp-tin{width:132px;}
+      .kwp-merge .pbp-wrline{display:flex;align-items:flex-start;gap:5px;}
+      .kwp-merge .pbp-wrline .tx>span:first-child{-webkit-line-clamp:3;}
+      .kwp-merge .pbp-talkedit{flex:none;}
       .kwp-perlab{display:flex;align-items:center;gap:4px;font-size:11.5px;color:#6b7280;white-space:nowrap;}
       .kwp-allbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 0 9px;}
       .kwp-allbar .note{font-size:10.5px;color:#9ca3af;}
@@ -3673,6 +4213,29 @@ async function renderScenarioDrain(container, mode) {
       .nt-judge{font-size:11px;color:#6b7280;line-height:1.7;}
       .nt-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 0;}
       .nt-tools .note{font-size:11px;color:#9ca3af;}
+      /* 🧩 复盘补卡候选（2026-11-12）：AI 只出候选，点「加入场景表」才进表 */
+      .nt-cands{margin:10px 0 0;border:1px solid #d9e6f2;background:linear-gradient(180deg,#f7fbfe 0%,#fff 62%);border-radius:10px;padding:10px 12px;}
+      .nt-cands-h{font-size:12.5px;font-weight:800;color:#0f3f57;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+      .nt-cands-h b{color:#0a6b8a;font-variant-numeric:tabular-nums;}
+      .nt-cands-h .s{font-size:11px;font-weight:400;color:#7b8a96;}
+      .nt-cand{border:1px solid #e3edf5;background:#fff;border-radius:9px;padding:8px 10px;margin-top:8px;}
+      .nt-cand.added{border-color:#bfe6d0;background:#f7fdf9;}
+      .nt-cand.ignored{opacity:.55;}
+      .nt-cand-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;font-weight:800;color:#1f2937;}
+      .nt-cand-h .sp{flex:1;}
+      .nt-cand-h .src{font-size:10.5px;font-weight:400;color:#8a94a0;}
+      .nt-cand-tg{font-size:10px;font-weight:600;border-radius:20px;padding:0 7px;background:#eef5fb;color:#23637f;}
+      .nt-cand-b{margin-top:6px;font-size:11.5px;color:#374151;line-height:1.7;}
+      .nt-cand-lb{font-weight:700;color:#7b8794;margin-right:5px;}
+      .nt-exchip{display:inline-block;background:#f3f7fa;border:1px solid #e4ecf3;border-radius:20px;padding:0 8px;margin:0 4px 4px 0;font-size:11px;color:#4b5563;}
+      .nt-br{margin-top:5px;padding-left:8px;border-left:2px solid #dbe7f1;}
+      .nt-br-h{font-size:11px;color:#5b6672;}
+      .nt-br-h .who{display:inline-block;background:#eef5fb;color:#23637f;border-radius:4px;padding:0 5px;margin-right:5px;font-weight:700;}
+      .nt-br-h .goal{color:#0a6b8a;margin-left:5px;}
+      .nt-say{display:flex;gap:6px;margin:3px 0 0;color:#1f2937;}
+      .nt-say .n{flex:none;width:14px;height:14px;border-radius:50%;background:#eaf3fa;color:#23637f;font-size:9.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;margin-top:2px;}
+      .nt-cand-f{display:flex;align-items:center;gap:8px;font-size:10.5px;color:#8a94a0;margin-top:8px;}
+      .nt-cand-f .sp{flex:1;}
       /* 问号气泡 .qhelp / 折叠块 .fdet 是全站公用样式，在 ui.css 里 */
     </style>
     <div class="sx-wrap">
@@ -3732,8 +4295,6 @@ async function renderScenarioDrain(container, mode) {
     const enabledN = pool.filter(e => e.on !== false).length;
     const now = Date.now();
     const todayWd = new Date(now).getDay();
-    const pbToday = DRAIN_PB_ORDER.filter(s => drainPbOnDay(cfg, s, now));
-    const pbOff = DRAIN_PB_ORDER.filter(s => !drainPbPlan(cfg, s).days.length);
     /* 启用了但一个玩法都没挂的词：永远不会进队列，表底单独留一行点出来 */
     const orphanWords = pool.filter(e => e.on !== false && !DRAIN_PB_WORD.some(s => drainWordTypeOn(e, s)));
     const save = async (next, quiet) => {
@@ -3741,7 +4302,7 @@ async function renderScenarioDrain(container, mode) {
       let r = null;
       try { r = await chrome.runtime.sendMessage({ action: 'drainSaveScanCfg', cfg: merged }); } catch (_) {}
       // 网页版：保存走服务器动作，没有存储变更回推 → 顺手让队列那半边重算，配置一改队列立刻对上
-      try { const qb = document.getElementById('drainQueueContent'); if (qb && typeof qb._qRender === 'function') qb._qRender(); } catch (_) {}
+      try { const qb = document.getElementById('drainPlanContent'); if (qb && typeof qb._qRender === 'function') qb._qRender(); } catch (_) {}
       // 词池变了 → 获客那排关键词标签同步刷新（同一份真源）
       try { if (typeof window._kwBarReload === 'function') await window._kwBarReload(); } catch (_) {}
       /* 存完给一句回音：今天排进几项 / 今天不跑是哪道闸（演示号被拦下时不报「已存」）
@@ -3804,49 +4365,10 @@ async function renderScenarioDrain(container, mode) {
         }).join('')}</div>`}
       </div>`;
     };
-    const kwpRow = (s) => {
-      const def = drainScenarioDef(s);
-      const ws = kwpWords(s);
-      const offN = ws.filter(e => e.on === false).length;
-      const running = drainPbOnDay(cfg, s, now);
-      const selN = kwpSelN(s);
-      const rivalN = (s === 'local') ? (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === 'rival').length : 0;
-      const rivalNote = rivalN
-        ? `<div class="kwp-meta">👤 还盯着 <b>${rivalN}</b> 个竞对主页：只收人，不评论</div>`
-        : '';
-      return `<tr id="row-${s}">
-        <td>
-          <div class="kwp-pbcell">
-            <div class="kwp-pbline">
-              <span class="kwp-icon" style="${DRAIN_PB_ICON_STYLE[s] || ''}">${def.icon}</span>
-              <span class="kwp-name">${escHtml(def.label)}</span>
-              ${running ? '<span class="kwp-today">今天跑</span>' : ''}
-            </div>
-            <div class="kwp-tag">${escHtml(drainPbCopy(cfg, s, 'tag') || def.tag || '')}</div>
-            <span class="kwp-cnt"><b>${ws.length}</b> 个词${offN ? ' · ' + offN + ' 停用' : ''}</span>
-            ${rivalNote}
-          </div>
-        </td>
-        <td>
-          ${kwpChips(s)}
-          <div class="kwp-tools">
-            <input class="kwp-tin" data-kwaddinput="${s}" placeholder="加一个词到「${escAttr(def.label)}」，回车">
-            <button type="button" class="btn btn-sm" data-kwadd="${s}">＋ 添加</button>
-          </div>
-          ${kwpCandHtml(s)}
-        </td>
-        <td class="kwp-findcell">
-          <button type="button" class="btn btn-sm" data-kwai="${s}" title="${escAttr('按「' + def.label + '」的出词策略找一批词（上面「玩法配置」最后一列那句），勾完只进这个玩法')}">✨ 找词</button>
-          ${s === 'cross' ? '<button type="button" class="btn btn-sm" data-kwtopic="cross" title="从话题采集池挑：挑进来只挂「同城异业」">🏷 话题</button>' : ''}
-          <button type="button" class="btn btn-sm kwp-batchdel" data-kwbatchdel="${s}"${selN ? '' : ' disabled'} title="${escAttr('把前面勾上的词一起从「' + def.label + '」移出（词还在词池，别的玩法照跑）')}">🗑 批量移出${selN ? '（' + selN + '）' : ''}</button>
-        </td>
-        <td class="kwp-percell">
-          <label class="kwp-perlab" title="这个玩法每个排上的日子从词池里轮着挑几个词">每天 <input class="pbp-per" type="number" min="1" max="20" value="${drainPbPlan(cfg, s).perDay}" data-pbper="${s}"> 个</label>
-        </td>
-      </tr>`;
-    };
     const kwpHighvRow = () => {
       const acctN = pbAcctN('highv');
+      const p = drainPbPlan(cfg, 'highv');
+      const cadOff = !!(run.highv && run.highv.mode === 'off');
       return `<tr id="row-highv" class="kwp-acct">
         <td>
           <div class="kwp-pbcell">
@@ -3858,9 +4380,15 @@ async function renderScenarioDrain(container, mode) {
             <span class="kwp-cnt">不出词</span>
           </div>
         </td>
-        <td colspan="3">
+        <td>${pbChipHtml('highv', 'days', cadOff ? '已停用 · 点恢复' : pbDayLabel(p.days), {
+          warn: cadOff,
+          tip: cadOff ? '老设置里这个玩法被定成「不跑」，点一下恢复默认节奏' : '点开选周几跑：一天可多选，也能一次套「每天 / 工作日 / 周末」',
+        })}</td>
+        <td>${pbChipHtml('highv', 'city', pbCityShort[p.city], { tip: '同城：这个玩法对同城评论怎么处理——不筛＝不看属地；优先＝同省的排前面；全收＝同城的都算机会' })}</td>
+        <td class="kwp-meta">—</td>
+        <td colspan="2">
           <div class="kwp-acctcell">
-            <span>这个玩法不用词：按排班去 <b>${acctN}</b> 个头部博主的主页看最新笔记，在笔记下面留一句「赞同＋本行视角补充」，评论区里回追问的人。</span>
+            <span>不出词：按排班看主页最新（<b>${acctN}</b> 个号），在笔记下面留一句「赞同＋本行视角补充」，评论区里回追问的人。</span>
             <button type="button" class="btn btn-sm" data-kwacct="1" title="看现在盯了哪些账号：启停、借势还是蹲人、多久进一次主页">看盯的账号</button>
           </div>
         </td>
@@ -3877,14 +4405,15 @@ async function renderScenarioDrain(container, mode) {
           <span class="kwp-cnt"><b>${orphan.length}</b> 个词</span>
         </div>
       </td>
+      <td colspan="3"><span class="kwp-meta">—</span></td>
       <td>
         <div class="kwp-chips">${orphan.map(e => `<span class="kwp-chip"><span class="wt">${escHtml(e.k)}</span></span>`).join('')}</div>
         <div class="kwp-tools">
-          <button type="button" class="btn btn-sm" id="sxKwOrphan" title="把这些没挂任何玩法的词一起挂到「本地泛搜索」，挂完还能自己调">🧭 都挂到本地泛搜</button>
+          <button type="button" class="btn btn-sm" id="sxKwOrphan" title="把这些没挂任何玩法的词一起挂到「本地泛搜」，挂完还能自己调">🧭 都挂到本地泛搜</button>
           <span class="note">也可以到上面任意一行用「＋ 添加」把词重打一遍挂进去。</span>
         </div>
       </td>
-      <td colspan="2"><span class="kwp-meta">—</span></td>
+      <td><span class="kwp-meta">—</span></td>
     </tr>`;
     const kwpAllWords = () => {
       const selN = pool.filter(e => _poolSel.has(e.k)).length;
@@ -3955,36 +4484,64 @@ async function renderScenarioDrain(container, mode) {
       o = o || {};
       return `<button type="button" class="pbp-chip${o.dim ? ' seloff' : ''}${o.warn ? ' warn' : ''}" data-pbpop="${s}|${kind}" title="${escAttr(o.tip || '')}"><span class="cv">${escHtml(label)}</span></button>`;
     };
-    /* 🧭 渠道行（2026-11-12 剪列）：这一签只管「去哪儿找」——渠道 / 周几跑 / 同城 / 出词策略。
-       评不评、动作、提店、收人全搬到「💬 怎么评」的笔记类型表，这一行不再重复给。 */
+    /* 🔑 关键词配置（2026-11-12 合成一张表）：一行一个玩法——周几跑 / 同城 / 每天挑几个 / 词 / 出词策略。
+       一个词可以同时挂几行；出词策略点「改」在这一行下面展开写。
+       评不评、动作、提店、收人全在「💬 评论配置」的笔记类型表，这一行不再重复给。 */
     const pbRow = (s) => {
       const def = drainScenarioDef(s);
       const p = drainPbPlan(cfg, s);
-      const acctN = pbAcctN(s);
-      const rivalAcctN = (s === 'local') ? (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === 'rival').length : 0;
+      const ws = kwpWords(s);
+      const offN = ws.filter(e => e.on === false).length;
+      const running = drainPbOnDay(cfg, s, now);
+      const selN = kwpSelN(s);
+      const rivalN = (s === 'local') ? (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === 'rival').length : 0;
       const tOpen = _drainTalkOpen === s;
       /* 出词策略：自己写过就用那句，没写显示内置那句（灰、标「内置口径」），点「改」就地写 */
-      const noWord = s === 'highv';
-      const wrBuiltin = noWord ? '' : drainAiKeywordRule(s, cfg.city, '', cfg);
+      const wrBuiltin = drainAiKeywordRule(s, cfg.city, '', cfg);
       const wrOwn = p.wordRule;
       const cadOff = !!(run[s] && run[s].mode === 'off');
-      const cityTip = '同城：这个渠道对同城评论怎么处理——不筛＝不看属地；优先＝同省的排前面；全收＝同城的都算机会';
-      return `<tr class="pbp-tr">
-        <td class="pbp-name" title="${escAttr((drainPbCopy(cfg, s, 'desc') || def.desc || def.label) + (rivalAcctN ? '（含盯的 ' + rivalAcctN + ' 个竞对号）' : ''))}">${def.icon} ${escHtml(def.label)}${s === 'highv' ? `<span class="pbp-sub">不出词${acctN ? ' · 盯 ' + acctN + ' 个号' : ''}</span>` : ''}</td>
+      const cityTip = '同城：这个玩法对同城评论怎么处理——不筛＝不看属地；优先＝同省的排前面；全收＝同城的都算机会';
+      return `<tr id="row-${s}" data-pb="${s}">
+        <td>
+          <div class="kwp-pbcell">
+            <div class="kwp-pbline">
+              <span class="kwp-icon" style="${DRAIN_PB_ICON_STYLE[s] || ''}">${def.icon}</span>
+              <span class="kwp-name">${escHtml(def.label)}</span>
+              ${running ? '<span class="kwp-today">今天跑</span>' : ''}
+            </div>
+            <div class="kwp-tag">${escHtml(drainPbCopy(cfg, s, 'tag') || def.tag || '')}</div>
+            <span class="kwp-cnt"><b>${ws.length}</b> 个词${offN ? ' · ' + offN + ' 停用' : ''}</span>
+            ${rivalN ? `<div class="kwp-meta">👤 还盯着 <b>${rivalN}</b> 个竞对主页：只收人，不评论</div>` : ''}
+          </div>
+        </td>
         <td>${pbChipHtml(s, 'days', cadOff ? '已停用 · 点恢复' : pbDayLabel(p.days), {
           warn: cadOff,
-          tip: cadOff ? '老设置里这个渠道被定成「不跑」，点一下恢复默认节奏' : '点开选周几跑：一天可多选，也能一次套「每天 / 工作日 / 周末」',
+          tip: cadOff ? '老设置里这个玩法被定成「不跑」，点一下恢复默认节奏' : '点开选周几跑：一天可多选，也能一次套「每天 / 工作日 / 周末」',
         })}</td>
         <td>${pbChipHtml(s, 'city', pbCityShort[p.city], { tip: cityTip })}</td>
-        <td class="pbp-wrcell">${noWord
-          ? '<span class="pbp-dash">不出词</span>'
-          : `<div class="pbp-wrline">
-              <span data-wrbox="${s}">${wrTxHtml(s, wrOwn)}</span>
-              <button type="button" class="pbp-talkedit" data-wredit="${s}">${tOpen ? '收起' : '改'}</button>
-            </div>`}</td>
+        <td class="kwp-percell">
+          <label class="kwp-perlab" title="这个玩法每个排上的日子从词池里轮着挑几个词">每天 <input class="pbp-per" type="number" min="1" max="20" value="${p.perDay}" data-pbper="${s}"> 个</label>
+        </td>
+        <td>
+          ${kwpChips(s)}
+          <div class="kwp-tools">
+            <input class="kwp-tin" data-kwaddinput="${s}" placeholder="加一个词，回车">
+            <button type="button" class="btn btn-sm" data-kwadd="${s}">＋ 添加</button>
+            <button type="button" class="btn btn-sm" data-kwai="${s}" title="${escAttr('按这一行最右那句出词策略找一批词，勾完只进这个玩法')}">✨ 找词</button>
+            ${s === 'cross' ? '<button type="button" class="btn btn-sm" data-kwtopic="cross" title="从话题采集池挑：挑进来只挂「同城异业」">🏷 话题</button>' : ''}
+            <button type="button" class="btn btn-sm kwp-batchdel" data-kwbatchdel="${s}"${selN ? '' : ' disabled'} title="${escAttr('把前面勾上的词一起从「' + def.label + '」移出（词还在词池，别的玩法照跑）')}">🗑 批量移出${selN ? '（' + selN + '）' : ''}</button>
+          </div>
+          ${kwpCandHtml(s)}
+        </td>
+        <td class="pbp-wrcell">
+          <div class="pbp-wrline">
+            <span data-wrbox="${s}">${wrTxHtml(s, wrOwn)}</span>
+            <button type="button" class="pbp-talkedit" data-wredit="${s}">${tOpen ? '收起' : '改'}</button>
+          </div>
+        </td>
       </tr>
-      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="4"><div class="pbp-teditbox">
-        ${noWord ? '<div class="hint">这个渠道不出词，没有出词策略。</div>' : `<div class="pbp-wrbox" style="margin-top:0;padding-top:0;border-top:0;">
+      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="6"><div class="pbp-teditbox">
+        <div class="pbp-wrbox" style="margin-top:0;padding-top:0;border-top:0;">
           <div class="h">出词策略：点「✨ 找词」时 AI 按这一句去找词。留空＝用下面那句内置口径。</div>
           <textarea data-writext="${s}" rows="2" placeholder="${escAttr(wrBuiltin)}">${escHtml(wrOwn)}</textarea>
           <div class="wrdefault">内置口径：${escHtml(wrBuiltin)}</div>
@@ -3994,65 +4551,10 @@ async function renderScenarioDrain(container, mode) {
             <span style="flex:1;"></span>
             <button type="button" class="btn btn-sm btn-primary" data-wrsave="${s}">保存出词策略</button>
           </div>
-        </div>`}
+        </div>
       </div></td></tr>`;
     };
     const cardBox = 'background:#fff;border:1px solid var(--line,#eceef0);border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(16,24,40,.05);';
-    /* 轮词的白话说明：一周几个槽、几个词、多出来的怎么办、几周轮完。没排日子/词为空就不说。 */
-    const rotNoteHtml = () => {
-      const lines = [];
-      DRAIN_PB_WORD.forEach(s => {
-        const st = drainPbRotStat(cfg, s);
-        if (!st || !st.N) return;
-        const def = drainScenarioDef(s);
-        const head = def.icon + ' ' + escHtml(def.label);
-        if (st.off) lines.push({ warn: false, text: head + '：这周没排日子，一个词都不跑' });
-        else if (st.overflow > 0) lines.push({ warn: true, text: head + '：一周 ' + st.slots + ' 个槽、有 ' + st.N + ' 个词，这一周跑到第 ' + st.slots + ' 个，还有 ' + st.overflow + ' 个排不上；下周从第 ' + (st.slots + 1) + ' 个接着往下，约 ' + st.weeks + ' 周轮完一圈' });
-        else if (st.N < st.slots) lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、只有 ' + st.N + ' 个词，跑完会绕回去，把前面的词再跑一遍' });
-        else lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、' + st.N + ' 个词，刚好一圈跑完' });
-      });
-      if (!lines.length) return '';
-      return '<div class="pbp-rotbox">' + lines.map(x => '<div class="pbp-rot' + (x.warn ? ' warn' : '') + '">' + x.text + '</div>').join('') + '</div>';
-    };
-    const pbWeekHtml = () => {
-      const off = _drainWeekOff || 0;
-      const wk = drainPbWeek(cfg, now + off * 7 * 24 * 3600 * 1000);
-      const t0 = new Date(now);
-      const sameDay = (ts) => {
-        const d = new Date(ts);
-        return !off && d.getFullYear() === t0.getFullYear() && d.getMonth() === t0.getMonth() && d.getDate() === t0.getDate();
-      };
-      return `<div style="${cardBox}margin-top:10px;">
-        <div class="pbp-weekcard-h">
-          <span class="t">📅 周日历</span>
-          <span class="sx-count">${off ? '下周' : '这一周'}每个玩法跑哪些词</span>
-          <span style="flex:1;"></span>
-          <span class="pbp-wkseg">
-            <button type="button" class="${off ? '' : 'on'}" data-wkoff="0">本周</button>
-            <button type="button" class="${off ? 'on' : ''}" data-wkoff="1">下周（接着轮）</button>
-          </span>
-          <span class="x">按上面的排班轮出来的，停用的词不进来</span>
-        </div>
-        <div class="sx-hint" style="margin:0 0 8px;line-height:1.7;">按上面排班和「每天挑几个词」轮着算出来的；停用的词不进来。词比一周的槽多时，下一周从这周停下的地方接着往下，不会每周都从头。手插和欠账不受排班限制。</div>
-        <div class="pbp-weekwrap">
-          <table class="pbp-week">
-            <thead><tr><th style="width:150px;">玩法</th>${DRAIN_WEEK_ORDER.map(d => `<th${!off && d === todayWd ? ' class="today"' : ''}>${WK_LABELS[d]}</th>`).join('')}</tr></thead>
-            <tbody>${DRAIN_PB_ORDER.map(s => {
-              const def = drainScenarioDef(s);
-              const acctN = pbAcctN(s);
-              const rs = drainPbRotStat(cfg, s);
-              return `<tr><td class="pbp-wk-name">${def.icon} ${escHtml(def.label)}${rs && rs.overflow ? `<span class="pbp-wkwarn" title="${escAttr('一周只有 ' + rs.slots + ' 个槽，排不上 ' + rs.overflow + ' 个词；下周接着往下轮')}">⚠ ${rs.overflow}</span>` : ''}</td>${wk[s].map(cell => {
-                const words = cell.words || [];
-                if (words.length) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>${words.map(w => `<span class="pbp-wchip" title="${escAttr(w)}">${escHtml(w)}</span>`).join('')}</td>`;
-                if (s === 'highv' && acctN && drainPbOnDay(cfg, s, cell.at)) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>👤 ${acctN} 个号</td>`;
-                return `<td${sameDay(cell.at) ? ' class="today"' : ''}><span class="pbp-wempty">—</span></td>`;
-              }).join('')}</tr>`;
-            }).join('')}</tbody>
-          </table>
-        </div>
-        ${rotNoteHtml()}
-      </div>`;
-    };
     /* ⏱「刚起来」线：判一篇值不值得抢首评用的，跟「怎么评」放一起 */
     const freshBoxHtml = `
       <div id="pbFreshLine" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 10px;padding:7px 9px;background:#f8fafc;border:1px solid #e8eef3;border-radius:7px;font-size:12px;color:#374151;">
@@ -4064,29 +4566,8 @@ async function renderScenarioDrain(container, mode) {
         <span id="pbFreshMsg" style="font-size:11px;color:#059669;"></span>
         <span class="qhelp" tabindex="0" data-tip="三条同时满足才算「刚起来」，才会抢首评：发布时间在上面线内、赞低于这条线、评论低于这条线。发布时间读不到、或赞/评论数读不全时，一律不判「刚起来」，不猜。">?</span>
       </div>`;
-    const pbHtml = `
-      <details class="cfgcard" open style="margin-bottom:10px;">
-        <summary class="cfgcard-h">
-          <span class="cfgcard-t">🧭 渠道排班</span>
-          <span class="cfgcard-s">${pbToday.length ? '今天跑 ' + pbToday.length + ' 个渠道' : '今天不跑'}</span>
-          <span class="cfgcard-x">${pbToday.length
-            ? pbToday.map(s => drainScenarioDef(s).icon + drainScenarioDef(s).label).join(' · ')
-            : (pbOff.length ? pbOff.length + ' 个渠道这周没排日子' : '')}</span>
-          <span class="cfgcard-chev">▾</span>
-        </summary>
-        <div class="cfgcard-b">
-          <div class="sx-hint" style="margin:2px 0 6px;">这一签只管<b>去哪儿找</b>：哪个渠道、周几跑、同城怎么算、找词按哪句。某篇帖子评不评、怎么评、能提到哪一步，去「💬 怎么评」那张笔记类型表看。要停一个渠道，把周几全部取消勾选。
-            <span class="qhelp" tabindex="0" data-tip="一个词可以同时挂几个渠道（在下面词池里勾）。同一渠道里，词按词池顺序轮着来：今天挑前 N 个，下次排上就接着往下挑，几天转完一圈。手插和欠账不受排班限制。">?</span>
-          </div>
-          <div class="pbp-scroll">
-            <table class="pbp-table">
-              <colgroup><col style="width:150px;"><col style="width:120px;"><col style="width:86px;"><col></colgroup>
-              <thead><tr><th>渠道</th><th>周几跑</th><th>同城</th><th>出词策略（找词按这句）</th></tr></thead>
-              <tbody>${DRAIN_PB_ORDER.map(pbRow).join('')}</tbody>
-            </table>
-          </div>
-        </div>
-      </details>`;
+    /* 🔑 关键词配置这一签：上面一排（投放平台 / 盯的账号 / 日常浏览）＋一张合表＋全部词。
+       周历已经搬到队列页第二个签，这一页不再画。 */
     /* 💬 「怎么评」那一签：笔记类型表（2026-11-12）管评不评 / 评论动作 / 提店 / 收人；
        评论场景表管「遇到这个场景、对方这么问，怎么接」。AI 先判类型，再照这张表跑。 */
     const ntTypes = drainNoteTypesFor(cfg);
@@ -4112,6 +4593,49 @@ async function renderScenarioDrain(container, mode) {
         <td class="nt-judge">${escHtml(d.judge)}</td>
       </tr>`;
     };
+    /* 🧩 复盘补卡（2026-11-12）：AI 只摆候选卡，点「加入场景表」才真进表；编不出真例子/跟现卡重复的，后台已经剔掉了 */
+    const ntCandsHtml = (() => {
+      if (!_ntCands) return '';
+      if (_ntCands.busy) return '<div class="nt-cands"><div class="nt-cands-h">🤖 正在读复盘日志、归场景… <span class="s">大约 10~60 秒；日志越多越慢</span></div></div>';
+      if (_ntCands.err) {
+        return '<div class="nt-cands"><div class="nt-cands-h" style="color:#b91c1c;">没归成：' + escHtml(_ntCands.err) + '</div>' +
+          '<div class="nt-cand-f"><span>再点一次「🤖 让 AI 补卡」重试。</span><span class="sp"></span></div></div>';
+      }
+      const stats = _ntCands.stats || {};
+      const list = _ntCands.cards || [];
+      if (!list.length) {
+        return '<div class="nt-cands"><div class="nt-cands-h">🤖 读了最近 3 天的复盘日志：' + (stats.missed || 0) + ' 条没归上卡 ' +
+          '<span class="s">' + escHtml(_ntCands.tip || '没归出新场景：原话还不够 2 条，或者跟现有卡重复了') + '</span></div></div>';
+      }
+      const left = list.filter(x => x.state === 'new').length;
+      const items = list.map((x, i) => {
+        const c = x.card || {};
+        const added = x.state === 'added';
+        const ignored = x.state === 'ignored';
+        const tags = (c.types || []).map(t => '<span class="nt-cand-tg">' + escHtml((DRAIN_NOTE_TYPE_DEF[t] && DRAIN_NOTE_TYPE_DEF[t].name) || t) + '</span>').join('') || '<span class="nt-cand-tg">通用</span>';
+        const head = '<div class="nt-cand-h"><b>场景 ' + (i + 1) + ' · ' + escHtml(c.name || '') + '</b>' + tags +
+          '<span class="src">来自 ' + (x.srcN || (c.ex || []).length) + ' 条评论</span><span class="sp"></span>' +
+          (added ? '<span style="font-size:11px;color:#0a8f4c;font-weight:700;">✅ 已加入场景表</span>'
+            : ignored ? '<span style="font-size:11px;color:#9ca3af;">已忽略</span>'
+              : '<button type="button" class="btn btn-sm" data-ntcig="' + i + '">忽略</button>' +
+                '<button type="button" class="btn btn-sm" data-ntcadd="' + i + '" style="background:var(--c-brand,#0a6b8a);border-color:var(--c-brand,#0a6b8a);color:#fff;">加入场景表</button>') +
+          '</div>';
+        if (added || ignored) return '<div class="nt-cand' + (added ? ' added' : ' ignored') + '">' + head + '</div>';
+        const body = '<div class="nt-cand-b">' +
+          '<div><span class="nt-cand-lb">真实例子</span>' + (c.ex || []).map(e => '<span class="nt-exchip">' + escHtml(e) + '</span>').join('') + '</div>' +
+          (c.branches || []).map(b => '<div class="nt-br"><div class="nt-br-h"><span class="who">对方：' + escHtml(b.who || '不限') + '</span>' +
+            escHtml(b.cond || '') + (b.goal ? '<span class="goal">→ ' + escHtml(b.goal) + '</span>' : '') + '</div>' +
+            (b.say || []).map((s, si) => '<div class="nt-say"><span class="n">' + (si + 1) + '</span><span>' + escHtml(s.text) +
+              ' <span style="color:#9ca3af;">（' + escHtml(s.angle) + '）</span></span></div>').join('') + '</div>').join('') +
+          (c.forbid ? '<div style="margin-top:5px;"><span class="nt-cand-lb">不能说</span>' + escHtml(c.forbid) + '</div>' : '') +
+          '</div>';
+        return '<div class="nt-cand">' + head + body + '</div>';
+      }).join('');
+      return '<div class="nt-cands"><div class="nt-cands-h">🤖 读了最近 3 天的复盘日志：<b>' + (stats.missed || 0) + '</b> 条没归上卡，归出 <b>' + list.length + '</b> 个场景 ' +
+        '<span class="s">（同一个场景至少 2 条才出卡；只有 1 条的先攒着）</span></div>' + items +
+        '<div class="nt-cand-f"><span>加入后进下面「评论场景表」，改完立刻生效。</span><span class="sp"></span>' +
+        (left ? '<button type="button" class="btn btn-sm" data-ntcall="1">剩下 ' + left + ' 张全部加入</button>' : '') + '</div></div>';
+    })();
     const ntHtml = `
       <div class="cfgcard" style="margin-bottom:10px;">
         <div class="cfgcard-h" style="cursor:default;">
@@ -4131,39 +4655,42 @@ async function renderScenarioDrain(container, mode) {
           </div>
           <div class="nt-tools">
             <button type="button" class="btn btn-sm" data-ntprompt="1" title="看判帖这一步现在拼给 AI 的提示词（含这张表）">👁 看提示词</button>
-            <button type="button" class="btn btn-sm" disabled title="候选卡由复盘 AI 产出，这块还没接上；这一轮先直接改表">🤖 让 AI 补卡（下一步）</button>
-            <span class="note">想加一种新场景的说法，去下面「评论场景表」里加卡。</span>
+            <button type="button" class="btn btn-sm" data-ntcard="1"${_ntCands && _ntCands.busy ? ' disabled' : ''} title="读复盘日志里「没归上卡」的评论原话，AI 归出 2~3 张候选卡；点「加入场景表」才进表，不点就当没看见">🤖 让 AI 补卡</button>
+            <span class="note">新场景不用手填：AI 出候选、你点加入；想改现成的卡，去下面「评论场景表」。</span>
           </div>
+          ${ntCandsHtml}
         </div>
       </div>`;
     const cfgTabHtml = `
       <div class="plan-tabs">
-        <button type="button" class="plan-tab${_cfgPlanTab === 'find' ? ' on' : ''}" data-cfgplan="find">🧭 去哪儿找<span class="s">词 · 排班 · 盯号</span></button>
-        <button type="button" class="plan-tab${_cfgPlanTab === 'rate' ? ' on' : ''}" data-cfgplan="rate">💬 怎么评<span class="s">笔记类型 · 场景卡</span></button>
+        <button type="button" class="plan-tab${_cfgPlanTab === 'find' ? ' on' : ''}" data-cfgplan="find">🔑 关键词配置<span class="s">排班 · 同城 · 词</span></button>
+        <button type="button" class="plan-tab${_cfgPlanTab === 'rate' ? ' on' : ''}" data-cfgplan="rate">💬 评论配置<span class="s">笔记类型 · 场景卡</span></button>
         <span style="flex:1;"></span>
-        <span class="plan-tabs-hint">一篇怎么跑，只看「怎么评」那张表</span>
+        <span class="plan-tabs-hint">一篇怎么跑、遇到什么话怎么接，都看「评论配置」</span>
       </div>`;
+    /* 🔑 关键词配置＝一张表（2026-11-12）：一行一个玩法，周几跑 / 同城 / 每天挑几个 / 词 / 出词策略全摊在一行里。
+       大V 那行不出词，关键词格换成「按排班看主页最新＋看盯的账号」。 */
     const kwHtml = `
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 9px;padding-bottom:9px;border-bottom:1px solid var(--line,#eceef0);">
-        <span style="font-size:12.5px;font-weight:800;color:#1f2937;">📚 关键词</span>
-        <span class="sx-count" style="background:#f6f8fa;border:1px solid #eceef0;border-radius:20px;padding:1px 8px;">${pool.length} 个词 · 启用 ${enabledN}${orphanWords.length ? ' · <b style="color:#b45309;">' + orphanWords.length + ' 个还没挂玩法</b>' : ''}</span>
-        <span class="qhelp" tabindex="0" data-tip="一张表：一行一个玩法，中间是这个玩法底下的词。词只有一份，一个词可以同时挂在几行里。要一次清掉几个词：先勾词前面的框，再点右边「🗑 批量移出」（词还在池里，挂着的别的玩法照跑）。停用 / 彻底删除 / 看上次跑，在最底下「📋 全部词」里。">?</span>
+      <div class="kwhead" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 9px;padding-bottom:9px;border-bottom:1px solid var(--line,#eceef0);">
+        <span style="font-size:12.5px;font-weight:800;color:#1f2937;">📚 关键词配置</span>
+        <span class="sx-count" style="background:#f6f8fa;border:1px solid #eceef0;border-radius:20px;padding:1px 8px;">${pool.length} 个词 · 启用 ${enabledN} · ${DRAIN_PB_WORD.length} 个玩法${orphanWords.length ? ' · <b style="color:#b45309;">' + orphanWords.length + ' 个还没挂玩法</b>' : ''}</span>
+        <span class="qhelp" tabindex="0" data-tip="一张表：一行一个玩法。周几跑＝哪几天排这个玩法；每天挑几个＝每个排上的日子从这行的词里轮着挑几个；词只有一份，一个词可以同时挂在几行里。要一次清掉几个词：先勾词前面的框，再点这一行「🗑 批量移出」（词还在池里，挂着的别的玩法照跑）。停用 / 彻底删除 / 看上次跑，在最底下「📋 全部词」里。">?</span>
         <span style="flex:1;"></span>
       </div>
       ${platBarHtml}
       <div class="kwp-scroll">
-        <table class="kwp-table">
-          <colgroup><col style="width:212px;"><col><col style="width:116px;"><col style="width:104px;"></colgroup>
-          <thead><tr><th>玩法</th><th>关键词</th><th>找词</th><th>每天挑几个</th></tr></thead>
+        <table class="kwp-table kwp-merge">
+          <colgroup><col style="width:176px;"><col style="width:104px;"><col style="width:78px;"><col style="width:94px;"><col><col style="width:236px;"></colgroup>
+          <thead><tr><th>玩法</th><th>周几跑</th><th>同城</th><th>每天挑几个</th><th>关键词</th><th>出词策略（找词按这句）</th></tr></thead>
           <tbody>
             ${kwpHighvRow()}
-            ${DRAIN_PB_WORD.map(kwpRow).join('')}
+            ${DRAIN_PB_WORD.map(pbRow).join('')}
             ${orphanWords.length ? kwpOrphanRow(orphanWords) : ''}
           </tbody>
         </table>
       </div>
       ${kwpAllWords()}
-      <div class="sx-hint" style="margin:7px 0 0;">跑哪天、评论怎么说、找词按哪句，在上面「🎯 玩法配置」里按玩法排；这里只管「这个玩法底下有哪些词」和「每天挑几个」。玩法排上、今天又轮到 → 才进工作台那条队列；想整个停掉一个玩法，回上面把周几全部取消勾选。</div>
+      <div class="sx-hint" style="margin:7px 0 0;">这一页只管「去哪儿找」：哪个玩法、周几跑、同城怎么算、找哪几个词。某篇帖子评不评、怎么评、能提到哪一步，去「💬 评论配置」那张笔记类型表看。要停一个玩法，把周几全部取消勾选。<br>玩法排上、今天又轮到 → 才进队列；周历在「队列 → 📅 周历」里看。</div>
     `;
     /* 🧩 评论场景表入口（2026-11-11）：现场怎么说看这张表；关键词包只管跑词、排班和硬闸。 */
     let _ccCount = null;
@@ -4178,29 +4705,65 @@ async function renderScenarioDrain(container, mode) {
         });
       }
       if (window.DrainCards) _ccCount = await DrainCards.countCards();
+      else _ccCount = null;
     } catch (_) {}
-    const ccEntryHtml = `
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;background:linear-gradient(120deg,var(--c-brand-soft,#f2f8fd) 0%,#fff 72%);border:1px solid var(--c-brand-line,#cfe4f5);border-left:4px solid var(--c-brand,#0a6b8a);border-radius:10px;box-shadow:0 1px 3px rgba(16,24,40,.05);">
-        <span style="font-size:22px;line-height:1;">🧩</span>
-        <div style="flex:1;min-width:240px;">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <span style="font-size:14px;font-weight:800;color:#1f2937;">评论场景表</span>
-            <span class="sx-count" style="background:#fff;border:1px solid var(--c-brand-line,#cfe4f5);border-radius:20px;padding:1px 8px;">${_ccCount ? (_ccCount.cards + ' 张卡 · ' + _ccCount.branches + ' 种情况 · ' + _ccCount.says + ' 句现成说法') : '点开看表'}</span>
-          </div>
-          <div class="sx-hint" style="margin:3px 0 0;">遇到什么场景、分几种情况、每种情况怎么说，都在这张表里；改完立刻生效。</div>
+    /* 🧩 评论场景表（2026-11-12 就地摊开）：卡片列表、编辑、AI 起草都在这页，不再跳独立页；
+       独立页 comment-cards.html 仍留着（老入口、真评论重放和决策日志在那）。 */
+    const ccBoardHtml = `${CCB_CSS}
+      <div class="cfgcard" style="margin-bottom:10px;">
+        <div class="cfgcard-h" style="cursor:default;">
+          <span class="cfgcard-t">🧩 评论场景表</span>
+          <span class="cfgcard-s" id="ccbStat">正在读表…</span>
+          <span class="cfgcard-x">遇到什么话、分几种情况、每种情况怎么说；改完立刻生效</span>
         </div>
-        <button type="button" id="ccOpen" style="border:1px solid var(--c-brand,#0a6b8a);background:var(--c-brand,#0a6b8a);color:#fff;font-weight:700;font-size:13px;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit;">打开场景表 →</button>
-      </div>`;
+        <div class="cfgcard-b">
+          <div class="ccb-tools">
+            <input class="ccb-q" id="ccbQ" placeholder="搜场景 / 评论例子 / 情况 / 现成说法 / 不许说">
+            <button type="button" class="btn btn-sm" id="ccbDraft" title="AI 按你写的想法或几条真评论，起草一张卡；点「收下」才进表">✨ AI 起草一张卡</button>
+            <button type="button" class="btn btn-sm" id="ccbNew">＋ 新建场景卡</button>
+            <span style="flex:1;"></span>
+            <button type="button" class="btn btn-sm" id="ccbReset" title="清掉自己改过、加过的卡，换回默认 14 张">恢复默认</button>
+            <a href="#" id="ccbOpenPage" title="真评论重放、决策日志还在独立页里" style="font-size:11.5px;color:#0a6b8a;">独立页 →</a>
+          </div>
+          <div id="ccbList" class="ccb-list"><div class="ccb-empty">正在读表…</div></div>
+          <div class="sx-hint" style="margin:8px 0 0;">卡上标的帖型＝这张卡只对那几类帖用；没标就是通用。AI 只从这张表里认场景，对不上就只给一句共情或一句判断，不硬套。</div>
+        </div>
+      </div>
+      <div class="modal-mask" id="ccbEditMask"><div class="modal-box" style="max-width:820px;max-height:86vh;overflow:auto;">
+        <h3 id="ccbEdTitle">改这张卡</h3>
+        <div class="profile-field"><label>场景名</label><input id="ccbEdName" placeholder="例：孩子上课坐不住，十分钟就要起来走"></div>
+        <div class="profile-field"><label>适用帖子类型（不勾＝通用，什么帖都能用）</label><div id="ccbEdTypes" style="font-size:12px;"></div></div>
+        <div class="profile-field"><label>什么时候用</label><input id="ccbEdWhen" placeholder="例：家长说孩子坐不住、老师说不专心"></div>
+        <div class="profile-field"><label>真实评论例子（一行一条）</label><textarea id="ccbEdEx" style="min-height:70px;"></textarea></div>
+        <div class="profile-field"><label>情况（先认「对方是谁」，再决定说什么）</label><div id="ccbEdBranches"></div>
+          <button type="button" class="btn btn-sm" id="ccbEdAddBranch">＋ 加一种情况</button></div>
+        <div class="ccb-grid2">
+          <div class="profile-field"><label>必须用的素材</label><input id="ccbEdMat" placeholder="例：分龄表 / 知识库某篇"></div>
+          <div class="profile-field"><label>这个场景不能说</label><input id="ccbEdForbid" placeholder="例：不说多动症，不承诺坐得住"></div>
+        </div>
+        <div class="profile-field"><label>来源（逗号隔开）</label><input id="ccbEdSrc" placeholder="例：知识库, 你的例子"></div>
+        <div class="modal-footer"><button type="button" id="ccbEdClose">取消</button><button type="button" id="ccbEdSave" style="background:#0a6b8a;border-color:#0a6b8a;color:#fff;">存下</button></div>
+      </div></div>
+      <div class="modal-mask" id="ccbDraftMask"><div class="modal-box" style="max-width:720px;max-height:86vh;overflow:auto;">
+        <h3>✨ AI 起草一张卡</h3>
+        <div class="profile-field"><label>想补什么场景（一句话）</label><input id="ccbDrIdea" placeholder="例：家长说孩子写作业坐不住，问要不要报体能"></div>
+        <div class="profile-field"><label>真评论原话（一行一条，可留空）</label><textarea id="ccbDrComments" style="min-height:80px;"></textarea></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+          <button type="button" class="btn btn-sm" id="ccbDrGo">开始起草</button>
+          <span id="ccbDrState" style="font-size:11.5px;color:#6b7280;"></span>
+        </div>
+        <div id="ccbDrPreview"></div>
+        <div class="modal-footer"><button type="button" id="ccbDrClose">关闭</button><button type="button" id="ccbDrAccept" disabled style="background:#0a6b8a;border-color:#0a6b8a;color:#fff;">收下，进表</button></div>
+      </div></div>`;
     /* 队列页＝配置台：顶上那两行灰字（正在跑指路 + 今天/明天排几次）2026-11-04 老板撤了；
        改完的回音还在——每存一次，右上角报一句「今天 N 次搜索（N 个词）」（save 里那段）。 */
     panel.innerHTML = `
       ${cfgTabHtml}
       ${_cfgPlanTab === 'rate'
-        ? (ntHtml + ccEntryHtml)
-        : (pbHtml + `<div style="${cardBox}">${kwHtml}</div>` + pbWeekHtml())}
+        ? (ntHtml + ccBoardHtml)
+        : `<div style="${cardBox}">${kwHtml}</div>`}
     `;
-    const ccOpenBtn = panel.querySelector('#ccOpen');
-    if (ccOpenBtn) ccOpenBtn.onclick = () => window.open('comment-cards.html', '_blank');
+    if (_cfgPlanTab === 'rate') { try { await ccbInit(panel); } catch (_) {} }
 
     /* 🎯 玩法配置：周几跑 / 评论动作 / 引导 / 提店 / 开口 / 收进清单，
        改哪一格就存哪一格（存完整页重绘，展开块按 _drainTalkOpen 自己回来） */
@@ -4581,6 +5144,75 @@ async function renderScenarioDrain(container, mode) {
       paint();
     };
 
+    /* 🧩 复盘补卡（2026-11-12）：读「没归上卡」的评论原话 → 后台 AI 归成候选卡 → 点「加入场景表」才落表。
+       只出候选、不自动改表；忽略只在这次页面里生效，刷新后再点会重新出。 */
+    const runCardSuggest = async () => {
+      if (_ntCands && _ntCands.busy) return;
+      if (!window.DrainCards) { drainToast('场景表还没加载，刷新一下再试', 'warn'); return; }
+      _ntCands = { busy: true };
+      renderScanCfg();
+      try {
+        let dec = [];
+        try { dec = await window.DrainCards.getDecisions(300); } catch (_) {}
+        const cut = Date.now() - 3 * 86400000;
+        const seen = {};
+        const rows = [];
+        (dec || []).forEach(d => {
+          if (!d || Number(d.at || 0) < cut) return;
+          const sc = String(d.scene || '').trim();
+          if (sc && sc !== 'none') return;   // 只补「没归上卡」的，已归上的不用再归
+          const note = String(d.noteTitle || '').trim();
+          let peer = String(d.peer || '').trim();
+          if (!peer || peer === '（这篇笔记本身）') peer = note;
+          peer = peer.replace(/\s+/g, ' ');
+          if (!peer) return;
+          const key = peer.replace(/\s+/g, '').slice(0, 20);
+          if (seen[key]) return;
+          seen[key] = 1;
+          rows.push({
+            k: 'd' + rows.length, pos: d.kind === 'note' ? '笔记留言' : '评论回复',
+            note: note.slice(0, 60), peer: peer.slice(0, 100),
+            ours: String(d.picked || '').slice(0, 120), type: String(d.angle || ''),
+          });
+        });
+        if (!rows.length) {
+          _ntCands = { stats: { missed: 0 }, cards: [], tip: '最近 3 天没有没归上卡的评论，先攒着，等评论多了再点' };
+          renderScanCfg();
+          return;
+        }
+        const res = await chrome.runtime.sendMessage({
+          action: 'drainCardSuggest',
+          rows: rows.slice(0, 30),
+        });
+        if (!res || res.ok === false) throw new Error((res && res.error) || 'AI 没回话');
+        const list = (Array.isArray(res.cards) ? res.cards : []).map(x => ({ card: x, srcN: x.srcN || 0, state: 'new' }));
+        _ntCands = { stats: { missed: rows.length }, cards: list, tip: res.tip || '', at: Date.now() };
+        if (!list.length) drainToast('这回没归出新场景：原话还不够，或者跟现有卡重复了');
+        else drainToast('AI 归出 ' + list.length + ' 张候选卡：点「加入场景表」才进表');
+      } catch (e) {
+        _ntCands = { err: (e && e.message) || String(e) };
+      }
+      renderScanCfg();
+    };
+    const ntSaveCands = async (idxs) => {
+      if (!window.DrainCards) return 0;
+      const cards = await window.DrainCards.getCards();
+      const ids = cards.map(c => c.id);
+      const add = [];
+      idxs.forEach(i => {
+        const x = _ntCands && _ntCands.cards && _ntCands.cards[i];
+        if (!x || x.state !== 'new') return;
+        let id = String(x.card.id || ('ai' + Date.now().toString(36)));
+        while (ids.indexOf(id) >= 0) id = id + '2';
+        ids.push(id);
+        add.push({ i: i, card: Object.assign({}, x.card, { id: id, src: ['复盘日志'] }) });
+      });
+      if (!add.length) return 0;
+      try { await window.DrainCards.saveCards(cards.concat(add.map(a => a.card))); } catch (_) {}
+      add.forEach(a => { _ntCands.cards[a.i].card = a.card; _ntCands.cards[a.i].state = 'added'; });
+      return add.length;
+    };
+
     panel.onclick = (ev) => {
       const t = ev.target;
       if (!t || !t.closest) return;
@@ -4593,6 +5225,39 @@ async function renderScenarioDrain(container, mode) {
       }
       const ntp = t.closest('[data-ntprompt]');
       if (ntp) { ev.preventDefault(); openPromptView('latest'); return; }
+      if (t.closest('[data-ntcard]')) { ev.preventDefault(); runCardSuggest(); return; }
+      const nca = t.closest('[data-ntcadd]');
+      if (nca) {
+        ev.preventDefault();
+        const i = Number(nca.getAttribute('data-ntcadd'));
+        nca.disabled = true;
+        ntSaveCands([i]).then(n => {
+          if (n > 0) {
+            const nm = (_ntCands && _ntCands.cards && _ntCands.cards[i] && _ntCands.cards[i].card.name) || '';
+            drainToast('加入场景表：' + nm + '（下一趟评论就按这张卡说）');
+          }
+          renderScanCfg();
+        });
+        return;
+      }
+      const nci = t.closest('[data-ntcig]');
+      if (nci) {
+        ev.preventDefault();
+        const i = Number(nci.getAttribute('data-ntcig'));
+        const x = _ntCands && _ntCands.cards && _ntCands.cards[i];
+        if (x && x.state === 'new') x.state = 'ignored';
+        renderScanCfg();
+        return;
+      }
+      if (t.closest('[data-ntcall]')) {
+        ev.preventDefault();
+        const all = (_ntCands && _ntCands.cards || []).map((x, i) => (x.state === 'new' ? i : -1)).filter(i => i >= 0);
+        ntSaveCands(all).then(n => {
+          if (n > 0) drainToast('全部加入：场景表多了 ' + n + ' 张卡');
+          renderScanCfg();
+        });
+        return;
+      }
       const popBtn = t.closest('[data-pbpop]');
       if (popBtn) {
         ev.preventDefault();
@@ -4646,11 +5311,6 @@ async function renderScenarioDrain(container, mode) {
       types[id] = Object.assign({}, types[id], { collect: !!inp.checked });
       const r = await save({ noteTypes: drainNoteTypesNorm(types) }, true);
       if (r && r.ok !== false) drainToast(d0.icon + d0.name + '：' + (inp.checked ? '有需求的人收进清单' : '不收人'));
-    });
-    /* 📅 周日历：切本周 / 下周（只换预览，不存配置） */
-    panel.querySelectorAll('[data-wkoff]').forEach(btn => btn.onclick = () => {
-      _drainWeekOff = Number(btn.getAttribute('data-wkoff')) ? 1 : 0;
-      renderScenarioDrain(container, mode);
     });
     /* ⏱ 抢首评的「刚起来」线：三条一起判，存进 freshCfg（整页重绘后输入框回到新值） */
     const freshSave = panel.querySelector('#pbFreshSave');
@@ -4945,14 +5605,14 @@ async function renderScenarioDrain(container, mode) {
     };
     panel.querySelectorAll('[data-kwai]').forEach(b => b.onclick = () => fetchAiCandidates(b.getAttribute('data-kwai')));
     panel.querySelectorAll('[data-kwtopic]').forEach(b => b.onclick = () => fetchTopicCandidates());
-    /* 👤 盯的账号 / 🌿 日常浏览：配置入口留在队列页（弹窗在队列页壳上，由 renderDrainQueue 挂） */
+    /* 👤 盯的账号 / 🌿 日常浏览：配置入口在获客规划页（弹窗在该页壳上，由 renderDrainPlan 挂） */
     panel.querySelectorAll('[data-kwacct]').forEach(b => b.onclick = () => {
-      const box = document.getElementById('drainQueueContent');
+      const box = document.getElementById('drainPlanContent');
       if (box && typeof box._openAcct === 'function') box._openAcct();
     });
     const kwDaily = _sel('sxKwDaily');
     if (kwDaily) kwDaily.onclick = () => {
-      const box = document.getElementById('drainQueueContent');
+      const box = document.getElementById('drainPlanContent');
       if (box && typeof box._openBrowse === 'function') box._openBrowse();
     };
     // 候选区只在「关键词池」那一节里挂载；切到别的节时 _cand 还留着，回来再接着勾
@@ -5566,11 +6226,22 @@ async function drainReadMyCommentFromTab(tabId, names) {
   } catch (_) {}
   return null;
 }
-/* 我在设置里维护的小红书昵称（内容脚本 extractMyComment 会再归一化一次） */
+/* 我在设置里维护的小红书昵称（内容脚本 extractMyComment 会再归一化一次）。
+   这个函数在后台和「干活宿主页」里都会被调用，而宿主页没有 lib/storage.js（Storage 未定义），
+   所以先认后台的 Storage，退到页面里的 readConfigPlain，再退到后台消息——三处都拿不到才算没配。 */
 async function drainMyAccountNames() {
   try {
-    const cfg = await Storage.getConfig();
-    return (cfg.myAccountNames || []).map(n => String(n || '').trim()).filter(Boolean);
+    let cfg = null;
+    if (typeof Storage !== 'undefined' && Storage && Storage.getConfig) {
+      cfg = await Storage.getConfig();
+    } else if (typeof readConfigPlain === 'function') {
+      cfg = await readConfigPlain();
+    } else {
+      const resp = await chrome.runtime.sendMessage({ action: 'getConfig' });
+      cfg = (resp && resp.config) || null;
+    }
+    return ((cfg && Array.isArray(cfg.myAccountNames)) ? cfg.myAccountNames : [])
+      .map(n => String(n || '').trim()).filter(Boolean);
   } catch (_) { return []; }
 }
 /* 活水记录合并：一旦查到过我的评论就钉住 seen=true，

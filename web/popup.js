@@ -393,7 +393,7 @@ function initHeaderMenu() {
     });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
   }
-  // ❓ 新手引导：点的时候带上「你现在停在哪一块」，引导页据此翻到对应模块（没停在一块＝从头看）
+  // ❓ 帮助说明（原名新手引导）：点的时候带上「你现在停在哪一块」，说明页据此翻到对应模块（没停在一块＝从头看）
   const guideLink = document.getElementById('hdrGuideLink');
   if (guideLink) {
     const GUIDE_MOD = { tabNotePublish: 'note', tabHuoke: 'huoke', tabProspect: 'ai', tabDiagnose: 'account', tabSettings: 'settings' };
@@ -694,28 +694,21 @@ async function initHeaderAccount() {
     const ed = (m && m.edition) || {};
     const ava = document.getElementById('hdrAcctAva');
     const nm = document.getElementById('hdrAcctNm');
-    const tierEl = document.getElementById('hdrAcctTier');
+    const capBtn = document.getElementById('hdrAcctBtn');
     if (ava) ava.textContent = (m.name || '我').slice(0, 1);
     if (nm) nm.textContent = m.name || '当前账号';
-    if (tierEl) {
+    /* 顶栏胶囊只摆三样（头像／账号名／三盏平台灯）：档位与到期情况全写进悬停那一句，试用或到期时给整颗胶囊描一圈橙边 */
+    if (capBtn) {
       const trial = ed.onTrial
-        ? '试用 · 剩 ' + (Number(ed.trialDays) > 0 ? Number(ed.trialDays) + ' 天' : '今天')
+        ? '试用中 · 剩 ' + (Number(ed.trialDays) > 0 ? Number(ed.trialDays) + ' 天' : '今天')
         : (ed.trialExpired ? '试用已到期' : '');
-      /* 付费号按月：本期剩几天；7 天内或已到期换橙标提醒续费 */
+      /* 付费号按月：本期剩几天；7 天内或已到期算要提醒 */
       const planDays = Number(ed.planDays) || 0;
       const planSoon = !!(ed.paidUntil && !ed.planExpired && planDays <= 7);
       const planTxt = ed.planExpired ? '本期已到期'
         : (ed.paidUntil ? (planDays > 0 ? '剩 ' + planDays + ' 天' : '今天到期') : '');
-      const chip = trial || planTxt;
-      /* 小窗（640）里档位徽标本来是藏起来的；试用/到期这一段要露出来，替掉「已绑 x/y」腾地方 */
-      const runAlert = !!(ed.onTrial || ed.trialExpired || ed.planExpired || planSoon);
-      /* 到期后档位已经是「免费」，胶囊里再写「免费版 · 本期已到期」会读成免费档也到期了，所以只说到期 */
-      tierEl.textContent = bi.demo ? '演示号'
-        : (trial || (ed.planExpired ? '本期已到期' : (chip ? (bi.tierLabel + ' · ' + chip) : bi.tierLabel)));
-      tierEl.className = 'hdr-acct-tier' + (bi.demo ? ' demo' : (bi.paid ? '' : ' free')) + (runAlert ? ' trial' : '');
-      const capBtn = document.getElementById('hdrAcctBtn');
-      if (capBtn) capBtn.classList.toggle('trial', runAlert);
-      tierEl.title = trial
+      const who = bi.demo ? '演示号：只能看示例' : ('当前档位：' + bi.tierLabel);
+      const when = trial
         ? (ed.onTrial
           ? ('试用期内按「' + (ed.trialTier || '全功能') + '」开，还剩 ' + (Number(ed.trialDays) || 0) + ' 天；到期落回免费档')
           : '试用已到期，现在按免费档开；要接着真发请开通档位')
@@ -723,7 +716,9 @@ async function initHeaderAccount() {
           ? (ed.planExpired
             ? ('本期到期了，现在按免费档开；续费「' + (ed.planTier || '') + '」档就恢复' + (ed.planPrice ? '（' + ed.planPrice + '/月）' : ''))
             : ('本期到 ' + new Date(ed.paidUntil).toLocaleDateString('zh-CN') + ' 为止；到期没续会落回免费档'))
-          : ('当前档位：' + bi.tierLabel));
+          : '点开出配对号、执行器与退出');
+      capBtn.title = who + '｜' + when;
+      capBtn.classList.toggle('trial', !!(ed.onTrial || ed.trialExpired || ed.planExpired || planSoon));
     }
     const lights = document.getElementById('hdrAcctLights');
     if (lights) {
@@ -749,9 +744,9 @@ async function initHeaderAccount() {
       /* 付费号按月：本期剩几天 / 已到期（到期后 label 已是免费，原档写在后面） */
       const planTxt = ed.planExpired ? ('本期已到期' + (ed.planTier ? '（原「' + ed.planTier + '」）' : ''))
         : (ed.paidUntil ? ('剩 ' + (Number(ed.planDays) > 0 ? Number(ed.planDays) : 0) + ' 天') : '');
-      /* 到期后 tierLabel 已是「免费版」，与「本期已到期」连读会误会，省掉它 */
+      /* 第一行小灰字不写档位名（要看得见档位就鼠标放顶栏那颗上）；到期后原档写在括号里 */
       const sub = bi.demo ? '只能看示例'
-        : [(ed.planExpired ? '' : bi.tierLabel), (m.phoneTail ? '尾号 ' + m.phoneTail : ''), trialTxt, planTxt].filter(Boolean).join(' · ');
+        : [(m.phoneTail ? '尾号 ' + m.phoneTail : ''), trialTxt, planTxt].filter(Boolean).join(' · ');
       who.innerHTML = '👤 <b>' + esc(m.name || '') + '</b><span class="t">' + esc(sub) + '</span>'
         + (m.pairCode
           ? '<span class="hdr-acct-code" id="hdrAcctCode" title="配对号，点一下复制">' + esc(m.pairCode) + '</span>'
@@ -786,6 +781,21 @@ async function initHeaderAccount() {
       execRow.querySelectorAll('.hdr-acct-go[data-go]').forEach((el) => {
         el.addEventListener('click', () => { location.href = el.getAttribute('data-go'); });
       });
+    }
+    /* ⬇️ 立刻下载执行器包：演示号和没开通的档都没有专属包，只有付费号摆这一行。
+       路径就是装机页那条，那边缺包会自己现打，所以点一下拿到的就是最新一份。 */
+    const dlRow = document.getElementById('hdrAcctDlRow');
+    if (dlRow) {
+      if (!bi.demo && bi.paid && m && m.id) {
+        dlRow.innerHTML = '<a class="hdr-acct-go" id="hdrExecDlGo" title="这一份只给你这台电脑用，配对号已经填好">⬇️ 立刻下载最新执行器包（zip）</a>';
+        dlRow.style.display = '';
+        const dl = document.getElementById('hdrExecDlGo');
+        dl.href = 'download/customers/' + encodeURIComponent(m.id) + '.zip';
+        dl.setAttribute('download', m.id + '.zip');
+      } else {
+        dlRow.style.display = 'none';
+        dlRow.innerHTML = '';
+      }
     }
   }
 
@@ -1006,6 +1016,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('tabLeadCfg')?.addEventListener('click', () => switchMainTab('leadCfg'));
   // 获客的「设置」：拟人化与频率（挡位 / 灌水频率与去重 / 停留间隔 / 互动行为）
   document.getElementById('tabHuokeCfg')?.addEventListener('click', () => switchMainTab('huokeCfg'));
+  // 获客的「获客规划」：去哪儿找（词 · 排班 · 盯号 · 同城搜索）＋ 怎么评（笔记类型表 · 场景卡）
+  document.getElementById('tabPlan')?.addEventListener('click', () => switchMainTab('plan'));
+  // 队列页脚注 → 回获客规划改排班和词
+  document.getElementById('qGoPlan')?.addEventListener('click', (e) => { e.preventDefault(); switchMainTab('plan'); });
   // 发笔记：点一级项落到「笔记档案」（这块的主页）；写稿 / 出图 / 出片都是它的衍生页，从档案里进
   document.getElementById('tabNotePublish')?.addEventListener('click', () => switchMainTab('noteArchive'));
   // 发笔记的二级：笔记规划（哪天发什么）+ 笔记档案（主入口）+ 工作台（发的动态）+ 素材 + 复盘
@@ -1030,7 +1044,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       wbGate('diag', function () { switchMainTab('diagnose'); diagGo(go); });
     });
   });
-  document.getElementById('tabCommentAssistant')?.addEventListener('click', () => switchMainTab('comment'));
   // 工作台的平台页签：只切「看哪边」（视频号那颗灰着，点了没反应）
   document.querySelectorAll('#wbPlatBar [data-wbplat]').forEach(function (el) {
     el.addEventListener('click', function () {
@@ -1059,13 +1072,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   /* ★ 先应用版本限制（隐藏不属于本版本的功能、到期锁定）；读完档位再选落点：
-     有获客 → 获客·工作台；没有获客 → 发笔记·笔记档案。
+     有获客 → 获客·获客规划（去哪儿找 / 怎么评）；没有获客 → 发笔记·笔记档案。
      首帧的菜单已由服务器按档位预藏好，这里只管接上锁与默认页 */
   try {
     await Promise.race([applyEditionToPopup(), new Promise((r) => setTimeout(r, 4000))]);
   } finally {
     const canHuoke = (typeof XhsEdition === 'undefined') || XhsEdition.has('autoWater');
-    switchMainTab(canHuoke ? 'comment' : 'noteArchive');
+    switchMainTab(canHuoke ? 'plan' : 'noteArchive');
   }
   // 初始化顶部租户切换器
   initTenantSwitcher();
@@ -1286,7 +1299,7 @@ let _selectedIds = new Set();  // 用户清单多选：勾选删除
 let _outboundCollapsed = true; // 消息桶：我方触达分组默认折叠
 let _syncInFlight = false;     // 通知同步防重入
 const NOTIF_SYNC_CAP = 150;     // 单次同步新增上限（降为150，控制单次抓取体量以免动作过于集中）
-let _huokeSub = 'comment';      // 获客分组下最后停留的子页（队列 / 工作台 / 笔记池 / 设置）
+let _huokeSub = 'plan';       // 获客分组下最后停留的子页（获客规划 / 队列 / 复盘 / 设置；工作台收在队列的第三格）
 let _wbPlat = 'xhs';            // 工作台看哪边：xhs＝评论助手 / dy＝抖音线索（只切看哪边，配置不跟着切）
 /* ── 页头渐变带（demo 外壳）：当前页名 ＋ 一句这页干啥的 ──
    页名从左侧栏当前选中的导航项现取（一级，有二级就缀上二级）；那一句在下面这张表里维护，
@@ -1303,8 +1316,8 @@ const PAGE_HERO = {
   tabNoteWork: '发布跑到哪一步，谁卡住了要你接手',
   tabNoteBench: '切原片、整理成素材——切片台和素材库都在这一页',
   tabNoteReview: '回看哪类内容发得好',
-  tabQueue: '这一轮搜什么词、跑哪些号，排着一条条做',
-  tabCommentAssistant: '当前笔记的评论分析、商机、一键回复',
+  tabPlan: '去哪儿找、怎么评——词和排班、笔记类型表都在这一页',
+  tabQueue: '今天跑什么、跑到哪；跑起来后在这页看评论和日志',
   tabPool: '搜到的笔记都在这，标着跑到哪一步',
   tabHuokeCfg: '一天跑多少、隔多久、动作有多慢',
   tabLeadTaskCfg: '定 AI 的口气，教它怎么把人带到成交',
@@ -1318,6 +1331,7 @@ const PAGE_HERO = {
   go5: '存你的资料，随时备份和导入',
   'stab:tenant': '一个产品一套资料，新建、改名、删除',
   'stab:ai': '用哪家的 AI，每种活分别用哪个',
+  'stab:taboo': '写案例不能说的话、孩子起不起小名、默认写法',
   'stab:guard': '一天做多少、几点停、哪天歇、账号体检',
   'stab:delays': '跑多少、多久不重复、每一步停多久',
   'stab:logs': '运行次数与 AI 用量',
@@ -1341,7 +1355,7 @@ function pageHeroSync() {
   if (!cur) return;
   const tx = (el) => { const s = el && el.querySelector('.rail-tx'); return s ? s.textContent.trim() : ''; };
   const topTx = tx(top);
-  nm.textContent = topTx ? (sub && tx(sub) ? topTx + ' · ' + tx(sub) : topTx) : 'AI运营工具';
+  nm.textContent = topTx ? (sub && tx(sub) ? topTx + ' · ' + tx(sub) : topTx) : '客满来';
   sb.textContent = PAGE_HERO[heroKey(cur)] || heroPurpose(cur.getAttribute('title') || '');
 }
 function heroKey(el) {
@@ -1387,7 +1401,6 @@ function switchMainTab(name, arg) {
   // 否则 npS() 还认着 _npOut，下一篇的出图函数会改到上一那篇的状态上
   _npMode = name === 'noteOut' ? 'out' : (name === 'noteCase' ? 'case' : (name === 'noteFacade' ? 'facade' : 'wizard'));
   const $ = (id) => document.getElementById(id);
-  const tabComment = $('tabCommentAssistant');
   const tabNote = $('tabNotePublish');
   const noteTabs = $('noteTabs');
   const tabNoteA = $('tabNoteArchive');
@@ -1397,6 +1410,7 @@ function switchMainTab(name, arg) {
   const tabNoteB = $('tabNoteBench');
   const tabDiag = $('tabDiagnose');
   const tabQueue = $('tabQueue');
+  const tabPlan = $('tabPlan');
   const tabPool = $('tabPool');
   const tabHuokeCfg = $('tabHuokeCfg');
   const tabHuoke = $('tabHuoke');
@@ -1420,6 +1434,7 @@ function switchMainTab(name, arg) {
   const dc = $('diagnoseContent');
   const src2 = $('drainContent');
   const dqc = $('drainQueueContent');
+  const dpc = $('drainPlanContent');
   const fmc = $('filmContent');
   const cqb = $('cqBar');   // 💬 评论条队列顶栏：只属于「工作台」页
   const wbpb = $('wbPlatBar');   // 工作台的平台页签（小红书 / 抖音 / 视频号占位）：也只属于「工作台」页
@@ -1428,14 +1443,14 @@ function switchMainTab(name, arg) {
   // 内容面板按 .content 泛收：别逐个列 id —— 内嵌 iframe 的宿主漏在清单外过一轮，切走后旧页会赖在屏上
   const _hideAll = () => {
     document.querySelectorAll('.content').forEach(x => { x.style.display = 'none'; });
-    [cqb, wbpb, leadTabs, diagSubTabs, noteTabs, setTabs].forEach(x => { if (x) x.style.display = 'none'; });
+    [cqb, wbpb, leadTabs, diagSubTabs, noteTabs, setTabs, $('dqTabs')].forEach(x => { if (x) x.style.display = 'none'; });
   };
   const _markTop = (on) => {
-    [tabComment, tabNote, tabDiag, tabQueue, tabPool, tabHuokeCfg, tabHuoke, tabProspect, tabSettings].forEach(t => { if (t) t.classList.remove('active'); });
+    [tabNote, tabDiag, tabPlan, tabQueue, tabPool, tabHuokeCfg, tabHuoke, tabProspect, tabSettings].forEach(t => { if (t) t.classList.remove('active'); });
     if (on) on.classList.add('active');
   };
   const _markSub = (on) => {
-    [tabComment, tabQueue, tabPool, tabHuokeCfg].forEach(t => { if (t) t.classList.remove('active'); });
+    [tabPlan, tabQueue, tabPool, tabHuokeCfg].forEach(t => { if (t) t.classList.remove('active'); });
     if (on) on.classList.add('active');
   };
   // 发笔记的二级＝（笔记规划 / 笔记档案 / 工作台 / 素材 / 复盘）；写稿 / 出图 / 出片都是从档案衍生的站内页，二级栏一律停在「笔记档案」那一档上。
@@ -1445,10 +1460,12 @@ function switchMainTab(name, arg) {
     [tabNoteP, tabNoteA, tabNoteW, tabNoteAs, tabNoteB, $('tabNoteReview')].forEach(t => { if (t) t.classList.remove('active'); });
     if (cur) cur.classList.add('active');
   };
-  // 获客分组只剩「工作台」一个子页时（无灌水的版本 = ① 基础版）：整条二级栏隐藏，避免空条；
-  // 这里的三个 tab 都要活查询——applyEditionToPopup 把二级页 remove 掉之后，init 时抓的 const 还是真值
-  const _showSub = () => { if (subTabs) subTabs.style.display = ($('tabQueue') || $('tabPool') || $('tabHuokeCfg')) ? '' : 'none'; };
+  // 获客分组一个子页都没有时（无灌水的版本 = ① 基础版）：整条二级栏隐藏，避免空条；
+  // 这里的几个 tab 都要活查询——applyEditionToPopup 把二级页 remove 掉之后，init 时抓的 const 还是真值
+  const _showSub = () => { if (subTabs) subTabs.style.display = ($('tabPlan') || $('tabQueue') || $('tabPool') || $('tabHuokeCfg')) ? '' : 'none'; };
   const _hideSub = () => { if (subTabs) subTabs.style.display = 'none'; };
+  // 队列页那三个横签（▶ 现在这趟 / 📅 周历 / 🧐 工作台）只属于队列页
+  const _showDqTabs = (on) => { const t = $('dqTabs'); if (t) t.style.display = on ? '' : 'none'; };
   // 线索页：通知 / 消息 / 任务配置 / 设置是四条二级线；页内胶囊只切「通知来自哪个渠道」
   const _showLead = (subId) => {
     if (leadTabs) leadTabs.style.display = '';
@@ -1543,6 +1560,7 @@ function switchMainTab(name, arg) {
     if (ccc) ccc.style.display = '';
     _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
     if (ccc && arg) npOpenCase(ccc, arg);
+    else if (ccc) npCaseEmpty(ccc);
     return;
   }
   if (name === 'noteBench') {
@@ -1639,9 +1657,9 @@ function switchMainTab(name, arg) {
     return;
   }
   if (name === 'taskCfg') {
-    // 旧名（任务配置已并成队列页右上角「⚙️ 批量」）：切过去并停在批量那一屏
-    if (dqc) dqc._qTab = 'bulk';
-    switchMainTab('queue');
+    // 旧名（任务配置已并成获客规划页那张大表）：切过去并停在批量那一屏
+    if (dpc) dpc._qTab = 'bulk';
+    switchMainTab('plan');
     return;
   }
   if (name === 'scenarioDrain') {
@@ -1652,12 +1670,22 @@ function switchMainTab(name, arg) {
     if (src2) wbLazyThen(function () { renderScenarioDrain(src2); });
     return;
   }
+  if (name === 'plan') {
+    // 获客规划：配置那一半——去哪儿找（词 · 排班 · 盯号 · 同城搜索）＋ 怎么评（笔记类型表 · 场景卡）
+    _huokeSub = 'plan';
+    _markTop(tabHuoke); _showSub(); _markSub(tabPlan); _hideAll(); if (dpc) dpc.style.display = 'flex';
+    _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
+    if (dpc) wbLazyThen(function () { renderDrainPlan(dpc); });
+    return;
+  }
   if (name === 'queue') {
-    // 队列：配置表派生出待跑队列，执行器按队列串行跑（执行器就在本页顶栏）
+    // 队列：三个页内横签——▶ 现在这趟（今天跑什么、跑到哪）/ 📅 周历（这一周怎么排）/ 🧐 工作台（跑的时候看什么）
     _huokeSub = 'queue';
-    _markTop(tabHuoke); _showSub(); _markSub(tabQueue); _hideAll(); if (dqc) dqc.style.display = 'flex';
+    _markTop(tabHuoke); _showSub(); _markSub(tabQueue); _hideAll(); _showDqTabs(true);
     // 左栏的笔记列表（灌水那份）跟队列没关系，这页不占位，整页留给队列
     _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
+    // 停在上次那一格：在「工作台」那格就先把清单容器收起来，省得一进去闪一下队列
+    if (dqc) dqc.style.display = (window.__xhsDqTab === 'work') ? 'none' : 'flex';
     if (dqc) wbLazyThen(function () { renderDrainQueue(dqc); });
     return;
   }
@@ -1670,11 +1698,52 @@ function switchMainTab(name, arg) {
     _embedSettingsFrame('huokeCfgFrame', 'delays');
     return;
   }
-  // comment（工作台）或默认：顶上那条平台页签由 wbPlatGo 负责铺（看哪边＝小红书 / 抖音）
-  _huokeSub = 'comment';
-  _markTop(tabHuoke); _showSub(); _markSub(tabComment); _hideAll();
-  wbPlatGo(_wbPlat);
+  // comment（工作台）：2026-11-12 并进「获客 → 队列」的第三格；基础版没有队列页，照旧单独铺
+  if (name === 'comment') {
+    window.__xhsDqTab = 'work';
+    if (!$('tabQueue')) {
+      _huokeSub = 'comment';
+      _hideAll(); _hideSub();
+      _setPanelLeftVisible(false); _setToolbarMode('comment'); _setProspectCleanMode(false);
+      wbPlatGo(_wbPlat);
+      return;
+    }
+    switchMainTab('queue');
+    if (typeof window.__xhsDqGoTab === 'function') window.__xhsDqGoTab('work');
+    return;
+  }
+  // 其余没认出来的名字：落到队列（以前默认落工作台）
+  _huokeSub = 'queue';
+  _markTop(tabHuoke); _showSub(); _markSub(tabQueue); _hideAll(); _showDqTabs(true);
+  _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
+  if (dqc) dqc.style.display = 'flex';
 }
+
+/* 队列页 → 🧐 工作台这一格：把工作台那套（平台页签 / 左笔记列表 / 右评论分析 / 这一趟的记录 / 日志）放出来；
+   切回「现在这趟 / 周历」再由 scenario-drain 的 paint 收回去。
+   exec-bridge 那边认 window.__xhsDqTab === 'work' 才让记录和日志露脸。 */
+window.dqWorkTab = function (on) {
+  const $ = (id) => document.getElementById(id);
+  const dqc = $('drainQueueContent');
+  const dyc = $('dyLeadsContent');
+  const tabs = $('dqTabs');
+  if (tabs) tabs.style.display = '';
+  if (on) {
+    if (dqc) dqc.style.display = 'none';
+    wbPlatGo(_wbPlat);   // 平台页签 / 左栏笔记列表 / 评论工具栏 都在它里面铺
+  } else {
+    if (dqc) dqc.style.display = 'flex';
+    const mc = $('mainContent');
+    if (mc) mc.style.display = 'none';
+    const bar = $('wbPlatBar');
+    if (bar) bar.style.display = 'none';
+    const cqb = $('cqBar');
+    if (cqb) cqb.style.display = 'none';
+    if (dyc) dyc.style.display = 'none';
+    _setPanelLeftVisible(false); _setToolbarMode('prospectList'); _setProspectCleanMode(true);
+  }
+  if (typeof window.__xhsBenchSync === 'function') window.__xhsBenchSync();
+};
 
 /* ══════════ 工作台：平台页签 ══════════
    页签只切「看哪边」，配置不跟着切 —— 队列配置只有一份，投放平台在「队列 → ⚙️ 配置」里勾。
@@ -1704,9 +1773,6 @@ function wbPlatGo(plat) {
     if (dcp) dcp.style.display = '';
     _setPanelLeftVisible(false);
     _setProspectCleanMode(true);
-    /* 评论目的那条属于小红书的评论助手（在 .right-toolbar 外面，_setProspectCleanMode 收不到它） */
-    const pb = document.getElementById('purposeBar');
-    if (pb) pb.style.display = 'none';
     if (cb) cb.style.display = 'none';
     wbDyLeadsPaint(dcp);
     return;
@@ -1854,7 +1920,7 @@ function wbSpin(text) {
     el.className = 'wb-top-spin';
     const ico = document.createElement('i');
     const sp = document.createElement('span');
-    sp.textContent = text || '正在加载，稍等一下…';
+    sp.textContent = text || '小来正在加载，稍等一下…';
     el.appendChild(ico); el.appendChild(sp);
     document.body.appendChild(el);
   } catch (_) { el = null; }
@@ -1868,7 +1934,7 @@ function wbLazyThen(fn) {
   const L = window.__wbLazy;
   if (!L) { fn(); return; }                       // 后台加载器不在（例如仍是内联引入的副本）：直接执行
   if (!L.done.length && !L.failed()) {            // 一个都还没到＝还在下：给个可见的等待效果
-    const stop = wbSpin('正在下载获客／灌水的功能文件，稍等一下…');
+    const stop = wbSpin('小来正在下载获客／灌水的功能文件，稍等一下…');
     L.wait().then(() => {
       stop();
       if (L.failed()) {
@@ -1899,7 +1965,7 @@ function wbGate(name, fn) {
   if (!P.started) {
     try { toast('第一次打开「' + label + '」要补下载这一页，稍等一下', 'info'); } catch (_) {}
   }
-  const stop = (!P.done.length && !P.failed) ? wbSpin('正在加载「' + label + '」这一页…') : null;
+  const stop = (!P.done.length && !P.failed) ? wbSpin('小来正在加载「' + label + '」这一页…') : null;
   P.go().then(() => {
     if (stop) stop();
     if (P.failed) {
@@ -1925,6 +1991,105 @@ let _npPlanCache = null;   // 发笔记读规划：进向导时读一次（向�
 async function npLoadPlanCache() {
   try { const d = await chrome.storage.local.get('note_plan'); return (d && d.note_plan) || null; } catch (_) { return null; }
 }
+/* 周表那一格（只读，不种空表）：③ 里从排产表点「按这条写」时，这一篇该怎么发/怎么讲按格子里定的来，
+   而不是退回选题表里那条的默认写法——不这样，同一题在格子里改成「讲故事」也没人接。 */
+let _npPlanGridCache = null;
+async function npPlanGridPeek() {
+  try {
+    const c = await readConfigPlain();
+    const raw = (c && c.product && c.product.weekTopicGrid) || null;
+    if (!raw || typeof raw !== 'object') return null;
+    const out = npPlanTopicGridEmpty();
+    NP_WEEK_DAYS.forEach(d => {
+      const row = (raw[d] && typeof raw[d] === 'object') ? raw[d] : {};
+      NP_PLAN_PLATS.forEach(p => { out[d][p.id] = npPlanTopicCellNorm(row[p.id]); });
+    });
+    return out;
+  } catch (_) { return null; }
+}
+function npPlanGridCellFor(tid) {
+  const g = _npPlanGridCache;
+  const t = String(tid || '');
+  if (!g || !t) return null;
+  for (let i = 0; i < NP_WEEK_DAYS.length; i++) {
+    const row = g[NP_WEEK_DAYS[i]];
+    if (!row) continue;
+    for (let j = 0; j < NP_PLAN_PLATS.length; j++) {
+      const c = row[NP_PLAN_PLATS[j].id];
+      if (c && c.gid && String(c.tid || '') === t) return c;
+    }
+  }
+  return null;
+}
+/** 排产表那条 → 带上周表格子定的载体/写法（格子里没点名这条就原样返回）；
+ *  载体永远跟着写法收口：清单不出图文（老档里清单+图文，到这里换成同档长文） */
+function npPlanItemWithCell(it) {
+  if (!it || !it.tid) return it;
+  if (typeof TopicTable === 'undefined') return it;
+  /* 表上亲手挑过写法 / 出口的：以它为准，不再被周表格子改回去 */
+  if (it.picked) {
+    const c = TopicTable.resolveCarrierFor(it.carriers, it.form || 'list', 'xhs', it.carrier);
+    return c === it.carrier ? it : Object.assign({}, it, { carrier: c });
+  }
+  const cell = npPlanGridCellFor(it.tid);
+  if (!cell || !(cell.carrier || cell.form)) {
+    const fixed = TopicTable.defaultCarrierFor(it.carriers, it.form || 'list', 'xhs');
+    return fixed === it.carrier ? it : Object.assign({}, it, { carrier: fixed });
+  }
+  const out = Object.assign({}, it);
+  if (cell.form) {
+    const fi = TopicTable.formInfo(cell.form, cell.variant || '');
+    out.form = fi.key;
+    out.variant = fi.variant;
+  }
+  const want = String(cell.carrier || out.carrier || '');
+  out.carrier = TopicTable.resolveCarrierFor(out.carriers, out.form || 'list', 'xhs', want);
+  return out;
+}
+/* 表上亲手挑的写法 / 出口另存一份（按「行业|题」记）：规划底子在演示号里是只读的，
+   挑写法这类操作要是也只写进规划，关掉重开就回默认了——单独存，重开 / 重排都按它盖。 */
+const NP_PLAN_PICK_KEY = 'np_form_picks';
+async function npPlanPicksLoad() {
+  try {
+    const d = await chrome.storage.local.get(NP_PLAN_PICK_KEY);
+    const m = d && d[NP_PLAN_PICK_KEY];
+    return (m && typeof m === 'object') ? m : {};
+  } catch (_) { return {}; }
+}
+function npPlanApplyPicks(plan, picks) {
+  if (!plan || !Array.isArray(plan.items) || !picks || typeof TopicTable === 'undefined') return plan;
+  const ind = String(plan.industryKey || '');
+  plan.items.forEach(it => {
+    if (!it || !it.tid) return;
+    const p = picks[ind + '|' + String(it.tid)];
+    if (!p || !p.form) return;
+    const fi = TopicTable.formInfo(p.form, p.variant || '');
+    if (!(it.formOpts || []).some(o => o.key === fi.key)) return;
+    it.form = fi.key;
+    it.variant = fi.variant;
+    it.carrier = TopicTable.resolveCarrierFor(it.carriers, it.form || 'list', 'xhs', p.carrier);
+    it.picked = true;
+  });
+  return plan;
+}
+/* 🧩 行业选题表（2026-11-05）：账号资料里选了某个行业，「笔记档案 → ✍️ 新建笔记」摆的就是这张表，不再由 AI 现排。
+   表里一行一条选题，带着组 / 载体 / 写法；已经写过的按 tid 保留，换表不丢勾。 */
+async function npIndustryEnsurePlan(key, plan) {
+  if (!key || typeof TopicTable === 'undefined' || !TopicTable.industry(key)) return plan;
+  const items = (plan && Array.isArray(plan.items)) ? plan.items : [];
+  let stale = !(plan && plan.src === 'industry' && plan.industryKey === key);
+  if (!stale && Number(plan.v || 1) < Number(TopicTable.PLAN_VERSION || 1)) stale = true;   // 老表：载体口径变了，重排一次（写过的 / 亲手挑过的照旧保留）
+  if (!stale) {
+    const have = {};
+    items.forEach(it => { if (it && it.tid) have[String(it.tid)] = 1; });
+    stale = TopicTable.topics(key).some(t => !have[String(t.id)]);
+  }
+  if (!stale) return npPlanApplyPicks(plan, await npPlanPicksLoad());
+  const want = npPlanApplyPicks(TopicTable.plan(key, plan), await npPlanPicksLoad());
+  try { await chrome.storage.local.set({ note_plan: want }); } catch (_) {}
+  _npPlanCache = want;
+  return want;
+}
 function _npTypeName(k) {
   try { const t = NotePlan.typeOf(k); if (t) return t.name; } catch (_) {}
   return String(k || '');
@@ -1939,14 +2104,13 @@ function npPlanCardHtml() {
   const items = (plan && Array.isArray(plan.items)) ? plan.items : [];
   if (!items.length) return '';
   const w = _npWiz || {};
-  const cur = w.planItem || null;
-  const next = items.find(it => it && !it.done) || null;
+  const cur0 = w.planItem || null;
+  const cur = (cur0 && !npPlanRetired(cur0)) ? cur0 : null;
+  const openItems = items.filter(it => it && !it.done);
+  const retiredOpen = openItems.filter(it => npPlanRetired(it)).length;
+  const next = openItems.filter(it => !npPlanRetired(it))[0] || null;
   const done = items.filter(it => it && it.done).length;
-  const meta = (it) => {
-    const t = _npTypeName(it.type);
-    const k = _npKindName(it.kind);
-    return t + (k && k !== t ? ' · ' + k : '') + (it.scope === 'samePeople' ? ' · 同人群' : (it.scope === 'breakout' ? ' · 破圈' : ''));
-  };
+  const meta = (it) => _npPlanMeta(it);
   // 📅 栏目：长期栏目里那一篇，标上「星期几 · 栏目名」——到那天发这一篇
   const colTag = (it) => (it && it.col)
     ? '<span style="font-size:10px;color:#7a5af5;background:#f4f1ff;border:1px solid #e0d9ff;border-radius:8px;padding:0 5px;margin-left:5px;">📅 ' +
@@ -1966,15 +2130,35 @@ function npPlanCardHtml() {
       (next.credential ? '<div style="font-size:11px;color:#8a929e;margin-top:1px;">凭据：' + esc(next.credential) + '</div>' : '') +
       '<button type="button" id="npPlanUse" class="btn btn-primary" style="margin-top:6px;font-size:11px;">按这条写</button>';
   } else {
-    h += '<div style="font-size:11px;color:#666;margin-top:4px;">这一批都成稿了——去「🗓 笔记规划」点「📋 排产表 · 补一批」，在表里点补下一批；不点也行，凌晨备稿时会自动补。</div>';
+    h += '<div style="font-size:11px;color:#666;margin-top:4px;">' + (retiredOpen
+      ? '能写的都成稿了——剩下的都是旧线（已下架）；去「🗓 笔记规划」点「📋 排产表 · 补一批」补一批新的，不点也行，凌晨备稿时会自动补。'
+      : '这一批都成稿了——去「🗓 笔记规划」点「📋 排产表 · 补一批」，在表里点补下一批；不点也行，凌晨备稿时会自动补。') + '</div>';
+  }
+  if (retiredOpen) {
+    h += '<div style="font-size:10px;color:#9aa0ac;margin-top:5px;">另有 ' + retiredOpen + ' 条是旧线（感悟 / 情绪 / 热梗 / 热点）——已下架，不再给写。</div>';
   }
   return h + '</div>';
 }
 // 规划表的两个小零件（挑知识页「按规划发」签用）：一行那点身份标签 / 📅 栏目日标
 function _npPlanMeta(it) {
+  // 🧩 行业选题表那条：组 · 载体 · 写法（跟表上一致；不再显示五条线那套词）
+  if (it && it.src === 'industry' && typeof TopicTable !== 'undefined') {
+    const car = TopicTable.outFor
+      ? TopicTable.outFor(it.carrier || (it.carriers || [])[0], it.form || (it.forms || [])[0])
+      : (it.carrier || (it.carriers || [])[0]);
+    return [it.group, TopicTable.carrierName(car),
+      TopicTable.formName(it.form || (it.forms || [])[0])].filter(Boolean).join(' · ');
+  }
   const t = _npTypeName(it.type);
   const k = _npKindName(it.kind);
   return t + (k && k !== t ? ' · ' + k : '') + (it.scope === 'samePeople' ? ' · 同人群' : (it.scope === 'breakout' ? ' · 破圈' : ''));
+}
+// 老排产表里的感悟 / 情绪 / 热梗 / 热点：这四条线已下架，条目只留着看，不再给写
+function npPlanRetired(it) {
+  if (!it || it.src === 'industry') return false;
+  const k = String(it.type || '').toLowerCase();
+  if (/^(tale|echo|meme|hot)$/.test(k)) return true;
+  return /感悟|情绪|热梗|热点/.test(_npTypeName(it.type) + ' ' + k);
 }
 function _npPlanColTag(it) {
   return (it && it.col)
@@ -1988,14 +2172,19 @@ async function npPlanMarkDone(item) {
   try {
     // 只改这一篇的「写过」，不整份盖回去：凌晨 02:00 可能刚补了一批（整份盖＝把新批冲掉）
     const p = await npLoadPlanCache();
-    const hit = (p && Array.isArray(p.items)) ? p.items.find(x => x && x.no === item.no) : null;
+    const hit = (p && Array.isArray(p.items))
+      ? p.items.find(x => x && (item.tid ? String(x.tid || '') === String(item.tid) : x.no === item.no))
+      : null;
     if (hit && !hit.done) {
       hit.done = true; hit.doneAt = Date.now();
       await chrome.storage.local.set({ note_plan: p });
     }
-    const c = (_npPlanCache && Array.isArray(_npPlanCache.items)) ? _npPlanCache.items.find(x => x && x.no === item.no) : null;
+    const c = (_npPlanCache && Array.isArray(_npPlanCache.items))
+      ? _npPlanCache.items.find(x => x && (item.tid ? String(x.tid || '') === String(item.tid) : x.no === item.no))
+      : null;
     if (c) { c.done = true; c.doneAt = Date.now(); }
-    if (_npWiz && _npWiz.planItem && _npWiz.planItem.no === item.no) _npWiz.planItem = null;
+    // 🧩 行业选题表这条不清：改稿 / 重新生成还要按它的组 / 载体 / 写法拼提示词
+    if (item.src !== 'industry' && _npWiz && _npWiz.planItem && _npWiz.planItem.no === item.no) _npWiz.planItem = null;
   } catch (_) {}
 }
 let _lastScanWasAuto = false; // ★ 本次刷新是否由机器人/自动模式驱动（抓取异常时走"跳过"而非红色打断）
@@ -2057,6 +2246,7 @@ async function renderNotePublish(container, preset) {
     style: { image: '', video: '' },              // 表现形式：只剩视频那格在用（由成片形式派生）；image 是旧档留下的名目，只当老账读
     filmKind: '',                                 // 字效编辑器那一步先选的「成片形式」（一篇一个；空＝还没选）
     visual: null, shots: null,                       // 图文：visual = { cover, images } 由画面表拼出；shots 才是真源
+    cards: null,                                     // 卡片图（对比/问答）：成稿时由 AI 按维度/问题各给一张 {role,title,lines,dim,cols}；清单走长文、讲故事/吐槽走分幕，都没有这一份
     voice: '', voiceError: '', voicePrev: '', voiceBusy: false,  // 视频：口播稿（可直接改 / AI 改 / 回退一版）
     noteStyle: {},                                // 🎚 这一条的两个覆盖：{ sellTalk, words }（空＝都跟账号默认；配比不在这里改，在 ③ 挑稿页「📄 内容基调」那几张卡上）
     styleDefault: null, styleTouched: false, stageKey: '',   // stageKey＝账号阶段（广告占比按它先起，④ 那句提示读它）
@@ -2068,11 +2258,9 @@ async function renderNotePublish(container, preset) {
                                                   // 🔥 热点线：④ 点到热点线就同步去找一条公开由头（why/angle 就是这篇的基调），不用另点按钮
     drainPick: null, drainVariants: null, drainError: '',   // 🔥 引流线：③ 挑稿页——挑中的那版（{cat,title,line,turn,body}）+ 这一批 18 版 + 出错话；挑中的那版进档，其余只活在台上
   };
-  _npIp = null;          // 🎭 IP 线：挑组合台的会话态（第几批 / 自己配的两步 / 临时选）每次重开归零
-  _npIpCard = null;      // 🎭 IP 卡（问卷一句话 + 招牌）：也重读一次——人设改了它跟着变
   container.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;color:var(--ink);">
-      <span style="display:flex;align-items:center;gap:8px;min-width:0;"><button type="button" class="np-wiz-back" title="回到「笔记档案」——这一篇有没存的改动会先问一句" style="border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer;flex:none;">← 返回档案</button><span>✍️ 写稿 · 卖点到发稿</span></span>
+      <span style="display:flex;align-items:center;gap:8px;min-width:0;"><button type="button" class="np-wiz-back" title="回到「笔记档案」——这一篇有没存的改动会先问一句" style="border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;font-weight:700;padding:5px 10px;cursor:pointer;flex:none;">← 返回档案</button><span>${(preset && preset.__industryItem) ? '✍️ 写稿 · 选题到成品' : '✍️ 写稿 · 人群到发稿'}</span></span>
       <span style="display:flex;align-items:center;gap:8px;font-weight:500;">
         <span id="npSaveHint" style="font-size:11px;color:#0a7b5a;"></span>
         <button type="button" class="np-wiz-save" title="把这半篇存进「笔记档案」——没写完也能存（草稿状态），之后在档案那一行点「✍️ 写稿」接着写" style="padding:5px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:12px;font-weight:700;cursor:pointer;">💾 保存</button>
@@ -2086,15 +2274,79 @@ async function renderNotePublish(container, preset) {
   ensureNpDelegation();
   _npWiz.prodName = await getProductName();
   _npPlanCache = await npLoadPlanCache();   // 规划那份排产表：这一步读进来，③ 选话题时按它摆「下一篇」
+  /* 账号选了行业的：进站就读本行业那份表（旧账号里可能还留着别的行业的排产，不能拿来当本行业题点） */
+  try {
+    const c0 = await readConfigPlain();
+    const ind0 = String((c0 && c0.topicIndustry) || '');
+    if (ind0) _npPlanCache = await npIndustryEnsurePlan(ind0, _npPlanCache);
+  } catch (_) {}
+  _npPlanGridCache = await npPlanGridPeek();   // 周表也读一份：③ 点「按这条写」要照格子里定的载体/写法走
   _npWiz.styleDefault = await npLoadNoteStyle();   // 📐 账号默认（写稿 ③「📄 内容基调」定的几条线配比/字数）
   _npWiz.stageKey = await npStageKeyNow();         // 🎚 这篇的广告占比按账号阶段先起（④ 可就手拨）
   _npWiz.stagePlan = await npStagePlanRead();      // 📌 阶段计划三档（K 线① 那行「按 xx 的阶段计划」读它；改在「🧬 账号规划」）
   _npWiz.styleLook = await npLoadImgLook();        // 🎨 出图默认（四类风格轴 + 画面流派，五十五改）
   await npLoadImgMotifs();                          // 🎭 账号自加的画面流派（内置那十条在 lib/visual-motif.js）
   await npCharsLoad(true);                          // 🎭 IP 角色卡：⑤「这篇用谁」与出图参考图都读它
-  if (preset) await npWizLoadArchive(preset, container);
+  if (preset && preset.__industryItem) npWizIndustryPreset(preset.__industryItem);
+  else if (preset) await npWizLoadArchive(preset, container);
   _npWizSnap = npWizSig(_npWiz);   // 进来的样子＝干净基线（回退时据它判有没有改动）
   await npWizRender(container);
+}
+
+/** 🧩 行业选题表点「写这篇」：直接落到 ④ 改稿站出这一篇稿——题面 / 真事 / 组 / 载体 / 写法
+ *  都挂在 planItem 上，后台拼提示词时照着它走；不走五条线那套（kOut / dOut 留空）。 */
+function npWizIndustryPreset(it) {
+  const w = _npWiz;
+  if (!w || !it) return;
+  w.planItem = npPlanItemWithCell(it);
+  w.topics = [{ topic: String(it.title || ''), fact: String(it.fact || '') }];
+  w.chosenTopicIdx = 0;
+  w.write = null;
+  w.kbTab = 'plan';
+  w.step = 4;
+  w.indOut = '';
+}
+/** 🧩 改稿屏那颗「下一步」：出口跟着写法走（清单→长文、对比/问答→图文、案例讲故事→视频），
+ *  这里只按这条题的写法给出唯一出口，改稿不再另选；缺料就停住补，不换出口。 */
+async function npIndToOut() {
+  const w = _npWiz;
+  if (!w || !npIsInd(w)) return;
+  const copy = String((w.draft && w.draft.content) || '').trim();
+  if (!copy) { if (typeof toast === 'function') toast('稿子还在写——等它写出来再出成品', 'error'); return; }
+  const pi = w.planItem || {};
+  const ok = (typeof TopicTable !== 'undefined' && TopicTable.outletsFor)
+    ? TopicTable.outletsFor(pi.carriers, pi.form || 'list', npPid(w)) : [pi.carrier || 'image'];
+  const kind = ok[0] || pi.carrier || 'image';
+  w.planItem = Object.assign({}, pi, { carrier: kind, picked: true });
+  w.indOut = kind;
+  if (kind === 'image' && typeof npPhotoCtxRead === 'function') {
+    try {
+      const pc = await npPhotoCtxRead();
+      const pr = npDirPhotoRate({ photo: pc }, TopicTable.formKey(pi.form || 'list'));
+      if (pr && pr.gate) {
+        if (typeof toast === 'function') toast('这题图文要贴你自己的照片，还缺「' + pr.miss.join('、') + '」——先去 📚 素材库补上', 'error');
+        return;
+      }
+    } catch (_) {}
+  }
+  if (kind === 'image') {
+    w.kOut = 'img'; w.dOut = '';
+    await npDFinishImg();
+    return;
+  }
+  if (kind === 'video') {
+    w.kOut = ''; w.dOut = 'film';
+    await npDFinishFilm();
+    return;
+  }
+  w.kOut = 'text'; w.dOut = '';
+  // 选成品这一步就把「形式＝长文」记进档案（图文 / 视频走 npDFinishBase 时也当场记）：
+  // 长文还没排，先留草稿；排完在长文站收口时才标「代发」
+  w.path = 'text'; w.voice = copy;
+  if (!w.arId) w.arId = npNoteId();
+  try { await npArchiveSave(w); } catch (_) {}
+  w.step = 5;
+  await npWizRender(npActiveC() || _npActiveContainer);
 }
 
 /** ✏️ 继续编辑：把档案里那一篇灌回向导。
@@ -2143,6 +2395,7 @@ async function npWizLoadArchive(n, container) {
       role: String(s.role || ''), si: Number(s.si) || 0, part: Number(s.part) || 0, parts: Number(s.parts) || 1,
       lab: String(s.lab || ''), ab: (Array.isArray(s.ab) ? s.ab : []).map(Number),
       t0: Number(s.t0) || 0, t1: Number(s.t1) || 0, secs: Number(s.secs) || 0,
+      hold: Number(s.hold) || 0,
       text: String(s.text || ''), prompt: String(s.prompt || ''), done: !!s.done, file: String(s.file || ''),
     })),
     shots: (Array.isArray(n.dgen.shots) ? n.dgen.shots : []).map(s => ({
@@ -2151,6 +2404,7 @@ async function npWizLoadArchive(n, container) {
     })),
     total: Number(n.dgen.total) || 0,
     points: Array.isArray(n.dgen.points) ? n.dgen.points.map(p => ({ t: String((p && p.t) || ''), why: String((p && p.why) || '') })) : [],
+    cover: (n.dgen.cover && (n.dgen.cover.main || n.dgen.cover.sub)) ? { main: String(n.dgen.cover.main || ''), sub: String(n.dgen.cover.sub || '') } : null,
     voice: String(n.dgen.voice || ''),
     src: String(n.dgen.src || ''),
     updatedAt: Number(n.dgen.updatedAt) || 0,
@@ -2158,7 +2412,6 @@ async function npWizLoadArchive(n, container) {
   _npDvError = '';   // 换了这一篇：上一篇排分镜失败的那句话别拦着这一篇自动排
   _npDshError = '';   // 同上：图文线分镜失败的那句话也别跨篇拦着
   _npDshSel = -1;     // 传图区选中的那张也别跨篇（选中态是这一趟的事）
-  _npDrainStage = null;   // 阶段建议每次重开重新算（账号阶段 / 规划改过了要跟着变）
   w.path = String((n.wip && n.wip.path) || '') || (n.form === '视频' ? 'video' : (n.form === '图文' ? 'image' : (n.form === '口播稿' ? 'voice' : (n.form === '长文' ? 'text' : ''))));
   w.style = { image: n.form === '图文' ? String(n.style || '') : '', video: n.form === '视频' ? String(n.style || '') : '' };
   w.filmKind = npKindFromLegacy(n);   // 这一档选过的成片形式（老档只记过视频表现形式的，反推回来）
@@ -2166,7 +2419,7 @@ async function npWizLoadArchive(n, container) {
   w.kGate = String(n.fGate || '');    // 口播那一篇选的出口（与门面共用档案那一格 fGate）：灌回来再存不许丢
   w.lip = n.lip || null;              // 逐句录／工单那层皮（卡底下那一块要照着它画）
   w.dOut = String(n.dOut || '');      // 引流线的交付分流
-  w.dir = String(n.dir || '');        // 🎭 六卡定的方向（含 IP 玩法线）：灌回来再存不许丢——npIsI 认它
+  w.dir = String(n.dir || '');        // 六卡定的方向：灌回来再存不许丢
   w.noteType = String(n.type || '');  // 档案记的内容类型（AI 排产的篇按它定分镜张数；老档没有＝空，按方向兜底）
   w.ipPlay = String((n.wip && n.wip.ipPlay) || n.ipPlay || '');           // 🎭 这一篇挑中的方式（招牌）
   w.ipTheme = String((n.wip && n.wip.ipTheme) || n.ipTheme || '');        // 🎭 这一篇挑中的主题
@@ -2174,10 +2427,17 @@ async function npWizLoadArchive(n, container) {
   w.ipCustom = !!((n.wip && n.wip.ipCustom) || n.ipCustom);               // ✍️ 自己配的：没有骨架段
   // 成稿：正文 / 标题 / 标签 / 建议发布
   if (String(n.draft || '').trim()) {
-    w.draft = { content: String(n.draft), titles: (n.titles || []).map(String), tags: (n.tags || []).map(String), timeTip: String(n.timeTip || '') };
+    w.draft = { content: String(n.draft), titles: (n.titles || []).map(String), tags: (n.tags || []).map(String), timeTip: String(n.timeTip || ''), location: String(n.location || '') };
     _npNote = { draft: w.draft, title: String(n.title || ''), tags: (n.tags || []).map(String), titleIdx: 0 };
   }
   w.visual = n.visual ? { cover: String(n.visual.cover || ''), images: String(n.visual.images || '') } : null;
+  // 🧩 卡片式写法（清单 / 对比 / 问答）的每张卡：接着改 / 重出一篇都照它排图
+  w.cards = (Array.isArray(n.cards) && n.cards.length) ? n.cards.map(c => ({
+    role: String((c && c.role) || ''), title: String((c && c.title) || ''),
+    lines: (Array.isArray(c && c.lines) ? c.lines : []).map(String),
+    dim: String((c && c.dim) || ''),
+    cols: (Array.isArray(c && c.cols) ? c.cols : []).map(String),
+  })) : null;
   w.voice = String(n.voice || '');
   w.longform = String(n.longform || '');   // 长文稿：档案那格原样接回（不然重进这一篇，出过的稿在台上是空的）
   w.longSrc = String(n.longSrc || '');     // 这版长文排的是哪份短稿：接回来才判得出「正文改过了，这版长文是旧的」
@@ -2200,22 +2460,13 @@ async function npWizLoadArchive(n, container) {
       w.step = w.step >= 6 ? 6 : (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 0));   // 🖼 知识图文：0/4/5/6
     } else w.step = w.step >= 4 ? 4 : 0;
   }
-  // 引流线：图文线站点 3 挑稿 / 4 改稿 / 5 分镜确认 / 6 预览（三十改）；文案直出视频线多一站 5 分镜出词——老步值往回收
-  // 🎭 玩法合并（批3）：讲故事型玩法的引流篇没稿时停在 1「AI 编故事」——玩法在建篇那一步已经钉了，没有 0/2/3 这几站
-  if (npIsD(w) && !npIsI(w)) {
-    if (npIsDStory(w) && !w.draft) w.step = 1;
-    else w.step = (w.dOut === 'film') ? (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3))
-      : (w.dOut === 'long') ? (String(w.longform || '').trim() ? 6 : (w.draft ? 5 : (npIsDStory(w) ? 1 : 3)))   // 📝 长文回挂：长文→⑥ / 短稿→⑤ / 没稿→挑稿或编故事
-      : (w.step >= 6 ? 6 : (w.step >= 5 ? 5 : (w.step >= 4 ? 4 : 3)));
-  }
-  // 🎭 IP 线：站点 0 挑组合 / 1 编故事 / 4 改稿 / 8 出料（5·6·7＝出料里的分镜确认/预览/存好半段，与图文线共用）——老步值往回收
-  if (npIsI(w)) w.step = w.draft ? (w.step >= 8 ? 8 : (w.step >= 5 ? w.step : 4)) : (w.step >= 1 ? 1 : 0);
+  // ① 卖点站已藏起（2026-11-05）：通用六步线最低落在 ②（给谁看），别停在没有站的第 0 步
+  if (!npIsK(w) && !npIsD(w) && !npIsL(w) && w.step < 1) w.step = 1;
   // 片台顶上那条工作流条点了「挑知识／改稿」回来（五十四改）：载完把这一步摆到那一站（消费即清）
   if (_npFilmLand) {
     const land = _npFilmLand; _npFilmLand = '';
     if (npIsK(w)) w.step = land === 'pick' ? 0 : 4;
-    else if (npIsI(w)) w.step = land === 'pick' ? 0 : (w.draft ? 4 : 1);
-    else if (npIsD(w)) w.step = land === 'pick' ? (npIsDStory(w) ? 1 : 3) : 4;
+    else if (npIsD(w)) w.step = land === 'pick' ? 3 : 4;
   }
   // 档案「🎬 录片 / 拼成片」直落：这一篇就是视频形式（知识线的 kOut=film 也算），直接停在分镜站（载完即消费）
   if (_npForcedDv) {
@@ -2610,7 +2861,9 @@ function npLongStepHtml(w) {
   const head = '<div style="display:flex;align-items:center;gap:8px;margin:2px 0 4px;flex-wrap:wrap;">' +
       '<span style="font-size:13px;font-weight:700;color:#333;">📝 出长文</span>' +
       '<span style="font-size:10.5px;color:#8a929e;">' + tone.t + ' · ' + tone.d + ' · ' + tone.chars + ' 字</span></div>' +
-    '<div style="font-size:11px;color:#8a929e;margin-bottom:10px;line-height:1.7;">腔由入口定死（' + (npIsKLong(w) ? '📚 知识' : '🔥 引流') + '这条线）——这一屏只把改好的短稿排成长文，不选腔。</div>';
+    '<div style="font-size:11px;color:#8a929e;margin-bottom:10px;line-height:1.7;">' +
+      (npIsInd(w) ? '这一屏只把改好的短稿排成长文——按选题表里这条的写法排，不选腔。'
+                  : '腔由入口定死（' + (npIsKLong(w) ? '📚 知识' : '🔥 引流') + '这条线）——这一屏只把改好的短稿排成长文，不选腔。') + '</div>';
   if (!copy) return head + '<div style="border:1px dashed var(--line);border-radius:10px;padding:12px;font-size:11.5px;color:#b45309;">正文还空着——先点「上一步」回改稿，把短稿整出来再排。</div>';
   if (w.longBusy) return head + '<div id="npLongWait" style="border:1px dashed var(--line);border-radius:10px;padding:12px;font-size:11.5px;color:#9aa0ac;"></div>';
   if (lf.trim()) {
@@ -3026,7 +3279,7 @@ function npDvOf(w) { const g = w && w.dgen; return (g && Array.isArray(g.segs) &
 function npDvSegsOf(n) { const g = n && n.dgen; return (g && Array.isArray(g.segs)) ? g.segs : []; }
 /** 🔥 引流稿里那句「转法句」：排分镜时给 AI 当硬约束（那句所在段必须落「转折到你这行」） */
 function npDvTurnOf(w) { return String(((w && w.drainPick) || {}).turn || '').trim(); }
-function npDvVoiceOf(w) { return String(((w && w.dgen) || {}).voice || '') || 'zh-CN-XiaoxiaoNeural'; }
+function npDvVoiceOf(w) { return String(((w && w.dgen) || {}).voice || '') || 'zh_male_liufei_uranus_bigtts'; }
 function npDvVoiceName(v) {
   const k = String(v || '');
   return (typeof VOICES !== 'undefined' && VOICES && typeof VOICES.short === 'function') ? VOICES.short(k) : k;
@@ -3058,10 +3311,13 @@ function npDvCastLine(w, s) {
 function npDvStripCast(txt) {
   return String(txt || '').replace(/^(?:【谁出场】[^\n]*\n?)+/, '');
 }
-/** 这一段显示/复制时真正拿到的整段：第一行永远是最新的【谁出场】 */
+/** 这一段显示/复制时真正拿到的整段：第一行永远是最新的【谁出场】
+ *  工作地点、导流指引是纯画面段（场地空镜／到店指引），不写人 */
 function npDvPromptText(w, s) {
-  const head = npDvCastLine(w, s);
+  const role = String((s && s.role) || '');
   const body = npDvStripCast(s && s.prompt);
+  if (role === '工作地点' || role === '导流指引') return body;
+  const head = npDvCastLine(w, s);
   return head ? head + '\n' + body : body;
 }
 
@@ -3182,12 +3438,13 @@ async function npDvTtsCloud(texts, voice, rate) {
   } catch (_) { return null; }
 }
 
-/** 试听：用所选音色念第一段的原话（听感对不对，比描述管用） */
+/** 试听：用所选音色念第一段有旁白的原话（头尾是静音段，跳过；听感对不对，比描述管用） */
 async function npDvAudition() {
   const w = _npWiz; const g = npDvOf(w);
   if (!g) return;
   const voice = npDvVoiceOf(w);
-  const txt = String(((g.segs[0] || {}).text) || (w.draft && w.draft.content) || '').trim().slice(0, 60);
+  const first = (g.segs || []).find(s => s && String(s.text || '').trim()) || {};
+  const txt = String(first.text || (w.draft && w.draft.content) || '').trim().slice(0, 60);
   if (!txt) { if (typeof toast === 'function') toast('还没有稿子——没法试听'); return; }
   const key = voice + '|' + txt;
   try {
@@ -3232,7 +3489,7 @@ async function npDvLoad(container, remake) {
   _npDvError = '';
   _npDvBusy = true;
   if (npS() === w) await npWizRender(container);   // 先把「正在排」的等待条画上
-  const stopWait = npWaitInto(container, 'npDvWait', 'AI 正在照稿子排分镜（一般三到五个），再按豆包「一条最长 15 秒」切条', 'notedv', () => npS() === w && w.step === 5);
+  const stopWait = npWaitInto(container, 'npDvWait', 'AI 正在照稿子排：引题一句＋内容段几个分镜（系统再套上工作地点和导流指引），再按豆包「一条最长 15 秒」切条', 'notedv', () => npS() === w && w.step === 5);
   try {
     const r = await chrome.runtime.sendMessage({
       action: 'genNoteDvSegs',
@@ -3250,6 +3507,7 @@ async function npDvLoad(container, remake) {
         role: String(s.role || ''), si: Number(s.si) || 0, part: Number(s.part) || 0, parts: Number(s.parts) || 1,
         lab: String(s.lab || ''), ab: (Array.isArray(s.ab) ? s.ab : []).map(Number),
         t0: Number(s.t0) || 0, t1: Number(s.t1) || 0, secs: Number(s.secs) || 0,
+        hold: Number(s.hold) || 0,
         text: String(s.text || ''), prompt: String(s.prompt || ''), done: false, file: '',
       })),
       shots: (r.shots || []).map(s => ({
@@ -3259,6 +3517,7 @@ async function npDvLoad(container, remake) {
       })),
       total: Number(r.total) || 0,
       points: (r.points || []).map(p => ({ t: String((p && p.t) || ''), why: String((p && p.why) || '') })),
+      cover: (r.cover && (r.cover.main || r.cover.sub)) ? { main: String(r.cover.main || ''), sub: String(r.cover.sub || '') } : null,
       voice: keepVoice,
       charId: npCharById(keepChar) ? keepChar : '',
       src: copy,
@@ -3284,7 +3543,7 @@ function npDvStepHtml(w) {
     return npDvCharBarHtml(w) +
       '<div class="card card-pad">' +
       '<b style="font-size:12.5px;">这一篇还没排分镜</b>' +
-      '<p class="note-xs" style="margin:6px 0 10px;">' + (_npDvError ? esc(_npDvError) : '点一下：AI 照稿子把它排成几个分镜（一格一个分镜，豆包一条最长 15 秒），每个分镜配一段能直接贴进豆包的提示词。') + '</p>' +
+      '<p class="note-xs" style="margin:6px 0 10px;">' + (_npDvError ? esc(_npDvError) : '点一下：AI 照稿子排「引题一句＋内容段几个分镜」，系统再套上「工作地点（空镜）」和「导流指引（末段）」——整条按 封面 → 工作地点 → 引题 → 内容段 → 导流指引 五段走。') + '</p>' +
       '<button type="button" class="np-dv-re btn btn-primary btn-sm">🎬 分镜出词</button></div>';
   }
   const segs = g.segs;
@@ -3318,26 +3577,40 @@ function npDvStepHtml(w) {
         '<div class="note-xs" style="margin-top:2px;color:#5b6472;">' + cap + '</div></div>';
     }).join('') + '</div>'
     : '';
-  const rows = segs.map((s, i) =>
-    '<tr>' +
-      '<td style="' + td + 'white-space:nowrap;"><b>第 ' + (i + 1) + ' 条</b><div class="note-xs" style="margin-top:2px;">' + esc(s.role || '') + (s.lab ? ' · ' + esc(s.lab) : '') + '</div>' +
-        '<div class="note-xs" style="margin-top:2px;">' + s.t0 + '–' + s.t1 + ' 秒 · 约 ' + s.secs + ' 秒</div>' +
-        '<div class="note-xs" style="margin-top:2px;color:#0a7067;">出镜：' + esc(npDvCastOf(w, s).map(c => c.name || '未命名').join('、') || '主角') + '</div>' +
-        '<div style="margin-top:3px;">' + (s.done ? '<span style="color:#16a34a;font-size:11px;">✓ 传回来了</span>' : '<span style="color:#9aa0ac;font-size:11px;">⏳ 待生成 / 待传回</span>') + '</div></td>' +
-      '<td style="' + td + 'min-width:200px;"><div style="line-height:1.65;color:#333;">' + esc(s.text || '') + '</div>' +
+  const five = !!(segs[0] && String(segs[0].role || '') === '工作地点');
+  const rows = segs.map((s, i) => {
+    const role = String(s.role || '');
+    const noPerson = role === '工作地点' || role === '导流指引';
+    const silent = !String(s.text || '').trim();
+    const mid = silent
+      ? '<div style="line-height:1.65;color:#8a929e;">（无旁白——只放画面' +
+        (role === '工作地点' ? '；封面主标题／副标题压在这一段开头' : role === '导流指引' ? '；整屏铺到店指引' : '') +
+        ' · 约 ' + s.secs + ' 秒）</div>'
+      : '<div style="line-height:1.65;color:#333;">' + esc(s.text || '') + '</div>' +
         '<div class="note-xs" style="margin-top:4px;">这条对上 ' + s.t0 + '–' + s.t1 + ' 秒这段旁白——整篇稿子' + esc(voiceName) + '一次念完' +
-        ((s.ab || []).length ? '；第 ' + s.ab.map(j => (j + 1)).join('、') + ' 个分镜并进来一起拍' : '') + '</div></td>' +
+        ((s.ab || []).length ? '；第 ' + s.ab.map(j => (j + 1)).join('、') + ' 个分镜并进来一起拍' : '') + '</div>';
+    return '<tr>' +
+      '<td style="' + td + 'white-space:nowrap;"><b>第 ' + (i + 1) + ' 条</b><div class="note-xs" style="margin-top:2px;">' + esc(role) + (s.lab ? ' · ' + esc(s.lab) : '') + '</div>' +
+        '<div class="note-xs" style="margin-top:2px;">' + s.t0 + '–' + s.t1 + ' 秒 · 约 ' + s.secs + ' 秒</div>' +
+        '<div class="note-xs" style="margin-top:2px;color:#0a7067;">出镜：' + (noPerson ? '不出人' : esc(npDvCastOf(w, s).map(c => c.name || '未命名').join('、') || '主角')) + '</div>' +
+        '<div style="margin-top:3px;">' + (s.done ? '<span style="color:#16a34a;font-size:11px;">✓ 传回来了</span>' : '<span style="color:#9aa0ac;font-size:11px;">⏳ 待生成 / 待传回</span>') + '</div></td>' +
+      '<td style="' + td + 'min-width:200px;">' + mid + '</td>' +
       '<td style="' + td + 'min-width:260px;"><textarea rows="4" class="np-dv-prompt" data-i="' + i + '" style="' + taS + '">' + esc(npDvPromptText(w, s)) + '</textarea>' +
         '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center;">' +
           '<button type="button" class="np-dv-copy btn btn-soft btn-sm" data-i="' + i + '">📋 复制提示词</button>' +
-          '<button type="button" class="np-dv-plus btn btn-sm" data-i="' + i + '" title="这一段单独加一个配角（不点＝整片就主角一个人）">＋ 加人</button>' +
+          (noPerson ? '' : '<button type="button" class="np-dv-plus btn btn-sm" data-i="' + i + '" title="这一段单独加一个配角（不点＝整片就主角一个人）">＋ 加人</button>') +
           (s.done
             ? '<span title="' + esc(s.file || '') + '" style="font-size:11px;color:#16a34a;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">✓ ' + esc(s.file || '片段传回来了') + '</span>' +
               '<button type="button" class="np-dv-reup btn btn-sm" data-i="' + i + '" title="清掉这一条，重新「⬆ 传回来」覆盖">↺ 重传</button>'
             : '<label class="btn btn-primary btn-sm" style="cursor:pointer;">⬆ 传回来<input type="file" accept="video/*" class="np-dv-file" data-i="' + i + '" style="display:none;"></label>') +
-        '</div>' + npDvCastBoxHtml(w, s, i) + '</td></tr>').join('');
-  return npDvCharBarHtml(w) + '<div class="note" style="margin-bottom:10px;">稿子改定了。AI 照稿子把全片排成 <b>' + shots.length + ' 个分镜</b>（整片约 ' + g.total + ' 秒——按' + esc(voiceName) + '念完估，只是参考），再照豆包「一条最长 15 秒」切成下面 <b>' + segs.length + ' 条</b>' + (facts ? '：' + facts : '') +
-    '。每条配好一段提示词——<b>直接复制进豆包</b>生成一小段视频导到本机，回来「<b>⬆ 传回来</b>」放进对应格子（选完自动打勾）。拼片时旁白念完的为准：镜头按旁白一条条裁齐＋字幕，配音用' + esc(voiceName) + '把整篇一次念完。</div>' +
+        '</div>' + (noPerson ? '' : npDvCastBoxHtml(w, s, i)) + '</td></tr>';
+  }).join('');
+  const headNote = five
+    ? '稿子改定了。这条视频按五段排：<b>封面</b>（用「工作地点」那一帧压主标题／副标题，不单独占一屏）→ <b>工作地点</b>（自家场地空镜，约 2 秒）→ <b>引题</b>（本人正面对着镜头，2~3 秒）→ <b>内容段</b>（旁白讲什么配什么，每条不超过 15 秒）→ <b>导流指引</b>（末段整屏铺到店指引）。整片约 <b>' + g.total + ' 秒</b>（按' + esc(voiceName) + '念完估，只是参考），共 <b>' + segs.length + ' 条镜头</b>' + (facts ? '：' + facts : '') +
+      '。工作地点、引题、导流用你自己拍的镜头（场地／本人／门口路线），内容段复制提示词让豆包生成；每段导回本机「<b>⬆ 传回来</b>」放进对应格子（选完自动打勾）。拼片时旁白念完的为准：镜头按旁白裁齐＋字幕，配音用' + esc(voiceName) + '把有旁白的段一次念完。'
+    : '稿子改定了。AI 照稿子把全片排成 <b>' + shots.length + ' 个分镜</b>（整片约 ' + g.total + ' 秒——按' + esc(voiceName) + '念完估，只是参考），再照豆包「一条最长 15 秒」切成下面 <b>' + segs.length + ' 条</b>' + (facts ? '：' + facts : '') +
+      '。每条配好一段提示词——<b>直接复制进豆包</b>生成一小段视频导到本机，回来「<b>⬆ 传回来</b>」放进对应格子（选完自动打勾）。拼片时旁白念完的为准：镜头按旁白一条条裁齐＋字幕，配音用' + esc(voiceName) + '把整篇一次念完。';
+  return npDvCharBarHtml(w) + '<div class="note" style="margin-bottom:10px;">' + headNote + '</div>' +
     strip +
     npDvVoiceHtml(w) +
     '<div style="overflow:auto;margin-top:10px;"><table style="width:100%;border-collapse:collapse;">' +
@@ -3454,8 +3727,116 @@ function npDvWrapLines(ctx, s, maxW) {
   return lines;
 }
 
-/** 拼片的一帧：片段 cover 铺满 1080×1920 ＋ 底部字幕条（这一段原文，烧进画面） */
-function npDvDrawFrame(ctx, W, H, v, text) {
+function _dvRoundRect(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.arcTo(x + w, y, x + w, y + rr, rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+  ctx.lineTo(x + rr, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rr, rr);
+  ctx.lineTo(x, y + rr);
+  ctx.arcTo(x, y, x + rr, y, rr);
+  ctx.closePath();
+}
+
+/** 封面压字：头 0.7 秒大字压主标题／副标题，0.7~1.1 秒淡掉，之后收成底部字幕条接着走场地 */
+function _dvDrawCover(ctx, W, H, deck, t) {
+  const main = String((deck && deck.coverMain) || '').trim();
+  if (!main) return;
+  const sub = String((deck && deck.coverSub) || '').trim();
+  const a = t <= 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.4);
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  if (a > 0.02) {
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(0,0,0,.4)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = '900 92px "Microsoft YaHei","PingFang SC",sans-serif';
+    const lines = npDvWrapLines(ctx, main, 860);
+    const lh = 118;
+    let y = 760 - (lines.length - 1) * lh / 2;
+    ctx.lineWidth = 14; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.fillStyle = '#fff';
+    lines.forEach(ln => { ctx.strokeText(ln, W / 2, y); ctx.fillText(ln, W / 2, y); y += lh; });
+    if (sub) {
+      ctx.font = '600 46px "Microsoft YaHei","PingFang SC",sans-serif';
+      ctx.lineWidth = 8;
+      const sl = npDvWrapLines(ctx, sub, 860);
+      let sy = y + 30;
+      sl.forEach(ln => { ctx.strokeText(ln, W / 2, sy); ctx.fillText(ln, W / 2, sy); sy += 62; });
+    }
+  } else {
+    ctx.font = '700 44px "Microsoft YaHei","PingFang SC",sans-serif';
+    const lines = npDvWrapLines(ctx, main, 900);
+    const lh = 60, y0 = H - 120 - (lines.length - 1) * lh;
+    ctx.fillStyle = 'rgba(0,0,0,.42)';
+    ctx.fillRect(0, y0 - 48, W, (lines.length - 1) * lh + 78);
+    ctx.lineWidth = 7; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.fillStyle = '#fff';
+    lines.forEach((ln, li) => { const yy = y0 + li * lh; ctx.strokeText(ln, W / 2, yy); ctx.fillText(ln, W / 2, yy); });
+  }
+  ctx.restore();
+}
+
+/** 导流指引：末段整屏压暗，铺一张到店卡片（门店／城市／怎么来） */
+function _dvDrawGuide(ctx, W, H, deck, text) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,.44)';
+  ctx.fillRect(0, 0, W, H);
+  const place = String((deck && deck.place) || '').trim();
+  const cityLine = String((deck && deck.city) || '').trim();
+  const line = String(text || '').trim();
+  const cardW = 920, padX = 56, padY = 48, innerW = cardW - padX * 2;
+  const F = {
+    place: '900 58px "Microsoft YaHei","PingFang SC",sans-serif',
+    city: '600 38px "Microsoft YaHei","PingFang SC",sans-serif',
+    line: '600 40px "Microsoft YaHei","PingFang SC",sans-serif',
+    hint: '600 36px "Microsoft YaHei","PingFang SC",sans-serif',
+  };
+  const blocks = [];
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  if (place) { ctx.font = F.place; npDvWrapLines(ctx, place, innerW).forEach(s => blocks.push({ s: s, f: F.place, c: '#111827', lh: 74 })); }
+  if (cityLine) { ctx.font = F.city; npDvWrapLines(ctx, cityLine, innerW).forEach(s => blocks.push({ s: s, f: F.city, c: '#4b5563', lh: 54 })); }
+  if (line) { ctx.font = F.line; npDvWrapLines(ctx, line, innerW).forEach(s => blocks.push({ s: s, f: F.line, c: '#1f2937', lh: 58 })); }
+  if (!blocks.length) blocks.push({ s: '门店地址还没填——去「账号规划」补城市／门店', f: F.hint, c: '#6b7280', lh: 52 });
+  const headH = 92;
+  const cardH = padY + headH + blocks.reduce((n, b) => n + b.lh, 0) + padY - 8;
+  const cardX = (W - cardW) / 2;
+  const cardY = Math.max(260, (H - cardH) / 2 - 140);
+  _dvRoundRect(ctx, cardX, cardY, cardW, cardH, 32);
+  ctx.fillStyle = 'rgba(255,255,255,.96)'; ctx.fill();
+  ctx.fillStyle = '#b42318';
+  _dvRoundRect(ctx, cardX, cardY, cardW, 10, 5); ctx.fill();
+  ctx.textAlign = 'left';
+  ctx.font = '900 52px "Microsoft YaHei","PingFang SC",sans-serif';
+  ctx.fillStyle = '#111827';
+  ctx.fillText('到店指引', cardX + padX, cardY + padY + 46);
+  let y = cardY + padY + headH + 42;
+  blocks.forEach(b => { ctx.font = b.f; ctx.fillStyle = b.c; ctx.fillText(b.s, cardX + padX, y); y += b.lh; });
+  ctx.restore();
+}
+
+/** 这条片要用的字：封面主／副标题（来自分镜接口）＋到店卡片上的门店／城市（账号规划里那份） */
+async function npDvDeckOf(w) {
+  const g = npDvOf(w);
+  const c = (g && g.cover) || {};
+  const main = String(c.main || '').trim() ||
+    String((_npNote && _npNote.title) || ((w && w.draft && w.draft.titles) || [])[0] || '').slice(0, 24);
+  const sub = String(c.sub || '').trim();
+  let place = '', city = '';
+  try {
+    const cfg = await readConfigPlain();
+    const mc = (cfg && cfg.myCity) || {};
+    place = String(mc.poi || '').trim();
+    city = [mc.city, mc.district].filter(Boolean).join(' · ');
+  } catch (_) {}
+  return { coverMain: main, coverSub: sub, place: place, city: city };
+}
+
+/** 拼片的一帧：片段 cover 铺满 1080×1920 ＋ 底部字幕条（这一段原文，烧进画面）
+ *  首段（工作地点）压封面主／副标题；末段（导流指引）铺到店卡片；t＝本条已过的秒数 */
+function npDvDrawFrame(ctx, W, H, v, seg, t, deck) {
   ctx.fillStyle = '#0d1117';
   ctx.fillRect(0, 0, W, H);
   const vw = (v && v.videoWidth) || 0, vh = (v && v.videoHeight) || 0;
@@ -3464,21 +3845,25 @@ function npDvDrawFrame(ctx, W, H, v, text) {
     const dw = vw * sc, dh = vh * sc;
     try { ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh); } catch (_) {}
   }
-  const t = String(text || '').trim();
-  if (!t) return;
-  ctx.font = NP_DV_SUB_FONT;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  const lines = npDvWrapLines(ctx, t, 900);
-  const lh = 84, y0 = H - 150 - (lines.length - 1) * lh;
-  ctx.fillStyle = 'rgba(0,0,0,.42)';
-  ctx.fillRect(0, y0 - 64, W, (lines.length - 1) * lh + 96);
-  ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,0,.55)';
-  ctx.fillStyle = '#fff';
-  lines.forEach((ln, li) => {
-    const y = y0 + li * lh;
-    ctx.strokeText(ln, W / 2, y);
-    ctx.fillText(ln, W / 2, y);
-  });
+  const role = String((seg && seg.role) || '');
+  const text = String((seg && seg.text) || '').trim();
+  if (role === '导流指引') { _dvDrawGuide(ctx, W, H, deck, text); return; }
+  if (text) {
+    ctx.font = NP_DV_SUB_FONT;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const lines = npDvWrapLines(ctx, text, 900);
+    const lh = 84, y0 = H - 150 - (lines.length - 1) * lh;
+    ctx.fillStyle = 'rgba(0,0,0,.42)';
+    ctx.fillRect(0, y0 - 64, W, (lines.length - 1) * lh + 96);
+    ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(0,0,0,.55)';
+    ctx.fillStyle = '#fff';
+    lines.forEach((ln, li) => {
+      const y = y0 + li * lh;
+      ctx.strokeText(ln, W / 2, y);
+      ctx.fillText(ln, W / 2, y);
+    });
+  }
+  if (role === '工作地点' && deck) _dvDrawCover(ctx, W, H, deck, Number(t) || 0);
 }
 
 function npDvVidsClear() {
@@ -3491,13 +3876,15 @@ function npDvVidsClear() {
   _npDvVids = [];
 }
 
-/** 录一遍：画布 30fps 采样收画面、配音进音轨（无 BGM）；段的时长以片段为准——这句没念完的，末帧定住接着念 */
-async function npDvRecordFilm(w, cv, ctx, segs, voBufs, ac, mime, pctCb) {
+/** 录一遍：画布 30fps 采样收画面、配音进音轨（无 BGM）；段的时长以片段为准——这句没念完的，末帧定住接着念
+ *  seg.hold（工作地点／导流指引这类不念旁白的段）＝只取片段开头这么多秒，防止 AI 给的 10 秒空镜拖垮节奏 */
+async function npDvRecordFilm(w, cv, ctx, segs, voBufs, ac, mime, deck, pctCb) {
   let D = 0;
   for (let i = 0; i < segs.length; i++) {
-    const clipD0 = Math.max(0.4, Number(_npDvVids[i].v.duration) || 0);
+    const clipRaw0 = Math.max(0.4, Number(_npDvVids[i].v.duration) || 0);
     const voD0 = voBufs[i] ? voBufs[i].duration : 0;
-    D += Math.max(clipD0, voD0);
+    const hold0 = Number(segs[i] && segs[i].hold) || 0;
+    D += hold0 ? Math.min(clipRaw0, Math.max(hold0, voD0)) : Math.max(clipRaw0, voD0);
   }
   const vStream = cv.captureStream(30);
   const msd = ac.createMediaStreamDestination();
@@ -3513,36 +3900,38 @@ async function npDvRecordFilm(w, cv, ctx, segs, voBufs, ac, mime, pctCb) {
     try { ttsBus.disconnect(); } catch (_) {}
   };
   const alive = () => (_npWiz === w && w.step === 5);
-  npDvDrawFrame(ctx, cv.width, cv.height, _npDvVids[0].v, segs[0].text);   // 首帧先画再开录：头一帧不黑
+  npDvDrawFrame(ctx, cv.width, cv.height, _npDvVids[0].v, segs[0], 0, deck);   // 首帧先画再开录：头一帧不黑
   rec.start(250);
   let base = 0;
   try {
     for (let i = 0; i < segs.length; i++) {
       if (!alive()) throw new Error('切页了——拼片停下');
       const s = segs[i], v = _npDvVids[i].v;
-      const clipD = Math.max(0.4, Number(v.duration) || 0);
+      const clipRaw = Math.max(0.4, Number(v.duration) || 0);
       const vo = voBufs[i];
+      const voD = vo ? vo.duration : 0;
+      const hold = Number(s.hold) || 0;
+      const clipD = hold ? Math.min(clipRaw, Math.max(hold, voD)) : clipRaw;
       await npcSeekVid(v, 0);
-      npDvDrawFrame(ctx, cv.width, cv.height, v, s.text);   // 这一段的第一帧先落上（段与段之间不闪上一段的尾巴）
+      npDvDrawFrame(ctx, cv.width, cv.height, v, s, 0, deck);   // 这一段的第一帧先落上（段与段之间不闪上一段的尾巴）
       if (vo) { const bs = ac.createBufferSource(); bs.buffer = vo; bs.connect(ttsBus); try { bs.start(); } catch (_) {} }
       try { await v.play(); } catch (_) { throw new Error('第 ' + (i + 1) + ' 段的片段在画面里播不动——回豆包重导一段 mp4 再传'); }
       while (true) {
         if (!alive()) throw new Error('切页了——拼片停下');
         const cur = v.currentTime || 0;
         if (cur >= clipD - 0.04 || v.ended) break;
-        npDvDrawFrame(ctx, cv.width, cv.height, v, s.text);
+        npDvDrawFrame(ctx, cv.width, cv.height, v, s, cur, deck);
         if (pctCb) pctCb(base + cur, D);
         await npcNextFrame();
       }
       try { v.pause(); } catch (_) {}
       base += clipD;
-      const voD = vo ? vo.duration : 0;
       if (voD > clipD + 0.05) {   // 配音长过片段：末帧定住接着念
         const wait = voD - clipD;
         const t0 = performance.now();
         while ((performance.now() - t0) / 1000 < wait) {
           if (!alive()) throw new Error('切页了——拼片停下');
-          npDvDrawFrame(ctx, cv.width, cv.height, v, s.text);
+          npDvDrawFrame(ctx, cv.width, cv.height, v, s, clipD + (performance.now() - t0) / 1000, deck);
           if (pctCb) pctCb(base + (performance.now() - t0) / 1000, D);
           await npcNextFrame();
         }
@@ -3640,7 +4029,8 @@ async function npDvAsm() {
     if (_npWiz !== w) throw new Error('切页了——拼片停下');
     // ⑤ 合成出片：实时录一遍（片段真播、配音同起、字幕每帧烧上）
     _npDvAsmStep = 4; _npDvAsmNote = ''; npDvAsmPaint();
-    const blob = await npDvRecordFilm(w, cv, ctx, segs, voBufs, ac, mime, (t, D) => {
+    const deck = await npDvDeckOf(w);
+    const blob = await npDvRecordFilm(w, cv, ctx, segs, voBufs, ac, mime, deck, (t, D) => {
       _npDvAsmNote = Math.max(0, Math.min(99, Math.round(D ? t / D * 100 : 0))) + '%';
       npDvAsmPaint();
     });
@@ -3715,6 +4105,7 @@ function npDshOnStage() {
    例外：干货步骤特别多（5 步起）→ 最多 6 张；故事 / 热点正文太短 → 降到 4~5；情绪 / 热梗极短 → 3 张。 */
 const NP_DSH_COUNT = {
   howto: { name: '知识·干货', total: [3, 4], capTotal: 6 },
+  case:  { name: '案例',      total: [1, 1] },   // 案例只出成片，不走卡片分镜；留一条只为标签口径
   tale:  { name: '感悟',      total: [7, 8], shortTotal: [4, 5] },
   hot:   { name: '热点',      total: [7, 8], shortTotal: [4, 5] },
   echo:  { name: '情绪',      total: [4, 5], shortTotal: [3, 3] },
@@ -3810,8 +4201,59 @@ async function npDshGen(container, auto) {
   if (_npDshBusy && !auto) return;   // 已经在切了（auto＝进站自动那一发，忙标已由调度器置上）
   const copy = String((w.draft && w.draft.content) || w.voice || '').trim();
   if (!copy) { _npDshError = '这篇还没稿子——先回 ② 把稿子改好再切分镜'; _npDshBusy = false; if (npS() === w) await npWizRender(container); return; }
+  /* 清单没有卡片图：别让它在分镜站里被切成分幕（2026-11-07） */
+  if (npNoImgFormOf(w)) {
+    _npDshError = '这条是「' + (npNoImgFormOf(w).name || '清单') + '」写法——这种写法出长文、不出图，回改稿屏点「📝 下一步：出长文」';
+    _npDshBusy = false;
+    if (npS() === w) await npWizRender(container);
+    return;
+  }
+  /* 🧩 卡片式写法（对比 / 问答）：稿子通常已经带着每张卡回来了——照卡排，不再让 AI 切分幕 */
+  const cardFi = npCardModeOf(w);
+  let cards0 = (w && Array.isArray(w.cards)) ? w.cards : [];
+  if (cardFi && !cards0.length) {
+    /* 老稿没带卡（写稿时选题格选的不是图文）：按正文补一次卡，补上就照卡排 */
+    _npDshError = '';
+    _npDshBusy = true;
+    if (npS() === w) await npWizRender(container);
+    const stopWait = npWaitInto(container, 'npDshWait', 'AI 正在按正文排这一套卡（' + String(cardFi.name || '对比') + '：一页讲一件事）', 'notedsh', () => npS() === w && w.step === 5);
+    let got = null;
+    try { got = await npCardsEnsure(w, copy, String((_npNote && _npNote.title) || '')); } catch (_) { got = null; }
+    stopWait();
+    _npDshBusy = false;
+    if (got) cards0 = got;
+  }
+  if (cardFi && cards0.length) {
+    _npDshError = '';
+    w.shots.items = npCardShotsOf(cards0, cardFi);
+    w.shots.story = npDshStoryShape(null);
+    w.shots.style = npLookToken(npLookOf(w));
+    /* 封面从「封面」那张卡来：主标题＝title、副标题＝第一行；卡片变了就重拼封面提示词（人改过的那份不动） */
+    const cv0 = npCoverOf(w);
+    const cc0 = npCardCoverOf(w) || {};
+    if (String(cc0.title || '').trim()) cv0.copy = String(cc0.title).trim();
+    else if (!String(cv0.copy || '').trim()) cv0.copy = String((cards0[0] && cards0[0].title) || '').slice(0, 60);
+    if (cc0.lines && cc0.lines[0]) cv0.sub = String(cc0.lines[0]).trim();
+    if (cv0.src !== 'manual') { cv0.src = 'card'; cv0.prompt = ''; cv0.cardKey = ''; }
+    w.shots.groupPrompt = '';
+    w.shots.groupPromptOwn = false;
+    npShotsCompose(w);
+    npImgSync(w);
+    _npDshBusy = false;
+    if (npS() === w) await npArchiveSave(w);
+    if (npS() === w) await npWizRender(container);
+    if (typeof toast === 'function') toast('按这篇的 ' + cards0.length + ' 张卡片排好了——每张一条提示词');
+    return;
+  }
+  /* 对比 / 问答没拿到卡片：停在这儿，绝不退回讲故事那套分幕（2026-11-07） */
+  if (cardFi) {
+    _npDshError = '这套卡没排出来（AI 这次没返回卡片）——再点一次「切分镜」；还不成就回改稿屏重新出一次稿';
+    _npDshBusy = false;
+    if (npS() === w) await npWizRender(container);
+    return;
+  }
   const typ = npDshTypeKey(w);
-  const typeName = ({ howto: '知识·干货', tale: '感悟', hot: '热点', echo: '情绪', meme: '热梗' })[typ] || '知识·干货';
+  const typeName = (NP_DSH_COUNT[typ] && NP_DSH_COUNT[typ].name) || '知识·干货';
   const coverOn = npCoverOn(w);
   const arId0 = String(w.arId || '');   // 切去写别的篇再回来：这一发回来时对不上号就整发作废，别把别人的分镜写进这一篇
   _npDshError = '';
@@ -3832,6 +4274,9 @@ async function npDshGen(container, auto) {
         coverOn: coverOn,
         chars: ((_npChars && _npChars.list) || []).map(c => ({ id: c.id, name: c.name })),
         mainChar: (npCharFor(w) || {}).name || '',
+        form: String((w.planItem && w.planItem.form) || ''),
+        variant: String((w.planItem && w.planItem.variant) || ''),
+        carrier: String((w.planItem && w.planItem.carrier) || ''),
       },
     });
     if (String(w.arId || '') !== arId0) {
@@ -3873,6 +4318,9 @@ async function npDshGen(container, auto) {
         clock: false, off: false, dlock: false,
         sids: [], cands: [], pick: -1,
         imgs: [],
+        need: String((x && (x.need || x['这张要的料'])) || '').trim(),
+        imgClip: '', imgGrp: '', imgSrc: '',
+        txtImg: '', txtPos: '', txtTxt: '',
       };
     }).filter(x => x.beat || x.copyText || x.view);
     if (!items.length) throw new Error('AI 这次没切出分镜，再点一次试试');
@@ -3935,9 +4383,26 @@ async function npDshUpload(id, files, via) {
       if (f.__genUrl) asset.genUrl = String(f.__genUrl);   // 服务器出的图：原图链接留着，整组齐了自动铺进代发区
       list.push(asset);
       if (!Array.isArray(it.imgs)) it.imgs = [];
-      if (via === 'genreplace') it.imgs = [aid]; else it.imgs.push(aid);   // 重出一张＝换掉这张，不叠在旧图后头
+      if (via === 'genreplace') {
+        /* 换掉整格：旧图连画面仓那几条一起摘掉，不留孤儿（以前只换引用，旧条目堆着） */
+        const prev = it.imgs.map(String);
+        for (let i = list.length - 1; i >= 0; i--) if (prev.indexOf(String(list[i] && list[i].id)) >= 0) list.splice(i, 1);
+        for (const j of prev) { try { await npCaseDel('asprev:' + j); } catch (_) {} }
+        it.imgs = [aid];
+      } else it.imgs.push(aid);
+      it.imgSrc = f.__genUrl ? 'ai' : 'own';   // 服务器画的 / 自己传的
+      it.imgClip = ''; it.imgGrp = '';          // 换了底图就不再是素材库那条
       ok++; last = String(f.name || '本机图');
     } catch (e) { bad = String((e && e.message) || e); }
+  }
+  if (ok) {
+    /* 换了底图：以前排好的字作废，旧的那张排字图一起摘掉——否则显出来的还是旧照片上的字 */
+    const oldPt = npPtResetOf(it);
+    if (oldPt) {
+      const k = list.findIndex(a => String((a && a.id) || '') === oldPt);
+      if (k >= 0) list.splice(k, 1);
+      try { await npCaseDel('asprev:' + oldPt); } catch (_) {}
+    }
   }
   if (ok) await npAsAssetsWrite(list);
   if (ok) { await npShotImgIndex(); npShotsCompose(w); npImgSync(w); await npArchiveSave(w); }
@@ -3955,6 +4420,553 @@ async function npDshUpload(id, files, via) {
   const c = npActiveC();
   if (c && npS() === w && via !== 'gen' && via !== 'genreplace') await npWizRender(c);
 }
+
+/* ── 🖼 从素材库挑（2026-11-08 照片图文第 2 步）──────────────────────────────
+   分镜卡上每张都能点「🖼 从素材库挑」：开的相册只列照片（imgOnly），默认停在这一张要的那组上，
+   但能看到全部——别的组也能挑（老板自己拍板），不替他顶替。点一张＝贴上，再点一张＝换掉。
+   同一次传进来的照片带同一个 grp（批次）戳：同一批当同一场地、同一身衣服；一篇里混批只标黄，不拦。 */
+function npShotNeedKey(w, it) {
+  const k = String((it && it.need) || '');
+  if (typeof npPhotoGroup === 'function' && npPhotoGroup(k)) return k;
+  let form = '';
+  try { form = TopicTable.formKey((w && w.planItem && w.planItem.form) || ''); } catch (_) { form = ''; }
+  const need = (typeof NP_PHOTO_FORM_NEEDS === 'object' && NP_PHOTO_FORM_NEEDS) ? (NP_PHOTO_FORM_NEEDS[form] || []) : [];
+  return need[0] || 'work';
+}
+function npShotNeedName(w, it) {
+  const g = (typeof npPhotoGroup === 'function') ? npPhotoGroup(npShotNeedKey(w, it)) : null;
+  return g ? g.n : '';
+}
+/** 这一篇贴上的图分几批：多的那批当基准。
+ *  只跟同一组（同一类照片）比——素材库是「一组一次上传」的，跨组比批次必然不同批，天天标黄等于没标。 */
+function npShotBatchBase(w, needK) {
+  const cnt = {};
+  npShotsOn(w).forEach(it => {
+    if (needK && npShotNeedKey(w, it) !== needK) return;
+    const g = String((it && it.imgGrp) || ''); if (g) cnt[g] = (cnt[g] || 0) + 1;
+  });
+  let best = '', n = 0;
+  Object.keys(cnt).forEach(g => { if (cnt[g] > n) { n = cnt[g]; best = g; } });
+  return best;
+}
+function npShotBatchOff(w, it) {
+  const g = String((it && it.imgGrp) || '');
+  if (!g) return false;
+  const base = npShotBatchBase(w, npShotNeedKey(w, it));
+  return !!(base && g !== base);
+}
+/* ── 📚 从素材库整篇出图（2026-11-08 老板改口径：两条路互斥，不许一半 AI 一半实拍）──
+   这一篇每张要的那组都得有富余的照片，一张照片只用一次；封面最后取（先 我本人，再 我的地方…）。
+   全取到了按钮才可点——不齐就灰着，写明缺哪组几张。 */
+let _npPhotoLibPlan = { arId: '', sig: '', plan: null, busy: false };
+
+function npPhotoLibSig(w) {
+  const on = npShotsOn(w);
+  return String((w && w.arId) || '') + '|' + on.map(it => String(it && it.id) + ':' + npShotNeedKey(w, it)).join(',') +
+    '|' + ((npCoverOf(w) && npCoverOf(w).on !== false) ? 'c' : '-');
+}
+/** 这一篇要几组、各几张；素材库里够不够（纯函数，不读写库） */
+function npPhotoLibPlan(w, clips) {
+  const photos = (clips || []).filter(c => c && c.imgOnly);
+  const by = {};
+  NP_PHOTO_GROUPS.forEach(g => { by[g.k] = []; });
+  photos.forEach(c => {
+    let tags = [];
+    try { tags = npLibTagsAll(c, null); } catch (_) { tags = c.tags || []; }
+    npPhotoGroupsOfTags(tags).forEach(k => { if (by[k]) by[k].push(c); });
+  });
+  const on = npShotsOn(w);
+  const want = {};
+  on.forEach(it => { const k = npShotNeedKey(w, it); want[k] = (want[k] || 0) + 1; });
+  const rows = NP_PHOTO_GROUPS.filter(g => want[g.k]).map(g => ({ k: g.k, n: g.n, need: want[g.k], have: (by[g.k] || []).length }));
+  /* 同一组先从张数最多的那一批里取：同一篇里的同类照片出自同一次上传（同场地、同身衣服） */
+  const pool = {};
+  rows.forEach(r => {
+    const bc = {};
+    (by[r.k] || []).forEach(c => { const b = String(c.grp || ''); if (b) bc[b] = (bc[b] || 0) + 1; });
+    pool[r.k] = (by[r.k] || []).slice().sort((a, b) => (bc[String(b.grp || '')] || 0) - (bc[String(a.grp || '')] || 0));
+  });
+  const used = {};
+  const slots = [];
+  on.forEach(it => {
+    const k = npShotNeedKey(w, it);
+    const c0 = (pool[k] || []).find(c => !used[c.id]) || null;
+    if (c0) used[c0.id] = 1;
+    slots.push({ it: it, isCv: false, k: k, clip: c0 });
+  });
+  const cv = npCoverOf(w);
+  const cvOn = !!(cv && cv.on !== false);
+  let cvShort = false;
+  if (cvOn) {
+    const rest = photos.filter(c => !used[c.id]);
+    let c0 = null;
+    ['me', 'place', 'work', 'guest', 'result'].some(k => { c0 = rest.find(c => (by[k] || []).indexOf(c) >= 0) || null; return !!c0; });
+    if (!c0) c0 = rest[0] || null;
+    if (c0) used[c0.id] = 1; else cvShort = true;
+    slots.push({ it: cv, isCv: true, k: '', clip: c0 });
+  }
+  /* 缺口按「实际没分到照片的格」算：一张照片挂了两组时，两行都数它、但只能用一次 */
+  const miss = {};
+  slots.forEach(s => { if (!s.clip && !s.isCv) miss[s.k] = (miss[s.k] || 0) + 1; });
+  const short = rows.map(r => ({ k: r.k, n: r.n, need: r.need, have: r.have, short: miss[r.k] || 0 })).filter(r => r.short);
+  return { rows: rows, short: short, cvShort: cvShort, slots: slots, total: slots.length,
+           ok: !short.length && !cvShort && slots.every(s => !!s.clip) };
+}
+function npPhotoLibPlanShort(plan) {
+  if (!plan) return '';
+  const out = (plan.short || []).map(r => r.n + ' ' + r.short + ' 张');
+  if (plan.cvShort) out.push('封面 1 张');
+  return out.join(' · ');
+}
+function npPhotoLibPlanOkText(plan) {
+  if (!plan) return '';
+  const out = (plan.rows || []).map(r => r.n + ' ' + r.need);
+  if ((plan.slots || []).some(s => s.isCv)) out.push('封面 1');
+  return out.join(' · ');
+}
+/** 分镜台上那颗按钮的状态：缓存一份，素材库一改（npClipsWrite）就作废重算 */
+function npPhotoLibPlanCached(w) {
+  if (!w) return null;
+  if (_npPhotoLibPlan.arId === String(w.arId || '') && _npPhotoLibPlan.sig === npPhotoLibSig(w)) return _npPhotoLibPlan.plan;
+  return null;
+}
+function npPhotoLibEnsure(w) {
+  if (!w || _npPhotoLibPlan.busy) return;
+  if (_npPhotoLibPlan.arId === String(w.arId || '') && _npPhotoLibPlan.sig === npPhotoLibSig(w)) return;
+  _npPhotoLibPlan.busy = true;
+  (async () => {
+    let clips = [];
+    try { clips = await npClipsRead(); } catch (_) {}
+    const plan = npPhotoLibPlan(w, clips);
+    _npPhotoLibPlan = { arId: String(w.arId || ''), sig: npPhotoLibSig(w), plan: plan, busy: false };
+    const c = npActiveC();
+    if (c && _npWiz === w) npWizRender(c);
+  })().catch(() => { _npPhotoLibPlan.busy = false; });
+}
+/** 整篇铺：把这一篇每张都换成素材库里的照片（全实拍，一张 AI 图都不掺） */
+async function npDshFillFromLib(container) {
+  const w = _npWiz; if (!w || !w.shots) return;
+  if (_npImgGen && _npImgGen.running) { if (typeof toast === 'function') toast('正在出图——等这一轮完再换'); return; }
+  if (_npDshBusy) { if (typeof toast === 'function') toast('分镜还在切——切完再铺'); return; }
+  let clips = [];
+  try { clips = await npClipsRead(); } catch (_) {}
+  const plan = npPhotoLibPlan(w, clips);
+  _npPhotoLibPlan = { arId: String(w.arId || ''), sig: npPhotoLibSig(w), plan: plan, busy: false };
+  if (!plan.ok) { if (typeof toast === 'function') toast('素材还没齐：' + npPhotoLibPlanShort(plan) + '——补齐再按', 'error'); return; }
+  const had = plan.slots.filter(s => (s.it.imgs || []).length).length;
+  if (had && !confirm('这一遍会把现在这套里的 ' + had + ' 张图（连排好的字）全换成素材库里的照片。\n\n换？')) return;
+  const list = await npAsAssetsRead();
+  const junk = [];
+  for (const s of plan.slots) {
+    if (!s.clip) continue;
+    const it = s.it;
+    (it.imgs || []).forEach(a => junk.push(String(a)));
+    const oldPt = npPtResetOf(it);
+    if (oldPt) junk.push(oldPt);
+    const c = s.clip;
+    const aid = npAsId();
+    const nm = String(c.src || c.name || '素材库照片');
+    list.push({ id: aid, kind: 'local', ref: nm, name: nm, thumb: String(c.thumb || ''), w: c.w || 0, h: c.h || 0,
+                shotOf: String((w.arId || '') + '#' + (s.isCv ? 'cv' : String(it.id || ''))), addedAt: Date.now() });
+    try {
+      let b = await npCaseGet('asprev:' + String(c.id));
+      if (!b && c.thumb) b = npDataUrlBlob(c.thumb);
+      if (b) await npCasePut('asprev:' + aid, b);
+    } catch (_) {}
+    it.imgs = [aid];
+    it.imgClip = String(c.id);
+    it.imgGrp = String(c.grp || '');
+    it.imgSrc = 'lib';
+  }
+  const uniq = [];
+  junk.forEach(j => { if (j && uniq.indexOf(j) < 0) uniq.push(j); });
+  if (uniq.length) {
+    const keep = list.filter(a => !(a && uniq.indexOf(String(a.id)) >= 0));
+    list.length = 0; keep.forEach(a => list.push(a));
+    for (const j of uniq) { try { await npCaseDel('asprev:' + j); } catch (_) {} }
+  }
+  await npAsAssetsWrite(list);
+  if (uniq.length) { try { await npPubClearFiles(w.arId); } catch (_) {} }   // 换过图：待发区那份是旧的，清掉
+  await npShotImgIndex(); npShotsCompose(w); npImgSync(w); await npArchiveSave(w);
+  if (typeof toast === 'function') toast('从素材库铺好了 ' + plan.total + ' 张（全是你的照片）');
+  const c0 = container || npActiveC();
+  if (c0 && npS() === w) await npWizRender(c0);
+}
+/** 这一篇的图从哪来：全 AI / 全实拍 / 混着（混了要标黄，请人走上面两颗按钮） */
+function npImgSrcMix(w) {
+  const slots = [];
+  const cv = npCoverOf(w);
+  if (cv && cv.on !== false) slots.push(cv);
+  npShotsOn(w).forEach(it => slots.push(it));
+  let ai = 0, lib = 0, own = 0, unk = 0, empty = 0;
+  slots.forEach(it => {
+    if (!((it.imgs || []).length)) { empty++; return; }
+    const s = String(it.imgSrc || '');
+    if (s === 'ai') ai++;
+    else if (s === 'lib') lib++;
+    else if (s === 'own') own++;
+    else if (String(it.imgClip || '')) lib++;
+    else unk++;
+  });
+  const real = lib + own + unk;
+  return { ai: ai, lib: lib, own: own, unk: unk, empty: empty, total: slots.length,
+           allAi: ai > 0 && ai === slots.length, mixed: ai > 0 && real > 0 };
+}
+/** 素材库一条照片归哪几组（相册里标组名用） */
+function npClipGroupNames(clip) {
+  let tags = [];
+  try { tags = npLibTagsAll(clip, null); } catch (_) { tags = (clip && clip.tags) || []; }
+  return (typeof npPhotoGroupsOfTags === 'function' ? npPhotoGroupsOfTags(tags) : []).map(k => (npPhotoGroup(k) || {}).n).filter(Boolean);
+}
+/** 把素材库这张照片贴到这一张分镜上：画面仓新记一条（素材库那条不动），预览图一并搬一份 */
+async function npDshUseClip(shotId, clipId) {
+  const w = _npWiz; if (!w || !w.shots) return;
+  const it = npShotOf(w, shotId); if (!it) return;
+  let clip = null;
+  try { clip = (await npClipsRead()).find(c => c && String(c.id) === String(clipId)); } catch (_) {}
+  if (!clip) { if (typeof toast === 'function') toast('这张照片在素材库里找不到了——重开相册再挑一次', 'error'); return; }
+  const list = await npAsAssetsRead();
+  const oldAid = (it.imgClip && (it.imgs || []).length === 1) ? String(it.imgs[0]) : '';
+  const oldPt = npPtResetOf(it);   // 换底图＝以前排的字作废
+  const junk = [oldAid, oldPt].filter(Boolean);
+  if (junk.length) {   // 换掉上一张从库里挑的：旧引用从画面仓摘掉，不堆垃圾
+    for (let i = list.length - 1; i >= 0; i--) if (junk.indexOf(String(list[i] && list[i].id)) >= 0) list.splice(i, 1);
+    for (const j of junk) { try { await npCaseDel('asprev:' + j); } catch (_) {} }
+  }
+  const aid = npAsId();
+  const nm = String(clip.src || clip.name || '素材库照片');
+  list.push({ id: aid, kind: 'local', ref: nm, name: nm, thumb: String(clip.thumb || ''), w: clip.w || 0, h: clip.h || 0,
+              shotOf: String((w.arId || '') + '#' + shotId), addedAt: Date.now() });
+  try { const b = await npCaseGet('asprev:' + String(clip.id)); if (b) await npCasePut('asprev:' + aid, b); } catch (_) {}
+  await npAsAssetsWrite(list);
+  it.imgs = [aid];
+  it.imgClip = String(clip.id);
+  it.imgGrp = String(clip.grp || '');
+  it.imgSrc = 'lib';
+  await npShotImgIndex(); npShotsCompose(w); npImgSync(w); await npArchiveSave(w);
+  const i2 = npShotsOn(w).indexOf(it);
+  if (typeof toast === 'function') toast((i2 >= 0 ? '第 ' + (i2 + 1) + ' 张' : '这一张') + '贴上「' + nm + '」了');
+  const c = npActiveC();
+  if (c && npS() === w) await npWizRender(c);
+}
+/** 相册：只放照片，默认停在这张要的那组；顶上能切组，底下一键补拍 */
+async function npDshPickFromLib(shotId) {
+  const w = _npWiz; if (!w || !w.shots) return;
+  const it = npShotOf(w, shotId); if (!it) return;
+  const idx = npShotsOn(w).indexOf(it) + 1;
+  const needK = npShotNeedKey(w, it);
+  let photos = [];
+  const reload = async () => {
+    let clips = [];
+    try { clips = await npClipsRead(); } catch (_) {}
+    photos = (clips || []).filter(c => c && c.imgOnly);
+  };
+  await reload();
+  let grp = '';
+  try { const cnt0 = npPhotoCounts(photos, c => npLibTagsAll(c, null)); grp = cnt0[needK] ? needK : ''; } catch (_) { grp = ''; }
+  const base = npShotBatchBase(w);
+  const chipsHtml = () => {
+    let cnt = {};
+    try { cnt = npPhotoCounts(photos, c => npLibTagsAll(c, null)); } catch (_) {}
+    const one = (k, n, c) => '<button type="button" data-pick-grp="' + npArAttr(k) + '" style="border:1px solid ' +
+      (grp === k ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:999px;background:' + (grp === k ? 'var(--c-brand-soft)' : '#fff') +
+      ';color:' + (grp === k ? 'var(--c-brand-text)' : (c ? '#555' : '#aaa')) + ';font-size:11.5px;font-weight:700;padding:3px 10px;cursor:pointer;">' + esc(n) + ' ' + c + '</button>';
+    return one('', '全部', photos.length) + NP_PHOTO_GROUPS.map(g => one(g.k, g.n, cnt[g.k] || 0)).join('');
+  };
+  const gridHtml = () => {
+    const list = grp ? photos.filter(c => npClipGroupNames(c).indexOf((npPhotoGroup(grp) || {}).n) >= 0) : photos;
+    if (!list.length) {
+      return '<div style="padding:22px 10px;text-align:center;font-size:12px;color:#6b7280;">' +
+        (photos.length ? '这一组还没照片——下面「＋ 补这组」传几张进来' : '素材库里还没有照片——用下面「＋ 补这组」传几张进来') + '</div>';
+    }
+    return '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + list.map(c => {
+      const gs = npClipGroupNames(c).join(' · ') || '没标组';
+      const on2 = String(it.imgClip || '') === String(c.id);
+      const same = !!(base && String(c.grp || '') && String(c.grp) === base);
+      const other = !!(base && String(c.grp || '') && String(c.grp) !== base);
+      const tag = on2 ? '用在这张' : (same ? '同一批' : (other ? '另一批' : ''));
+      return '<button type="button" data-pick-clip="' + npArAttr(c.id) + '" title="' + npArAttr(gs + (tag ? ' · ' + tag : '')) + '" style="width:96px;padding:0;border:2px solid ' +
+        (on2 ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:8px;background:#fff;overflow:hidden;cursor:pointer;">' +
+        '<div style="width:92px;height:92px;' + (c.thumb ? 'background:url(' + npArAttr(c.thumb) + ') center/cover;' : 'background:#f3f4f6;') + '"></div>' +
+        '<div style="font-size:10.5px;padding:3px 4px;color:' + (on2 ? 'var(--c-brand-text)' : (other ? '#b45309' : '#374151')) + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+          esc(tag || gs) + '</div>' +
+      '</button>';
+    }).join('') + '</div>';
+  };
+  const body = () => '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">' + chipsHtml() + '</div>' +
+    '<div data-pick-grid style="max-height:47vh;overflow:auto;padding-right:2px;">' + gridHtml() + '</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">' +
+      '<label style="border:1px dashed var(--line);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--c-brand-text);cursor:pointer;">＋ 补这组（拍好直接传）' +
+        '<input type="file" multiple accept="image/*" data-pick-add hidden></label>' +
+      '<span style="font-size:11.5px;color:#6b7280;">只用这一组自己的照片，别的组不顶替；同一次传的算同一批（同场地、同身衣服）。</span>' +
+    '</div>';
+  npLibModalOpen(
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+      '<b style="font-size:13px;">🖼 给第 ' + idx + ' 张挑一张</b>' +
+      '<span style="font-size:11.5px;color:#b45309;background:#fff7ed;border:1px solid #fed7aa;border-radius:999px;padding:2px 9px;">这张要「' + esc(npShotNeedName(w, it)) + '」</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button type="button" data-pick-close style="border:0;background:transparent;font-size:15px;color:#888;cursor:pointer;">✕</button>' +
+    '</div>' +
+    '<div data-pick-body>' + body() + '</div>',
+    (sheet, m) => {
+      const repaint = () => { const box = sheet.querySelector('[data-pick-body]'); if (box) box.innerHTML = body(); };
+      sheet.addEventListener('click', async (e) => {
+        const cb = e.target.closest ? e.target.closest('[data-pick-close]') : null;
+        if (cb) { m.close(); return; }
+        const chip = e.target.closest ? e.target.closest('[data-pick-grp]') : null;
+        if (chip) { grp = String(chip.getAttribute('data-pick-grp') || ''); repaint(); return; }
+        const pic = e.target.closest ? e.target.closest('[data-pick-clip]') : null;
+        if (pic) { const cid = String(pic.getAttribute('data-pick-clip') || ''); m.close(); await npDshUseClip(shotId, cid); }
+      });
+      sheet.addEventListener('change', async (e) => {
+        const inp = e.target;
+        if (!inp || !inp.hasAttribute || !inp.hasAttribute('data-pick-add')) return;
+        const arr = inp.files ? Array.prototype.slice.call(inp.files) : [];
+        if (!arr.length) return;
+        const before = photos.map(c => String(c.id));
+        await npLibPhotoAdd(null, needK, arr);   // 入库＋盖「同一批」戳；页面这侧不用刷
+        await reload();
+        const fresh = photos.filter(c => before.indexOf(String(c.id)) < 0);
+        if (fresh.length) { m.close(); await npDshUseClip(shotId, fresh[0].id); return; }
+        repaint();
+      });
+    }
+  );
+}
+/* ── ✍ 照片上排字（2026-11-08 照片图文第 3 步）──────────────────────────────
+   照片本身不动：另存一张「排好字的」挂在分镜上（txtImg），原图留在 imgs 里——
+   换位置、重排、发出去都读排好的那张；想改随时回来重排。
+   算法在 lib/photo-text.js（跟老板点头的 demo 同一版）。 */
+let _npPtBusy = false;
+
+/** 这一张显出来／发出去用哪张：排过字就用排好的，没排过用原图 */
+function npShotShowAid(it) {
+  const t = String((it && it.txtImg) || '');
+  if (t) return t;
+  const ids = (it && it.imgs) || [];
+  return ids.length ? String(ids[ids.length - 1]) : '';
+}
+/** 这张要排的那行字：正文里这一拍那句优先，没有才退到旁白／这一拍 */
+function npShotTextOf(it) {
+  const main = String((it && it.copyMain) || '').trim();
+  if (main) return npPtPick(main);
+  const ct = String((it && it.copyText) || '').trim();
+  if (ct) return npPtPick(ct);
+  const aside = String((it && it.copyAside) || '').trim();
+  if (aside) return npPtPick(aside);
+  return npPtPick(String((it && (it.beat || it.text)) || '').trim());
+}
+function npPtPosOf(it) { return String((it && it.txtPos) || '') === 'top' ? 'top' : 'bottom'; }
+/** 换了底图：图上那套排好的字就作废了（返回旧图 id，调用方顺手清掉） */
+function npPtResetOf(it) {
+  if (!it) return '';
+  const old = String(it.txtImg || '');
+  it.txtImg = ''; it.txtPos = ''; it.txtTxt = '';
+  return old;
+}
+/** 要排的那几格：封面（要出且有图）在前，再按图 1、2、3…——没照片的格不进（先贴照片） */
+function npPtSlots(w) {
+  const out = [];
+  const cv = npCoverOf(w);
+  if (cv && cv.on !== false && (cv.imgs || []).length) out.push({ it: cv, isCv: true, label: '封面' });
+  npShotsOn(w).forEach((it, i) => {
+    if (!(it.imgs || []).length) return;
+    out.push({ it: it, isCv: false, label: '第 ' + (i + 1) + ' 张' });
+  });
+  return out;
+}
+/** 画面仓里摘掉几张（换排版时清旧的，不堆垃圾） */
+async function npPtAssetDrop(aids) {
+  const drop = (aids || []).map(String).filter(Boolean);
+  if (!drop.length) return;
+  const list = await npAsAssetsRead();
+  const keep = list.filter(a => !(a && drop.indexOf(String(a.id)) >= 0));
+  if (keep.length !== list.length) await npAsAssetsWrite(keep);
+  for (const id of drop) { try { await npCaseDel('asprev:' + id); } catch (_) {} }
+}
+/** 排一格：取原图 → 排字 → 存成画面仓一条 → 记在分镜上（老的排字图交给调用方清） */
+async function npPtMakeSlot(w, slot, pos) {
+  const it = slot && slot.it;
+  if (!w || !it) return { ok: false, why: '找不到这一张' };
+  const srcId = String(((it.imgs || []).slice(-1)[0]) || '');
+  if (!srcId) return { ok: false, why: '这张还没贴照片' };
+  const text = slot.isCv ? npPtPick(npCoverText(w)) : npShotTextOf(it);
+  if (!text) return { ok: false, why: '这张还没有能排的字——回「✎ 改这张」写一句' };
+  let assets = [];
+  try { assets = await npAsAssetsRead(); } catch (_) {}
+  const src = await npLongAssetBlob(srcId, assets);
+  if (!src || !src.blob) return { ok: false, why: '这张照片的图取不回来（要重出一遍）' };
+  let img = null;
+  try { img = await npPtLoad(src.blob); } catch (_) { return { ok: false, why: '这张照片读不出来' }; }
+  const made = npPtCanvas(img, text, pos);
+  if (!made.info || !made.info.ok) return { ok: false, why: (made.info && made.info.why) || '排字没成' };
+  let blob = null;
+  try { blob = await npPtBlob(made.canvas, 0.92); } catch (_) { return { ok: false, why: '排好的图存不下来' }; }
+  let t = null;
+  try { t = { thumb: npPtThumb(made.canvas, 160), w: NP_PT_W, h: NP_PT_H }; } catch (_) { return { ok: false, why: '缩略图没做出来' }; }
+  const aid = npAsId();
+  const nm = '排字-' + slot.label;
+  assets.push({ id: aid, kind: 'local', ref: nm, name: nm, thumb: t.thumb, w: NP_PT_W, h: NP_PT_H,
+                shotOf: String((w.arId || '') + '#' + String(it.id || '')), addedAt: Date.now(), pt: true });
+  await npAsAssetsWrite(assets);
+  try { await npCasePut('asprev:' + aid, blob); } catch (_) {}
+  const old1 = String(it.txtImg || '');
+  it.txtImg = aid;
+  it.txtPos = pos === 'top' ? 'top' : 'bottom';
+  it.txtTxt = text;
+  return { ok: true, info: made.info, aid: aid, old: old1, text: text };
+}
+/** 排完落档：清旧图、重算索引、存档案；待发区里还是排字前搬的那份就清掉（标待发时按排好的重搬） */
+async function npPtSaveAll(w, olds) {
+  if (olds && olds.length) { try { await npPtAssetDrop(olds); } catch (_) {} }
+  try { await npShotImgIndex(); npShotsCompose(w); npImgSync(w); await npArchiveSave(w); } catch (_) {}
+  try {
+    const m = await npPubFilesAll();
+    const meta = m[String(w.arId || '')];
+    if (meta && String(meta.src || '') === 'archive') await npPubClearFiles(w.arId);
+  } catch (_) {}
+}
+/** ✍ 一键排字：所有有照片的格（含封面）按各自记的位置排一遍，再打开逐张看 */
+async function npDshTypeAll() {
+  const w = _npWiz;
+  if (!w || !w.shots || _npPtBusy) return;
+  const slots = npPtSlots(w);
+  if (!slots.length) { if (typeof toast === 'function') toast('还没有照片——先「⬆ 传图」或「🖼 从素材库挑」', 'error'); return; }
+  _npPtBusy = true;
+  const olds = [];
+  let ok = 0, bad = '';
+  try {
+    for (const s of slots) {
+      try {
+        const r = await npPtMakeSlot(w, s, npPtPosOf(s.it));
+        if (r && r.ok) { ok++; if (r.old) olds.push(r.old); }
+        else if (r && r.why) bad = r.why;
+      } catch (e) { bad = String((e && e.message) || e); }
+    }
+    if (ok) await npPtSaveAll(w, olds);
+  } finally { _npPtBusy = false; }
+  if (!ok) { if (typeof toast === 'function') toast('没排成：' + (bad || '照片读不出来'), 'error'); return; }
+  const c = npActiveC();
+  if (c && npS() === w) await npWizRender(c);
+  if (typeof toast === 'function') toast(ok + ' 张的字排好了' + (bad ? '（' + bad + '）' : '') + '——逐张看一遍');
+  npDshPtPreview(0);
+}
+/** 逐张看：大字预览＋「字放上／放下」＋单张重排；图上压的是哪句也摊出来 */
+function npDshPtPreview(start) {
+  const w = _npWiz;
+  if (!w || !w.shots) return;
+  const slots = npPtSlots(w);
+  if (!slots.length) { if (typeof toast === 'function') toast('还没有照片——先传图或从素材库挑', 'error'); return; }
+  let i = Math.max(0, Math.min(slots.length - 1, Number(start) || 0));
+  let busy = false;
+  const noPic = npShotsOn(w).map((it, k) => ((it.imgs || []).length ? '' : ('第 ' + (k + 1) + ' 张'))).filter(Boolean);
+  const shell =
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+      '<b style="font-size:13px;">✍ 字排到照片上</b>' +
+      '<span class="note-xs" data-pt-count></span>' +
+      '<span style="flex:1;"></span>' +
+      '<button type="button" data-pt-close style="border:0;background:transparent;font-size:15px;color:#888;cursor:pointer;">✕</button>' +
+    '</div>' +
+    '<div data-pt-body></div>';
+  npLibModalOpen(shell, (sheet, m) => {
+    const body = sheet.querySelector('[data-pt-body]');
+    const cntEl = sheet.querySelector('[data-pt-count]');
+    const say = (t) => { if (typeof toast === 'function') toast(t); };
+    const paint = async () => {
+      const s = slots[i], it = s.it;
+      const total = slots.length;
+      if (cntEl) cntEl.textContent = s.label + ' · 第 ' + (i + 1) + '/' + total + ' 张' + (s.isCv ? '（发出去第一张就是它）' : '');
+      body.innerHTML = '<div style="padding:18px 4px;font-size:12px;color:#6b7280;">正在排…</div>';
+      const srcId = String(((it.imgs || []).slice(-1)[0]) || '');
+      const stored = String(it.txtTxt || '');
+      const nowText = s.isCv ? npPtPick(npCoverText(w)) : npShotTextOf(it);
+      const shown = stored || nowText;
+      const pos = npPtPosOf(it);
+      let info = null, img = null;
+      try {
+        const assets = await npAsAssetsRead();
+        const src = await npLongAssetBlob(srcId, assets);
+        if (src && src.blob) img = await npPtLoad(src.blob);
+      } catch (_) {}
+      if (img) { const made = npPtCanvas(img, shown, pos); info = made.info; }
+      const pic = img
+        ? '<canvas width="' + NP_PT_W + '" height="' + NP_PT_H + '" style="width:100%;max-width:320px;height:auto;display:block;border-radius:10px;background:#111;"></canvas>'
+        : '<div style="width:100%;max-width:320px;aspect-ratio:4/5;border-radius:10px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:12px;color:#9ca3af;">图取不回来</div>';
+      const cam = info && info.ok ? (info.dark ? '暗底' : (info.bright ? '亮底' : '中间亮度')) : '';
+      const word = info && info.ink === '#ffffff' ? '白字' : '深字';
+      const okc = info && info.ok && info.contrast >= 4.5;
+      const infoHtml = !info ? '' : (!info.ok
+        ? '<div style="font-size:12px;color:#b91c1c;font-weight:700;">' + esc(info.why || '排不下') + '</div>'
+        : '<div style="font-size:12px;color:#374151;line-height:1.7;"><b>' + cam + '</b> → ' + word +
+          ' · 字号 ' + info.fs + ' · ' + info.lines + ' 行' +
+          (info.alpha > 0 ? ' · 压底 ' + Math.round(info.alpha * 100) + '%' : ' · 不压底') + '<br>' +
+          (okc ? '<span style="color:#15803d;font-weight:700;">✓ 清楚 ' + info.contrast.toFixed(1) + ':1</span>'
+               : '<span style="color:#b91c1c;font-weight:700;">✗ 还差一点 ' + info.contrast.toFixed(1) + ':1——换个位置再试</span>') +
+          '</div>');
+      const stale = !!(stored && nowText && stored !== nowText);
+      const txtHtml = '<div style="font-size:12px;color:#111827;line-height:1.7;margin-top:8px;">图上这行字：<b>' + esc(shown || '（还没字）') + '</b></div>' +
+        (!stored ? '<div class="note-xs" style="margin-top:4px;color:#b45309;">这张还没排——点下面「排这张」。</div>' : '') +
+        (stale ? '<div class="note-xs" style="margin-top:4px;color:#b45309;">稿子改过了：图上还是旧那句，点「↻ 重排这张」换成新的。</div>' : '') +
+        '<div class="note-xs" style="margin-top:4px;">要换这句，回「✎ 改这张」改原句，再回来重排。</div>';
+      const posBtn = (p, t) => '<button type="button" data-pt-pos="' + p + '"' + (pos === p ? ' disabled' : '') +
+        ' style="border:1px solid ' + (pos === p ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;cursor:' +
+        (pos === p ? 'default' : 'pointer') + ';background:' + (pos === p ? 'var(--c-brand-soft)' : '#fff') + ';color:' + (pos === p ? 'var(--c-brand-text)' : '#374151') + ';">' + t + '</button>';
+      const nav = (d, t, off) => '<button type="button" data-pt-nav="' + d + '"' + (off ? ' disabled' : '') +
+        ' style="border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:' +
+        (off ? '#c3c8d0' : '#374151') + ';cursor:' + (off ? 'default' : 'pointer') + ';">' + t + '</button>';
+      body.innerHTML =
+        '<div style="display:flex;gap:14px;flex-wrap:wrap;">' +
+          '<div style="flex:0 0 320px;max-width:100%;">' + pic + '</div>' +
+          '<div style="flex:1;min-width:210px;">' +
+            infoHtml + txtHtml +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;">' + posBtn('top', '字放上') + posBtn('bottom', '字放下') +
+              '<button type="button" data-pt-re style="border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:700;background:#fff;color:#374151;cursor:pointer;">↻ 重排这张</button></div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;border-top:1px dashed var(--line);padding-top:10px;">' +
+              nav(-1, '‹ 上一张', i <= 0) + nav(1, '下一张 ›', i >= slots.length - 1) + '</div>' +
+            (noPic.length ? '<div class="note-xs" style="margin-top:8px;color:#b45309;">另外 ' + noPic.join('、') + ' 还没照片——先贴上再来排。</div>' : '') +
+          '</div>' +
+        '</div>';
+      const cvEl = body.querySelector('canvas');
+      if (cvEl && img) { const ctx = cvEl.getContext('2d'); npPtCompose(ctx, img, shown, pos); }
+    };
+    const redo = async (pos) => {
+      if (busy) return;
+      const s = slots[i], it = s.it;
+      busy = true;
+      body.innerHTML = '<div style="padding:18px 4px;font-size:12px;color:#6b7280;">正在重排…</div>';
+      const olds = [];
+      try {
+        const r = await npPtMakeSlot(w, s, pos);
+        if (r && r.ok) { if (r.old) olds.push(r.old); await npPtSaveAll(w, olds); }
+        else say('没排成：' + ((r && r.why) || '照片读不出来'));
+      } catch (e) { say('没排成：' + ((e && e.message) || e)); }
+      busy = false;
+      try {
+        const c = npActiveC();
+        if (c && npS() === w) await npWizRender(c);
+      } catch (_) {}
+      await paint();
+    };
+    body.addEventListener('click', async (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      const pb = t.closest('[data-pt-pos]');
+      if (pb && !pb.disabled) { await redo(String(pb.getAttribute('data-pt-pos') || 'bottom')); return; }
+      if (t.closest('[data-pt-re]')) { await redo(npPtPosOf(slots[i].it)); return; }
+      const nb = t.closest('[data-pt-nav]');
+      if (nb && !nb.disabled) {
+        i = Math.max(0, Math.min(slots.length - 1, i + (Number(nb.getAttribute('data-pt-nav')) || 0)));
+        await paint();
+      }
+    });
+    sheet.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t && t.closest && t.closest('[data-pt-close]')) m.close();
+    });
+    paint();
+  });
+}
+
 /** 📋 点一张小图选中（再点一下取消）：粘贴 / 换图就进这张 */
 function npDshPickSel(container, i) {
   _npDshSel = (_npDshSel === i) ? -1 : i;
@@ -3995,6 +5007,7 @@ async function npDshUpMany(container, files) {
                   shotOf: String((w.arId || '') + '#' + items[i].id), addedAt: Date.now() });
       if (!Array.isArray(items[i].imgs)) items[i].imgs = [];
       items[i].imgs.push(aid);
+      items[i].imgSrc = 'own'; items[i].imgClip = ''; items[i].imgGrp = '';
       n++;
     } catch (e) { bad = String((e && e.message) || e); }
   }
@@ -4023,6 +5036,21 @@ function npDshMotif(container, k) {
   if (typeof toast === 'function') toast(k ? '这一套按「' + k + '」摆画面——每张提示词重拼了' : '跟账号默认走了');
   npWizRender(container || npActiveC());
 }
+/** 换这一篇的版面套（卡片写法那四套）：只重拼提示词，不重切分镜、不动已经出的图 */
+function npDshPack(container, k) {
+  const w = _npWiz; if (!w || !w.shots) return;
+  const own = npLookShape(w.shots.look);
+  const nextO = Object.assign({}, own);
+  if (k) nextO.pack = k; else delete nextO.pack;
+  npLookApply(w, nextO);
+  npShotsCompose(w);
+  npImgSync(w);
+  npArchiveTouch(w);
+  const pk = npCardPackOf(w);
+  if (typeof toast === 'function') toast(k ? '这一篇按「' + pk.k + ' ' + pk.t + '」出图——每张提示词重拼了（已出的图不动）' : '这一篇跟默认走了（A 品牌色块）');
+  npWizRender(container || npActiveC());
+  npArchiveSave(w);
+}
 async function npDshNext(container) {
   const w = _npWiz; if (!w || !w.shots) return;
   await npShotImgIndex();
@@ -4038,10 +5066,9 @@ async function npDshDone() {
   const on = npShotsOn(w);
   const cv = npCoverOf(w) || {};
   const gap = on.filter(x => !((x.imgs || []).length)).length + ((cv.on !== false && !(cv.imgs || []).length) ? 1 : 0);
-  const isIp = npIsI(w);   // 🎭 IP 篇：排期方式还没定——不自动找位子，提示老板自己挑
   switchMainTab('noteArchive');
   if (typeof toast === 'function') toast(gap > 0 ? ('存好了——还缺 ' + gap + ' 张，档案「🖼 出图」随时回来补')
-    : (isIp ? '这套齐了——先在「🆕 写好等排期」里「📅 自己选位子」挑个位子排上' : '这套齐了——排了日子就到点自己发，没排就点「🚀 发布」'));
+    : '这套齐了——排了日子就到点自己发，没排就点「🚀 发布」');
 }
 /** 封面：出 / 不出 */
 function npDshCvOn(v, container) {
@@ -4057,9 +5084,18 @@ function npDshCvOn(v, container) {
 function npDshCvGen(container) {
   const w = _npWiz; if (!w || !w.shots) return;
   const cv = npCoverOf(w);
-  const it0 = npShotsOn(w)[0] || {};
-  cv.prompt = npCoverPromptCompose(w, '画面照着这篇的场子：' + String(it0.topic || '现场实拍') +
-    '，第一眼要让人停下手指点进来；必须出现的元素照第 1 张那一份。');
+  if (npCardModeOf(w)) {
+    const cc = npCardCoverOf(w) || {};
+    if (!String(cv.copy || '').trim() && String(cc.title || '').trim()) cv.copy = String(cc.title).trim();
+    if (!String(cv.sub || '').trim() && cc.lines && cc.lines[0]) cv.sub = String(cc.lines[0]).trim();
+    cv.cardKey = String(cv.copy || '').trim() + '|' + String(cv.sub || '').trim();
+    cv.prompt = npCardCoverPrompt(w);
+    cv.src = 'card';
+  } else {
+    const it0 = npShotsOn(w)[0] || {};
+    cv.prompt = npCoverPromptCompose(w, '画面照着这篇的场子：' + String(it0.topic || '现场实拍') +
+      '，第一眼要让人停下手指点进来；必须出现的元素照第 1 张那一份。');
+  }
   npShotsCompose(w);
   npArchiveTouch(w);
   if (typeof toast === 'function') toast('封面提示词拼好了——复制去生成，或先自己改那格');
@@ -4079,6 +5115,8 @@ function npDshCvPromptSet(v) {
   const w = _npWiz; if (!w || !w.shots) return;
   const cv = npCoverOf(w); if (!cv) return;
   cv.prompt = String(v || '');
+  cv.src = 'manual';
+  cv.cardKey = '';
   npShotsCompose(w);
   npArchiveTouch(w);
 }
@@ -4121,6 +5159,100 @@ function npImgQuotaEnsure(force) {
 }
 /** 老分镜（没有「这一拍」的老档）的单张提示词：组头交代「同一套拍法、同一个人」，
  *  下面就是那一张的正文/说明/画面/背景/机位/文案（带尺寸，单发也够）。 */
+/** 这一篇是不是「卡片式」写法（对比 / 问答）：是就返回写法信息，出图不切分幕、照卡排。
+ *  图怎么出只认写法——选题格里「怎么发」选的是视频 / 长文，成品最后选了图文，图照样得是卡片（2026-11-07 修） */
+function npCardModeOf(w) {
+  const pi = w && w.planItem;
+  if (!pi || pi.src !== 'industry' || typeof TopicTable === 'undefined') return null;
+  try {
+    const fi = TopicTable.formInfo(pi.form || 'list', pi.variant || '');
+    return (fi && fi.img && fi.img.mode === 'card') ? fi : null;
+  } catch (_) { return null; }
+}
+/** 卡片式写法但稿子里没带卡片（老稿，或选题格当时选的不是图文）：让后台按正文排一次卡。
+ *  排上了就写进 w.cards；排不上返回 null——调用方报错，绝不退回分幕。 */
+async function npCardsEnsure(w, copy, title) {
+  const have = (w && Array.isArray(w.cards)) ? w.cards.filter(Boolean) : [];
+  if (have.length) return have;
+  const pi = (w && w.planItem) || {};
+  let r = null;
+  try {
+    r = await chrome.runtime.sendMessage({ action: 'genNoteShots', data: {
+      platform: npPid(w),
+      title: String(title || (_npNote && _npNote.title) || ((w.draft && w.draft.titles) || [])[0] || ''),
+      script: String(copy || '').trim(),
+      form: String(pi.form || ''),
+      variant: String(pi.variant || ''),
+      carrier: 'image',
+      cardsOnly: true,
+    } });
+  } catch (_) { return null; }
+  const cs = (r && r.ok !== false && Array.isArray(r.cards)) ? r.cards : [];
+  const got = cs.map(c => ({
+    role: String((c && c.role) || ''),
+    title: String((c && c.title) || ''),
+    lines: (Array.isArray(c && c.lines) ? c.lines : []).map(x => String(x || '').trim()).filter(Boolean),
+    dim: String((c && c.dim) || ''),
+    cols: (Array.isArray(c && c.cols) ? c.cols : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 4),
+  })).filter(c => c.role || c.title || c.lines.length);
+  if (!got.length) return null;
+  w.cards = got;
+  return got;
+}
+/** 这一篇的写法根本不出图（清单 → 长文）：是就返回写法信息，分镜站不接 */
+function npNoImgFormOf(w) {
+  const pi = w && w.planItem;
+  if (!pi || pi.src !== 'industry' || typeof TopicTable === 'undefined') return null;
+  try {
+    const fi = TopicTable.formInfo(pi.form || 'list', pi.variant || '');
+    return (fi && fi.img && fi.img.mode === 'none') ? fi : null;
+  } catch (_) { return null; }
+}
+/** 这一篇是不是分幕的叙事写法（讲故事 / 吐槽）：是就返回写法 key。
+ *  一张图＝一拍，正文里那一整段原样写进画面（2026-11-07 老板照 demo 拍）；同样只认写法、不看选题格的载体 */
+function npBeatFormOf(w) {
+  const pi = w && w.planItem;
+  if (!pi || pi.src !== 'industry' || typeof TopicTable === 'undefined') return '';
+  try {
+    const fi = TopicTable.formInfo(pi.form || 'list', pi.variant || '');
+    return (fi && (fi.key === 'story' || fi.key === 'rant')) ? fi.key : '';
+  } catch (_) { return ''; }
+}
+/** 这格选这个写法的理由：写稿提示词里【这一篇的写法】后面那一句 */
+function npFormWhyOf(w) {
+  const pi = w && w.planItem;
+  if (!pi || pi.src !== 'industry' || typeof TopicTable === 'undefined') return '';
+  try { return TopicTable.whyFor(pi, pi.form || 'list'); } catch (_) { return ''; }
+}
+/** 封面卡：cards 里 role 是「封面」的那一张（跟配图分开——封面只出一次，不再当配图重出） */
+function npCardCoverOf(w) {
+  const cs = (w && Array.isArray(w.cards)) ? w.cards : [];
+  return cs.find(c => /封面/.test(String((c && c.role) || ''))) || null;
+}
+/** 卡片 → 画面表里的一行。内容只放落档字段（text / desc / copyMain / role），序列化不会丢 */
+function npCardShotsOf(cards, fi) {
+  const roles = ((fi && fi.img && Array.isArray(fi.img.roles)) ? fi.img.roles : []).filter(r => !/封面/.test(String(r || '')));
+  const inner = (Array.isArray(cards) ? cards : []).filter(c => !/封面/.test(String((c && c.role) || '')));
+  return inner.map((c, i) => {
+    const title = String((c && c.title) || '');
+    const lines = (Array.isArray(c && c.lines) ? c.lines : []).map(x => String(x || '').trim()).filter(Boolean);
+    return {
+      id: npShotId(),
+      text: title || String((c && c.role) || ('第 ' + (i + 1) + ' 张')),
+      keySid: '', keyText: '',
+      form: '', desc: lines.join('\n'),
+      lead: '', beat: '', delta: '', where: '', view: '卡片', sub: '',
+      copyText: title, copyMain: title, copyAside: '', copyAt: '',
+      dim: String((c && c.dim) || ''),
+      cols: (Array.isArray(c && c.cols) ? c.cols : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 4),
+      scene: '', act: '', face: '', chars: [],
+      role: String((c && c.role) || roles[i] || ('第 ' + (i + 1) + ' 张')),
+      topic: '', prompt: '',
+      cap: VisualMotif.captionShape(null), clock: false, off: false, dlock: false,
+      sids: [], cands: [], pick: -1, imgs: [],
+    };
+  });
+}
 function npImgPromptShotLegacy(w, it, i, total) {
   const look = npLookOf(w);
   const st = npShotStyle(look);
@@ -4148,6 +5280,7 @@ function npImgPromptShotLegacy(w, it, i, total) {
 /** 单张的提示词（2026-11-03 定）：一张图＝一条自带全部信息的提示词——主角、故事、场景、风格、配文
  *  都在这条里写死，不靠「照组头」「跟整组一样」；每张单独发给 AI，一次只出一张图。 */
 function npImgPromptShot(w, it, i, total) {
+  if (it && !String(it.beat || '').trim() && npCardModeOf(w)) return npImgPromptCard(w, it, i, total);
   const beat = String((it && it.beat) || '').trim();
   if (!beat) return npImgPromptShotLegacy(w, it, i, total);
   const look = npLookOf(w);
@@ -4219,6 +5352,15 @@ function npImgPromptShot(w, it, i, total) {
   if (tone) styleBits.push('色调：' + tone);
   styleBits.push('整张统一这一种画法，人物、背景、道具都按画的处理，不要真人照片、不要写实摄影、不要混进真实皮肤和布料质感');
   lines.push('【风格】' + styleBits.join('；') + '。');
+  if (npBeatFormOf(w)) {
+    const sk = npStorySkin(w, beat);
+    lines.push('【版面】' + sk.look + '。');
+    lines.push('【配色】' + sk.colors + '。');
+    if (sk.ip && !leads.some(l => l && l.id === sk.ip.id)) {
+      lines.push('【出镜人】画面里那个「我」就是这个号本人（' + sk.ip.name + '）：' + sk.ip.line +
+        '。只画这一个本人，别的大人不许套这个形象，尤其别给哨子；表情永远温和、平静或带笑，不许画成生气、皱眉、瞪眼、凶脸。');
+    }
+  }
   if (face) lines.push('【表情】' + face.replace(/[。；;]+$/, '') + '。只做微表情，不夸张。');
   const camBits = [];
   if (view) camBits.push('景别构图：' + view.replace(/[。；;]+$/, ''));
@@ -4232,9 +5374,13 @@ function npImgPromptShot(w, it, i, total) {
       '；两行同一字号、同一颜色，行距正常，两行之间不加破折号；只出现一次，是画面的一部分；' + NP_IMG_TEXT_EMPH +
       '不要底色条、不要色块、不要边框、不要分栏；除了这两行字，画面里不要再出现任何文字、英文、数字、logo、水印。');
   } else if (copy) {
-    lines.push('【配文】图上只写这一句：「' + copy + '」。共 ' + Array.from(copy).length + ' 字' +
-      (copyAt ? '，这一句' + copyAt : '') +
-      '；只出现一次，是画面的一部分；' + NP_IMG_TEXT_EMPH +
+    const isBeatPara = !!npBeatFormOf(w);
+    lines.push('【配文】图上只写这一整段：「' + copy + '」。共 ' + Array.from(copy).length + ' 字' +
+      (copyAt ? '，这一段' + copyAt : '') +
+      '；只出现一次，是画面的一部分；' +
+      (isBeatPara
+        ? '这一段是这一张图上唯一的话，一个字都不能少、不能缩写、不能改成两句口号，把这一整段原样写完：按意思断成几行，一行不超过 14 个字，字号要大到手机上一眼能读清；字多就把整段小一号，不许删字凑版面；换行的地方不许把上一行末尾的字再重复写到下一行开头，每个字只写一次；'
+        : NP_IMG_TEXT_EMPH) +
       '不要底色条、不要色块、不要边框、不要上下分层、不要大小两套字号；除了这一句，画面里不要再出现任何文字、英文、数字、logo、水印。');
   } else {
     lines.push('【配文】这一张图上不写字，画面里不要出现任何文字、英文、数字、logo、水印。');
@@ -4247,9 +5393,293 @@ function npImgPromptShot(w, it, i, total) {
   lines.push('【画面约束】脸、发型、发长、发色、衣服、随身标志物跟【主角】【出场】写的一模一样，这一张只换动作、角度、表情；【故事】【场景】【机位】只用来看懂画面，不要画到图上；只出这一张，不要拼图、不要多格、不要加水印和边框。');
   return lines.join('\n');
 }
+/* ── 🧱 卡片图的四套版面（2026-11-07 照 demo 搬进产品）─────────────
+   老板定：A/B/C/D 都放进产品，出图前选一套；一篇一套，换套只重拼提示词，不动已经出的图。
+   底色、色号、画法、IP 摆法全写在这一张表里，卡片提示词不再自己猜颜色。
+   IP＝号里绑的那个出镜人（那份角色卡）；号里没绑就不画人，保持原来的纯字卡。 */
+const NP_CARD_PACKS = [
+  {
+    k: 'A', t: '品牌色块', note: '浅米底＋暖橙＋深墨蓝，运动品牌海报感',
+    bg: '浅米色纸底（#F7F4EE），不要纯白',
+    colors: '主色暖橙（#FF6A2B）、深墨蓝（#1B2A41）、浅米色（#F3EEE4）；大标题用深墨蓝粗字，关键词和小标签用暖橙；表格表头深墨蓝底白字，隔行浅米色，关键格用暖橙浅底；细线分格、圆角、投影极淡',
+    look: '扁平信息图，运动品牌海报感：颜色干净有对比，版面像一张能贴在店里的说明牌；字大、行距松，手机上一眼看清；不要渐变、不要立体字、不要贴纸感、不要照片、不要脏色',
+  },
+  {
+    k: 'B', t: '专业报告', note: '冷灰蓝底＋深蓝＋一点金，像一份正式评估报告',
+    bg: '很浅的冷灰蓝底（#F2F6FB），不要纯白',
+    colors: '主色深蓝（#12325A）、钢灰蓝（#E8EEF6）、点缀金（#C9A227）；顶部一条深蓝细色带，大标题深蓝；表头浅蓝底深蓝字；分条的文字用小圆点或序号，圆点紧贴在那一行第一个字前面、不许单独占一行；表格页里根本不用小圆点；有关键结论就用金色细线单独框一下——这一张没有结论就别画框，画面里不许留空框、空色块',
+    look: '专业咨询报告风：版面规整、对齐工整、线条细，像一份正式的评估报告；不用卡通装饰、不要渐变、不要贴纸感、不要照片；字要清楚、行距够',
+  },
+  {
+    k: 'C', t: '杂志实景', note: '顶部一条场景插画＋色块信息区，最像小红书封面',
+    bg: '暖米白（#FBF6EE）打底，主色块用暖橙',
+    colors: '主色暖橙（#FF6A2B）、深墨蓝（#1B2A41）、米白（#FBF6EE）；插画区用暖橙＋米白＋深墨蓝描边；信息区用米白底、深墨蓝细线、暖橙表头色块',
+    look: '小红书杂志内页感：顶部一条扁平插画场景，下面是色块信息区，大标题压在色块上；整张有一个暖橙色块做视觉锚点，留白够；不要照片、不要渐变、不要立体字',
+  },
+  {
+    k: 'D', t: '高对比大字', note: '近黑底＋亮黄大字，一句话占半张',
+    bg: '深墨蓝近黑底（#101820），不要渐变、不要发灰',
+    colors: '主色亮黄（#FFD400）、白色、深墨蓝（#101820）；大标题亮黄超粗字，关键词用白色，重点用暖橙色块；表格用白色细线分格、表头亮黄底黑字、隔行稍亮一点的深底；深底格子里只许用白色或亮黄字',
+    look: '大字报风：一句话占半张，字超粗超大，信息砍到只剩句子；用大字和色块撑版面，除角落那一个讲解员之外不画别的插画和装饰；不要照片、不要渐变、不要立体字',
+  },
+];
+function npCardPackOf(w) {
+  const own = String((w && w.shots && w.shots.look && w.shots.look.pack) || '').trim().toUpperCase();
+  const def = String((w && w.styleLook && w.styleLook.pack) || '').trim().toUpperCase();
+  const k = own || def;
+  return NP_CARD_PACKS.filter(p => p.k === k)[0] || NP_CARD_PACKS[0];
+}
+/** 卡片图里那一个讲解员：号里绑了出镜人才画（外形照角色卡那段话），没绑返回 null＝纯字卡 */
+function npCardIpOf(w) {
+  const c = npCharFor(w);
+  if (!c) return null;
+  const line = String(npCharLine(c) || '').trim();
+  if (!line) return null;
+  return { id: String(c.id || ''), name: String(c.name || '讲解员').trim() || '讲解员', line: line, refs: npCharRefIds(c) };
+}
+function npCardRefsOf(w) { const ip = npCardIpOf(w); return ip ? ip.refs : []; }
+/** 这一张的外壳：底色、画法、配色、IP 摆哪——四套共用一套拼法，按页面角色换位置 */
+function npCardSkin(w, kind) {
+  const pk = npCardPackOf(w);
+  const ip = npCardIpOf(w);
+  const K = String(kind || 'page');
+  const strip = pk.k === 'C' && K !== 'cover';
+  /* D 那套「一句话占半张、信息砍到只剩句子」只适合封面；表格页照搬会被模型砍字，换成表格版口径 */
+  const look = (pk.k === 'D' && K !== 'cover')
+    ? '大字报表格版：深底亮黄粗字，字可以比封面小一号，但每一格的字必须写全——一个都不许删、不许省、不许改短；用粗字、色块和白色细线撑版面；不要插画、不要照片、不要渐变、不要立体字'
+    : pk.look;
+  const out = { pk: pk, strip: '', face: '', look: look + '。', colors: pk.colors + '。', ip: '' };
+  if (strip) {
+    out.strip = '最上面一条扁平插画横条——很窄的一条细长横幅，高度只占画面最上方约五分之一（约 ' + (K === 'page' ? 20 : 17) + '%），横向占满；' +
+      '横条的下沿是一条笔直的横向分界线，位置就在画面高度五分之一处，分界线以下全部是信息区（颜色比横条浅）；' +
+      '横条上下去都是短的，高度绝不许超过画面的四分之一，绝不许占掉半张；' +
+      '信息区是整张的主体，从分界线一直排到画面底边，占画面四分之三以上；' +
+      (ip ? ip.name + '在这一篇的场地里（照正文写的场景画），动作自然，只画一个人，不是照片'
+        : '只画这一篇正文里的场景，不画人') +
+      '；横条里一个字都不写——页面小标签和标题都写在横条下面的标题带里，绝对不许写进插画；横条下面才是信息区——';
+  }
+  out.face = pk.bg + '；画面里不放照片、不放无关图标；' +
+    (ip ? '主色只用在大标题关键词、小色带、' + ip.name + '的衣服上，别把整张压暗。'
+      : '画面里不出现人、不出现照片、不出现插画人物；一个主色只用在关键处，别把整张压暗。');
+  if (ip) {
+    let place;
+    if (strip) place = '只画在上面那条插画横条里，横条里只有这一个大人，画面别的地方不许再出现第二个人';
+    else if (K === 'cover') place = '只出现在右下角，占画面高度约 1/4，半身、朝画面里看，比例小，不压主标题和副标题，像品牌形象出现在海报角落，别抢标题；整张只画这一个人，画面别的地方不许再出现第二个人';
+    else if (K === 'pick') place = '只出现在右下角，占画面高度约 1/5，半身；整个人要完全在表格外面——头顶低于表格底边，靠画面右下角那点空白站，不压表格线、不挡任何字；整张只画这一个人，画面别的地方不许再出现第二个人';
+    else if (K === 'page') place = (pk.k === 'A'
+      ? '做成一个圆形头像贴纸：只有头和肩，圆形，直径约占画面高度 1/10，像一张不干胶贴纸贴在卡片右下角——压住卡片角是故意的；贴纸外沿有一圈细白边，看起来是贴上去的；贴纸不许压住任何字、不许盖住最后一行；整张只画这一个人，画面别的地方不许再出现第二个人'
+      : '只出现在右下角，占画面高度约 1/6，半身，不压任何字、不压卡片；整张只画这一个人，画面别的地方不许再出现第二个人');
+    else if (pk.k === 'D') place = '只放在大标题右边那块空白里，占画面高度约 1/8，半身；整个人完全在表格上面，不许碰到表格边框、不许压住任何一格；整张只画这一个人，画面别的地方不许再出现第二个人';
+    else place = '只出现在右下角，占画面高度约 1/5，半身；整个人要完全在表格外面——头顶低于表格底边，靠画面右下角那点空白站，不压表格线、不挡任何字，表格太满就把人画小一点；整张只画这一个人，画面别的地方不许再出现第二个人';
+    out.ip = '【IP】' + ip.line + '。只画这一个人，' + place + '；外形只照上面这段话，没写的都不许加——头上尤其不许戴皇冠、帽子、发带、眼镜；表情永远温和、平静或带笑，绝对不许画成生气、皱眉、瞪眼、凶脸。';
+  }
+  return out;
+}
+/* ── 讲故事/吐槽的版面套（2026-11-07）：还是 A/B/C/D 四套，但一张图＝一幅场景插画＋整段话，
+   所以只换底色、配色、字色，不切横条、不另开文字区——「整段字长在画面里」这条不动。 */
+const NP_STORY_SKINS = {
+  A: {
+    look: '扁平插画，暖橙＋深墨蓝＋浅米的运动品牌海报感；场景留出大块浅色墙面、地面好写字；颜色干净有对比，不要渐变、不要照片、不要贴纸感',
+    colors: '主色暖橙（#FF6A2B）、深墨蓝（#1B2A41）、浅米色（#F7F4EE）；场景用暖橙和浅米，整段字用深墨蓝，最扎的那句用暖橙加粗',
+  },
+  B: {
+    look: '冷灰蓝＋深蓝的规整插画，画面干净、留白多、线条细，像一份正式评估报告的配图；不要卡通装饰、不要渐变、不要照片',
+    colors: '主色深蓝（#12325A）、钢灰蓝（#E8EEF6）、点缀金（#C9A227）；场景只用冷灰蓝和深蓝，整段字用深蓝，最扎的那句用金色细线框一下，别处不加装饰',
+  },
+  C: {
+    look: '暖米白的杂志内页感插画：像一页摊开的实景，构图稳、留白够，场景里有可以落字的浅色区域；不要照片、不要渐变、不要立体字',
+    colors: '暖橙（#FF6A2B）、深墨蓝（#1B2A41）、米白（#FBF6EE）；场景暖米白打底，整段字用深墨蓝，留一处暖橙色块做视觉锚点',
+  },
+  D: {
+    look: '深底大字报：场景画成夜色或暗调，只留人物和几处亮色，整段字超粗超大；不要照片、不要渐变、不要立体字',
+    colors: '亮黄（#FFD400）、白色、深墨蓝（#101820）；深底上整段字用亮黄或白色，最扎的那句用暖橙色块压一层',
+  },
+};
+/** 故事/吐槽这一张用哪套版面、号里那个人怎么进画面（本人＝「我」那一拍才出，不硬塞） */
+function npStorySkin(w, beat) {
+  const pk = npCardPackOf(w);
+  const s = NP_STORY_SKINS[pk.k] || NP_STORY_SKINS.A;
+  const ip = npCardIpOf(w);
+  const selfOn = !!ip && /我|咱/.test(String(beat || ''));
+  return { pk: pk, look: s.look, colors: s.colors, ip: selfOn ? ip : null };
+}
+/** 卡片式写法的一张：字是主角，四套版面给底色和画法——号里绑了人就在角落放一个讲解员，没绑就不画人。
+ *  封面＝主标题＋副标题两行大字；内页＝标题＋按序号排的「小标题：具体标准」，字要比正文细。 */
+function npImgPromptCard(w, it, i, total) {
+  const vw = npVw(w);
+  const role = String((it && it.role) || '').trim();
+  const title = String((it && (it.copyMain || it.copyText)) || '').trim().replace(/[。．.；;，,]+$/, '');
+  const lines = String((it && it.desc) || '').split(/\n+/).map(s => s.trim()).filter(Boolean);
+  const dim = String((it && it.dim) || '').trim();
+  const cols = (Array.isArray(it && it.cols) ? it.cols : []).map(s => String(s || '').trim()).filter(Boolean);
+  const isCover = /封面/.test(role);
+  /* 版式（2026-11-07 照 demo）：维度页＝一维一张的对照表（左上角那格空着）；怎么选页＝两列选择表；
+     问题页＝大字问题＋原因；解法页＝结论＋步骤；封面＝大字卡。
+     老档的 总对比页/选项页/总结页/分档页/总图/并排对比/原因页/方案页 也照老口径认，重出就顺过来 */
+  const isOver = /总对比页/.test(role);
+  const isOpt = /选项页/.test(role);
+  const isSum = /总结页/.test(role);
+  const isDim = /维度页|分档页/.test(role);
+  const isPick = /怎么选|总图|并排对比/.test(role);
+  const isQ = /问题页|原因页/.test(role);
+  const isFix = /解法页|方案页|做法页|判断标准页/.test(role);
+  /* 怎么选页 稿子里只给判断行、不给标题，这里补一句固定的抬头（demo 上那句） */
+  const headTitle = (/怎么选页/.test(role) && !title) ? '你这种情况，就选这个' : title;
+  const isTable = isDim || isPick || isOver || isOpt || isSum;
+  const head = isPick ? (cols.length ? cols : ['什么情况', '选哪个'])
+    : isOpt ? (cols.length ? cols : ['维度', '这一档怎么算'])
+    : isSum ? (cols.length ? cols : ['如果你', '就选'])
+    : cols;
+  const skin = npCardSkin(w, isCover ? 'cover' : (isPick ? 'pick' : (isTable ? 'table' : 'page')));
+  const out = [];
+  out.push('【这一张】第 ' + (i + 1) + ' 张 / 共 ' + total + ' 张，' + vw.size + '。只画这一张，不要拼图、不要多格、不要分镜格、不要加水印和边框。');
+  const layoutAt = out.length;   // C 套要在版式最前面加一条插画横条
+  if (isCover) {
+    out.push('【版式】整张就是一张大字卡，不是照片：主标题在最上面、左对齐，字号最大（约占画面宽 3/4，最多两行）；副标题紧接在下面一行，字号约主标题的一半；其余留白，不逐条罗列。');
+  } else if (isOver) {
+    out.push('【版式】一张总对比表，不是清单：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '最上面是大标题' + (title ? '「' + title + '」' : '') + '；标题下面是一张表格，表头横着写要比的 ' + Math.max(head.length, 2) + ' 个选项' +
+      (head.length ? '（' + head.join(' / ') + '）' : '') + '；表格左边第一列写要比的维度，往右每一格写这个选项在这个维度上的具体值；' +
+      '格与格之间用细线分开，同一行必须横着能比，整张就是一张总表，不要写成一行一条的清单。');
+  } else if (isOpt) {
+    out.push('【版式】一个选项一张明细表：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '最上面是大标题' + (title ? '「' + title + '」' : '') + '；下面两列小表，左列表头写「' + head[0] + '」、右列表头写「' + (head[1] || '这一档怎么算') + '」；' +
+      '一行一个维度，右边写这一档具体怎么算（次数、时长、谁带、能不能停），格子用细线分开，行距松开，不要写成一行一条的清单。');
+  } else if (isSum) {
+    out.push('【版式】一张判断表，不是清单：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '最上面是大标题' + (title ? '「' + title + '」' : '') + '；下面按列头' + head.map(c => '「' + c + '」').join('、') + '排成表，' +
+      '一行一种情况，格子用细线分开，行距松开；最后一行用主色块单独强调，读起来像一句能当场对号的话。');
+  } else if (isDim) {
+    out.push('【版式】一张对照表，一屏只比一个维度，不是清单：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '最上面是大标题「' + (dim || title || '对照') + '」；标题下面是一张表格，占画面约 65%，表头横着写要比的 ' + Math.max(head.length, 2) + ' 个对象' +
+      (head.length ? '（' + head.join(' / ') + '）' : '') + '；表格一共 ' + (Math.max(head.length, 2) + 1) + ' 列：最左一列写这个维度下的角度，' +
+      '它上面那格表头留空、一个字都不写、绝对不许把任何一个对象名写进去；往右每一格写这个对象在这个角度上的具体值或做法；' +
+      '每个对象只出现一次，不许重复任何一列、不许多出一列；格与格之间用细线分开，同一行必须横着能比，整张就是一张表，不要写成一行一条的清单。');
+  } else if (isPick) {
+    out.push('【版式】一张两列的选择表：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '最上面是大标题' + (headTitle ? '「' + headTitle + '」' : '') + '；下面分成左右两列，表头左边写「' + head[0] + '」、右边写「' + (head[1] || '选哪个') + '」；' +
+      '一行一个情况，左边写什么情况、右边写选哪个或先做什么，格子用细线分开，行距松开。');
+  } else if (isQ) {
+    out.push('【版式】问题页，不是清单：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '上半张只放那一句问题，字号最大（约占画面宽 3/4，最多两行），左对齐；下面用 3~4 行写原因，每行前面一个短横线、不加序号，行距松开；' +
+      '这几行里只有最后一行改用浅色块做底、加粗，前面几行不加底——每一行都只出现一次，绝对不许把最后一行在上面写一遍、再在下面的色块里写一遍。');
+  } else if (isFix) {
+    out.push('【版式】解法页：' + (role ? '左上角一个小标签写「' + role + '」，整张只写这一个标签；' : '') +
+      '大标题本身就是那句结论，用主色块或粗体单独突出，占一行（最多两行）；下面 4~6 行步骤，行首写阿拉伯数字序号（1 2 3…），一行一步，左对齐；' +
+      '序号只能是数字，不许画圆点、方点、菱形、对勾、破折号来代替；' +
+      '这些步骤每行写的就是原句，原句末尾没标点，所以每一步行尾一个标点都不要带（不许补逗号或句号）；' +
+      '除了大标题和这些步骤，不许另外再加「解法步骤」「步骤」「关键结论」「结论」这类小标题或总结句，一个字都不许多。');
+  } else {
+    out.push('【版式】卡片式信息图，一屏只讲这一件事：' + (role ? '左上角一个小标签写「' + role + '」；' : '') +
+      '上方是大标题；下面一行一条，行首加序号（1. 2. 3.），左对齐，行距松开；每行都是一句「小标题：具体标准或做法」，用细线或浅色块分开。');
+  }
+  if (skin.strip) out[layoutAt] = out[layoutAt].replace('【版式】', '【版式】' + skin.strip);
+  out.push('【画面】' + skin.face);
+  if (skin.ip) out.push(skin.ip);
+  const txt = [];
+  if (headTitle) txt.push((isCover ? '主标题' : '大标题') + '「' + headTitle + '」');
+  if (isTable && head.length) txt.push('表头从左到右依次写' + head.map(c => '「' + c + '」').join('、'));
+  lines.forEach((s, k) => {
+    if (isTable) {
+      const cells = s.split(/[｜|]/).map(x => String(x || '').trim()).filter(Boolean);
+      txt.push('表格第 ' + (k + 1) + ' 行，从左到右依次写' + cells.map(c => '「' + c + '」').join('、'));
+    } else if (isCover) {
+      txt.push((k === 0 ? '副标题' : '下面第 ' + k + ' 行') + '「' + s + '」');
+    } else {
+      txt.push('第 ' + (k + 1) + ' 行「' + s + '」');
+    }
+  });
+  if (txt.length) {
+    out.push('【图上文字】只写下面这几处，逐字照抄：' + txt.join('；') +
+      '。不许改字、不许加字、不许少字、不许出现错别字' + (skin.ip ? '；讲解员的名字不要写成任何文字' : '') +
+      '；除了这些，画面里不要再出现任何文字、英文、数字、logo、水印。');
+  } else {
+    out.push('【图上文字】这一张不写字，画面里不要出现任何文字、英文、数字、logo、水印。');
+  }
+  if (isTable) {
+    out.push('【排字】每一格里的字只写一遍：绝对不许把一格的头几个字先单独占一行、再在下面重复一遍（比如「同一个班」不许写成「同一 / 一个班」）；' +
+      '一行写不完就顺着往下接着写，下一行开头不许再抄上一行最后那几个字；宁可整格字小一号，也不许为了排满重复任何字、不许丢字、不许空格；' +
+      '同一个字紧挨着出现两次（中间只隔空格或标点也算）都是重复，比如「次次数」「多多少」「留 留着」「开卡 卡起」都不行，除非原句本来就有叠字（这一篇没有）；' +
+      '换行时必须把标点留在上一行末尾，绝对不许让逗号、顿号、句号出现在下一行开头；' +
+      '原句末尾本来没有标点，就不许自己补逗号、句号，不是每一行都必须带标点；' +
+      '写完每格顺一遍，看见连着两个一样的字就删掉一个；除【图上文字】给出的标点，不许自己加逗号、顿号、空格。');
+  } else {
+    out.push('【排字】每一行只写一处，绝对不许把同一行在上面写一遍、下面再写一遍；' +
+      '一句话一行写不下就顺着往下接着写，下一行开头不许把上一行末尾的字再写一遍（比如上一行收在「…还是」，下一行直接从「不愿」接着写，不许写成「还是不愿」）；' +
+      '同一个字紧挨着出现两次（比如「陪他他」「次次数」）都是重复，写完顺一遍，看见连着的两个字就删掉一个（除非原句本来就有叠字）；' +
+      '换行时标点留在上一行末尾，绝对不许让逗号、顿号、句号出现在下一行开头；' +
+      '原句末尾本来没有标点，就不许自己补逗号、句号，不是每一行都必须带标点；' +
+      '除【图上文字】给出的标点，不许自己加逗号、顿号、空格。');
+  }
+  out.push('【风格】' + skin.look);
+  out.push('【配色】' + skin.colors);
+  return out.join('\n');
+}
+/** 卡片式写法的封面：主标题＋副标题，两行大字；四套版面给底色和画法，绑了出镜人才在右下角放一个讲解员 */
+function npCardCoverPrompt(w) {
+  const vw = npVw(w);
+  const cv = npCoverOf(w) || {};
+  const cc = npCardCoverOf(w) || {};
+  const main = String(cv.copy || cc.title || '').trim().replace(/[。．.；;，,]+$/, '');
+  const sub = String(cv.sub || ((cc.lines || [])[0]) || '').trim().replace(/[。．.；;，,]+$/, '');
+  /* 问答的封面不只放一句副标题：老板要「封面就把这些问题全封上」——把这一篇要答的问题全列出来 */
+  let isQa = false;
+  let formKey = '';
+  try {
+    const pi = w.planItem;
+    if (pi && pi.src === 'industry' && typeof TopicTable !== 'undefined') {
+      const fi = TopicTable.formInfo(pi.form || 'list', pi.variant || '');
+      formKey = String((fi && fi.key) || '');
+      isQa = formKey === 'qa';
+    }
+  } catch (_) {}
+  const band = formKey === 'qa' ? '问答' : (formKey === 'compare' ? '对比' : '');
+  const bandTxt = band ? '最上面一条小色带写「' + band + '」，这两个字整张只写这一次，下面列问题的地方不要再设表头、不要再写第二遍；' : '';
+  const qs = isQa ? ((cc.lines || []).map(x => String(x || '').trim()).filter(Boolean)) : [];
+  const total = npShotsOn(w).length + 1;
+  const skin = npCardSkin(w, 'cover');
+  const out = [];
+  out.push('【这一张】这一篇的封面（第 1 张，共 ' + total + ' 张），' + vw.size + '。只画这一张，不要拼图、不要多格、不要分镜格、不要加水印和边框。');
+  out.push(qs.length
+    ? '【版式】整张就是一张大字卡，不是照片：' + bandTxt + '主标题在最上面、左对齐，字号最大（约占画面宽 3/4，最多两行）；标题下面把这一篇要答的问题一个一个列出来，一个问题一行、行首加序号，字号约主标题的一半；其余留白，不放小图标。'
+    : '【版式】整张就是一张大字卡，不是照片：' + bandTxt + '主标题在最上面、左对齐，字号最大（约占画面宽 3/4，最多两行）；副标题紧接在下面一行，字号约主标题的一半；其余留白，不逐条罗列、不放小图标。');
+  out.push('【画面】' + skin.face);
+  if (skin.ip) out.push(skin.ip);
+  const txt = [];
+  if (main) txt.push('主标题「' + main + '」');
+  if (qs.length) qs.forEach((q, k) => txt.push('问题第 ' + (k + 1) + ' 条「' + q + '」'));
+  else if (sub) txt.push('副标题「' + sub + '」');
+  if (txt.length) {
+    out.push('【图上文字】只写下面这几处，逐字照抄：' + txt.join('；') +
+      '。不许改字、不许加字、不许少字、不许出现错别字' + (skin.ip ? '；讲解员的名字不要写成任何文字' : '') +
+      '；除了这些，画面里不要再出现任何文字、英文、数字、logo、水印。');
+  } else {
+    out.push('【图上文字】这一张不写字，画面里不要出现任何文字、英文、数字、logo、水印。');
+  }
+  out.push('【风格】' + skin.look);
+  out.push('【配色】' + skin.colors);
+  return out.join('\n');
+}
 /** 封面单张：② 那格写过就照那格；没写过按同一套场子拼一条（顺手存进 cv.prompt，⑥ 里也看得到） */
 function npImgPromptCover(w) {
   const cv = npCoverOf(w);
+  if (npCardModeOf(w)) {
+    const cc = npCardCoverOf(w) || {};
+    if (!String(cv.copy || '').trim() && String(cc.title || '').trim()) cv.copy = String(cc.title).trim();
+    if (!String(cv.copy || '').trim()) {
+      cv.copy = String((_npNote && _npNote.title) || ((w.draft && w.draft.titles) || [])[0] || (npShotsOn(w)[0] || {}).copyText || '').slice(0, 40);
+    }
+    if (!String(cv.sub || '').trim() && cc.lines && cc.lines[0]) cv.sub = String(cc.lines[0]).trim();
+    /* 卡片式写法：提示词按主标题/副标题现拼（老稿那份实拍封面的提示词会被换掉）；人改过的（manual）不动 */
+    if (cv.src !== 'manual') {
+      cv.prompt = npCardCoverPrompt(w);
+      cv.src = 'card';
+      cv.cardKey = String(cv.copy || '').trim() + '|' + String(cv.sub || '').trim();
+      npShotsCompose(w);
+      npArchiveTouch(w);
+    }
+    return String(cv.prompt || '').trim() + '\n\n这是这一篇的封面那一张：只出这一张，不要拼图、不要多格、不要加水印和边框。';
+  }
   const it0 = npShotsOn(w)[0] || {};
   if (!String(cv.prompt || '').trim()) {
     cv.prompt = npCoverPromptCompose(w, '画面照着这篇的场子：' + String(it0.topic || '现场实拍') +
@@ -4386,18 +5816,30 @@ function npImgTickStart() {
     if (bar) bar.style.width = npImgPct(g) + '%';
   }, 1000);
 }
-/** 一键出图要出的那几张：封面先出，再按分镜顺序补空格 */
-function npImgGenJobs(w) {
+/** 一键出图要出的那几张：封面先出，再按分镜顺序补空格。
+ *  force＝整篇都走 AI（素材图文「AI 出图」那颗）：空格全出，已经是你自己照片的也换成 AI 画的；
+ *  已经 AI 出的不重出（重出要再花钱）。出来就是清一色 AI，不掺实拍。 */
+function npImgGenJobs(w, force) {
   const vw = npVw(w);
   const on = npShotsOn(w);
   const jobs = [];
+  const push = (it, kind, id, name, prompt, refs) => {
+    const has = (it.imgs || []).length;
+    jobs.push({ kind: kind, id: id, name: name, prompt: prompt, size: vw.size, via: has ? 'genreplace' : 'gen', refs: refs });
+  };
   const cv = npCoverOf(w);
-  if (cv && cv.on !== false && !((cv.imgs || []).length)) {
-    jobs.push({ kind: 'cover', id: 'cv', name: (vw.cover || '封面'), prompt: npImgPromptCover(w), size: vw.size, via: 'gen', refs: npCharRefIds(npCharFor(w)) });
+  const cvHas = !!((cv && cv.imgs) || []).length;
+  const cvSkip = !cv || cv.on === false || (force ? (cvHas && String(cv.imgSrc || '') === 'ai') : cvHas);
+  if (!cvSkip) {
+    push(cv, 'cover', 'cv', (vw.cover || '封面'), npImgPromptCover(w), npCardModeOf(w) ? npCardRefsOf(w) : npCharRefIds(npCharFor(w)));
   }
   on.forEach((it, i) => {
-    if ((it.imgs || []).length) return;
-    jobs.push({ kind: 'shot', id: it.id, name: '第 ' + (i + 1) + ' 张', prompt: npImgPromptShot(w, it, i, on.length), size: vw.size, via: 'gen', refs: npCharRefsOfItem(w, it) });
+    if (!force && (it.imgs || []).length) return;
+    if (force && String(it.imgSrc || '') === 'ai' && (it.imgs || []).length) return;
+    /* 卡片写法带上出镜人那张定妆照（保脸一致）；这一张自己点了别人出场就不掺）
+       ——号里没绑人的反正是空数组，不会画人 */
+    const refs = (npCardModeOf(w) && !((it && it.chars) || []).length) ? npCardRefsOf(w) : npCharRefsOfItem(w, it);
+    push(it, 'shot', it.id, '第 ' + (i + 1) + ' 张', npImgPromptShot(w, it, i, on.length), refs);
   });
   return jobs;
 }
@@ -4509,20 +5951,28 @@ function npImgRegenOne(container, id) {
   if (!confirm('重出' + (isCv ? '封面' : '这一张') + chargeTxt + '\n\n重出？')) return;
   const vw = npVw(w);
   let job;
-  if (isCv) job = { kind: 'cover', id: 'cv', name: (vw.cover || '封面'), prompt: npImgPromptCover(w), size: vw.size, via: 'genreplace' };
+  if (isCv) job = { kind: 'cover', id: 'cv', name: (vw.cover || '封面'), prompt: npImgPromptCover(w), size: vw.size, via: 'genreplace', refs: npCardModeOf(w) ? npCardRefsOf(w) : npCharRefIds(npCharFor(w)) };
   else {
     const on = npShotsOn(w); const i = on.indexOf(it);
-    job = { kind: 'shot', id: it.id, name: '第 ' + (i + 1) + ' 张', prompt: npImgPromptShot(w, it, i, on.length), size: vw.size, via: 'genreplace', refs: npCharRefsOfItem(w, it) };
+    const refs = (npCardModeOf(w) && !((it && it.chars) || []).length) ? npCardRefsOf(w) : npCharRefsOfItem(w, it);
+    job = { kind: 'shot', id: it.id, name: '第 ' + (i + 1) + ' 张', prompt: npImgPromptShot(w, it, i, on.length), size: vw.size, via: 'genreplace', refs: refs };
   }
   npImgRun(container, [job]);
 }
-/** 点「一键出图」：额度 / Key / 全站上限在这儿拦一下，过了就直接开画（不再让人点第二遍） */
-function npImgStart(container) {
+/** 点「一键出图」：额度 / Key / 全站上限在这儿拦一下，过了就直接开画（不再让人点第二遍）。
+ *  force＝整篇全 AI 出（素材图文模式）：已有图也换掉，替换前确认一次（要花钱）。 */
+function npImgStart(container, force) {
   const w = _npWiz; if (!w) return;
   if (_npDshBusy) { if (typeof toast === 'function') toast('分镜还在切——切完再出'); return; }
   if (_npImgGen && _npImgGen.running) { if (typeof toast === 'function') toast('正在出——等这一轮完'); return; }
-  const miss = npImgMissing(w);
-  if (!miss.need) { if (typeof toast === 'function') toast('图齐了——要换哪张，点小图右上角的 ↻'); return; }
+  const forceOn = !!force;
+  const jobs = npImgGenJobs(w, forceOn);
+  if (!jobs.length) { if (typeof toast === 'function') toast('图齐了——要换哪张，点小图右上角的 ↻'); return; }
+  if (forceOn) {
+    const mix = npImgSrcMix(w);
+    const replacing = Math.max(0, mix.total - mix.ai - mix.empty);   // 这次会被换掉的（你自己的照片 / 自己传的）
+    if (replacing > 0 && !confirm('整篇走 AI：这次出 ' + jobs.length + ' 张；现有 ' + replacing + ' 张你自己的图会换成 AI 画的（排好的字一起清掉）。\n\n出成功才扣张数，开始？')) return;
+  }
   if (!_npImgQuota) {
     if (_npImgQuotaErr) { if (typeof toast === 'function') toast('出图接口没接上——照旧复制提示词去生成', 'error'); return; }
     npImgQuotaEnsure(true);
@@ -4532,8 +5982,8 @@ function npImgStart(container) {
   const q = _npImgQuota;
   if (q.keyReady === false) { if (typeof toast === 'function') toast('服务器还没配出图 Key——先填 server/.env 的 IMAGE_API_KEY', 'error'); return; }
   if (Number(q.dayUsed) >= Number(q.dayCap)) { if (typeof toast === 'function') toast('今天全站出图到顶了——明天再来', 'error'); return; }
-  if (!q.unlimited && Number(q.left) < miss.need) { if (typeof toast === 'function') toast(npImgShortTip(q, miss.need, q.left), 'error'); return; }
-  npImgRun(container || npActiveC());
+  if (!q.unlimited && Number(q.left) < jobs.length) { if (typeof toast === 'function') toast(npImgShortTip(q, jobs.length, q.left), 'error'); return; }
+  npImgRun(container || npActiveC(), jobs);
 }
 /** 整组都是服务器出的 → 顺手按「封面、第 1 张…」铺进代发区（自己传过任何一张就不动，留给「📁 交文件」） */
 async function npImgStageGenerated(w) {
@@ -4569,8 +6019,12 @@ async function npImgStageGenerated(w) {
 }
 /** ⑤ 出图：按钮进「⬆ 传图 / ⬆ 传封面」那一排；额度 / 进度就贴在这排下面（同一张卡里）。
     返回 { btn, panel }：btn 塞进上传行的按钮排，panel 摆在它下面。图和封面都齐了就不摆按钮。 */
-function npImgGenBits(w) {
+function npImgGenBits(w, opts) {
+  opts = opts || {};
+  const photo = !!opts.photo;                 // 素材图文：两条路互斥，两颗按钮
+  const plan = opts.plan || null;
   const miss = npImgMissing(w);
+  const mix = npImgSrcMix(w);
   const q = _npImgQuota;
   const g = (_npImgGen && _npImgGen.arId === String(w.arId || '')) ? _npImgGen : null;
   const running = !!(g && g.running);
@@ -4580,17 +6034,37 @@ function npImgGenBits(w) {
   const dayFull = !!(q && Number(q.dayUsed) >= Number(q.dayCap));
   const left = q ? Math.max(0, Number(q.left) || 0) : 0;
   const stageTxt = (_npImgStageNote.arId === String(w.arId || '')) ? _npImgStageNote.text : '';
-  const parts = [];
-  if (miss.shots) parts.push('配图 ' + miss.shots + ' 张');
-  if (miss.cover) parts.push('封面 1 张');
-  const status = miss.need
-    ? '这次补：' + parts.join(' + ') + '（自己传过的格子不重出）'
-    : '✓ 配图 ' + miss.total + ' 张齐了' + (npCoverOf(w) && npCoverOf(w).on !== false ? '，封面也有' : '') + (stageTxt ? ' · ' + stageTxt : '');
-  const can = !!q && !keyBad && !dayFull && (unlimited || left >= miss.need) && !_npDshBusy && !running;
-  const btn = miss.need
-    ? '<button type="button" class="np-img-open btn btn-primary" style="font-weight:700;' + (can ? '' : 'opacity:.55;cursor:not-allowed;') + '"' + (can ? '' : ' disabled') + '>' +
-      (running ? '🖼 出图中…' : '🖼 一键出图（' + miss.need + ' 张）') + '</button>'
-    : '';
+  const btn = [];
+  let status = '';
+  let photoLine = '';
+  if (photo) {
+    const total = mix.total;
+    const aiN = npImgGenJobs(w, true).length;
+    const aiCan = aiN > 0 && !!q && !keyBad && !dayFull && (unlimited || left >= aiN) && !_npDshBusy && !running;
+    if (aiN > 0) {
+      const lbl = (total - mix.empty === 0) ? '🖼 AI 出图（' + aiN + ' 张）' : '🖼 AI 补成全篇（' + aiN + ' 张）';
+      btn.push('<button type="button" class="np-img-open np-img-all btn btn-primary" title="整篇都让 AI 画：还没图的和你自己照片的那几张一起换成 AI 画的，已经 AI 出的不重出；不掺实拍" style="font-weight:700;' + (aiCan ? '' : 'opacity:.55;cursor:not-allowed;') + '"' + (aiCan ? '' : ' disabled') + '>' +
+        (running ? '🖼 出图中…' : lbl) + '</button>');
+    }
+    const libOk = !!(plan && plan.ok);
+    const libCan = libOk && !running && !_npDshBusy;
+    btn.push('<button type="button" class="np-dsh-filllib btn btn-soft btn-sm" title="' + npArAttr(libOk ? '整篇都用素材库里的照片：每张按它要的那一组取，封面另取一张' : ('素材还没齐：' + npPhotoLibPlanShort(plan))) + '" style="font-weight:700;' + (libCan ? '' : 'opacity:.55;cursor:not-allowed;') + '"' + (libCan ? '' : ' disabled') + '>📚 从素材库出图' + (libOk ? '（' + total + ' 张）' : '') + '</button>');
+    if (!plan) photoLine = '<div class="note-xs" style="margin-top:4px;color:#6b7280;">正在核对素材库…</div>';
+    else if (!plan.ok) photoLine = '<div class="note-xs" style="margin-top:4px;color:#b45309;">素材库还缺 <b>' + esc(npPhotoLibPlanShort(plan)) + '</b>——先去素材库补齐（「＋ 照片」），齐了这颗才可按；急的话也可以走「AI 出图」。</div>';
+    else photoLine = '<div class="note-xs" style="margin-top:4px;color:#15803d;">✓ 素材齐了：' + esc(npPhotoLibPlanOkText(plan)) + '——按「从素材库出图」一次铺满，全是你的照片。</div>';
+    if (mix.mixed) photoLine += '<div class="note-xs" style="margin-top:3px;color:#b45309;">这篇现在混了 AI 图和你的照片（差台）——上面两颗按钮随便走哪条，都是整套换。</div>';
+    status = mix.allAi ? '✓ 这套图都是 AI 出的' : (mix.empty ? '' : '已有 ' + (total - mix.empty) + '/' + total + ' 张图');
+  } else {
+    const parts = [];
+    if (miss.shots) parts.push('配图 ' + miss.shots + ' 张');
+    if (miss.cover) parts.push('封面 1 张');
+    status = miss.need
+      ? '这次补：' + parts.join(' + ') + '（自己传过的格子不重出）'
+      : '✓ 配图 ' + miss.total + ' 张齐了' + (npCoverOf(w) && npCoverOf(w).on !== false ? '，封面也有' : '') + (stageTxt ? ' · ' + stageTxt : '');
+    const can = !!q && !keyBad && !dayFull && (unlimited || left >= miss.need) && !_npDshBusy && !running;
+    if (miss.need) btn.push('<button type="button" class="np-img-open btn btn-primary" style="font-weight:700;' + (can ? '' : 'opacity:.55;cursor:not-allowed;') + '"' + (can ? '' : ' disabled') + '>' +
+      (running ? '🖼 出图中…' : '🖼 一键出图（' + miss.need + ' 张）') + '</button>');
+  }
   let panel = '';
   if (running) {
     panel = '<div style="margin-top:8px;">' +
@@ -4601,6 +6075,15 @@ function npImgGenBits(w) {
       '<div class="note-xs" style="margin-bottom:6px;">出图是 AI 现画，不是从网上取图——一张一般 20~40 秒（封面先出，再按顺序出配图）。</div>' +
       '<button type="button" class="np-img-stop btn btn-soft btn-sm">⏹ 停下（出好的留着，没出的不扣）</button>' +
       '</div>';
+  } else if (photo) {
+    panel = photoLine;
+    const aiNeed = npImgGenJobs(w, true).length;
+    if (aiNeed > 0 && q && (keyBad || dayFull || (!unlimited && left < aiNeed))) {
+      const why = keyBad ? 'AI 出图暂时用不了——先点每张的「📋 复制这一张」去豆包 / 即梦生成'
+        : dayFull ? '今天出图名额用完了——先点每张的「📋 复制这一张」自己生成'
+        : npImgShortTip(q, aiNeed, left);
+      panel += '<div class="note-xs" style="margin-top:4px;color:#b45309;">' + esc(why) + '</div>';
+    }
   } else if (miss.need) {
     const why = !q ? '' : keyBad ? '一键出图暂时用不了——先点每张的「📋 复制这一张」去豆包 / 即梦生成，图回来「⬆ 传图」传上来'
       : dayFull ? '今天出图名额用完了——先点每张的「📋 复制这一张」自己生成，图回来传上来'
@@ -4624,7 +6107,7 @@ function npImgGenBits(w) {
       '<span class="note-xs">' + esc(status) + '</span>' +
       '</div>'
     : '';
-  return { btn: btn, panel: head + panel + runErr + noteLine + errLine };
+  return { btn: btn.join(''), panel: head + panel + runErr + noteLine + errLine };
 }
 
 /** ⑤ 分镜确认页：配置行（画面风格 / 📐 分几张）＋ 每张一条提示词＋传图区。
@@ -4660,6 +6143,7 @@ let _npDshOpen = '';
 function npShotListHtml(w) {
   const on = npShotsOn(w);
   const chs = (_npChars && _npChars.list) ? _npChars.list : [];
+  const canPick = !npCardModeOf(w);   // 对比 / 问答仍是信息卡：不出「从素材库挑」（封面可以借一张，走封面那格）
   const rows = on.map((it, i) => {
     const open = _npDshOpen === it.id;
     const cast = npCharsOfItem(w, it).map(c => c.name || '未命名').join('、') || '主角';
@@ -4667,13 +6151,18 @@ function npShotListHtml(w) {
     const isNew = !!String(it.beat || '').trim();
     const big = isNew ? it.beat : (npCapFallbackBig(it) || '—');
     const cvTx = String(it.copyText || '').trim();
+    const hasImg = !!((it.imgs || []).length);
     const head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 2px;' + (i ? 'border-top:1px dashed var(--line);' : '') + '">' +
       '<b style="font-size:11.5px;color:var(--c-brand-text);min-width:30px;">图' + (i + 1) + '</b>' +
       (it.role ? '<span class="note-xs">' + esc(it.role) + '</span>' : '') +
       '<span style="font-size:12px;font-weight:700;">' + esc(big) + '</span>' +
       (cvTx ? '<span class="note-xs">· 图上「' + esc(cvTx) + '」</span>' : '') +
       '<span class="note-xs">· 主角 ' + esc(lead) + '</span>' +
+      (!hasImg && _npPhotoPost ? '<span style="font-size:11px;font-weight:700;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:999px;padding:1px 8px;">缺料 · ' + esc(npShotNeedName(w, it)) + '</span>' : '') +
+      (npShotBatchOff(w, it) ? '<span style="font-size:11px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:999px;padding:1px 8px;" title="同一篇尽量用同一批照片（同一次传的＝同场地、同身衣服）">这张跟别张不是一批</span>' : '') +
+      (it.txtImg ? '<span style="font-size:11px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:999px;padding:1px 8px;" title="点上面「✍ 一键排字」可逐张看、换位置">✍ 已排字 · 字在' + (npPtPosOf(it) === 'top' ? '上' : '下') + '</span>' : '') +
       '<span style="flex:1;"></span>' +
+      (canPick ? '<button type="button" class="np-dsh-picklib btn btn-soft btn-sm" data-id="' + npArAttr(it.id) + '">🖼 从素材库挑</button>' : '') +
       '<button type="button" class="np-shot-copy btn btn-soft btn-sm" data-id="' + npArAttr(it.id) + '">📋 复制这一张</button>' +
       '<button type="button" class="np-dsh-pen btn btn-soft btn-sm" data-id="' + npArAttr(it.id) + '">' + (open ? '收起' : '✎ 改这张') + '</button>' +
       '</div>';
@@ -4715,9 +6204,15 @@ function npShotListHtml(w) {
         (!isNew && !(it.scene || it.act || it.face) ? '<div class="note-xs" style="margin-top:5px;color:#b45309;">这张是老分镜——三格空着就按老写法出图；点「↻ 再来一组」按新方法重切。</div>' : '') +
       '</div>';
   }).join('');
+  const beatF = npBeatFormOf(w);
+  const cntNote = !beatF ? '' : (on.length < 3
+    ? '这一篇只切出 ' + on.length + ' 张——故事 / 吐槽一篇要 3~4 张，补拍一两张，或点「↻ 再来一组」'
+    : (on.length > 4 ? '故事 / 吐槽一篇 3~4 张就够，多出来的可以勾掉' : '故事 / 吐槽一篇 3~4 张：同一场地、同一身衣服'));
   return '<div style="border:1px solid var(--line);border-radius:10px;background:var(--c-surface);padding:8px 12px;margin-bottom:10px;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:12.5px;">🧩 每张画什么</b>' +
-    '<span class="note-xs">每张右上角「📋 复制这一张」＝这一张单独发给 AI 的完整提示词（主角 / 故事 / 场景 / 风格 / 配文都在里面）；点「✎ 改这张」才展开改</span></div>' +
+    '<span class="note-xs">每张右上角「📋 复制这一张」＝这一张单独发给 AI 的完整提示词（主角 / 故事 / 场景 / 风格 / 配文都在里面）；点「✎ 改这张」才展开改</span>' +
+    (cntNote ? '<span class="note-xs" style="flex-basis:100%;color:' + (on.length < 3 || on.length > 4 ? '#b45309' : '#6b7280') + ';">' + esc(cntNote) + '</span>' : '') +
+    '</div>' +
     rows + '</div>';
 }
 function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进站拉一次，20 秒内不重复
@@ -4730,6 +6225,27 @@ function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进�
       (on2 ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:999px;background:' + (on2 ? 'var(--c-brand-soft)' : '#fff') + ';color:' +
       (on2 ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">' + esc(k) + '</button>';
   };
+  const ownPack = String((w.shots && w.shots.look && w.shots.look.pack) || '').trim().toUpperCase();
+  const packChip = (p) => {
+    const on2 = ownPack === p.k;
+    return '<button type="button" class="np-dsh-pack" data-k="' + npArAttr(p.k) + '" title="' + npArAttr(p.note + '（换这套只重拼提示词，已经出的图不动）') + '" style="border:1px solid ' +
+      (on2 ? 'var(--c-brand)' : 'var(--line)') + ';border-radius:999px;background:' + (on2 ? 'var(--c-brand-soft)' : '#fff') + ';color:' +
+      (on2 ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">' + p.k + ' ' + esc(p.t) + '</button>';
+  };
+  const cardIp = npCardModeOf(w) ? npCardIpOf(w) : null;
+  const packOn = !!npCardModeOf(w) || !!npBeatFormOf(w);
+  const packIp = cardIp || npCardIpOf(w);
+  const packNote = !packIp
+    ? '这个号还没绑出镜人——只上配色和版面，不画人'
+    : (cardIp ? '图里那个讲解员＝' + esc(cardIp.name) + '，每张只在角落出现一个'
+      : '图里那个「我」＝' + esc(packIp.name) + '，只在他出场的那几张画，正文里没有就不硬塞');
+  const packRow = !packOn ? '' :
+    '<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-top:8px;">' +
+      '<span style="min-width:62px;font-size:11px;font-weight:700;color:#374151;">📐 版面套</span>' +
+      '<span style="display:flex;gap:4px;flex-wrap:wrap;">' + NP_CARD_PACKS.map(packChip).join('') +
+      '<button type="button" class="np-dsh-pack" data-k="" title="' + npArAttr('这一篇跟账号默认走（现在默认 A 品牌色块）') + '" style="border:1px dashed var(--line);border-radius:999px;background:' + (!ownPack ? 'var(--c-brand-soft)' : '#fff') + ';color:' + (!ownPack ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">默认</button></span>' +
+      '<span class="note-xs" style="flex-basis:100%;margin-left:68px;">' + packNote + '</span>' +
+    '</div>';
   const cfg =
     '<div style="border:1px solid var(--line);border-radius:10px;background:var(--c-surface);padding:10px 12px;margin-bottom:10px;">' +
       '<div style="font-size:12px;font-weight:700;color:#333;">⚙ 生成前定一次 <span class="note-xs">——都写进每张的提示词；生成后还能改</span></div>' +
@@ -4738,6 +6254,7 @@ function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进�
         '<span style="display:flex;gap:4px;flex-wrap:wrap;">' + NP_LOOK_MOTIFS.map(m => motifChip(m.k)).join('') +
         '<button type="button" class="np-dsh-motif" data-k="" title="' + npArAttr('这一套跟账号默认走（账号默认就是下面「🎨 出图风格」那份）') + '" style="border:1px dashed var(--line);border-radius:999px;background:' + (!ownMotif ? 'var(--c-brand-soft)' : '#fff') + ';color:' + (!ownMotif ? 'var(--c-brand-text)' : '#555') + ';font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">跟账号默认</button></span>' +
       '</div>' +
+      packRow +
       '<div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-top:8px;">' +
         '<span style="min-width:62px;font-size:11px;font-weight:700;color:#374151;">📐 分几张</span>' +
         '<span class="note-xs">AI 读正文自己定（按证据链，3~8 张）</span>' +
@@ -4808,19 +6325,20 @@ function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进�
     const hasImg = !!((it.imgs || []).length);
     const base = 'position:relative;width:52px;height:64px;border-radius:8px;cursor:pointer;overflow:hidden;flex:none;';
     if (!hasImg) return '<div class="np-dsh-cell" data-i="' + i + '" title="第 ' + (vi + 1) + ' 张还空着" style="' + base + 'border:2px dashed ' + (onSel ? '#2563eb' : '#c8ced8') + ';background:' + (onSel ? '#eef4ff' : '#fafbfc') + ';display:flex;align-items:center;justify-content:center;color:#9aa0ac;font-size:12px;">' + (vi + 1) + '</div>';
-    const aid = it.imgs[it.imgs.length - 1];
+    const aid = npShotShowAid(it);
     const a = (_npShotImgs && _npShotImgs[aid]) || null;
     const thumb = a && a.thumb ? '<img src="' + escAttr(a.thumb) + '" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">' : '';
+    const ptMark = it.txtImg ? '<span title="这张已经把字排上去了（发出去用的是这张）" style="position:absolute;left:2px;top:2px;background:rgba(21,128,61,.82);color:#fff;font-size:9px;border-radius:4px;padding:0 4px;z-index:2;">字</span>' : '';
     const regen = '<span class="np-dsh-regen" data-id="' + npArAttr(it.id) + '" title="重出第 ' + (vi + 1) + ' 张（扣 1 张，会先确认）" style="position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:10px;line-height:17px;text-align:center;z-index:2;">↻</span>';
     return '<div class="np-dsh-cell np-img-view" data-aid="' + npArAttr(aid) + '" data-i="' + i + '" title="第 ' + (vi + 1) + ' 张——点开看大图（并选中这张，粘贴 / 换图就进它）；右上角 ↻ 重出" style="' + base + 'border:2px solid ' + (onSel ? '#2563eb' : '#16a34a') + ';background:linear-gradient(160deg,#4a5568,#2d3748);cursor:zoom-in;' + (onSel ? 'box-shadow:0 0 0 2px rgba(37,99,235,.25);' : '') + '">' +
-      thumb + regen +
+      thumb + ptMark + regen +
       (thumb ? '' : '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;">✓</span>') +
       '<span style="position:absolute;left:3px;bottom:2px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;border-radius:4px;padding:0 4px;">' + (vi + 1) + '</span></div>';
   };
   /* 封面也摆进传图区（2026-10-21）：一键出图会把它一起出；点图看大图，换图走「⬆ 传封面」，右上角 ↻ 单张重出 */
   const cv0 = npCoverOf(w) || {};
   const cvOn = cv0.on !== false;
-  const cvAid = (cv0.imgs || []).length ? cv0.imgs[cv0.imgs.length - 1] : '';
+  const cvAid = npShotShowAid(cv0);
   const cvA = (cvAid && _npShotImgs && _npShotImgs[cvAid]) || null;
   const cvThumb = cvA && cvA.thumb ? '<img src="' + escAttr(cvA.thumb) + '" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;">' : '';
   const cvCell = !cvOn ? '' : '<div class="np-dsh-cvcell' + (cvThumb ? ' np-img-view' : '') + '"' + (cvThumb ? ' data-aid="' + npArAttr(cvAid) + '"' : '') + ' title="' + (cvThumb ? '封面——点开看大图；要换图点下面「⬆ 传封面」；右上角 ↻ 重出' : '封面——点这传封面') + '" style="position:relative;width:64px;height:80px;border-radius:8px;cursor:pointer;overflow:hidden;flex:none;border:2px ' + (cvThumb ? 'solid #16a34a' : 'dashed #c8ced8') + ';background:' + (cvThumb ? 'linear-gradient(160deg,#4a5568,#2d3748)' : '#fafbfc') + ';display:flex;align-items:center;justify-content:center;color:#9aa0ac;font-size:11px;">' +
@@ -4828,13 +6346,22 @@ function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进�
     (cvThumb ? '' : '点这传封面') +
     (cvThumb ? '<span class="np-dsh-regen" data-id="cv" title="重出封面（扣 1 张，会先确认）" style="position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;background:rgba(0,0,0,.62);color:#fff;font-size:10px;line-height:17px;text-align:center;z-index:2;">↻</span>' : '') +
     '<span style="position:absolute;left:3px;bottom:2px;background:rgba(0,0,0,.55);color:#fff;font-size:9px;border-radius:4px;padding:0 4px;">封面</span></div>';
-  const imgBits = npImgGenBits(w);
+  /* 素材图文：两条路互斥（全 AI / 全素材库）。素材够不够在这页现算，算完刷一次让「从素材库出图」亮/灰 */
+  const ptOn = !!_npPhotoPost && !npCardModeOf(w);
+  if (ptOn) npPhotoLibEnsure(w);
+  const libPlan = ptOn ? npPhotoLibPlanCached(w) : null;
+  const imgBits = npImgGenBits(w, ptOn ? { photo: true, plan: libPlan } : null);
+  const ptTotal = on.length + (cvOn ? 1 : 0);
+  const ptDone = on.filter(x => x.txtImg).length + ((cvOn && cv0.txtImg) ? 1 : 0);
+  const ptBtn = !ptOn ? '' :
+    '<button type="button" class="np-dsh-pt btn btn-soft btn-sm" title="' + npArAttr('把每张要配的那句字排到照片上：最多 4 行、最小 26 号，亮暗按最不利处算，看不清就自动压底；封面也排') + '">' +
+      '✍ 一键排字' + (ptDone ? '（已排 ' + ptDone + '/' + ptTotal + '）' : '') + '</button>';
   const upCard =
     '<div style="border:1px solid var(--line);border-radius:10px;background:var(--c-surface);padding:10px 12px;margin-bottom:10px;">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
         '<label class="btn btn-primary" style="cursor:pointer;">⬆ 传图（可多选）<input type="file" accept="image/*" multiple class="np-dsh-upmany" style="display:none;"></label>' +
         (cvOn ? '<label class="btn btn-soft btn-sm" style="cursor:pointer;">⬆ 传封面<input type="file" accept="image/*" class="np-dsh-cv-file" style="display:none;"></label>' : '') +
-        imgBits.btn +
+        imgBits.btn + ptBtn +
         '<b style="font-size:12.5px;color:#333;">已传 ' + gotN + '/' + on.length + (cvOn ? ' · ' + (cvThumb ? '封面 ✓' : '封面缺') : ' · 不出封面') + '</b>' +
       '</div>' +
       imgBits.panel +
@@ -4843,11 +6370,17 @@ function npDshStepHtml(w) {  npImgQuotaEnsure();   // 额度条要的数：进�
       '<div class="note-xs" style="margin-top:7px;">点小图看大图（字不清楚就在大图里「新标签打开」再放大）；点一下也把这张选中——回这儿直接 <b>Ctrl+V</b>，贴的就进它。自己传：选文件（可多选，按顺序铺进空格）。服务器出的图点右上角 ↻ 可单张重出。</div>' +
     '</div>';
   const missNow = npImgMissing(w);
+  const footTxt = ptOn
+    ? (libPlan ? (libPlan.ok
+        ? '素材齐了——「📚 从素材库出图」一次铺满，或「🖼 AI 出图」整篇让 AI 画；两条路选一条，别混着来'
+        : '素材库还缺 ' + npPhotoLibPlanShort(libPlan) + '——先去素材库补齐，「📚 从素材库出图」才可按；现在也可以「🖼 AI 出图」整篇让 AI 画')
+      : '正在核对素材库…')
+    : (missNow.need
+      ? '还缺 ' + [missNow.shots ? missNow.shots + ' 张配图' : '', missNow.cover ? '封面' : ''].filter(Boolean).join(' + ') + '——上面「🖼 一键出图」直接出；也可以照每张的「📋 复制这一张」去豆包 / 即梦一张一张生成，图回来「⬆ 传图」多选一次传'
+      : '✓ 图齐了——页脚进预览看合成');
   return cfg + storyCard + npCharBarHtml(w) + (on.length ? npShotListHtml(w) : '') + upCard +
     '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
-      '<span class="note-xs">' + (missNow.need
-        ? '还缺 ' + [missNow.shots ? missNow.shots + ' 张配图' : '', missNow.cover ? '封面' : ''].filter(Boolean).join(' + ') + '——上面「🖼 一键出图」直接出；也可以照每张的「📋 复制这一张」去豆包 / 即梦一张一张生成，图回来「⬆ 传图」多选一次传'
-        : '✓ 图齐了——页脚进预览看合成') + '</span>' +
+      '<span class="note-xs">' + esc(footTxt) + '</span>' +
     '</div>';
 }
 
@@ -5186,17 +6719,25 @@ const NP_CASE_STEPS = ['① 进料 · 剪切 · 定义', '② 大组装'];
 const NP_CASE_BGMS = ['🔇 静音', '🎹 安静钢琴', '🥁 轻快节奏'];
 const NP_CASE_COVERS_DEF = ['过程实拍', '细节特写', '成果全景'];
 const NP_CASE_ASM_TX = ['对段序…', '配 BGM…', '烧字幕…', 'TTS 配音…', '合成出片…'];
-/* 拆几个环节＝用户自己拨的档（六十六改）：只定 AI 蒸环节轴时的数量范围，默认 3~6；存 config.product.caseSplit */
-const NP_CASE_SPLITS = [[3, 4], [3, 6], [4, 8], [5, 10]];
-/** 拆档读数：认 [min,max]（2~12 兜底），不是这个形就回默认 3~6 */
-function npCaseSplitShape(v) {
-  const a = Array.isArray(v) ? v.map(x => Math.round(Number(x) || 0)) : [];
-  return (a.length === 2 && a[0] >= 2 && a[1] >= a[0] && a[1] <= 12) ? [a[0], a[1]] : [3, 6];
-}
+/* 案例成片固定 8 段（2026-11-09 老板拍）：封面压在工作地点那一帧、不单独占一屏；
+   讲解人插在现场之后、讲问题之前（第 4、5 段之间）；「遇到什么 · 怎么做的」一个点一条、有几处就几条。 */
+const NP_CASE_BEATS = [
+  { key: 'cover',  name: '🖼 封面', hint: '就压在工作地点那一帧上，不单独占一屏' },
+  { key: 'place',  name: '📍 工作地点', hint: '空镜 1~2 秒：在哪儿干活' },
+  { key: 'who',    name: '🏠 谁家 · 在哪', hint: '这是谁家、在哪个片区（客户信息可脱敏）' },
+  { key: 'scene',  name: '👀 现场什么样', hint: '进去第一眼看到的样子' },
+  { key: 'talk',   name: '🗣 讲解人出镜', hint: '本人对着镜头说这次做什么；话长就切成 2~3 段' },
+  { key: 'issue',  name: '🔧 遇到什么 · 怎么做的', hint: '一个点一条，每条 2~3 秒，有几处就几条' },
+  { key: 'result', name: '✅ 结果', hint: '做完是什么样' },
+  { key: 'cta',    name: '🏪 导流指引', hint: '整屏到店卡，3 秒起' },
+];
 const NP_CASE_DB = 'xhsCase', NP_CASE_STORE = 'case';
 
 let _npCase = null;       // 这一篇的工作台状态（切走即清，下次从档案按名字捡回来）
 let _npCaseTimer = 0;
+let _npFilmAuto = '';     // 正文页点了「生成视频」：进案例页后直接进片，不再停在大组装
+let _npCaseEditBoot = ''; // 正文刚写完：进案例页直接停在「② 改正文」这一页
+let _npScriptTimer = 0;   // 改正文防抖落档
 let _npcSVid = null;      // ① 的剪切播放器（video 元素不重建，每次 render 后挂回壳里）
 let _npcPVid = null;      // ② 的预览/出片播放器（离屏挂 body 上，永不重建）
 let _npcVidRaf = 0;
@@ -5207,7 +6748,11 @@ let _npcPrev = { on: false, sess: 0, t: 0 };
 let _npcAC = null, _npcSrcGain = null, _npcBgmCache = {};
 
 function npcFmt(x) { x = Math.max(0, Math.round(Number(x) || 0)); return Math.floor(x / 60) + ':' + String(x % 60).padStart(2, '0'); }
-function npcMaxLen(secs) { return Math.max(8, Math.round(secs * 4.5)); }   // 讲解词铁律（demo maxLenOf）
+function npcMaxLen(secs) {
+  /* 案例字幕铁律（2026-11-09）：一条 9~14 字、只讲一个点（2~3 秒按每秒 4~5 字算） */
+  const s = Math.max(1, Number(secs) || 0);
+  return Math.min(14, Math.max(9, Math.round(s * 4.5)));
+}
 function npcErrText(e) { return String((e && e.message) || e || '未知问题'); }
 function npcAbInit(m) {
   if (!m || !m.dur) return { a: 10, b: 26 };
@@ -5217,17 +6762,41 @@ function npcAbInit(m) {
 
 /* ── 三十二改 · 说话统一真晓晓：① 试听 / ② 整段预览 / 素材库连播全走 EdgeTTS（Edge 免费通道，
       跟成片同一把嗓子），同一句只合一次、② 进场预热；不是 Edge 或用不了 → 浏览器嗓子兜底（界面标签跟着说实话） ── */
-const NPC_SAY = { a: null, gen: 0, cache: {}, pend: {}, fail: {} };
+const NPC_SAY = { a: null, gen: 0, cache: {}, pend: {}, fail: {}, segTimer: 0 };
 function npcTtsIsEdge() { try { return !!(window.EdgeTTS && EdgeTTS.isEdge()); } catch (_) { return false; } }
-function npcTtsMode() { return npcTtsIsEdge() ? '晓晓' : '浏览器嗓子'; }
+/* 案例这条线选的嗓子：记在笔记 asm.voice 上；没选过＝刘飞 2.0（11-11 老板定，原来落晓晓） */
+const NPC_VOICE_DEF = 'zh_male_liufei_uranus_bigtts';
+function npcVoiceOf(g) {
+  const v = String((g && g.voice) || '');
+  try { if (v && typeof VOICES !== 'undefined' && VOICES.list && VOICES.list.some(o => o.v === v)) return v; } catch (_) {}
+  return NPC_VOICE_DEF;
+}
+function npcVoiceName(g) {
+  try { if (typeof VOICES !== 'undefined' && VOICES.short) return VOICES.short(npcVoiceOf(g)); } catch (_) {}
+  return '刘飞 2.0';
+}
+function npcVoiceIsDoubao(g) {
+  try { return typeof VOICES !== 'undefined' && !!VOICES.providerOf && VOICES.providerOf(npcVoiceOf(g)) === 'doubao'; } catch (_) { return false; }
+}
+function npcTtsMode() { return (npcTtsIsEdge() || npcVoiceIsDoubao(_npCase)) ? npcVoiceName(_npCase) : '浏览器嗓子'; }
 function npcSayKey(t) { return String(t || '').trim().slice(0, 120); }
+/* 一句 mp3：豆包那批走云端合成（按字数扣额度，取不到退回免费晓晓），其它在本机念 */
+async function npcTtsMp3(text, g, rate) {
+  const rt = rate || '+20%';
+  if (npcVoiceIsDoubao(g)) {
+    const c = await npDvTtsCloud([text], npcVoiceOf(g), rt);
+    if (c && c[0]) return c[0];
+    return await EdgeTTS.synth(text, { voice: NPC_VOICE_DEF, rate: rt });
+  }
+  return await EdgeTTS.synth(text, { voice: npcVoiceOf(g), rate: rt });
+}
 function npcTtsGet(txt) {                                   // 缓存合成：同一句只合一次；失败记下来不退烧重试
-  const key = npcSayKey(txt);
+  const key = npcVoiceOf(_npCase) + '|' + npcSayKey(txt);
   if (!key) return Promise.reject(new Error('空的'));
   if (NPC_SAY.cache[key]) return Promise.resolve(NPC_SAY.cache[key]);
   if (NPC_SAY.fail[key]) return Promise.reject(new Error('上次没合成功'));
   if (NPC_SAY.pend[key]) return NPC_SAY.pend[key];
-  const p = EdgeTTS.synth(String(txt), { voice: 'zh-CN-XiaoxiaoNeural', rate: '+20%' })
+  const p = npcTtsMp3(String(txt), _npCase, '+20%')
     .then(u8 => {
       const url = URL.createObjectURL(new Blob([u8], { type: 'audio/mpeg' }));
       NPC_SAY.cache[key] = url; delete NPC_SAY.pend[key];
@@ -5239,6 +6808,7 @@ function npcTtsGet(txt) {                                   // 缓存合成：�
 }
 function npcSayStop() {
   NPC_SAY.gen++;
+  if (NPC_SAY.segTimer) { clearTimeout(NPC_SAY.segTimer); NPC_SAY.segTimer = 0; }
   if (NPC_SAY.a) { try { NPC_SAY.a.pause(); } catch (_) {} NPC_SAY.a = null; }
   try { speechSynthesis.cancel(); } catch (_) {}
 }
@@ -5256,9 +6826,10 @@ function npcSay(txt, opt) {
   opt = opt || {};
   const gen = NPC_SAY.gen;
   const toastFn = (typeof toast === 'function') ? toast : () => {};
-  if (!npcTtsIsEdge()) { npcSayFallback(text); if (opt.announce) toastFn('这台浏览器不是 Edge——先用浏览器嗓子顶着；出片统一晓晓（Edge 免费通道）'); return; }
-  const key = npcSayKey(text);
-  if (opt.announce && !NPC_SAY.cache[key] && !NPC_SAY.pend[key]) toastFn('🔊 晓晓合成中…（合成过一遍就顺了）');
+  const vn = npcVoiceName(_npCase);
+  if (!npcTtsIsEdge() && !npcVoiceIsDoubao(_npCase)) { npcSayFallback(text); if (opt.announce) toastFn('这台浏览器不是 Edge——先用浏览器嗓子顶着；出片统一' + vn + '（Edge 免费通道）'); return; }
+  const key = npcVoiceOf(_npCase) + '|' + npcSayKey(text);
+  if (opt.announce && !NPC_SAY.cache[key] && !NPC_SAY.pend[key]) toastFn('🔊 ' + vn + '合成中…（合成过一遍就顺了）');
   npcTtsGet(text).then(url => {
     if (gen !== NPC_SAY.gen) return;                        // 期间被停过 / 换过一句——这条不放了
     const a = new Audio(url); NPC_SAY.a = a;
@@ -5267,15 +6838,17 @@ function npcSay(txt, opt) {
   }).catch(() => {
     if (gen !== NPC_SAY.gen) return;
     npcSayFallback(text);
-    if (opt.announce) toastFn('晓晓没合成功（网络或接口抽风）——先拿浏览器嗓子顶一下');
+    if (opt.announce) toastFn(vn + '没合成功（网络或接口抽风）——先拿浏览器嗓子顶一下');
   });
 }
-function npcTtsWarm(texts) {                                // 进场预热：一条条顺序合，别一口气开一堆连接
-  if (!npcTtsIsEdge()) return;
+function npcTtsWarm(texts) {                                // 进场预热：一条条顺序合，别一口气开一堆连接（只预热免费的，豆包按字数扣额度不预跑）
+  if (!npcTtsIsEdge() || npcVoiceIsDoubao(_npCase)) return;
+  const pre = npcVoiceOf(_npCase) + '|';
   const uniq = []; const seen = {};
   (texts || []).forEach(t => {
     const k = npcSayKey(t);
-    if (k && !seen[k] && !NPC_SAY.cache[k] && !NPC_SAY.fail[k]) { seen[k] = 1; uniq.push(k); }
+    const key = pre + k;
+    if (k && !seen[key] && !NPC_SAY.cache[key] && !NPC_SAY.fail[key]) { seen[key] = 1; uniq.push(String(t || '').trim()); }
   });
   let i = 0;
   const next = () => { if (i >= uniq.length) return; npcTtsGet(uniq[i++]).then(next, next); };
@@ -5376,19 +6949,48 @@ function npCasePack(g) {
       fit: npcFitIsOn(m) ? npcFitCoerce(m.fit) : undefined,   // 没动过取景的素材不打标——老档保持原样
       marks: Array.isArray(m.marks) ? m.marks.map(x => Math.round(Number(x) * 10) / 10).filter(x => isFinite(x) && x > 0).slice(0, 300) : undefined,
     })),
-    bgm: Number(g.bgm) || 0, cover: Number(g.cover) || 0,
+    bgm: Number(g.bgm) || 0, cover: Number(g.cover) || 0, voice: String(g.voice || ''),
     covers: (g.covers || []).slice(0, 3).map(String), coversAI: !!g.coversAI,
     subOn: !!g.subOn, voOn: !!g.voOn,
+    cover2: (g.cv2Saved && g.cv2Saved.thumb) ? {
+      title: String(g.cv2Saved.title || '').slice(0, 20),
+      lay: /^(big|side|band)$/.test(String(g.cv2Saved.lay || '')) ? String(g.cv2Saved.lay) : 'big',
+      at: Number(g.cv2Saved.at) || 0,
+      thumb: String(g.cv2Saved.thumb || ''),
+    } : undefined,
+    card: {
+      on: g.cardOn !== false,
+      dur: (Number(g.cardDur) === 1.5 || Number(g.cardDur) === 2.5) ? Number(g.cardDur) : 2,
+      lay: /^(big|side|band)$/.test(String(g.cardLay || '')) ? String(g.cardLay) : 'big',
+    },
     film: film, updatedAt: Date.now(),
   };
   if (g.libMode) {
-    pack.libClips = (g.libClips || []).filter(x => x && x.clipId && x.videoId).slice(0, 60).map(x => ({
-      clipId: String(x.clipId), videoId: String(x.videoId), videoName: String(x.videoName || ''),
-      a: Number(x.a) || 0, b: Number(x.b) || 0, dur: Number(x.dur) || 0,
-      name: String(x.name || ''), desc: String(x.desc || ''),
-      tags: (x.tags || []).map(String).slice(0, 12), shot: Number(x.shot) || 0,
-    }));
+    pack.libClips = (g.libClips || []).filter(x => x && x.clipId && x.videoId).slice(0, 60).map((x, i) => {
+      /* 大组装里改过的口播要落回这一段——不然下次打开又变回画面说明 */
+      const mm = (g.mats || []).find(m => m && String(m.id) === 'lib:' + x.clipId + ':' + i);
+      const mv = (mm && mm.segs && mm.segs[0] && mm.segs[0].vo) || '';
+      return {
+        clipId: String(x.clipId), videoId: String(x.videoId), videoName: String(x.videoName || ''),
+        a: Number(x.a) || 0, b: Number(x.b) || 0, dur: Number(x.dur) || 0,
+        name: String(x.name || ''), desc: String(x.desc || ''),
+        tags: (x.tags || []).map(String).slice(0, 12), shot: Number(x.shot) || 0,
+        cat: String(x.cat || ''),
+        vo: String(mv || x.vo || '').slice(0, 200),
+        gid: String(x.gid || ''),   // 同组画面共用一句字幕/配音（引言＝场馆＋本人）
+      };
+    });
     pack.libBrief = String(g.libBrief || '');
+    pack.scriptCol = String(g.scriptCol || '');
+    pack.libStyle = String(g.libStyle || '');
+    pack.subFs = g.subFs === 'lg' ? 'lg' : 'std';
+    if (g.libBlocks && (g.libBlocks.intro || g.libBlocks.content || g.libBlocks.door)) {
+      pack.libBlocks = {
+        intro: String(g.libBlocks.intro || ''),
+        content: String(g.libBlocks.content || ''),
+        door: String(g.libBlocks.door || ''),
+      };
+    }
   }
   return pack;
 }
@@ -5420,10 +7022,27 @@ async function npCaseLoadKbTitles() {
   } catch (_) {}
   if (_npCase) _npCase.kbTitles = list.filter(e => e && e.isActive !== false && String(e.title || '').trim()).map(e => String(e.title).trim());
 }
+/* 案例页空着的时候别给一片白：说清案例怎么来，给一颗「去素材库挑段」 */
+function npCaseEmpty(container) {
+  if (!container) return;
+  container.innerHTML = '<div class="card card-pad" style="max-width:660px;">' +
+      '<div style="font-size:15px;font-weight:700;margin-bottom:6px;">🎬 案例成片</div>' +
+      '<div style="font-size:13px;color:#666;line-height:1.75;">案例是从素材库挑几段建出来的：勾完段，AI 按画面说明写一段正文（引言／内容／到店三块），改完直接生成视频——念完一句就切下一镜。</div>' +
+      '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<button type="button" class="btn btn-primary" id="npcEmptyPick">📚 去素材库挑段</button>' +
+        '<button type="button" class="btn" id="npcEmptyArch">🗂 看已有案例</button>' +
+      '</div>' +
+    '</div>';
+  const pick = container.querySelector('#npcEmptyPick');
+  if (pick) pick.addEventListener('click', () => switchMainTab('noteAssets'));
+  const arch = container.querySelector('#npcEmptyArch');
+  if (arch) arch.addEventListener('click', () => switchMainTab('noteArchive'));
+}
 async function npOpenCase(container, n) {
   if (!container || !n) return;
   ensureNpDelegation();
   npCaseLeave();   // 上一篇还没走完的（含防抖的落档）先收干净
+  const bootId = _npCaseEditBoot; _npCaseEditBoot = '';   // 正文刚写完一次性「直接停在改正文」
   const rid = String(n.id || '');
   const title = String(n.title || ((n.titles || [])[0] || '') || '');
   const a = (n.asm && typeof n.asm === 'object') ? n.asm : {};
@@ -5435,6 +7054,7 @@ async function npOpenCase(container, n) {
   if (libRefs.length) {
     const vids = await npVideosRead();
     const pool = await npClipsRead();
+    const hasPlace = libRefs.some(x => String(x.cat || '') === 'place');
     for (let i = 0; i < libRefs.length; i++) {
       const ref = libRefs[i];
       const v = vids.find(x => x && String(x.id) === String(ref.videoId)) || null;
@@ -5446,20 +7066,26 @@ async function npOpenCase(container, n) {
       let blob = null;
       try { blob = await npCaseGet('src:' + ref.videoId); } catch (_) {}
       const desc = String((c && c.desc) || ref.desc || '');
-      const vo = i === 0 && String(a.libBrief || '').trim()
-        ? (String(a.libBrief).trim().replace(/[。.!！?？]+$/, '') + '。' + desc).slice(0, 180)
-        : desc;
+      let catK = '';
+      try { catK = c ? npMatCatOfClip(c, v) : npMatCatOfTags(ref.tags || []); } catch (_) { catK = ''; }
+      const catN = npMatCatName(catK || NP_MAT_WAIT);
+      const vo = String(ref.vo || '').trim() ||
+        (i === 0 && String(a.libBrief || '').trim()
+          ? (String(a.libBrief).trim().replace(/[。.!！?？]+$/, '') + '。' + desc).slice(0, 180)
+          : desc);
+      /* 引言那种结构：本人不用整段出镜，只留最后 2 秒接在场馆后面 */
+      const ca2 = (catK === 'me' && hasPlace && (cb - ca) > 2) ? cb - 2 : ca;
       mats.push({
         id: 'lib:' + ref.clipId + ':' + i,
         name: String((v && v.name) || ref.videoName || (c && c.name) || '素材库片段'),
-        dur: dur,
-        segs: [{ a: ca / dur * 100, b: cb / dur * 100, stage: '素材库', kb: null, vo: vo, voAlt: false, done: true }],
+        dur: dur, cat: catK, catName: catN, gid: String(ref.gid || ''),
+        segs: [{ a: ca2 / dur * 100, b: cb / dur * 100, stage: catN, kb: null, vo: vo, voAlt: false, done: true }],
         blob: blob, url: blob ? URL.createObjectURL(blob) : '', missing: !blob,
       });
     }
     libMode = mats.length > 0;
     if (!libMode && typeof toast === 'function') toast('素材库里这几段的原视频找不回来了——回素材库重新挑一次', 'error');
-    if (libMode) npLibLockForNote(rid, title, libRefs).catch(() => {});   // 进大组装先把这些段锁给这篇（已被别篇占着的会提醒）
+    if (libMode) npLibLockForNote(rid, title, libRefs).catch(() => {});   // 进大组装把占用记到这篇名下（挑段不锁，同段可以给多篇用）
   }
   if (!libMode) {
     const stored = Array.isArray(a.mats) ? a.mats.slice(0, 40) : [];
@@ -5489,30 +7115,58 @@ async function npOpenCase(container, n) {
     } catch (_) {}
     if (!film) film = { url: '', blob: null, name: String(filmMeta.name || ''), dur: Number(filmMeta.dur) || 0, at: Number(filmMeta.at) || 0, segs: Array.isArray(filmMeta.segs) ? filmMeta.segs : [] };
   }
-  // 拆档是用户级的（config 里存一份，所有案例篇共用）：进来先读，蒸环节轴按它拆
-  let split = [3, 6];
-  try { const c = await readConfigPlain(); split = npCaseSplitShape(c && c.product && c.product.caseSplit); } catch (_) {}
   _npcPrev.t = 0;
+  /* 三块正文（2026-11-10 新链）：有它就只走「选素材 → 正文 → 出片」，不再进大组装 */
+  const libBlocks = (libMode && a.libBlocks && (a.libBlocks.intro || a.libBlocks.content || a.libBlocks.door))
+    ? { intro: String(a.libBlocks.intro || ''), content: String(a.libBlocks.content || ''), door: String(a.libBlocks.door || '') }
+    : null;
+  /* 这篇用的写法：这篇存过就听它的（换过写法会记下），没存过就听这个号的默认 */
+  const storedStyle = String(a.libStyle || '');
+  const styleKnown = NPC_CASE_STYLES.some(s => s.k === storedStyle);
+  const libStyle = libMode
+    ? (styleKnown ? storedStyle : await npcCaseStylePick())
+    : storedStyle;
+  /* 定过的封面（标题＋版式＋小图）跟着这一篇走；大图本体在 xhsCase 仓 ccover:<篇id> */
+  const c2 = (a.cover2 && a.cover2.thumb) ? a.cover2 : null;
   _npCase = {
-    arId: rid, title: title, step: libMode ? 2 : 1,
+    arId: rid, title: title, step: libMode ? 2 : 1, styleKnown: libMode ? styleKnown : false,
+    kidName: String(a.kidName || ''), kidNone: !!a.kidNone,
     mats: mats, mat: libMode ? 0 : (mats.length ? mats.length - 1 : 0),
     ab: npcAbInit(libMode ? (mats[0] || null) : (mats.length ? mats[mats.length - 1] : null)),
     segOpen: -1,
-    stages: libMode ? [{ name: '素材库', kb: [] }] : stages,
-    stageBusy: false, stageEdit: false, kbTitles: [], split: split,
+    stages: libMode ? ['place', 'me', 'work', 'door'].map(k => ({ name: npMatCatName(k), kb: [] }))
+      : (stages.length ? stages : NP_CASE_BEATS.map(b => ({ name: b.name, kb: [] }))),
+    stageBusy: false, stageEdit: false, kbTitles: [],
     covers: Array.isArray(a.covers) ? a.covers.map(String).slice(0, 3) : [],
     coversAI: !!a.coversAI, coversBusy: false,
-    cover: Number(a.cover) || 0, bgm: Number(a.bgm) || 0,
-    subOn: a.subOn !== false, voOn: a.voOn !== false,
+    cover: Number(a.cover) || 0, bgm: Number(a.bgm) || 0, voice: String(a.voice || ''),
+    subOn: a.subOn !== false, voOn: a.voOn !== false, subFs: String(a.subFs || '') === 'lg' ? 'lg' : 'std',
+    cv2Open: false, cv2Busy: false, cv2Frames: [], cv2Sel: -1, cv2Err: '',
+    cv2Title: c2 ? String(c2.title || '') : '',
+    cv2Lay: (c2 && /^(big|side|band)$/.test(String(c2.lay || ''))) ? String(c2.lay) : 'big',
+    cv2Saved: c2 ? { title: String(c2.title || ''), lay: String(c2.lay || 'big'), at: Number(c2.at) || 0, thumb: String(c2.thumb || '') } : null,
+    cardOn: !(a.card && a.card.on === false),
+    cardDur: (a.card && (Number(a.card.dur) === 1.5 || Number(a.card.dur) === 2.5)) ? Number(a.card.dur) : 2,
+    cardLay: (a.card && /^(big|side|band)$/.test(String(a.card.lay || ''))) ? String(a.card.lay) : 'big',
+    _cardImg: null,
     queue: null, asmStep: -1, exp: { on: false, pct: 0, tx: '' },
     busyVo: null, film: film, saved: false,
     libMode: libMode, libClips: libRefs, libBrief: String(a.libBrief || ''),
+    libBlocks: libBlocks, libStyle: libStyle, filmFlow: !!libBlocks,
+    filmStep: -1, filmPct: 0, filmTx: '', filmPlan: null,
+    editScript: bootId === rid, scriptCol: String(a.scriptCol || ''),
+    sc: { b: '', i: -1, ask: '', pend: null, busy: false, text: {}, err: '', again: false, focus: false },
   };
+  /* 环节轴固定 8 段：老稿存过的环节保留，新稿/空轴直接按 2026-11-09 的八段铺 */
   npCaseRender(container);
   if (!libMode) npCaseLoadKbTitles().catch(() => {});
-  // 第一次进来环节轴还空着：按知识库当场蒸一版（demo 场景表是写死的，真实版从你的知识库蒸）
-  if (!libMode && !stages.length && !film) npCaseDistill(container);
+  /* 正文页点了「生成视频」进来的：到了就直接开动，不再停在大组装让人点第二次 */
+  if (_npCase && _npCase.filmFlow && _npFilmAuto === rid) {
+    _npFilmAuto = '';
+    setTimeout(() => { if (_npCase && _npCase.arId === rid && _npCase.filmFlow) npCaseFilmRun(container); }, 80);
+  }
 }
+
 
 /* ── 渲染 ── */
 function npcStepbarHtml(cur) {
@@ -5540,9 +7194,13 @@ function npcHeaderHtml() {
 function npcPageHtml() {
   const g = _npCase;
   if (!g) return '';
+  if (g.filmFlow) {
+    if (g.editScript) return npcHeaderHtml() + '<div style="padding:0 14px 74px;">' + npcScriptEditHtml() + '</div>';
+    return npcHeaderHtml() + '<div style="padding:0 14px 74px;">' + npcFilmPageHtml() + '</div>' + npcCvHtml();
+  }
   const libBanner = g.libMode
     ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border:1px solid var(--c-brand-line,#f0d9d9);background:var(--c-brand-soft,#fdf2f2);border-radius:10px;font-size:12px;color:var(--c-brand-text,#b23b3b);">' +
-        '<b>🎞 素材来自素材库</b><span>共 ' + (g.libClips || []).length + ' 段 · 段序按挑段顺序，下面能上下调</span>' +
+        '<b>🎞 素材来自素材库</b><span>共 ' + (g.libClips || []).length + ' 段 · 按四个大类排：工作地点 → 引题 → 内容 → 导流（封面＝第一段的第一帧），下面能上下调</span>' +
         '<span style="flex:1;"></span><button type="button" class="npc-qmini" data-npc="libpick">换几段</button></div>'
     : '';
   return npcHeaderHtml() + '<div style="padding:0 14px 74px;">' + libBanner + npcStepbarHtml(g.step) + (g.step === 2 ? npcAsmHtml() : npcCutHtml()) + '</div>';
@@ -5557,6 +7215,14 @@ function npCaseRender(container) {
   if (!g || !container) return;
   if (container.id !== 'noteCaseContent') return;   // 只画在案例页里——切走了别乱写别人的壳
   const sc = container.scrollTop || 0;
+  if (g.filmFlow) {                                 // 新链：正文 → 出片，一屏干完
+    npcVidPump(false);
+    container.innerHTML = npcPageHtml();
+    container.scrollTop = sc;
+    npcScriptBind(container);
+    npcFilmPaint();
+    return;
+  }
   const v = _npcSVid;
   const keep = v ? { t: v.currentTime || 0, playing: !v.paused } : null;
   if (g.step === 1) {                                 // 进料即后台扫分镜（在本机跑，扫完横条自己长出来）
@@ -5747,26 +7413,26 @@ function npcSegCardHtml(m, s, i) {
         '</select>' : '') +
       '</div>' : '';
     inner = '<div class="npc-segdef">' +
-      '<div class="q1">这段在干嘛？点一个环节 <span class="note-xs">（环节轴＝AI 从你知识库蒸馏 · <span class="npc-edit-link" data-npc="seopen">⚙ 可改</span> · <span class="npc-edit-link" data-npc="redistill">↻ 可重蒸</span>）</span></div>' +
+      '<div class="q1">这段在干嘛？点一个环节 <span class="note-xs">（案例固定 8 段 · <span class="npc-edit-link" data-npc="seopen">⚙ 可改</span> · <span class="npc-edit-link" data-npc="redistill">↻ 恢复成 8 段</span>）</span></div>' +
       (g.stageBusy
-        ? '<div class="npc-stage-note">🔮 正在蒸环节轴…</div>'
+        ? '<div class="npc-stage-note">正在排 8 段…</div>'
         : (sts.length ? '<div class="stage">' + stageChips + '</div>'
-          : '<div class="note-xs" style="margin-bottom:4px;">环节轴还没蒸出来——<span class="npc-edit-link" data-npc="redistill">点这里蒸一遍</span>（按你知识库的料把这条片子拆成几个环节）。</div>')) +
+          : '<div class="note-xs" style="margin-bottom:4px;">环节轴是空的——<span class="npc-edit-link" data-npc="redistill">点这里按 8 段排一遍</span>（工作地点 → 谁家在哪 → 现场 → 讲解人 → 遇到什么怎么做 → 结果 → 导流）。</div>')) +
       kbRow +
-      '<div class="rule">铁律：这段 ' + secs + ' 秒，讲解最多 ' + npcMaxLen(secs) + ' 字——写讲解词按这个裁。</div></div>';
+      '<div class="rule">铁律：这段 ' + secs + ' 秒，一条字幕 9~' + npcMaxLen(secs) + ' 字、只讲一个点。</div></div>';
   } else if (s.done) {
     const isMute = s.stage === '🌫';
     inner = '<div style="margin-top:6px;">' +
       (isMute
         ? '<span class="chip on">🌫 只是过渡 · 保留原声，不配讲解</span>'
         : '<span class="chip on">' + esc(s.stage || '') + '</span><span class="badge ok">⭐ ' + esc(s.kb || '') + '</span>') +
-      '<div class="q1" style="margin-top:8px;">讲解词（定义完当场出的，铁律 ≤ ' + npcMaxLen(secs) + ' 字）</div>' +
+      '<div class="q1" style="margin-top:8px;">讲解词（定义完当场出的 · 9~' + npcMaxLen(secs) + ' 字、只讲一个点）</div>' +
       '<div style="' + (isMute ? 'color:var(--c-ink-3);font-style:italic;' : 'font-size:var(--fs-sm);color:var(--c-ink-2);line-height:1.7;') + '">' + esc(s.vo || '') + '</div>' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;">' +
         (isMute ? '' :
           '<button type="button" class="npc-qmini" data-npc="hear" data-i="' + i + '">🔊 听</button>' +
           '<button type="button" class="npc-qmini" data-npc="revo" data-i="' + i + '">↻ 换一版</button>') +
-        '<span class="note-xs" style="margin-left:auto;">试听＝出片同一把嗓子（' + npcTtsMode() + '）· Edge 免费通道</span>' +
+        '<span class="note-xs" style="margin-left:auto;">试听＝出片同一把嗓子（' + npcTtsMode() + '）' + (npcVoiceIsDoubao(g) ? ' · 云端念，按字数扣额度' : ' · Edge 免费通道') + '</span>' +
         '<button type="button" class="npc-qmini" data-npc="redef" data-i="' + i + '">↻ 重定义</button>' +
       '</div></div>';
   }
@@ -5779,9 +7445,6 @@ function npcSegCardHtml(m, s, i) {
 }
 function npcStageEditHtml() {
   const g = _npCase;
-  const split = npCaseSplitShape(g.split);
-  const splitChip = (p) =>
-    '<span class="chip' + (split[0] === p[0] && split[1] === p[1] ? ' on' : '') + '" data-npc="sesplit" data-v="' + p[0] + '~' + p[1] + '" title="蒸环节轴时按这个数量范围拆">' + p[0] + '~' + p[1] + '</span>';
   const rows = (g.stages || []).map((st, i) =>
     '<div class="se-row">' +
       '<input type="text" class="npc-se-name" data-i="' + i + '" value="' + npArAttr(st.name) + '" title="改环节名（背着屏幕别太长）">' +
@@ -5796,15 +7459,11 @@ function npcStageEditHtml() {
     '</div>').join('');
   return '<div class="npc-stagedit">' +
     '<div class="se-row" style="margin-bottom:6px;"><b style="font-size:var(--fs-xs);">⚙ 环节轴（改完点环节那排 chip 就变）</b></div>' +
-    '<div class="se-row" style="margin-bottom:6px;align-items:baseline;">' +
-      '<span class="note-xs" style="flex:none;">拆几个环节：</span>' +
-      NP_CASE_SPLITS.map(splitChip).join('') +
-      '<span class="note-xs">重蒸时按这个档拆</span>' +
-    '</div>' +
+    '<div class="se-row" style="margin-bottom:6px;font-size:10.5px;color:#8a929e;line-height:1.6;">固定 8 段：工作地点 → 谁家在哪 → 现场 → 讲解人 → 遇到什么怎么做 → 结果 → 导流；封面压在工作地点那一帧，不单独占一屏。</div>' +
     rows +
     '<div class="se-row">' +
       '<button type="button" class="npc-qmini" data-npc="seadd">＋ 加一个环节</button>' +
-      '<button type="button" class="npc-qmini" data-npc="redistill" title="按上面拨的档把环节轴重蒸一版">↻ 按这个档重蒸</button>' +
+      '<button type="button" class="npc-qmini" data-npc="redistill" title="把环节轴恢复成固定的 8 段">↻ 恢复成 8 段</button>' +
       '<span style="flex:1;"></span>' +
       '<button type="button" class="npc-qmini" data-npc="seclose">收起</button>' +
     '</div>' +
@@ -5816,6 +7475,14 @@ function npCaseQueueBuild() {
   if (!g) return [];
   const all = [];
   (g.mats || []).forEach((m, mi) => (m.segs || []).forEach((s, si) => { if (s && s.done) all.push({ mi: mi, si: si, s: s, m: m }); }));
+  if (g.libMode) {
+    /* 素材库的段按四个大类排：工作地点 → 引题 → 内容 → 导流；同类的保持挑段顺序（封面＝第一段的第一帧） */
+    const order = ['place', 'me', 'work', 'door'];
+    return all.sort((x, y) => {
+      const ix = order.indexOf(x.m.cat), iy = order.indexOf(y.m.cat);
+      return (ix < 0 ? 9 : ix) - (iy < 0 ? 9 : iy);
+    });
+  }
   const idx = (st) => { const k = (g.stages || []).findIndex(x => x.name === st); return k < 0 ? 50 : k; };
   all.sort((x, y) => {
     const ix = x.s.stage === '🌫' ? 99 : idx(x.s.stage);
@@ -5828,6 +7495,23 @@ function npCaseSegDur(q) { return q.m.dur * (q.s.b - q.s.a) / 100; }
 function npCaseQueueDur() {
   const g = _npCase;
   return (g && g.queue ? g.queue : []).reduce((n, q) => n + npCaseSegDur(q), 0);
+}
+/* 同组画面共用一句字幕/配音（引言＝场馆几个画面＋最后 2 秒本人）：
+   按队列顺序认清每组从哪一段开始、整组多长；老档没有组号就一段一组 */
+function npcQueueGroups(queue) {
+  const map = {};
+  let t = 0;
+  (queue || []).forEach((q, i) => {
+    const d = npCaseSegDur(q);
+    const gid = String((q.m && q.m.gid) || '');
+    const key = gid || ('#' + i);
+    if (!map[key]) map[key] = { key: key, idxs: [], start: t, dur: 0, first: i };
+    map[key].idxs.push(i);
+    map[key].dur += d;
+    q._gk = key;
+    t += d;
+  });
+  return map;
 }
 function npcAtOf(t) {
   const g = _npCase;
@@ -5857,7 +7541,7 @@ function npcAsmHtml() {
     return '<div class="npc-qrow"><span class="grip" title="用右边的 ↑↓ 调顺序">⠿</span>' +
       '<div class="qb"><b>段' + (i + 1) + ' · ' + esc(String(q.m.name).replace(/\.[a-z0-9]+$/i, '')) + '</b>' +
       '<div class="vo' + (mute ? ' mute' : '') + '">' + (writing ? '✍️ AI 正在写…' : esc(mute ? (q.s.vo || '（过渡段 · 保留原声，不配讲解）') : (q.s.vo || ''))) + '</div>' +
-      '<div class="meta">' + (g.libMode ? '素材库挑的段' : (mute ? '过渡段' : '环节：' + esc(q.s.stage || '') + ' · ⭐ ' + esc(q.s.kb || ''))) + ' · ' + npcFmt(t1) + ' – ' + npcFmt(t2) + ' · ' + secs + ' 秒</div></div>' +
+      '<div class="meta">' + (g.libMode ? '素材库 · ' + esc(q.m.catName || '待分类') : (mute ? '过渡段' : '环节：' + esc(q.s.stage || '') + ' · ⭐ ' + esc(q.s.kb || ''))) + ' · ' + npcFmt(t1) + ' – ' + npcFmt(t2) + ' · ' + secs + ' 秒</div></div>' +
       '<div class="ops">' +
         '<button type="button" class="npc-qmini" title="上移" ' + (i === 0 ? 'disabled' : '') + ' data-npc="qmove" data-i="' + i + '" data-x="-1">↑</button>' +
         '<button type="button" class="npc-qmini" title="下移" ' + (i === queue.length - 1 ? 'disabled' : '') + ' data-npc="qmove" data-i="' + i + '" data-x="1">↓</button>' +
@@ -5883,7 +7567,11 @@ function npcAsmHtml() {
     : ('<button type="button" class="btn btn-primary btn-sm" data-npc="prevplay">' + (_npcPrev.on ? '⏸ 暂停' : '▶️ 播放整段') + '</button>' +
       '<span id="npcAClock" class="note-xs num" style="font-variant-numeric:tabular-nums;">' + npcFmt(_npcPrev.t) + ' / ' + npcFmt(D) + '</span>' +
       '<span class="note-xs">按下面段序连着播（共 ' + queue.length + ' 段）· 点画面跳段 · 画面＝源片按 ① 取景框裁出来的（跟出片一致）· 字幕＝讲解词自动烧，解读＝' + npcTtsMode() + '（段卡里 ↻ 换词，预览跟着变）</span>');
-  return '<div class="card card-pad" style="margin-bottom:12px;">' +
+  const noWork = g.libMode && !(g.mats || []).some(m => String((m && m.cat) || '') === 'work');
+  return (noWork
+    ? '<div class="card card-pad" style="margin-bottom:12px;border:1px solid #e8eaf0;background:#fafbfd;font-size:12.5px;color:#6b7280;line-height:1.75;">这次没挑「现场」的段——正文照样写，画面用你挑的这几段借一下。想让正文更贴今天干的活，点下面的 <b>🎞 换素材</b> 补一条现场段。</div>'
+    : '') +
+    '<div class="card card-pad" style="margin-bottom:12px;">' +
     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">' +
       '<div style="font-weight:700;color:var(--ink);">' + (filmDone ? '▶ 成片回看 · ' + npcFmt(g.film.dur) : '▶ 整段预览 · 拼好就是这样') + '</div>' +
       '<span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">' +
@@ -5898,18 +7586,22 @@ function npcAsmHtml() {
     '<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">' + playRow + '</div>' +
   '</div>' +
   '<div class="npc-asm">' +
-    '<div class="npc-asm-left"><div style="font-weight:700;color:var(--ink);margin-bottom:6px;">' + (g.libMode ? '🧩 段序（按你挑段的顺序，可调）' : '🧩 段序（AI 按环节给的建议序，可调）') + '</div>' + qHtml +
-      '<button type="button" class="btn btn-sm" data-npc="qreset">' + (g.libMode ? '↻ 恢复挑段顺序' : '↻ AI 重排（按环节序）') + '</button></div>' +
+    '<div class="npc-asm-left"><div style="font-weight:700;color:var(--ink);margin-bottom:6px;">' + (g.libMode ? '🧩 段序（工作地点 → 引题 → 内容 → 导流，可调）' : '🧩 段序（AI 按环节给的建议序，可调）') + '</div>' + qHtml +
+      '<button type="button" class="btn btn-sm" data-npc="qreset">' + (g.libMode ? '↻ 按大类重排' : '↻ AI 重排（按环节序）') + '</button></div>' +
     '<div class="npc-asm-right">' +
       '<div class="card card-pad">' +
         '<div style="font-weight:700;color:var(--ink);margin-bottom:8px;">🎛 出片设置</div>' +
+        '<div class="npc-optrow"><div class="olb">🎙 音色</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+          (((typeof VOICES !== 'undefined' && VOICES.list) ? VOICES.list : []).map(o => '<span class="chip' + (o.v === npcVoiceOf(g) ? ' on' : '') + '" data-npc="voice" data-v="' + npArAttr(o.v) + '" title="' + esc(o.d + '｜' + o.use) + '">' + esc(o.n) + '</span>').join('')) +
+          '<button type="button" class="btn btn-sm" data-npc="voiceaud">🎧 试听</button>' +
+        '</div></div>' +
         '<div class="npc-optrow"><div class="olb">🎵 BGM</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
           NP_CASE_BGMS.map((b, i) => '<span class="chip' + (g.bgm === i ? ' on' : '') + '" data-npc="bgm" data-i="' + i + '">' + b + '</span>').join('') +
         '</div></div>' +
         '<div class="npc-optrow"><div class="olb">🖼 封面（' + (g.coversAI ? 'AI 提名三张' : '三张参考') + '）</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
           coverChips.map((c, i) => '<span class="chip' + (g.cover === i ? ' on' : '') + '" data-npc="cover" data-i="' + i + '">' + esc(c) + '</span>').join('') +
         '</div></div>' +
-        '<p class="note-xs">段序 / 字幕 / 配音 / BGM 出片时实时合成——预览里看到什么样，出片就是什么样。封面这句是发布时挑封面的参考。</p>' +
+        '<p class="note-xs">段序 / 字幕 / 配音 / BGM 出片时实时合成——预览里看到什么样，出片就是什么样。音色里豆包那批走云端念（按字数扣额度），「晓晓」等 5 条免费、本机念。封面这句是发布时挑封面的参考。</p>' +
         asmBtn + doneBox +
         '<div class="npc-exp" id="npcExp" style="' + (g.exp.on ? '' : 'display:none;') + '">' + (g.exp.on ? esc('出片中… ' + g.exp.pct + '%（真画面真声音在录，别切页、别锁屏）') : '') + '</div>' +
       '</div>' +
@@ -5917,6 +7609,1416 @@ function npcAsmHtml() {
   '</div>';
 }
 
+/* ── 新链（2026-11-10）：选素材 → 三块正文 → 出片；不再进大组装 ──
+   出片顺序反过来了：先按三块配音、量出每句真实长度，再照「念完一句就切下一镜」裁画面；
+   长素材剪掉尾巴，素材不够切就一条长素材按时间顺序切成几截，实在没画面才定格兜底。 */
+const NPC_FILM_TAIL = 0.2;                      // 每句念完留的气口（秒）
+/* 顶上三段小标签：点哪段去哪段（跟门面站同一套） */
+function npcFilmStepsHtml(cur) {
+  const items = [['pick', '1', '选素材'], ['edit', '2', '改正文'], ['film', '3', '生成视频']];
+  return '<div class="npc-fsteps">' + items.map(([k, n, label]) => {
+    const on = k === cur;
+    const act = on ? '' : (k === 'pick' ? ' data-npc="libpick"' : (k === 'edit' ? ' data-npc="scedit"' : ' data-npc="scback"'));
+    return '<button type="button" class="npc-fstep' + (on ? ' on' : '') + '"' + act + '><i>' + n + '</i>' + esc(label) + '</button>';
+  }).join('') + '</div>';
+}
+/* ── ② 改正文（整页）：一句一行，点哪句改哪句；右栏看片子怎么切 ── */
+const NPC_SC_BLOCKS = [
+  { key: 'intro', name: '① 引言', hint: '打招呼＋店名＋做了几年＋在哪儿', tip: '这句配在场馆／本人画面上，从第一帧就开始念。', tag: '一般不用改' },
+  { key: 'content', name: '② 内容', hint: '素材说明融合成一段故事', tip: '只用素材说明里看得见的人和事，不编人数、名字、效果；一句配一个画面，念完就切。', tag: '主要改这块' },
+  { key: 'door', name: '③ 到店指引', hint: '一句招呼＋店在哪儿', tip: '这句配在门口／进门画面上，念完片子就结束。', tag: '一般不用改' },
+];
+/* 按句号/问号/叹号/分号断句，但记住每句在原段落里的位置——替换时只换这一句，换行和空格都不动 */
+function npcScParts(t) {
+  const src = String(t || '');
+  const out = [];
+  const re = /[^。！？!?；;\r\n]+[。！？!?；;]?/g;
+  let m;
+  while ((m = re.exec(src))) {
+    if (!m[0].trim()) continue;
+    out.push({ text: m[0], start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+function npcScBusyPhrase() { return 'AI 只改这一句，其余一个字都不动'; }
+function npcScRowsHtml(key) {
+  const g = _npCase;
+  const st = (g && g.sc) || {};
+  const src = String((g && g.libBlocks && g.libBlocks[key]) || '');
+  if (st.text && st.text[key]) {
+    return '<textarea class="npc-sc-ta" data-sc-key="' + key + '" rows="4" placeholder="这一块整段随便改，改完点「🖱 回到逐句」">' + esc(src) + '</textarea>';
+  }
+  const parts = npcScParts(src);
+  if (!parts.length) return '<div class="npc-sc-empty">这块还空着——点右上角「✍️ 全文手改」自己写，或点「↻ 换一版」让 AI 再写一遍。</div>';
+  return parts.map((p, i) => {
+    const on = st.b === key && st.i === i;
+    const pend = (on && st.pend && st.pend.i === i) ? st.pend : null;
+    let panel = '';
+    if (on) {
+      if (pend) {
+        panel = '<div class="npc-scpanel">' +
+          '<div class="t1">AI 改好了这一句——比一比再定：</div>' +
+          '<div class="old">原句：' + esc(pend.old) + '</div>' +
+          '<div class="new">改后：' + esc(pend.s) + '</div>' +
+          '<div class="ops"><button type="button" class="btn btn-primary btn-sm" data-npc="scuse">✓ 用这版</button>' +
+          '<button type="button" class="btn btn-sm" data-npc="scdrop">不要</button></div></div>';
+      } else {
+        const busy = !!st.busy;
+        panel = '<div class="npc-scpanel">' +
+          '<div class="ops"><input id="npcScAsk" type="text" maxlength="80" placeholder="这句要怎么改？例「短一半，别绕」" value="' + npArAttr(st.ask || '') + '"' + (busy ? ' disabled' : '') + '>' +
+          '<button type="button" class="btn btn-primary btn-sm" data-npc="scgo"' + (busy ? ' disabled' : '') + '>' + (busy ? '⏳ 改这句…' : '🤖 改这句') + '</button>' +
+          '<button type="button" class="btn btn-sm" data-npc="sccancel">取消</button></div>' +
+          '<div class="msg' + (st.err ? ' err' : '') + '" id="npcScMsg">' + esc(st.err || (busy ? 'AI 正在只改这一句…' : npcScBusyPhrase())) + '</div></div>';
+      }
+    }
+    return '<div class="npc-scrow' + (on ? ' on' : '') + '" data-npc="scrow" data-b="' + key + '" data-i="' + i + '">' + esc(p.text.trim()) + '</div>' + panel;
+  }).join('');
+}
+function npcScBlockHtml(b) {
+  const g = _npCase;
+  const textMode = !!(g && g.sc && g.sc.text && g.sc.text[b.key]);
+  return '<div class="npc-scblock" data-block="' + b.key + '">' +
+    '<div class="hd"><b>' + b.name + '</b>' +
+      '<span class="tag' + (b.key === 'content' ? ' main' : '') + '">' + b.tag + '</span>' +
+      '<span class="tag2">' + b.hint + '</span><span class="sp"></span>' +
+      (b.key === 'content' ? '<button type="button" class="npc-qmini" data-npc="scagain" title="换一种讲法重写这一篇（避开最近几篇用过的）"' + (g && g.sc && g.sc.again ? ' disabled' : '') + '>' + (g && g.sc && g.sc.again ? 'AI 正在换…' : '↻ 换一版') + '</button>' : '') +
+      '<button type="button" class="npc-qmini" data-npc="sctext" data-b="' + b.key + '">' + (textMode ? '🖱 回到逐句' : '✍️ 全文手改') + '</button>' +
+    '</div>' +
+    '<div class="bd">' + npcScRowsHtml(b.key) + '</div>' +
+    '<div class="hint">' + b.tip + '</div></div>';
+}
+/* 排一遍（只按字数估，不出声不录）——右栏「片子会这样切」用它，真实时长出片时以配音为准 */
+function npcScEstimate(g) {
+  const sentences = npCaseFilmSentenceList((g && g.libBlocks) || {}, g);
+  if (!sentences.length) return { plan: null, sentences: sentences, durs: [] };
+  const durs = sentences.map(s => Math.max(0.9, String(s.text || '').replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length / 4.1));
+  const pools = npCaseFilmPools(g);
+  if (!pools.all.length) return { plan: null, sentences: sentences, durs: durs, noClips: true };
+  const plan = npCaseFilmBuildPlan(g, sentences, { bufs: [], durs: durs }, pools);
+  return { plan: plan, sentences: sentences, durs: durs };
+}
+function npcScIdxInBlock(sentences, gi) {
+  const sen = sentences[gi] || {};
+  const grp = sen.group;
+  const g = _npCase;
+  const parts = npcScParts((g && g.libBlocks && g.libBlocks[grp]) || '');
+  let k = -1;
+  for (let i = 0; i <= gi && i < sentences.length; i++) if (sentences[i].group === grp) k++;
+  const same = sentences.filter(s => s.group === grp);
+  if (same.length === parts.length) return Math.max(0, Math.min(parts.length - 1, k));
+  /* 断句方式偶尔差一行（换行/纯标点）：按字面认那一句，认不上再按序数兜底 */
+  const want = String(sen.text || '').replace(/\s+/g, '');
+  for (let i = 0; i < parts.length; i++) if (String(parts[i].text).replace(/\s+/g, '') === want) return i;
+  return Math.max(0, Math.min(parts.length - 1, k));
+}
+function npcScCutsHtml() {
+  const g = _npCase;
+  if (!g) return '';
+  const est = npcScEstimate(g);
+  if (!est.plan || !est.plan.shots.length) {
+    return '<div class="npc-sc-empty">' + (est.noClips ? '素材的原视频找不到了——先点「← 换素材」重挑一次。' : '还没有句子——写完正文，这里就排出片子怎么切。') + '</div>';
+  }
+  let n = 0;
+  return est.plan.shots.filter(sh => sh.first).map(sh => {
+    n++;
+    const sen = sh.sen || {};
+    const cat = String((sh.m && sh.m.catName) || '') || '素材';
+    const on = sen.group === g.sc.b && npcScIdxInBlock(est.sentences, sen.i) === g.sc.i;
+    const secs = Number(est.durs[sen.i]) || 0;
+    return '<div class="npc-scut' + (on ? ' on' : '') + '" data-npc="scjump" data-si="' + sen.i + '">' +
+      '<div class="thumb">' + esc(cat) + '</div>' +
+      '<div class="tx"><b>镜头 ' + n + ' · ' + esc(cat) + '</b>' +
+        '<div class="s">' + esc(String(sen.text || '')) + '</div>' +
+        '<div class="m">念 ' + secs.toFixed(1) + ' 秒 · 原素材 ' + npcFmt(sh.m && sh.m.dur) + ' · 每句念完约 0.2 秒切下一镜</div></div></div>';
+  }).join('');
+}
+function npcScSettingsHtml(withCover) {
+  const g = _npCase;
+  if (!g) return '';
+  const voices = (typeof VOICES !== 'undefined' && Array.isArray(VOICES.list)) ? VOICES.list : [];
+  const chip = (on, act, label, extra) => '<span class="chip' + (on ? ' on' : '') + '" data-npc="' + act + '"' + (extra || '') + '>' + esc(label) + '</span>';
+  return '<div class="card card-pad">' +
+    '<div style="font-weight:700;color:var(--c-ink);margin-bottom:8px;">🎛 出片设置</div>' +
+    '<div class="npc-optrow"><div class="olb">🎙 音色</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      voices.map(o => chip(String(o.v) === npcVoiceOf(g), 'voice', o.n, ' data-v="' + npArAttr(o.v) + '" title="' + esc(String(o.d || '') + '｜' + String(o.use || '')) + '"')).join('') +
+      '<button type="button" class="btn btn-sm" data-npc="voiceaud">🎧 试听</button></div></div>' +
+    '<div class="npc-optrow"><div class="olb">🎵 BGM</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      NP_CASE_BGMS.map((b, i) => chip(g.bgm === i, 'bgm', b, ' data-i="' + i + '"')).join('') + '</div></div>' +
+    '<div class="npc-optrow"><div class="olb">💬 字幕</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      chip(!!g.subOn, 'subon', '开', ' data-v="on"') + chip(!g.subOn, 'subon', '关', ' data-v="off"') + '</div></div>' +
+    '<div class="npc-optrow"' + (withCover ? '' : ' style="margin-bottom:0;"') + '><div class="olb">🔠 字号</div><div style="display:flex;gap:6px;flex-wrap:wrap;">' +
+      chip(g.subFs !== 'lg', 'subfs', '标准', ' data-v="std"') + chip(g.subFs === 'lg', 'subfs', '大', ' data-v="lg"') + '</div></div>' +
+    (withCover
+      ? '<div class="npc-optrow"><div class="olb">🖼 封面</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+          npcCvThumbHtml() +
+          '<button type="button" class="btn btn-sm" data-npc="cvopen">' + (g.cv2Saved ? '改封面' : '🖼 做封面') + '</button>' +
+          (g.cv2Saved ? '<button type="button" class="npc-qmini" data-npc="cvdl" title="把这张封面下到电脑">⬇ 下载</button>' : '') +
+          '<span style="font-size:10.5px;color:var(--c-ink-3);">' + (g.cv2Saved ? esc(String(g.cv2Saved.title || '')) : '挑一帧、压标题；片子还没出也能先做') + '</span>' +
+        '</div></div>' +
+        '<div class="npc-optrow" style="margin-bottom:0;"><div class="olb">🎬 片头卡</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+          chip(g.cardOn !== false, 'cardon', '开', ' data-v="on"') + chip(g.cardOn === false, 'cardon', '关', ' data-v="off"') +
+          '<span style="font-size:10.5px;color:var(--c-ink-3);">开头压</span>' +
+          chip(g.cardDur !== 1.5 && g.cardDur !== 2.5, 'carddur', '2 秒', ' data-v="2"') +
+          chip(g.cardDur === 1.5, 'carddur', '1.5 秒', ' data-v="1.5"') +
+          chip(g.cardDur === 2.5, 'carddur', '2.5 秒', ' data-v="2.5"') +
+          NPC_CV_LAYS.map(l => chip((g.cardLay || 'big') === l.k, 'cardlay', l.n, ' data-v="' + l.k + '"')).join('') +
+          '<span style="font-size:10.5px;color:var(--c-ink-3);">标题用这一篇的笔记标题（右上「✏️ 改正文」能改）</span>' +
+        '</div></div>'
+      : '') +
+  '</div>';
+}
+function npcScMergeHtml() {
+  const g = _npCase;
+  const b = (g && g.libBlocks) || {};
+  const body = npCaseMergeOf(b);
+  const chars = body.replace(/\s/g, '').length;
+  return '<details style="margin-top:2px;border:1px solid var(--c-line);border-radius:var(--r-md);background:var(--c-surface);padding:8px 10px;">' +
+    '<summary style="cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:var(--c-ink-2);">合并后的发布正文（点开看；发布和视频都用这段）</summary>' +
+    '<div id="npcScMerge" style="margin-top:7px;font-size:12.5px;line-height:1.85;color:var(--c-ink-2);white-space:pre-wrap;">' + (body ? esc(body) : '（三块都空着——至少写一块）') + '</div>' +
+    '<div id="npcScMeta" style="margin-top:4px;font-size:10.5px;color:var(--c-ink-3);">' + (chars ? ('共 ' + chars + ' 字 · 按正常语速大约念 ' + (chars / 4.1).toFixed(1) + ' 秒；出片以配音实际时长为准') : '') + '</div></details>';
+}
+function npcScriptEditHtml() {
+  const g = _npCase;
+  const b = (g && g.libBlocks) || {};
+  const body = npCaseMergeOf(b);
+  const chars = body.replace(/\s/g, '').length;
+  return npcFilmStepsHtml('edit') +
+    '<div class="npc-sc-head"><h2>② 改正文</h2><p>点哪句改哪句；改完这一屏直接生成视频。</p></div>' +
+    '<div class="npc-film-grid">' +
+      '<div class="npc-film-main">' +
+        '<div class="card card-pad" style="margin-bottom:10px;">' +
+          '<div class="olb" style="font-size:var(--fs-xs);font-weight:700;color:var(--c-ink-2);margin-bottom:5px;">标题</div>' +
+          '<input id="npcScTitle" type="text" maxlength="24" value="' + npArAttr(String((g && g.title) || '')) + '" style="width:100%;box-sizing:border-box;border:1px solid var(--c-line);border-radius:9px;padding:8px 10px;font-size:14px;font-weight:700;outline:none;font-family:var(--font-ui);">' +
+        '</div>' +
+        '<div class="card card-pad" style="margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<span style="font-size:var(--fs-xs);font-weight:700;color:var(--c-ink-2);">写法</span>' +
+          '<select id="npcScStyle" title="同一批画面，换一种骨架讲" style="flex:1;min-width:150px;border:1px solid var(--c-line);border-radius:9px;padding:6px 8px;font-size:13px;background:var(--c-surface);color:var(--c-ink);font-family:var(--font-ui);">' +
+            NPC_CASE_STYLES.map(s => '<option value="' + s.k + '"' + (s.k === String((g && g.libStyle) || 'report') ? ' selected' : '') + '>' + esc(s.n) + ' — ' + esc(s.d) + '</option>').join('') +
+          '</select>' +
+          '<button type="button" class="btn btn-sm" data-npc="scstyle" title="按选中的写法把标题＋三块重写一遍（会覆盖现在这三块，改过的字先落档）">↻ 按这个写法重写</button>' +
+          '<div id="npcScStyleNow" style="flex-basis:100%;font-size:10.5px;color:var(--c-ink-3);line-height:1.7;">' + esc(npcScStyleNowText()) + '</div>' +
+          '<div style="flex-basis:100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--c-line);padding-top:8px;">' +
+            '<span style="font-size:var(--fs-xs);font-weight:700;color:var(--c-ink-2);">孩子称呼</span>' +
+            (g && g.kidName
+              ? '<button type="button" class="chip on" data-npc="kidname" data-n="keep" title="这篇现在就叫他这个名字">用「' + esc(g.kidName) + '」</button>'
+              : '') +
+            '<button type="button" class="chip" data-npc="kidname" data-n="' + (g && g.kidName ? 'pick' : 'name') + '" title="换一个常用小名，只改正文里的称呼">↻ ' + (g && g.kidName ? '换一个小名' : '给这个孩子起个小名') + '</button>' +
+            '<button type="button" class="chip' + (g && g.kidNone ? ' on' : '') + '" data-npc="kidname" data-n="none" title="改成“有个孩子”，全篇不起名">不起名，写“有个孩子”</button>' +
+            '<span id="npcKidNow" style="font-size:10.5px;color:var(--c-ink-3);">' +
+              (g && g.kidName ? '正文里现在叫他「' + esc(g.kidName) + '」'
+                : (g && g.kidNone ? '这篇按「不起名」写——正文里用“有个孩子”' : '这篇正文里没有具体孩子（这种讲法不用起名）')) +
+            '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div id="npcScBlocks">' + NPC_SC_BLOCKS.map(npcScBlockHtml).join('') + '</div>' +
+        npcScMergeHtml() +
+        '<div class="npc-scbar">' +
+          '<button type="button" class="btn btn-sm" data-npc="libpick" title="回素材库重挑——挑完会重写正文">← 换素材</button>' +
+          '<span class="sp"></span>' +
+          '<span class="npc-schint" id="npcScHint">' + (chars ? ('合并后 ' + chars + ' 字 · 约 ' + Math.round(chars / 4.1) + ' 秒') : '三块还空着') + '</span>' +
+          '<button type="button" class="btn btn-primary" data-npc="scgen">🎬 生成视频</button>' +
+        '</div>' +
+      '</div>' +
+      '<aside class="npc-film-side">' +
+        '<div class="card card-pad">' +
+          '<div style="font-weight:700;color:var(--c-ink);margin-bottom:2px;">片子会这样切</div>' +
+          '<div style="font-size:10.5px;color:var(--c-ink-3);margin-bottom:7px;line-height:1.7;">点一条跳到那句字幕；念完约 0.2 秒就切下一镜。</div>' +
+          '<div class="npc-sccuts" id="npcScCuts">' + npcScCutsHtml() + '</div>' +
+        '</div>' +
+        '<div style="margin-top:10px;">' + npcScSettingsHtml() + '</div>' +
+      '</aside>' +
+    '</div>';
+}
+function npcScHintPaint() {
+  const g = _npCase;
+  if (!g) return;
+  const hint = document.getElementById('npcScHint');
+  if (hint) {
+    const chars = npCaseMergeOf(g.libBlocks).replace(/\s/g, '').length;
+    hint.textContent = chars ? ('合并后 ' + chars + ' 字 · 约 ' + Math.round(chars / 4.1) + ' 秒') : '三块还空着';
+  }
+  const cuts = document.getElementById('npcScCuts');
+  if (cuts) cuts.innerHTML = npcScCutsHtml();
+  const mv = document.getElementById('npcScMerge');
+  if (mv) mv.textContent = npCaseMergeOf(g.libBlocks) || '（三块都空着——至少写一块）';
+  const meta = document.getElementById('npcScMeta');
+  if (meta) {
+    const chars = npCaseMergeOf(g.libBlocks).replace(/\s/g, '').length;
+    meta.textContent = chars ? ('共 ' + chars + ' 字 · 按正常语速大约念 ' + (chars / 4.1).toFixed(1) + ' 秒；出片以配音实际时长为准') : '';
+  }
+}
+/* 写着「这篇用的是 X 讲法」——下拉是「按哪种写法重写」，这行是当前这稿实际用的 */
+function npcScStyleNowText() {
+  const g = _npCase;
+  if (!g) return '';
+  if (!String((g.libBlocks && g.libBlocks.content) || '').trim()) return '';
+  if (!g.styleKnown) return '这篇原来的讲法没记下——想换一种就点正文右上角「↻ 换一版」';
+  return '这篇用的是「' + npcCaseStyleName(String(g.libStyle || 'report')) + '」讲法——想换一种就点正文右上角「↻ 换一版」';
+}
+function npcScStylePaint() {
+  const g = _npCase;
+  if (!g) return;
+  const k = String(g.libStyle || 'report');
+  const sel = document.getElementById('npcScStyle');
+  if (sel) {
+    /* 只在「这篇的写法」真变了时同步下拉，别把老板刚选好待重写的那个覆盖掉 */
+    const last = sel.getAttribute('data-style-now') || '';
+    if (last !== k) {
+      if (NPC_CASE_STYLES.some(s => s.k === k)) sel.value = k;
+      sel.setAttribute('data-style-now', k);
+    }
+  }
+  const now = document.getElementById('npcScStyleNow');
+  if (now) now.textContent = npcScStyleNowText();
+}
+function npcScriptBlocksPaint(container) {
+  if (!_npCase || !_npCase.editScript) return;
+  const box = document.getElementById('npcScBlocks');
+  if (box) box.innerHTML = NPC_SC_BLOCKS.map(npcScBlockHtml).join('');
+  npcScHintPaint();
+  npcScStylePaint();
+  npcScriptBindTa();
+  npcScriptBindAsk(container);
+}
+function npcScriptBindAsk(container) {
+  const g = _npCase;
+  const ask = document.getElementById('npcScAsk');
+  if (!ask) return;
+  ask.addEventListener('input', () => { if (_npCase === g) g.sc.ask = ask.value; });
+  ask.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); npcScriptAsk(container); } });
+  if (g && g.sc && g.sc.focus) { g.sc.focus = false; setTimeout(() => { try { ask.focus(); } catch (_) {} }, 30); }
+}
+function npcScriptBindTa() {
+  const g = _npCase;
+  document.querySelectorAll('.npc-sc-ta').forEach(ta => ta.addEventListener('input', () => {
+    if (_npCase !== g) return;
+    const k = String(ta.getAttribute('data-sc-key') || '');
+    if (!k) return;
+    g.libBlocks[k] = ta.value;
+    npcScHintPaint();
+    npcScriptSaveSoon();
+  }));
+}
+function npcScriptBind(container) {
+  const g = _npCase;
+  if (!g) return;
+  if (g.editScript) {
+    const ti = document.getElementById('npcScTitle');
+    if (ti) ti.addEventListener('input', () => {
+      if (_npCase !== g) return;
+      g.title = String(ti.value || '').trim().slice(0, 24);
+      npcScriptSaveSoon();
+    });
+    npcScriptBindTa();
+    npcScriptBindAsk(container);
+    return;
+  }
+  npcFilmPosterPaint();
+  if (g.cv2Open) {
+    const ti = document.getElementById('npcCvTitle');
+    if (ti) ti.addEventListener('input', () => {
+      if (_npCase !== g) return;
+      g.cv2Title = String(ti.value || '').slice(0, 14);
+      npcCvPaintPreview();
+    });
+    const fi = document.getElementById('npcCvFile');
+    if (fi) fi.addEventListener('change', () => npcCvUpload(fi));
+    const mask = document.getElementById('npcCvMask');
+    if (mask) mask.addEventListener('click', (ev) => {
+      if (ev.target === mask && _npCase === g) { g.cv2Open = false; npCaseRender(npActiveC()); }
+    });
+    npcCvPaintPreview();
+  }
+}
+/* 改正文落档：防抖写回这篇笔记（标题 / 三块 / 音色 BGM 封面一起） */
+function npcScriptSaveSoon() {
+  const g = _npCase;
+  if (!g) return;
+  clearTimeout(_npScriptTimer);
+  _npScriptTimer = setTimeout(() => {
+    _npScriptTimer = 0;
+    npcScriptSaveNow().catch(() => {});
+  }, 900);
+}
+async function npcScriptSaveNow() {
+  const g = _npCase;
+  if (!g || !g.arId || !g.libBlocks) return;
+  await npCaseBlocksPersist(g.arId, {
+    title: String(g.title || ''),
+    intro: String(g.libBlocks.intro || ''),
+    content: String(g.libBlocks.content || ''),
+    door: String(g.libBlocks.door || ''),
+    voice: String(g.voice || ''), bgm: Number(g.bgm) || 0, cover: Number(g.cover) || 0,
+    scriptCol: String(g.scriptCol || ''), style: String(g.libStyle || ''), kidName: String(g.kidName || ''), kidNone: !!g.kidNone,
+  }, g.libClips || []);
+}
+async function npcScriptAsk(container) {
+  const g = _npCase;
+  if (!g || !g.editScript || g.sc.busy) return;
+  const key = g.sc.b;
+  const src = String((g.libBlocks || {})[key] || '');
+  const parts = npcScParts(src);
+  const cur = String(((parts[g.sc.i] || {}).text) || '').trim();
+  if (!cur) return;
+  const ask = String(g.sc.ask || '').trim();
+  if (!ask) { g.sc.err = '先说一句想怎么改'; npcScriptBlocksPaint(container); return; }
+  g.sc.busy = true; g.sc.err = ''; g.sc.pend = null;
+  npcScriptBlocksPaint(container);
+  let err = '';
+  try {
+    const r = await chrome.runtime.sendMessage({
+      action: 'reviseNote',
+      data: {
+        platform: 'xhs',
+        content: npCaseMergeOf(g.libBlocks),
+        onlySentence: cur,
+        ask: ask,
+        topic: String(g.title || ''),
+        people: [], tags: [], noteStyle: null, planItem: null, hot: null,
+      },
+    });
+    if (_npCase !== g) return;
+    if (!r || r.ok === false) throw new Error((r && r.error) || 'AI 没给出改后的那一句，换个说法再试');
+    const s = String(r.sentence || '').trim();
+    if (!s) throw new Error('AI 没给出改后的那一句，换个说法再试');
+    g.sc.pend = { i: g.sc.i, old: cur, s: s };
+  } catch (e) { err = '改这句失败：' + npcErrText(e); }
+  if (_npCase !== g) return;
+  g.sc.busy = false;
+  g.sc.err = err;
+  npcScriptBlocksPaint(container);
+}
+function npcScriptUse(container) {
+  const g = _npCase;
+  if (!g) return;
+  const p = g.sc.pend;
+  if (!p) return;
+  const key = g.sc.b;
+  const src = String((g.libBlocks || {})[key] || '');
+  const parts = npcScParts(src);
+  const row = parts[p.i];
+  if (!row || String(row.text).trim() !== String(p.old)) {
+    g.sc.pend = null; g.sc.err = '这句的位置变过了——再点它改一次';
+    npcScriptBlocksPaint(container);
+    return;
+  }
+  const trail = (String(row.text).trim().match(/[。！？!?；;]$/) || [''])[0];
+  const lead = (String(row.text).match(/^\s*/) || [''])[0];
+  const next = String(p.s).trim() + (/[。！？!?；;]/.test(String(p.s).trim().slice(-1)) ? '' : trail);
+  g.libBlocks[key] = src.slice(0, row.start) + lead + next + src.slice(row.end);
+  g.sc.pend = null; g.sc.b = ''; g.sc.i = -1; g.sc.ask = ''; g.sc.err = '';
+  npcScriptBlocksPaint(container);
+  npcScriptSaveSoon();
+  if (typeof toast === 'function') toast('这句换好了');
+}
+function npcScriptToggleText(container, key) {
+  const g = _npCase;
+  if (!g || !g.sc.text) return;
+  g.sc.text[key] = !g.sc.text[key];
+  g.sc.pend = null; g.sc.b = ''; g.sc.i = -1;
+  npcScriptBlocksPaint(container);
+}
+async function npcScriptAgain(container) {
+  const g = _npCase;
+  if (!g || g.sc.again) return;
+  /* 「换一版」连讲法一起换：避开这版和最近 3 篇用过的骨架（固定写法的那号则听设置） */
+  const nextStyle = await npcCaseStylePick(g.libStyle);
+  const recent = await npcRecentTexts(g.arId);
+  g.sc.again = true; g.sc.err = '';
+  npcScriptBlocksPaint(container);
+  const r = await npCaseScriptRequest(g.libClips || [], g.scriptCol || '', '', {
+    mode: 'again', title: String(g.title || ''),
+    intro: String(g.libBlocks.intro || ''), content: String(g.libBlocks.content || ''), door: String(g.libBlocks.door || ''),
+  }, nextStyle, recent, g.kidNone ? 'none' : g.kidName);
+  if (_npCase !== g) return;
+  g.sc.again = false;
+  if (!r || !r.ok) {
+    g.sc.err = '这一版没换出来：' + ((r && r.error) || '接口没回话') + '——再点一次';
+    npcScriptBlocksPaint(container);
+    return;
+  }
+  const nb = npCaseBlocksOf(r, g.libClips || []);
+  if (nb.intro) g.libBlocks.intro = nb.intro;
+  if (nb.content) g.libBlocks.content = nb.content;
+  if (nb.door) g.libBlocks.door = nb.door;
+  g.libStyle = nextStyle; g.styleKnown = true;
+  if (r.kidName !== undefined) { g.kidName = String(r.kidName || ''); if (g.kidName) g.kidNone = false; }
+  g.sc.b = ''; g.sc.i = -1; g.sc.pend = null;
+  npcScriptBlocksPaint(container);
+  npcScriptSaveSoon();
+  if (typeof toast === 'function') toast('换成了「' + npcCaseStyleName(nextStyle) + '」讲法的一版——对就留着，不对再点一次');
+}
+/* 换写法整套重写（标题沿用，三块覆盖）：先把选中的写法记下来，再跟「换一版」走同一条请求 */
+async function npcScriptRestyle(container) {
+  const g = _npCase;
+  if (!g || g.sc.again) return;
+  const sel = document.getElementById('npcScStyle');
+  const pick = String((sel && sel.value) || '');
+  const style = NPC_CASE_STYLES.some(s => s.k === pick) ? pick : (g.libStyle || 'report');
+  g.sc.again = true; g.sc.err = '';
+  npcScriptBlocksPaint(container);
+  const r = await npCaseScriptRequest(g.libClips || [], g.scriptCol || '', '', {
+    mode: 'again', title: String(g.title || ''),
+    intro: String(g.libBlocks.intro || ''), content: String(g.libBlocks.content || ''), door: String(g.libBlocks.door || ''),
+  }, style, await npcRecentTexts(g.arId), g.kidNone ? 'none' : g.kidName);
+  if (_npCase !== g) return;
+  g.sc.again = false;
+  if (!r || !r.ok) {
+    g.sc.err = '没重写出来：' + ((r && r.error) || '接口没回话') + '——再点一次';
+    npcScriptBlocksPaint(container);
+    return;
+  }
+  const nb = npCaseBlocksOf(r, g.libClips || []);
+  if (nb.intro) g.libBlocks.intro = nb.intro;
+  if (nb.content) g.libBlocks.content = nb.content;
+  if (nb.door) g.libBlocks.door = nb.door;
+  g.libStyle = style; g.styleKnown = true;
+  if (r.kidName !== undefined) { g.kidName = String(r.kidName || ''); if (g.kidName) g.kidNone = false; }
+  g.sc.b = ''; g.sc.i = -1; g.sc.pend = null;
+  npcScriptBlocksPaint(container);
+  npcScriptSaveSoon();
+  if (typeof toast === 'function') toast('按「' + npcCaseStyleName(style) + '」重写了一版——不对就再换一个写法');
+}
+/* 改稿屏「孩子称呼」：换一个小名 / 不起名——只动正文里的称呼，别的句子一个字不碰 */
+const NPC_KID_NAMES = ['小宇', '果果', '豆豆', '一一', '乐乐', '米粒', '诺诺', '跳跳', '安安', '多多'];
+function npcKidRe(text, from, to) {
+  if (!from) return String(text || '');
+  const re = new RegExp(String(from).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+  let first = true;
+  return String(text || '').replace(re, () => {
+    const out = first ? to : (to === '有个孩子' ? '这个孩子' : to);
+    first = false;
+    return out;
+  });
+}
+async function npcKidNameSet(mode, container) {
+  const g = _npCase;
+  if (!g || !g.libBlocks) return;
+  const src = String(g.libBlocks.content || '');
+  const cur = String(g.kidName || '');
+  if (mode === 'keep') return;
+  if (mode === 'none') {
+    if (!cur) {
+      if (/有个孩子|这个孩子/.test(src)) { if (typeof toast === 'function') toast('这篇已经是不起名的写法了'); }
+      else if (typeof toast === 'function') toast('这篇正文里没有具体孩子，不用改称呼');
+      return;
+    }
+    g.libBlocks.content = npcKidRe(src, cur, '有个孩子');
+    g.kidNamePrev = cur;
+    g.kidName = '';
+    g.kidNone = true;
+    npCaseRender(container);
+    npcScriptSaveSoon();
+    if (typeof toast === 'function') toast('这一篇不起名了：改成“有个孩子”，别的句子没动');
+    return;
+  }
+  /* 换一个小名 / 给这个孩子起个小名 */
+  let recent = [];
+  try { recent = await npcRecentTexts(g.arId, 3); } catch (_) { recent = []; }
+  const prevName = String(g.kidNamePrev || '');
+  const pool = NPC_KID_NAMES.filter(n => n !== cur && n !== prevName && !src.includes(n) && !recent.some(t => String(t).includes(n)));
+  const cand = pool.length ? pool : NPC_KID_NAMES.filter(n => n !== cur);
+  const name = String(cand.length ? cand[Math.floor(Math.random() * cand.length)] : '果果');
+  if (cur && src.includes(cur)) {
+    g.libBlocks.content = npcKidRe(src, cur, name);
+  } else if (/有个孩子/.test(src)) {
+    g.libBlocks.content = src.replace('有个孩子', name);
+  } else if (/这个孩子/.test(src)) {
+    g.libBlocks.content = src.replace('这个孩子', name);
+  } else {
+    if (typeof toast === 'function') toast('这篇正文里没有具体孩子，不用起名（报班提醒、误区纠错这类讲法本来就不点具体孩子）');
+    return;
+  }
+  g.kidNamePrev = cur;
+  g.kidName = name;
+  g.kidNone = false;
+  npCaseRender(container);
+  npcScriptSaveSoon();
+  if (typeof toast === 'function') toast(cur ? ('改叫「' + name + '」了，别的句子没动') : ('给他起名叫「' + name + '」，别的句子没动'));
+}
+/* 「🎬 生成视频」：先把改过的字落档，再翻到出片台开动 */
+async function npcScriptStart(container) {
+  const g = _npCase;
+  if (!g) return;
+  if (!String(g.libBlocks.content || '').trim()) {
+    if (typeof toast === 'function') toast('「内容」还空着——中间那段是片子的正文，先写一点', 'error');
+    return;
+  }
+  clearTimeout(_npScriptTimer); _npScriptTimer = 0;
+  try { await npcScriptSaveNow(); } catch (_) {}
+  if (_npCase !== g) return;
+  g.editScript = false;
+  npCaseRender(container);
+  npCaseFilmRun(container);
+}
+/* 出片台右栏：手机大小的成片预览（270×480）＋播放 / 重播 / 全屏 */
+function npcPhoneHtml() {
+  const g = _npCase;
+  const running = g.filmStep >= 0;
+  const filmDone = !!(g.film && g.film.at);
+  const status = running ? '出片中' : (filmDone ? '已成片' : '还没出片');
+  const inner = (filmDone && g.film.url)
+    ? '<video id="npcFilmVid" src="' + npArAttr(g.film.url) + '" playsinline preload="metadata"></video>'
+    : '<canvas id="npcFilmPoster" width="540" height="960"></canvas>';
+  return '<div class="card card-pad">' +
+    '<div class="npc-phone-hd"><b>成片预览</b><span class="chip' + (filmDone ? ' on' : '') + '" id="npcFilmPhoneSt">' + status + '</span></div>' +
+    '<div class="npc-phone" id="npcFilmPhone"><div class="npc-film-stage" id="npcFilmStage">' + inner + '</div>' +
+      '<div class="npc-phone-ov" id="npcFilmPhoneOv"' + (running ? '' : ' style="display:none;"') + '>⏳ ' + esc(g.filmTx || '正在生成…') + '</div></div>' +
+    '<div class="npc-phone-ops">' +
+      '<button type="button" class="btn btn-sm" data-npc="filmplay"' + (filmDone && g.film.url ? '' : ' disabled') + '>▶ 播放</button>' +
+      '<button type="button" class="btn btn-sm" data-npc="filmreplay"' + (filmDone && g.film.url ? '' : ' disabled') + '>↻ 重播</button>' +
+      '<button type="button" class="btn btn-sm" data-npc="filmfs"' + (filmDone ? '' : ' disabled') + '>⛶ 全屏</button>' +
+    '</div>' +
+    '<div class="npc-phone-meta">' + (filmDone ? ('成片 ' + npcFmt(g.film.dur) + ' · 竖屏 9:16') : '生成后这里出成片 · 竖屏 9:16') + '</div>' +
+  '</div>';
+}
+/* 还没出片时，右栏先摆第一镜的画面＋字幕，别给一块黑 */
+function npcFilmPosterPaint() {
+  const g = _npCase;
+  if (!g || !g.filmFlow || g.editScript || g.filmStep >= 0) return;
+  if (g.film && g.film.url) return;
+  const cv = document.getElementById('npcFilmPoster');
+  if (!cv) return;
+  const card = npcCardConf(g);
+  if (card.on) {                                     // 开头有封面卡：先摆卡，别摆第一镜
+    const gen0 = ++_npcSeekGen;
+    npCaseCardImg(g).then(img => {
+      if (gen0 !== _npcSeekGen || _npCase !== g) return;
+      const cv0 = document.getElementById('npcFilmPoster');
+      if (!cv0) return;
+      npcCardDraw(cv0.getContext('2d'), cv0.width, cv0.height, img, card.title, card.lay, 1);
+    }).catch(() => {});
+    return;
+  }
+  const est = npcScEstimate(g);
+  const q = est.plan && est.plan.shots && est.plan.shots[0];
+  if (!q) return;
+  const gen = ++_npcSeekGen;
+  npcLoadSeg(q).then((ok) => {
+    if (!ok || gen !== _npcSeekGen || _npCase !== g) return;
+    return npcSeekVid(_npcPVid, Math.max(0, Math.min(q.m.dur - 0.05, q.t1))).then(() => {
+      if (gen !== _npcSeekGen || _npCase !== g) return;
+      const cv2 = document.getElementById('npcFilmPoster');
+      if (!cv2) return;
+      const q0 = g.queue;
+      g.queue = est.plan.shots;
+      try { npcDrawFrameTo(cv2.getContext('2d'), cv2.width, cv2.height, g, q, 0, 0.05, est.plan.total); } catch (_) {}
+      g.queue = q0;
+    });
+  }).catch(() => {});
+}
+function npcFilmPageHtml() {
+  const g = _npCase;
+  const b = g.libBlocks || {};
+  const running = g.filmStep >= 0;
+  const filmDone = !!(g.film && g.film.at);
+  const chars = npCaseMergeOf(b).replace(/\s/g, '').length;
+  const est = Math.max(1, Math.round(chars / 4.1));
+  const segN = (g.libClips || []).length;
+  const block = (label, text) =>
+    '<div style="margin:0 0 8px;"><div style="font-size:11px;font-weight:700;color:var(--c-ink-3);margin-bottom:3px;">' + label + '</div>' +
+      '<div style="border:1px solid var(--c-line);background:var(--c-bg);border-radius:9px;padding:7px 10px;font-size:12.5px;line-height:1.8;color:var(--c-ink-2);white-space:pre-wrap;">' +
+      (text ? esc(text) : '<span style="color:var(--c-ink-4);">（这块空着）</span>') + '</div></div>';
+  return npcFilmStepsHtml('film') +
+    '<div class="npc-film-grid">' +
+      '<div class="npc-film-main">' +
+        '<div class="card card-pad" style="margin-bottom:10px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+            '<div style="font-weight:700;color:var(--c-ink);">🎬 这条案例</div>' +
+            '<span style="font-size:11px;color:var(--c-ink-3);">' + segN + ' 段素材 · 正文 ' + chars + ' 字 · 大约念 ' + est + ' 秒</span>' +
+            '<span style="flex:1;"></span>' +
+            '<button type="button" class="npc-qmini" data-npc="scedit" title="回改正文那一页，改完再出片">✏️ 改正文</button>' +
+            '<button type="button" class="npc-qmini" data-npc="libpick" title="回素材库换几段（换完重写正文）">🎞 换素材</button>' +
+          '</div>' +
+          block('① 引言', b.intro) + block('② 内容', b.content) + block('③ 到店指引', b.door) +
+          '<p style="font-size:10.5px;color:var(--c-ink-3);line-height:1.7;margin:4px 0 0;">出片时按这三块念：先配音量出每句有多长，再「念完一句就切下一镜」裁画面。</p>' +
+        '</div>' +
+        '<div style="margin-bottom:10px;">' + npcScSettingsHtml(true) + '</div>' +
+        '<div class="card card-pad">' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+            '<button type="button" class="btn btn-primary" id="npcFilmBtn" ' + (running ? 'disabled' : '') + ' data-npc="filmgen">' +
+              (running ? '⏳ 正在生成…' : (filmDone ? '🎬 重新生成一版' : '🎬 生成视频')) + '</button>' +
+            ((g.film && g.film.blob) ? '<button type="button" class="btn btn-sm" data-npc="dlfilm">⬇ 下载成片</button>' : '') +
+            (filmDone ? (g.saved
+              ? '<button type="button" class="btn btn-sm" data-npc="toarchive">去档案看</button>'
+              : '<button type="button" class="btn btn-sm" data-npc="savearc">✓ 完成，存回档案</button>') : '') +
+          '</div>' +
+          '<div style="height:5px;background:var(--c-bg-2);border-radius:4px;overflow:hidden;margin-top:10px;"><div id="npcFilmBar" style="height:100%;width:' + (running ? g.filmPct : 0) + '%;background:var(--c-brand);transition:width .2s;"></div></div>' +
+          '<div class="npc-exp" id="npcFilmExp" style="' + (running ? '' : 'display:none;') + '">' +
+            (running ? esc((g.filmTx || '出片中…') + ' ' + g.filmPct + '%（真画面真声音在录，别切页、别锁屏）') : '') + '</div>' +
+          '<div style="font-size:10.5px;color:var(--c-ink-3);margin-top:6px;" id="npcFilmStat">' + esc(g.filmStat || '') + '</div>' +
+        '</div>' +
+        '<details class="npc-film-cut"><summary>🎞 每镜怎么剪（点开看：用了哪条素材、剪掉多少）</summary>' +
+          '<div class="npc-sccuts" id="npcFilmCuts">' + npcScCutsHtml() + '</div></details>' +
+      '</div>' +
+      '<aside class="npc-film-side">' + npcPhoneHtml() + '</aside>' +
+    '</div>';
+}
+/* 出片进度只碰这几处 DOM（录的时候别整页重画） */
+function npcFilmPaint() {
+  const g = _npCase;
+  if (!g) return;
+  const running = g.filmStep >= 0;
+  const btn = document.getElementById('npcFilmBtn');
+  if (btn) {
+    btn.disabled = running;
+    btn.textContent = running ? '⏳ 正在生成…' : ((g.film && g.film.at) ? '🎬 重新生成一版' : '🎬 生成视频');
+  }
+  const ex = document.getElementById('npcFilmExp');
+  if (ex) {
+    ex.style.display = running ? '' : 'none';
+    if (running) ex.textContent = (g.filmTx || '出片中…') + ' ' + g.filmPct + '%（真画面真声音在录，别切页、别锁屏）';
+  }
+  const bar = document.getElementById('npcFilmBar');
+  if (bar) bar.style.width = Math.max(0, Math.min(100, Number(g.filmPct) || 0)) + '%';
+  const stat = document.getElementById('npcFilmStat');
+  if (stat) stat.textContent = String(g.filmStat || '');
+  const st = document.getElementById('npcFilmPhoneSt');
+  if (st) st.textContent = running ? '出片中' : ((g.film && g.film.at) ? '已成片' : '还没出片');
+  const ov = document.getElementById('npcFilmPhoneOv');
+  if (ov) {
+    ov.style.display = running ? '' : 'none';
+    if (running) ov.textContent = '⏳ ' + (g.filmTx || '正在生成…') + ' ' + g.filmPct + '%';
+  }
+}
+/* ── 🖼 封面（2026-11-11）：从素材原帧挑一帧（不带字幕/进度条），标题默认取正文第一句 ── */
+const NPC_CV_LAYS = [
+  { k: 'big', n: '大字压中' },
+  { k: 'side', n: '左上竖排' },
+  { k: 'band', n: '底部白条' },
+];
+function npcCvAutoTitle(g) {
+  const list = npCaseFilmSentenceList((g && g.libBlocks) || {});
+  const first = (list.find(x => x.group === 'intro') || list[0] || { text: '' }).text;
+  let s = String(first || '').replace(/^(大家好|哈喽|嗨|hello|hi)[，,。！!、\s]*/i, '');
+  const clauses = s.split(/[，,。！？!?；;：:、\s]/).filter(Boolean);
+  let out = '';
+  for (const c of clauses) { if (out.length >= 6) break; out += c; }
+  out = out.replace(/[^\u4e00-\u9fa5A-Za-z0-9%＋+]/g, '').slice(0, 14);
+  if (!out) out = String((g && g.title) || '案例成片').replace(/[（(]还没定名[)）]/g, '').trim().slice(0, 14);
+  return out;
+}
+/** 三套版式（照 demo：大字压中 / 左上竖排 / 底部白条） */
+function npcCvTitleOn(ctx, W, H, lay, text) {
+  const t = String(text || '').trim();
+  if (!t) return;
+  const ff = '"Microsoft YaHei","PingFang SC",sans-serif';
+  const wrap = (s, maxW, maxLines) => {
+    const lines = []; let line = '';
+    for (const ch of s) {
+      if (ctx.measureText(line + ch).width > maxW && line) {
+        lines.push(line); line = ch;
+        if (lines.length >= maxLines) break;
+      } else line += ch;
+    }
+    if (line && lines.length < maxLines) lines.push(line);
+    return lines.slice(0, maxLines);
+  };
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (lay === 'big') {
+    const fs = Math.round(W * 0.082), lh = Math.round(fs * 1.3);
+    ctx.font = 'bold ' + fs + 'px ' + ff;
+    const lines = wrap(t, W * 0.86, 2);
+    const boxH = lh * lines.length + Math.round(H * 0.05);
+    const top = Math.round(H * 0.42 - boxH / 2);
+    ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, top, W, boxH);
+    ctx.fillStyle = '#fff';
+    lines.forEach((ln, i) => ctx.fillText(ln, W / 2, top + Math.round(H * 0.025) + lh * (i + 0.5)));
+  } else if (lay === 'side') {
+    const fs = Math.round(W * 0.064);
+    const chars = Array.from(t).slice(0, 7);
+    ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.fillRect(W * 0.05, H * 0.05, Math.round(fs * 1.7), H * 0.56);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold ' + fs + 'px ' + ff;
+    chars.forEach((ch, i) => ctx.fillText(ch, W * 0.05 + fs * 0.85, H * 0.09 + i * fs * 1.35));
+  } else {
+    const fs = Math.round(W * 0.062);
+    ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.fillRect(0, H * 0.85, W, H * 0.15);
+    ctx.fillStyle = '#14181f'; ctx.font = 'bold ' + fs + 'px ' + ff;
+    ctx.fillText(t.slice(0, 16), W / 2, H * 0.925);
+  }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function npcCvLoadVid(url) {
+  return new Promise((res, rej) => {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    const tm = setTimeout(() => { try { v.removeAttribute('src'); v.load(); } catch (_) {} rej(new Error('素材读太慢')); }, 12000);
+    v.addEventListener('loadeddata', () => { clearTimeout(tm); res(v); }, { once: true });
+    v.addEventListener('error', () => { clearTimeout(tm); rej(new Error('这条素材读不开')); }, { once: true });
+  });
+}
+function npcCvSeek(v, t) {
+  return new Promise((res) => {
+    let done = false;
+    const tm = setTimeout(() => { if (done) return; done = true; res(); }, 4000);
+    v.addEventListener('seeked', () => { if (done) return; done = true; clearTimeout(tm); res(); }, { once: true });
+    try { v.currentTime = Math.max(0, Math.min(t, Math.max(0, (v.duration || 0) - 0.05))); } catch (_) { if (!done) { done = true; clearTimeout(tm); res(); } }
+  });
+}
+/** 原帧 → 3:4 大图＋小图；顺带算平均亮度，太黑的那帧先跳过 */
+function npcCvDrawFrame(v) {
+  const W = 1080, H = 1440;
+  const vw = v.videoWidth || 0, vh = v.videoHeight || 0;
+  if (!vw || !vh) throw new Error('这一帧没画面');
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const c = cv.getContext('2d');
+  const sc = Math.max(W / vw, H / vh);
+  c.drawImage(v, (W - vw * sc) / 2, (H - vh * sc) / 2, vw * sc, vh * sc);
+  let luma = 255;
+  try {
+    const sm = document.createElement('canvas'); sm.width = 32; sm.height = 42;
+    const sc2 = sm.getContext('2d');
+    sc2.drawImage(cv, 0, 0, 32, 42);
+    const d = sc2.getImageData(0, 0, 32, 42).data;
+    let n = 0, sum = 0;
+    for (let i = 0; i < d.length; i += 4) { sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114; n++; }
+    luma = n ? sum / n : 255;
+  } catch (_) {}
+  const th = document.createElement('canvas'); th.width = 270; th.height = 360;
+  th.getContext('2d').drawImage(cv, 0, 0, 270, 360);
+  return { full: cv.toDataURL('image/jpeg', 0.92), thumb: th.toDataURL('image/jpeg', 0.8), luma: luma };
+}
+async function npcCvMake(container) {
+  const g = _npCase;
+  if (!g || g.cv2Busy) return;
+  if (!g.cv2Title) g.cv2Title = npcCvAutoTitle(g);
+  g.cv2Busy = true; g.cv2Err = '';
+  const own = (g.cv2Frames || []).filter(x => x && x.own);
+  g.cv2Frames = own.slice(); g.cv2Sel = own.length ? 0 : -1;
+  npCaseRender(container);
+  const pools = npCaseFilmPools(g);
+  const clips = pools.work.length ? pools.work : (pools.place.length ? pools.place : pools.all);
+  const plan = [];
+  const fracs = [0.5, 0.32, 0.68, 0.44, 0.6, 0.38, 0.56, 0.26];   // 素材少也要凑够 6 帧可挑
+  for (let ri = 0; ri < 8 && plan.length < 6 && clips.length; ri++) {
+    for (let ci = 0; ci < clips.length && plan.length < 6; ci++) plan.push({ c: clips[ci], f: fracs[(ri * clips.length + ci) % fracs.length] });
+  }
+  const vids = new Map();
+  try {
+    for (const p of plan) {
+      if (_npCase !== g || !g.cv2Open) break;
+      const key = String(p.c.m.id);
+      let v = vids.get(key);
+      if (!v) { v = await npcCvLoadVid(p.c.m.url); vids.set(key, v); }
+      const t = Math.max(0.05, Math.min(p.c.a + (p.c.b - p.c.a) * p.f, (v.duration || p.c.m.dur || 0) - 0.06));
+      await npcCvSeek(v, t);
+      if (_npCase !== g) break;
+      const fr = npcCvDrawFrame(v);
+      fr.t = +t.toFixed(1); fr.cat = String(p.c.cat || '');
+      if (fr.luma < 24 && g.cv2Frames.length >= 4) continue;
+      g.cv2Frames.push(fr);
+      if (g.cv2Sel < 0) g.cv2Sel = 0;
+      npCaseRender(container);
+    }
+  } catch (e) {
+    g.cv2Err = '取帧没成：' + String((e && e.message) || e) + '——可以「⬆ 传自己的图」';
+  }
+  vids.forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (_) {} });
+  g.cv2Busy = false;
+  if (_npCase === g) npCaseRender(container);
+}
+function npcCvPick(container, i) {
+  const g = _npCase;
+  if (!g || isNaN(i) || !(g.cv2Frames || [])[i]) return;
+  g.cv2Sel = i;
+  npCaseRender(container);
+}
+async function npcCvUpload(input) {
+  const g = _npCase;
+  const f = input && input.files && input.files[0];
+  if (!g || !f) return;
+  try {
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im); im.onerror = () => rej(new Error('这张图读不开'));
+      im.src = url;
+    });
+    const W = 1080, H = 1440;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const c = cv.getContext('2d');
+    const iw = img.naturalWidth || W, ih = img.naturalHeight || H;
+    const sc = Math.max(W / iw, H / ih);
+    c.drawImage(img, (W - iw * sc) / 2, (H - ih * sc) / 2, iw * sc, ih * sc);
+    const th = document.createElement('canvas'); th.width = 270; th.height = 360;
+    th.getContext('2d').drawImage(cv, 0, 0, 270, 360);
+    try { URL.revokeObjectURL(url); } catch (_) {}
+    g.cv2Frames = [{ full: cv.toDataURL('image/jpeg', 0.92), thumb: th.toDataURL('image/jpeg', 0.8), t: 0, cat: '自己传的图', own: true }]
+      .concat((g.cv2Frames || []).filter(x => x && !x.own));
+    g.cv2Sel = 0;
+    npCaseRender(npActiveC());
+    if (typeof toast === 'function') toast('自己的图换上了——写标题、挑版式，再点「✓ 定这张」');
+  } catch (e) {
+    if (typeof toast === 'function') toast('这张图读不开：' + String((e && e.message) || e), 'error');
+  }
+}
+function npcCvPaintPreview() {
+  const g = _npCase;
+  const cv = document.getElementById('npcCvPrev');
+  if (!g || !cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.fillStyle = '#111'; ctx.fillRect(0, 0, W, H);
+  const fr = (g.cv2Frames || [])[g.cv2Sel] || null;
+  if (!fr) {
+    ctx.fillStyle = '#8b93a1'; ctx.font = '600 14px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(g.cv2Busy ? '正在从素材里取帧…' : '左边先挑一帧', W / 2, H / 2);
+    ctx.textAlign = 'left';
+    return;
+  }
+  const im = new Image();
+  im.onload = () => {
+    if (_npCase !== g || !cv.isConnected) return;
+    try { ctx.drawImage(im, 0, 0, W, H); npcCvTitleOn(ctx, W, H, g.cv2Lay, g.cv2Title); } catch (_) {}
+  };
+  im.src = fr.full;
+}
+async function npcCvCompose() {
+  const g = _npCase;
+  const fr = g && (g.cv2Frames || [])[g.cv2Sel];
+  if (!fr) return null;
+  const im = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i); i.onerror = () => rej(new Error('这一帧读不开'));
+    i.src = fr.full;
+  });
+  const W = 1080, H = 1440;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(im, 0, 0, W, H);
+  npcCvTitleOn(ctx, W, H, g.cv2Lay, g.cv2Title);
+  const blob = await new Promise(res => { try { cv.toBlob(b => res(b), 'image/jpeg', 0.92); } catch (_) { res(null); } });
+  return blob && blob.size ? { blob: blob, cv: cv } : null;
+}
+async function npcCvFix(container) {
+  const g = _npCase;
+  if (!g || g.cv2Busy) return;
+  if (!g.cv2Title) g.cv2Title = npcCvAutoTitle(g);
+  g.cv2Busy = true; npCaseRender(container);
+  try {
+    const out = await npcCvCompose();
+    if (!out) throw new Error('合不出来——换一帧再试，或传一张自己的图');
+    try { await npCasePut('ccover:' + g.arId, out.blob); } catch (_) {}
+    /* 片头卡要用同一张图（不带压上去的标题），原帧单独存一份 */
+    const frRaw = (g.cv2Frames || [])[g.cv2Sel] || null;
+    if (frRaw && frRaw.full) {
+      try { await npCasePut('ccoverraw:' + g.arId, await (await fetch(frRaw.full)).blob()); } catch (_) {}
+      g._cardImg = null;
+    }
+    const th = document.createElement('canvas'); th.width = 270; th.height = 360;
+    th.getContext('2d').drawImage(out.cv, 0, 0, 270, 360);
+    g.cv2Saved = {
+      title: String(g.cv2Title || ''), lay: String(g.cv2Lay || 'big'), at: Date.now(),
+      thumb: th.toDataURL('image/jpeg', 0.8),
+      t: Number(((g.cv2Frames || [])[g.cv2Sel] || {}).t) || 0,
+    };
+    g.cv2Busy = false;
+    await npCaseFlush();
+    if (_npCase !== g) return;
+    npCaseRender(container);
+    if (typeof toast === 'function') toast('封面定好了——存在这一篇里，重进还在；要图点「⬇ 下载封面」');
+  } catch (e) {
+    g.cv2Busy = false;
+    if (_npCase === g) npCaseRender(container);
+    if (typeof toast === 'function') toast(String((e && e.message) || e), 'error');
+  }
+}
+async function npcCvDownload() {
+  const g = _npCase;
+  if (!g) return;
+  if (!g.cv2Saved) { if (typeof toast === 'function') toast('还没定封面——先挑一帧定下来'); return; }
+  let blob = null;
+  try { blob = await npCaseGet('ccover:' + g.arId); } catch (_) {}
+  if (!blob || !blob.size) {
+    const out = await npcCvCompose();
+    blob = out && out.blob;
+  }
+  if (!blob) { if (typeof toast === 'function') toast('封面文件找不到了——重新定一次', 'error'); return; }
+  npcDownload(blob, '封面_' + String(g.title || '案例成片').replace(/[\\/:*?"<>|]/g, '').replace('（还没定名）', '').trim().slice(0, 20) + '.jpg');
+}
+function npcCvThumbHtml() {
+  const g = _npCase;
+  const s = g && g.cv2Saved;
+  return (s && s.thumb) ? '<img src="' + npArAttr(s.thumb) + '" alt="封面" style="width:27px;height:36px;object-fit:cover;border-radius:5px;border:1px solid var(--c-line);flex:none;">' : '';
+}
+/* ── 片头封面卡（2026-11-12）：整条片最前面压一段封面＋标题，发布后第一帧就是它 ── */
+const NPC_CARD_DURS = [1.5, 2, 2.5];
+function npcCardConf(g) {
+  const on = !(g && g.cardOn === false);
+  const d = Number(g && g.cardDur);
+  const dur = NPC_CARD_DURS.indexOf(d) >= 0 ? d : 2;
+  const lay = /^(big|side|band)$/.test(String((g && g.cardLay) || '')) ? String(g.cardLay) : 'big';
+  let title = String((g && g.title) || '').replace(/[（(]还没定名[)）]/g, '').replace(/\s+/g, '').trim();
+  if (!title && g) title = npcCvAutoTitle(g);
+  return { on: on, dur: on ? dur : 0, lay: lay, title: title.slice(0, 14) };
+}
+function npcImgOfBlob(blob) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = () => { try { URL.revokeObjectURL(url); } catch (_) {} res(im); };
+    im.onerror = () => { try { URL.revokeObjectURL(url); } catch (_) {} rej(new Error('封面图读不开')); };
+    im.src = url;
+  });
+}
+/* 卡上那张图：先在「做封面」定过的那帧（原帧，不带已压的标题），没有就取场馆类第一段中间一帧 */
+async function npCaseCardImg(g) {
+  if (!g) return null;
+  if (g._cardImg) return g._cardImg;
+  let img = null;
+  try {
+    const b = await npCaseGet('ccoverraw:' + g.arId);
+    if (b && b.size) img = await npcImgOfBlob(b);
+  } catch (_) {}
+  if (!img) {
+    const pools = npCaseFilmPools(g);
+    const c = (pools.place && pools.place[0]) || (pools.all && pools.all[0]) || null;
+    if (c) {
+      let v = null;
+      try {
+        v = await npcCvLoadVid(c.m.url);
+        await npcCvSeek(v, Math.max(0, Math.min(c.b - 0.06, c.a + (c.b - c.a) * 0.5)));
+        const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1440;
+        const cx = cv.getContext('2d');
+        const vw = v.videoWidth || 0, vh = v.videoHeight || 0;
+        if (vw && vh) {
+          const sc = Math.max(1080 / vw, 1440 / vh);
+          cx.drawImage(v, (1080 - vw * sc) / 2, (1440 - vh * sc) / 2, vw * sc, vh * sc);
+          img = cv;
+        }
+      } catch (_) {} finally { try { if (v) { v.pause(); v.removeAttribute('src'); v.load(); } } catch (_) {} }
+    }
+  }
+  if (img) g._cardImg = img;
+  return img || null;
+}
+function npcCardDraw(ctx, W, H, img, title, lay, zoom) {
+  ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+  if (img) {
+    const iw = img.videoWidth || img.width || 0, ih = img.videoHeight || img.height || 0;
+    if (iw && ih) {
+      const sc = Math.max(W / iw, H / ih) * (Number(zoom) || 1);
+      try { ctx.drawImage(img, (W - iw * sc) / 2, (H - ih * sc) / 2, iw * sc, ih * sc); } catch (_) {}
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(0, 0, W, H);
+    }
+  }
+  npcCvTitleOn(ctx, W, H, lay, title);
+}
+function npcCvHtml() {
+  const g = _npCase;
+  if (!g || !g.cv2Open) return '';
+  const s = g.cv2Saved;
+  const frames = g.cv2Frames || [];
+  const sel = g.cv2Sel;
+  const grid = frames.map((f, i) =>
+    '<button type="button" data-npc="cvpick" data-i="' + i + '" title="' + npArAttr(f.own ? '自己传的图' : (f.t ? '素材 ' + f.t.toFixed(1) + ' 秒这一帧' : '')) + '" style="position:relative;padding:0;border:2px solid ' + (i === sel ? 'var(--c-brand)' : 'transparent') + ';border-radius:9px;overflow:hidden;background:#111;cursor:pointer;width:118px;height:157px;flex:none;">' +
+      '<img src="' + npArAttr(f.thumb) + '" style="width:100%;height:100%;object-fit:cover;display:block;">' +
+      '<span style="position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.62);color:#fff;font-size:9px;border-radius:4px;padding:0 4px;">' + esc(f.own ? '自己的图' : (f.t ? f.t.toFixed(1) + 's' : '')) + '</span>' +
+    '</button>').join('');
+  const lay = NPC_CV_LAYS.map(l => '<span class="chip' + (g.cv2Lay === l.k ? ' on' : '') + '" data-npc="cvlay" data-v="' + l.k + '">' + esc(l.n) + '</span>').join('');
+  return '<div id="npcCvMask" style="position:fixed;inset:0;z-index:9990;background:rgba(15,20,30,.46);display:flex;align-items:center;justify-content:center;padding:16px;">' +
+    '<div style="width:940px;max-width:96vw;max-height:92vh;overflow:auto;background:var(--c-surface,#fff);border-radius:14px;padding:16px 18px;box-shadow:0 18px 50px rgba(0,0,0,.28);font-family:var(--font-ui);">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">' +
+        '<div style="font-weight:700;font-size:15px;color:var(--c-ink);">🖼 做封面</div>' +
+        '<span style="font-size:11px;color:var(--c-ink-3);">从这条片子的素材里挑一帧，把标题压上去 · 3:4 · 1080×1440</span>' +
+        '<span style="flex:1;"></span>' +
+        '<button type="button" class="npc-qmini" data-npc="cvclose" title="关掉，回出片台">✕</button>' +
+      '</div>' +
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;">' +
+        '<div style="flex:1.5;min-width:320px;">' +
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+            '<b style="font-size:12px;color:var(--c-ink-2);">从素材里挑一帧</b>' +
+            '<span style="font-size:10.5px;color:var(--c-ink-3);">' + (g.cv2Busy ? '正在取帧…' : ('共 ' + frames.length + ' 张')) + '</span>' +
+            '<span style="flex:1;"></span>' +
+            '<button type="button" class="btn btn-sm" data-npc="cvroll" ' + (g.cv2Busy ? 'disabled' : '') + '>🎲 换一批</button>' +
+            '<label class="btn btn-soft btn-sm" style="cursor:pointer;">⬆ 传自己的图<input type="file" accept="image/*" id="npcCvFile" style="display:none;"></label>' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + (grid || '<div style="font-size:12px;color:var(--c-ink-3);padding:22px 0;">' + (g.cv2Busy ? '正在取帧…' : '这条还没挑到可用的画面——可以传一张自己的图') + '</div>') + '</div>' +
+          (g.cv2Err ? '<div style="margin-top:8px;font-size:11px;color:var(--c-danger);">' + esc(g.cv2Err) + '</div>' : '') +
+          '<div style="margin-top:10px;font-size:10.5px;color:var(--c-ink-3);line-height:1.7;">取的是素材原帧——不带字幕、不带进度条。换一批 / 换版式 / 改标题都不花钱，封面是这台电脑上现合的。</div>' +
+        '</div>' +
+        '<div style="flex:1;min-width:250px;">' +
+          '<div style="display:flex;justify-content:center;">' +
+            '<canvas id="npcCvPrev" width="270" height="360" style="width:270px;height:360px;border-radius:10px;background:#111;display:block;"></canvas>' +
+          '</div>' +
+          '<div style="margin-top:10px;"><div style="font-size:11px;font-weight:700;color:var(--c-ink-3);margin-bottom:4px;">标题（最多 14 字）</div>' +
+            '<input id="npcCvTitle" type="text" maxlength="14" value="' + npArAttr(g.cv2Title || '') + '" style="width:100%;box-sizing:border-box;border:1px solid var(--c-line);border-radius:9px;padding:8px 10px;font-size:13px;font-weight:700;outline:none;font-family:var(--font-ui);color:var(--c-ink);">' +
+            '<div style="font-size:10px;color:var(--c-ink-3);margin-top:3px;">默认取正文第一句，改哪写哪。</div></div>' +
+          '<div style="margin-top:10px;"><div style="font-size:11px;font-weight:700;color:var(--c-ink-3);margin-bottom:5px;">版式</div>' +
+            '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + lay + '</div></div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">' +
+            '<button type="button" class="btn btn-primary btn-sm" data-npc="cvfix" ' + ((!frames.length || g.cv2Busy) ? 'disabled' : '') + '>✓ 定这张当封面</button>' +
+            (s ? '<button type="button" class="btn btn-sm" data-npc="cvdl">⬇ 下载封面</button>' : '') +
+          '</div>' +
+          (s && s.thumb ? '<div style="display:flex;align-items:center;gap:7px;margin-top:10px;padding-top:9px;border-top:1px solid var(--c-line);"><img src="' + npArAttr(s.thumb) + '" style="width:36px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--c-line);"><div style="font-size:10.5px;color:var(--c-ink-2);line-height:1.6;">这篇现在用的封面<br><b>' + esc(s.title || '') + '</b> · ' + esc((NPC_CV_LAYS.find(l => l.k === s.lay) || {}).n || '') + '</div></div>' : '') +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+/* 三块 → 一句一行：按句号/问号/叹号/分号断，逗号留在句子里（念的时候自然会停一下） */
+function npCaseFilmSentenceList(blocks, g) {
+  const split = (t) => String(t || '').replace(/[\r\n]+/g, '').match(/[^。！？!?；;]+[。！？!?；;]?/g) || [];
+  /* 没挑到「到店指引」的段就不喊到店——末句招呼配上别的门面画面更假，直接收在正文 */
+  const hasDoor = !g || (g.mats || []).some(m => String((m && m.cat) || '') === 'door');
+  const b = blocks || {};
+  const out = [];
+  const put = (group, t) => split(t).forEach(x => {
+    const s = String(x).replace(/\s+/g, '').trim();
+    if (s.replace(/[。！？!?；;，,、\s]/g, '')) out.push({ group: group, text: s });
+  });
+  put('intro', b.intro);
+  put('content', b.content);
+  if (hasDoor) put('door', b.door);
+  return out;
+}
+/* 挑中的段（每个 mat 一段）→ 可裁的源片区间；开工前再核一遍文件和时长 */
+function npCaseFilmClipsOf(g) {
+  const out = [];
+  (g.mats || []).forEach((m, i) => {
+    if (!m || m.missing || !m.url || !(Number(m.dur) > 0)) return;
+    const s0 = (m.segs && m.segs[0]) || null;
+    const pa = s0 ? Math.max(0, Math.min(100, Number(s0.a) || 0)) : 0;
+    const pb = s0 ? Math.max(pa + 1, Math.min(100, Number(s0.b) || 100)) : 100;
+    const a = pa / 100 * m.dur, b = pb / 100 * m.dur;
+    if (!(b - a > 0.2)) return;
+    out.push({ m: m, mi: i, cat: String(m.cat || ''), a: a, b: b });
+  });
+  return out;
+}
+function npCaseFilmPools(g) {
+  const all = npCaseFilmClipsOf(g);
+  const by = (keys) => all.filter(c => keys.indexOf(c.cat) >= 0);
+  const place = by(['place', 'me']);
+  let work = by(['work']);
+  const door = by(['door']);
+  const rest = all.filter(c => ['place', 'me', 'work', 'door'].indexOf(c.cat) < 0);
+  if (work.length) work = work.concat(rest);
+  else work = rest.slice();
+  return {
+    all: all,
+    place: place.length ? place : all.slice(0, Math.min(2, all.length)),
+    work: work,
+    door: door.length ? door : work.slice(-1),
+  };
+}
+/* 一组句子铺到这一组素材上：按句长分画面；写满一条就顺延到下一条，多余尾巴剪掉；
+   一组素材用光了就定格最后一帧把剩下的字念完（兜底，正常数据走不到） */
+function npCasePlanGroup(list, clips, durs) {
+  const shots = [];
+  const S = list.length, C = clips.length;
+  if (!S || !C) return shots;
+  const holdShot = (need, it, first, anc, t) => {
+    if (!anc || !(need > 0.02)) return;
+    const tt = Math.max(0, Math.min((anc.m && anc.m.dur ? anc.m.dur : 0) - 0.04, t));
+    shots.push({ m: anc.m, mi: anc.mi, cat: anc.cat, t1: tt, t2: tt, play: need, hold: true, sen: it, first: first });
+  };
+  if (C >= S) {
+    /* 素材够：每句至少一条，多出来的给最长的句子；一句分到几条就把这句的念白摊到这几条上（各剪掉多余尾巴） */
+    const ks = list.map(() => 1);
+    let extra = C - S;
+    const order = list.map((it, i) => i).sort((a, b) => (Number(durs[list[b].i]) || 0) - (Number(durs[list[a].i]) || 0));
+    let oi = 0;
+    while (extra > 0) { ks[order[oi % S]]++; extra--; oi++; }   // 一轮一轮发，别把多出来的全堆在同一句上
+    let ci = 0;
+    list.forEach((it, si) => {
+      let need = Math.max(0.5, Number(durs[it.i]) || 0) + NPC_FILM_TAIL;
+      const mine = clips.slice(ci, ci + ks[si]);
+      ci += ks[si];
+      const totalSpan = mine.reduce((n, c) => n + Math.max(0.1, c.b - c.a), 0);
+      const scale = totalSpan > 0 ? Math.min(1, need / totalSpan) : 0;
+      let first = true;
+      mine.forEach(c => {
+        if (need <= 0.02) return;
+        const take = Math.min(Math.max(0.1, c.b - c.a) * scale, need);
+        if (!(take > 0.05)) return;
+        shots.push({ m: c.m, mi: c.mi, cat: c.cat, t1: c.a, t2: c.a + take, play: take, hold: false, sen: it, first: first });
+        need -= take;
+        first = false;
+      });
+      if (need > 0.02) {
+        const last = shots[shots.length - 1];
+        const anc = last || mine[mine.length - 1] || clips[0];
+        holdShot(need, it, first, anc, last ? last.t2 : Math.max(anc.a, anc.b - 0.04));
+      }
+    });
+    return shots;
+  }
+  /* 句子多过素材：一条素材顶几句；素材够长就按句切成几截，用完还差就定格最后一帧把字念完 */
+  let ci = 0, pos = clips[0].a;
+  list.forEach(it => {
+    let need = Math.max(0.5, Number(durs[it.i]) || 0) + NPC_FILM_TAIL;
+    let first = true, guard = 0;
+    while (need > 0.02 && guard++ < 200) {
+      if (ci >= clips.length) {
+        const last = shots[shots.length - 1];
+        const anc = last || clips[clips.length - 1];
+        holdShot(need, it, first, anc, last ? last.t2 : Math.max(anc.a, anc.b - 0.04));
+        need = 0;
+        break;
+      }
+      const c = clips[ci];
+      const avail = c.b - pos;
+      if (!(avail > 0.05)) { ci++; if (ci < clips.length) pos = clips[ci].a; continue; }
+      const take = Math.min(avail, need);
+      shots.push({ m: c.m, mi: c.mi, cat: c.cat, t1: pos, t2: pos + take, play: take, hold: false, sen: it, first: first });
+      pos += take;
+      need -= take;
+      first = false;
+      if (pos >= c.b - 0.05) { ci++; if (ci < clips.length) pos = clips[ci].a; }
+    }
+  });
+  return shots;
+}
+function npCaseFilmBuildPlan(g, sentences, vo, pools) {
+  const groups = [
+    { key: 'intro', label: '引题', clips: pools.place },
+    { key: 'content', label: '正文', clips: pools.work },
+    { key: 'door', label: '到店', clips: pools.door },
+  ];
+  const shots = [];
+  let off = 0;
+  groups.forEach(gr => {
+    const list = [];
+    sentences.forEach((sen, i) => { if (sen.group === gr.key) list.push({ i: i, text: sen.text, group: sen.group }); });
+    if (!list.length) return;
+    const clips = (gr.clips || []).length ? gr.clips : pools.all;
+    npCasePlanGroup(list, clips, vo.durs).forEach(sh => {
+      const m = sh.m;
+      const dur = Math.max(0.1, Number(m.dur) || 0);
+      const s = Object.assign({}, (m.segs && m.segs[0]) || {}, {
+        a: Math.max(0, Math.min(100, sh.t1 / dur * 100)),
+        b: Math.max(0.01, Math.min(100, sh.t2 / dur * 100)),
+        stage: gr.label, kb: null, vo: String(sh.sen.text || ''), voAlt: false, done: true,
+      });
+      shots.push({ m: m, mi: sh.mi, si: 0, s: s, t1: sh.t1, t2: sh.t2, play: sh.play, hold: sh.hold,
+        off: off, sen: sh.sen, first: sh.first });
+      off += sh.play;
+    });
+  });
+  const voiceAt = [];
+  shots.forEach(q => { if (q.first && q.sen) voiceAt.push({ at: q.off, buf: vo.bufs[q.sen.i] || null }); });
+  /* 每句在成片里的起止：字幕按它分屏，一句分到几个镜头也接着往下出 */
+  const span = {};
+  shots.forEach(q => {
+    const si = (q.sen && q.sen.i != null) ? q.sen.i : -1;
+    if (si < 0) return;
+    if (!span[si]) span[si] = { at: q.off, end: q.off + q.play };
+    span[si].at = Math.min(span[si].at, q.off);
+    span[si].end = Math.max(span[si].end, q.off + q.play);
+  });
+  shots.forEach(q => {
+    const si = (q.sen && q.sen.i != null) ? q.sen.i : -1;
+    if (si < 0 || !span[si]) return;
+    const spanD = Math.max(0.6, span[si].end - span[si].at);
+    const voiceD = Number(vo.durs && vo.durs[si]) || 0;
+    q._sub = { at: span[si].at, dur: (voiceD > 0.5) ? Math.min(spanD, voiceD) : spanD };
+  });
+  return { shots: shots, voiceAt: voiceAt, total: off, card: npcCardConf(g) };
+}
+/* 逐句配音：合成一首量一截真实时长；没合成出来的按字数估（这一段就没声音，画面照走） */
+async function npCaseFilmVo(g, sentences, tick) {
+  const bufs = [], durs = [];
+  for (let i = 0; i < sentences.length; i++) {
+    if (_npCase !== g) return null;
+    if (tick) tick(i, sentences.length);
+    let buf = null, d = 0;
+    try {
+      const mp3 = await npcTtsMp3(sentences[i].text, g, '+20%');
+      buf = await npcMp3Buf(mp3);
+      d = Number(buf && buf.duration) || 0;
+    } catch (_) {}
+    if (!(d > 0.2)) d = Math.max(0.9, sentences[i].text.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length / 4.1);
+    bufs.push(buf); durs.push(d);
+  }
+  return { bufs: bufs, durs: durs };
+}
+/* 照计划实时录一遍：混音、字幕、镜头切换全部按「句子」这条时间轴走 */
+async function npcRecordFilmPlan(g, plan, bgmBuf, pctCb) {
+  const cv = document.createElement('canvas');
+  cv.width = 1080; cv.height = 1920;
+  const ctx = cv.getContext('2d');
+  const stage = document.getElementById('npcFilmStage');
+  if (stage) { stage.innerHTML = ''; stage.appendChild(cv); }   // 录的时候右栏手机窗里就是真画面
+  const shots = plan.shots, D = plan.total;
+  const card = (plan.card && plan.card.dur > 0.1) ? plan.card : null;   // 片头卡：整条片最前面那一段
+  const cardDur = card ? card.dur : 0;
+  const Drec = D + cardDur;
+  const ac = npcAudioCtx();
+  if (ac.state === 'suspended') { try { await ac.resume(); } catch (_) {} }
+  const v = npcPVidMake();
+  v.volume = 0;   // 新链整条只有配音＋BGM：源片原声不进成片（换句处不再「重新起一遍」）
+  const vStream = cv.captureStream(30);
+  const msd = ac.createMediaStreamDestination();
+  const ttsBus = ac.createGain(); ttsBus.gain.value = 1; ttsBus.connect(msd);
+  const bgmBus = ac.createGain(); bgmBus.gain.value = 0.0001; bgmBus.connect(msd);
+  let bgmSrc = null;
+  if (bgmBuf) { bgmSrc = ac.createBufferSource(); bgmSrc.buffer = bgmBuf; bgmSrc.loop = true; bgmSrc.connect(bgmBus); }
+  const mime = npcPickMime();
+  if (!mime) throw new Error('这台浏览器不支持边录边合成（升级一下 Edge 再试）');
+  const mix = new MediaStream(vStream.getVideoTracks().concat(msd.stream.getAudioTracks()));
+  const rec = new MediaRecorder(mix, { mimeType: mime, videoBitsPerSecond: 6000000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise((res) => { rec.onstop = () => res(); });
+  const cleanup = () => {
+    try { bgmSrc && bgmSrc.stop(); } catch (_) {}
+    try { ttsBus.disconnect(); } catch (_) {}
+    try { bgmBus.disconnect(); } catch (_) {}
+  };
+  let cardImg = null;
+  if (card) { try { cardImg = await npCaseCardImg(g); } catch (_) {} }
+  const q0 = shots[0];
+  if (!(await npcLoadSeg(q0))) throw new Error('第一条素材载不进画面——换 mp4 再试');
+  await npcSeekVid(v, Math.max(0, Math.min(q0.m.dur - 0.05, q0.t1)));
+  if (card) npcCardDraw(ctx, cv.width, cv.height, cardImg, card.title, card.lay, 1);
+  else try { npcDrawFrameTo(ctx, cv.width, cv.height, g, q0, 0, 0, D); } catch (_) {}
+  rec.start(250);
+  /* 一条 BGM 垫到底：开头 0.4 秒淡入、结尾 0.6 秒淡出；中间不按句子重起 */
+  if (bgmSrc) {
+    const bt = ac.currentTime, lvl = 0.13;
+    bgmBus.gain.setValueAtTime(0.0001, bt);
+    bgmBus.gain.linearRampToValueAtTime(lvl, bt + 0.4);
+    bgmBus.gain.setValueAtTime(lvl, Math.max(bt + 0.4, bt + Drec - 0.6));
+    bgmBus.gain.linearRampToValueAtTime(0.0001, bt + Drec);
+    try { bgmSrc.start(bt); } catch (_) {}
+  }
+  /* 配音按镜头时间轴一次排好；画面用同一只墙钟推进，切镜卡在句尾那 0.2 秒上 */
+  const lead = 0.15;
+  const audioT0 = ac.currentTime + lead;
+  const wallT0 = performance.now() + lead * 1000;
+  (plan.voiceAt || []).forEach(x => {
+    if (!x.buf) return;
+    const bs = ac.createBufferSource();
+    bs.buffer = x.buf; bs.connect(ttsBus);
+    try { bs.start(audioT0 + cardDur + Math.max(0, x.at)); } catch (_) {}
+  });
+  try {
+    /* 片头卡：静帧＋极轻的推近，卡上不出字幕、不出进度条 */
+    if (card) {
+      const cardEnd = wallT0 + cardDur * 1000;
+      while (performance.now() < cardEnd) {
+        if (_npCase !== g) throw new Error('切页了——出片停下');
+        const el0 = Math.max(0, Math.min(cardDur, (performance.now() - wallT0) / 1000));
+        npcCardDraw(ctx, cv.width, cv.height, cardImg, card.title, card.lay, 1 + 0.03 * (el0 / cardDur));
+        if (pctCb) pctCb(el0, Drec);
+        await npcNextFrame();
+      }
+    }
+    for (let i = 0; i < shots.length; i++) {
+      if (_npCase !== g) throw new Error('切页了——出片停下');
+      const sh = shots[i];
+      const startAt = wallT0 + (cardDur + sh.off) * 1000;
+      const endAt = startAt + sh.play * 1000;
+      while (performance.now() < startAt - 20) await npcNextFrame();
+      if (!(await npcLoadSeg(sh))) throw new Error('有一条素材载不进画面——换 mp4 再试');
+      const late = Math.max(0, (performance.now() - startAt) / 1000);
+      try { v.pause(); } catch (_) {}
+      if (sh.hold) {
+        await npcSeekVid(v, Math.max(0, Math.min(sh.m.dur - 0.05, sh.t2 - 0.04)));
+      } else {
+        await npcSeekVid(v, Math.max(0, Math.min(sh.m.dur - 0.02, sh.t1 + Math.min(late, sh.play))));
+        try { await v.play(); } catch (_) {}
+      }
+      while (true) {
+        if (_npCase !== g) throw new Error('切页了——出片停下');
+        const now = performance.now();
+        if (now >= endAt) break;
+        const t = sh.off + Math.max(0, Math.min(sh.play, (now - startAt) / 1000));
+        npcDrawFrameTo(ctx, cv.width, cv.height, g, sh, i, t, D);
+        if (pctCb) pctCb(cardDur + t, Drec);
+        await npcNextFrame();
+      }
+      try { v.pause(); } catch (_) {}
+    }
+    const last = shots[shots.length - 1];
+    try { npcDrawFrameTo(ctx, cv.width, cv.height, g, last, shots.length - 1, D, D); } catch (_) {}
+    if (pctCb) pctCb(Drec, Drec);
+    await npcSleep(140);
+  } catch (e) {
+    try { rec.stop(); } catch (_) {}
+    cleanup();
+    await stopped.catch(() => {});
+    throw e;
+  }
+  try { v.pause(); } catch (_) {}
+  try { rec.stop(); } catch (_) {}
+  await stopped.catch(() => {});
+  cleanup();
+  return new Blob(chunks, { type: mime.split(';')[0] || 'video/mp4' });
+}
+/* 正文页那颗「生成视频」进来后跑的就是这一条：配音 → 排镜头 → 录 */
+async function npCaseFilmRun(container) {
+  const g = _npCase;
+  if (!g || !g.filmFlow || g.filmStep >= 0) return;
+  if (typeof EdgeTTS === 'undefined' || !EdgeTTS.isEdge()) {
+    if (typeof toast === 'function') toast('这台浏览器不是 Edge——免费配音只认 Edge。用 Edge 打开扩展再出片', 'error');
+    return;
+  }
+  const sentences = npCaseFilmSentenceList(g.libBlocks || {}, g);
+  if (!sentences.length) {
+    if (typeof toast === 'function') toast('三块正文都空着——先点「✏️ 改正文」写一点再出片', 'error');
+    return;
+  }
+  const pools = npCaseFilmPools(g);
+  if (!pools.all.length) {
+    if (typeof toast === 'function') toast('素材库里这几段的原视频找不回来了——点「🎞 换素材」重挑一次', 'error');
+    return;
+  }
+  npCaseStopPrev();
+  const ac = npcAudioCtx();
+  try { ac.resume(); } catch (_) {}
+  g.filmStep = 0; g.filmPct = 0; g.filmTx = '正在按三块配音'; g.filmStat = ''; g.filmPlan = null;
+  npCaseRender(container);
+  try {
+    const vo = await npCaseFilmVo(g, sentences, (i, n) => {
+      if (_npCase !== g) return;
+      g.filmPct = Math.round(i / Math.max(1, n) * 40);
+      g.filmTx = '正在配音 ' + (i + 1) + '/' + n + ' 句';
+      npcFilmPaint();
+    });
+    if (!vo || _npCase !== g) return;
+    const plan = npCaseFilmBuildPlan(g, sentences, vo, pools);
+    if (!plan.shots.length) throw new Error('没排出镜头——素材不够，回素材库补几段');
+    g.filmPlan = plan;
+    g.queue = plan.shots;
+    g.filmStep = 1; g.filmPct = 40;
+    g.filmTx = '正在按每句的长度切画面'; npcFilmPaint();
+    const cardDur0 = (plan.card && plan.card.dur) || 0;
+    const bgmBuf = g.bgm ? await npcBgmBuf(g.bgm, plan.total + cardDur0) : null;
+    if (_npCase !== g) return;
+    const blob = await npcRecordFilmPlan(g, plan, bgmBuf, (t, D) => {
+      if (_npCase !== g) return;
+      g.filmPct = Math.max(40, Math.min(99, Math.round(40 + (D ? t / D : 0) * 59)));
+      g.filmTx = '正在录 ' + npcFmt(t) + ' / ' + npcFmt(D);
+      npcFilmPaint();
+    });
+    if (_npCase !== g) return;
+    if (!blob || !blob.size) throw new Error('录出来是空的——再试一次');
+    try { await npCasePut('film:' + g.arId, blob); } catch (_) {}
+    if (_npCase !== g) return;
+    if (g.film && g.film.url) { try { URL.revokeObjectURL(g.film.url); } catch (_) {} }
+    g.film = {
+      url: URL.createObjectURL(blob), blob: blob, name: npcFilmName(g),
+      dur: Math.round((plan.total + ((plan.card && plan.card.dur) || 0)) * 10) / 10, at: Date.now(),
+      segs: plan.shots.map(q => ({ mi: q.mi, si: q.si })),
+    };
+    g.saved = false;
+    g.filmStep = -1; g.filmPct = 0; g.filmTx = '';
+    g.filmPlan = null; g.queue = null;
+    g.filmStat = (plan.card && plan.card.dur ? ('开头 ' + plan.card.dur + ' 秒是封面卡 · ') : '') +
+      '共 ' + sentences.length + ' 句 → ' + plan.shots.length + ' 个镜头，每句念完约 0.2 秒切下一镜';
+    npCaseFlush().catch(() => {});
+    npCaseRender(container);
+    if (typeof toast === 'function') toast('✓ 成片 ' + npcFmt(g.film.dur) + '——' + plan.shots.length + ' 个镜头，每句念完就切');
+    npcDownload(blob, g.film.name);
+  } catch (e) {
+    if (_npCase !== g) return;
+    g.filmStep = -1; g.filmPct = 0; g.filmTx = ''; g.filmPlan = null; g.queue = null;
+    npCaseRender(container);
+    if (typeof toast === 'function') toast('出片没成：' + npcErrText(e), 'error');
+  }
+}
 /* ── ① 的交互：时间线（三十二改＝真进度条＋A/B 读数＋分镜横条）/ 取景框拖拽 / 剪切播放器钟 ── */
 function npCaseBindTl() {
   const g = _npCase;
@@ -6371,6 +9473,24 @@ function npCaseHear(i) {
   if (!s || !s.vo) return;
   npcSay(s.vo, { announce: true });
 }
+/** 🎧 音色试听：念这条片的第一句讲解（跟出片同一把嗓子）；还没讲解就念一句样板 */
+function npCaseVoiceAudition() {
+  const g = _npCase;
+  if (!g) return;
+  let text = '';
+  const q = (g.queue && g.queue.length) ? g.queue : npCaseQueueBuild();
+  for (const x of (q || [])) {
+    const t = String((x && x.s && x.s.vo) || '').trim();
+    if (t) { text = t; break; }
+  }
+  if (!text) {
+    const m = (g.mats || [])[0];
+    const s = m && m.segs && m.segs[0];
+    text = String((s && s.vo) || '').trim();
+  }
+  if (!text) text = '这是这条片的配音，听听合不合适。';
+  npcSay(text, { announce: true });
+}
 async function npCaseReVoiceS(i, container) {
   const g = _npCase;
   const m = g && g.mats[g.mat];
@@ -6416,43 +9536,19 @@ function npCaseSeKbAdd(t) {
   npCaseRender(npActiveC());
 }
 
-/* ── 环节轴：蒸 / 重蒸 ── */
+/* ── 环节轴：固定 8 段（2026-11-09 起不再让 AI 蒸；蒸出来的环节跟这个口径对不上） ── */
 async function npCaseDistill(container) {
   const g = _npCase;
   if (!g || g.stageBusy) return;
-  g.stageBusy = true;
+  g.stages = NP_CASE_BEATS.map(b => ({ name: b.name, kb: [] }));
+  npCaseTouch();
   npCaseRender(container);
-  try {
-    const sp = npCaseSplitShape(g.split);             // 拆几个环节＝用户拨的档（六十六改；⚙ 里改）
-    const res = await chrome.runtime.sendMessage({ action: 'aiCaseStages', title: g.title, min: sp[0], max: sp[1] });
-    if (_npCase !== g) return;
-    if (res && res.error) throw new Error(res.error);
-    const st = Array.isArray(res && res.stages) ? res.stages : [];
-    const stages = st.map(s => ({ name: String((s && s.name) || '').slice(0, 16), kb: (Array.isArray(s && s.kb) ? s.kb : []).map(String).slice(0, 6) })).filter(s => s.name).slice(0, sp[1]);
-    if (stages.length < 2) throw new Error('AI 没蒸出可用的环节轴');
-    g.stages = stages;
-    npCaseTouch();
-    if (typeof toast === 'function') toast('环节轴蒸好了：' + stages.map(s => s.name).join(' → '));
-  } catch (e) {
-    if (_npCase === g && typeof toast === 'function') toast('蒸环节轴没成：' + npcErrText(e), 'error');
-  } finally {
-    if (_npCase === g) { g.stageBusy = false; npCaseRender(container); }
-  }
-}
-/** 拆档存进 config.product.caseSplit：用户级一份，所有案例篇共用 */
-async function npCaseSaveSplit(split) {
-  try {
-    const cfg = await readConfigPlain();
-    if (!cfg.product) cfg.product = {};
-    cfg.product.caseSplit = [split[0], split[1]];
-    await writeConfigPlain(cfg);
-  } catch (_) {}
+  if (typeof toast === 'function') toast('按 8 段排好了：工作地点 → 谁家在哪 → 现场 → 讲解人 → 遇到什么怎么做 → 结果 → 导流（封面压在工作地点那一帧）');
 }
 async function npCaseRedistill(container) {
   const g = _npCase;
   if (!g || g.stageBusy) return;
-  const sp = npCaseSplitShape(g.split);
-  if (g.stages.length && !window.confirm('重新蒸一遍环节轴？按你拨的档拆成 ' + sp[0] + '~' + sp[1] + ' 个——现在排的环节和挂的知识会被顶掉（剪好的段还在，重挂一下就行）。')) return;
+  if (g.stages.length && !window.confirm('恢复成固定的 8 段？现在排的环节和挂的知识会被顶掉（剪好的段还在，重挂一下就行）。')) return;
   await npCaseDistill(container);
 }
 async function npCaseCoversAI(container) {
@@ -6515,26 +9611,34 @@ async function npcSeekVid(v, t) {
   try { v.currentTime = T; } catch (_) { return; }
   try { await npcWaitEvent(v, 'seeked', 6000); } catch (_) {}
 }
-function npcRr(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+/* 一句切成几屏：先按标点断成小句，太长（14 字以上）再均分——不把词从中间劈开 */
+function npcSubChunks(txt) {
+  const raw = String(txt || '').replace(/\s+/g, '');
+  const head = raw.match(/[^，,、；;：:。！？!?…]+/g) || [];
+  const out = [];
+  head.forEach(p => {
+    const s = p.replace(/[，,、；;：:。！？!?…]+$/, '');
+    if (!s) return;
+    if (s.length <= 14) { out.push(s); return; }
+    const n = Math.ceil(s.length / 12);
+    const step = Math.ceil(s.length / n);
+    for (let i = 0; i < s.length; i += step) out.push(s.slice(i, i + step));
+  });
+  return out.length ? out : [raw];
 }
-function npcWrap(ctx, s, maxW) {
-  const lines = []; let line = '';
-  for (const ch of String(s)) {
-    if (ctx.measureText(line + ch).width > maxW && line) { lines.push(line); line = ch; }
-    else line += ch;
+/* 字幕里哪几个字当重点上色：数字、几岁几分钟这类带量的词 */
+function npcSubRuns(t) {
+  const re = /[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十百千万两]+[分钟岁天周次倍个年月日号点左右]*/g;
+  const runs = []; let last = 0, m;
+  while ((m = re.exec(t))) {
+    if (m.index > last) runs.push({ t: t.slice(last, m.index), hl: false });
+    runs.push({ t: m[0], hl: true });
+    last = m.index + m[0].length;
   }
-  if (line) lines.push(line);
-  if (lines.length > 2) { lines.length = 2; lines[1] = lines[1].slice(0, -2) + '…'; }
-  return lines;
+  if (last < t.length) runs.push({ t: t.slice(last), hl: false });
+  return runs.length ? runs : [{ t: t, hl: false }];
 }
-/* demo drawA 的镜像：真画面铺底（cover 裁剪）＋ 段标 ＋ 解读指示 ＋ 字幕 ＋ 进度条 */
+/* demo drawA 的镜像：真画面铺底（cover 裁剪）＋ 字幕 ＋ 进度条（角上的段标／嗓子标已撤） */
 function npcDrawFrameTo(ctx, W, H, g, q, qi, t, D) {
   const k = W / 640;
   const v = _npcPVid;
@@ -6551,23 +9655,51 @@ function npcDrawFrameTo(ctx, W, H, g, q, qi, t, D) {
     try { ctx.drawImage(v, win.x, win.y, win.w, win.h, (W - dw) / 2, (H - dh) / 2, dw, dh); } catch (_) {}
   }
   const mute = q.s.stage === '🌫';
-  ctx.fillStyle = 'rgba(0,0,0,.45)'; npcRr(ctx, 12 * k, 12 * k, 190 * k, 34 * k, 8 * k); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = '600 ' + 16 * k + 'px sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('段' + (qi + 1) + '/' + ((g.queue || []).length) + (mute ? '' : ' · ' + String(q.s.stage || '')), 22 * k, 35 * k);
-  const vName = npcTtsMode();                          // 三十二改：说的是哪把嗓子就标哪把
-  ctx.font = '600 ' + 15 * k + 'px sans-serif'; ctx.textAlign = 'right';
-  ctx.fillStyle = (g.voOn && !mute) ? '#f97316' : '#8b93a1';
-  ctx.fillText(mute ? '🌫 过渡 · 保留原声' : (g.voOn ? (_npcPrev.on ? '🔊 ' + vName + ' · 解读中' : '🔊 解读：' + vName) : '🔇 解读已关'), W - 14 * k, 34 * k);
   const vo = q.s.vo || '';
-  if (g.subOn && vo) {
-    ctx.font = '600 ' + 19 * k + 'px sans-serif';
-    const lines = npcWrap(ctx, vo, W - 60 * k);
-    const bh = 18 * k + lines.length * 26 * k;
-    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, H - 52 * k - bh + 14 * k, W, bh);
-    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-    lines.forEach((ln, li) => ctx.fillText(ln, W / 2, H - 34 * k - (lines.length - 1 - li) * 26 * k));
+  if (g.subOn && vo && !mute) {
+    const fsz = (g.subFs === 'lg') ? 1.32 : 1;          // 字幕字号两档：标准约 44px / 大约 58px（1080 宽成片）
+    const chunks = npcSubChunks(vo);
+    let sb = q._sub || null;                            // 这句念的时间段（录片／试听时按每镜挂上）
+    if (!sb && q.off != null && q.play > 0) sb = { at: q.off, dur: q.play };
+    const now = (t == null) ? 0 : t;
+    let p = 0;
+    if (sb && sb.dur > 0.05) p = Math.max(0, Math.min(0.99999, (now - sb.at) / sb.dur));
+    const tot = chunks.reduce((a, c) => a + c.length, 0) || 1;   // 按字数分时间：念到哪一屏出哪一屏
+    let cum = 0, ci = chunks.length - 1, c0 = 0;
+    for (let i = 0; i < chunks.length; i++) {
+      const d = chunks[i].length / tot;
+      if (p < cum + d || i === chunks.length - 1) { ci = i; c0 = cum; break; }
+      cum += d;
+    }
+    const seg = chunks[ci] || '';
+    const age = (sb && sb.dur > 0.05) ? Math.max(0, (now - sb.at) - c0 * sb.dur) : 0.3;
+    const fpx = 26 * k * fsz;
+    ctx.font = '800 ' + fpx + 'px sans-serif';
+    const runs = npcSubRuns(seg);
+    let wsum = 0;
+    runs.forEach(r => { wsum += ctx.measureText(r.t).width; });
+    const maxW = W - 60 * k;
+    const sc = wsum > maxW ? Math.max(0.6, maxW / wsum) : 1;
+    if (sc < 1) { ctx.font = '800 ' + (fpx * sc) + 'px sans-serif'; wsum = 0; runs.forEach(r => { wsum += ctx.measureText(r.t).width; }); }
+    const fsz2 = fpx * sc;
+    const alpha = Math.min(1, 0.35 + age / 0.1);         // 每小段上来时淡入＋往上抬一点（首帧不留空）
+    const by = H - 42 * k + (1 - alpha) * fsz2 * 0.45;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.globalAlpha = alpha;
+    ctx.lineJoin = 'round'; ctx.miterLimit = 2;
+    ctx.lineWidth = fsz2 * 0.16;                         // 不铺黑条：给字加粗描边，亮画面也看得清
+    ctx.strokeStyle = 'rgba(0,0,0,.9)';
+    let x = (W - wsum) / 2;
+    runs.forEach(r => {
+      const w = ctx.measureText(r.t).width;
+      ctx.strokeText(r.t, x, by);
+      ctx.fillStyle = r.hl ? '#ffcf33' : '#fff';         // 重点字（几岁、几分钟这类）换黄色
+      ctx.fillText(r.t, x, by);
+      x += w;
+    });
+    ctx.globalAlpha = 1;
   }
-  const py = H - 12 * k;
+  const py = H - 18 * k;
   ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(0, py, W, 5 * k);
   let acc = 0;
   (g.queue || []).forEach((qq, i2) => {
@@ -6586,11 +9718,30 @@ function npcDrawFrameTo(ctx, W, H, g, q, qi, t, D) {
 }
 function npcNextFrame() { return new Promise(r => requestAnimationFrame(() => r())); }
 function npcAClock(t, D) { const el = document.getElementById('npcAClock'); if (el) el.textContent = npcFmt(t) + ' / ' + npcFmt(D); }
-function npcSpeakSeg(g, q) {
-  npcSayStop();
-  if (!g.voOn || q.s.stage === '🌫') return;
+function npcSpeakSeg(g, q, i) {
+  if (!g.voOn || q.s.stage === '🌫') { npcSayStop(); return; }
   const vo = q.s.vo || '';
+  const gid = String((q.m && q.m.gid) || '');
+  if (!gid) { npcSayStop(); if (vo) npcSay(vo); return; }
+  const gk = npcQueueGroups(g.queue || [])[q._gk];
+  const idx = (typeof i === 'number') ? i : (gk ? gk.first : 0);
+  if (gk && idx !== gk.first) return;   // 同组后面的画面不重启——别把排好的延时语音掐掉
+  npcSayStop();
   if (!vo) return;
+  /* 引言：场馆先走，人出来才开口（跟出片同一档：压到整组最后） */
+  const hasPlace = gk && gk.idxs.some(k => (g.queue || [])[k] && (g.queue || [])[k].m && (g.queue || [])[k].m.cat === 'place');
+  if ((q.m.cat === 'place' || q.m.cat === 'me') && hasPlace) {
+    const at = Math.max(0, gk.dur - vo.length / 5.5 - 0.25);
+    if (at > 0.15) {
+      const gen = NPC_SAY.gen;
+      NPC_SAY.segTimer = setTimeout(() => {
+        NPC_SAY.segTimer = 0;
+        if (gen !== NPC_SAY.gen) return;
+        npcSay(vo);
+      }, at * 1000);
+      return;
+    }
+  }
   npcSay(vo);
 }
 function npcPaintPrev() {
@@ -6609,6 +9760,7 @@ function npcPaintPrev() {
       if (gen !== _npcSeekGen || _npCase !== g) return;
       const cv2 = document.getElementById('npcACv');
       if (!cv2) return;
+      at.q._sub = { at: t - at.lt, dur: Math.max(0.1, npCaseSegDur(at.q)) };   // 拖进度条时字幕也按这一段分屏
       npcDrawFrameTo(cv2.getContext('2d'), cv2.width, cv2.height, g, at.q, at.i, t, D);
       npcAClock(t, D);
     }).catch(() => {});
@@ -6620,10 +9772,11 @@ async function npcPrevSegment(g, q, i, base, lt0, sess, D) {
   const v = _npcPVid;
   const m = q.m;
   const t1 = q.s.a / 100 * m.dur, t2 = q.s.b / 100 * m.dur;
+  q._sub = { at: base, dur: Math.max(0.1, t2 - t1) };   // 试听也按这一段的时长分屏
   await npcSeekVid(v, t1 + lt0);
   if (sess !== _npcPrev.sess || !_npcPrev.on) return false;
   v.volume = (q.s.stage === '🌫' || !g.voOn) ? 1 : 0.18;   // 有解读的段原声压低（跟成片同一档）——预览里什么样，出片什么样
-  npcSpeakSeg(g, q);
+  npcSpeakSeg(g, q, i);
   try { await v.play(); } catch (_) { if (typeof toast === 'function') toast('这条素材播不动——换 mp4 再试', 'error'); return false; }
   while (true) {
     if (sess !== _npcPrev.sess || !_npcPrev.on || _npCase !== g) { try { v.pause(); } catch (_) {} return false; }
@@ -6743,7 +9896,7 @@ async function npCaseAssemble(container) {
     await npcSleep(240);
     if (_npCase !== g) return;
     g.asmStep = 1; g.exp.tx = NP_CASE_ASM_TX[1]; npcAsmPaint();
-    const bgmBuf = g.bgm ? await npcBgmBuf(g.bgm) : null;
+    const bgmBuf = g.bgm ? await npcBgmBuf(g.bgm, npCaseQueueDur()) : null;
     if (_npCase !== g) return;
     g.asmStep = 2; g.exp.tx = NP_CASE_ASM_TX[2]; npcAsmPaint();
     await npcSleep(240);
@@ -6827,10 +9980,13 @@ function npcPickMime() {
 }
 async function npcVoBufs(g, queue) {
   const out = [];
+  const gmap = npcQueueGroups(queue);
   for (let i = 0; i < queue.length; i++) {
     const q = queue[i];
-    if (!g.voOn || q.s.stage === '🌫' || !q.s.vo) { out.push(null); continue; }
-    const mp3 = await EdgeTTS.synth(q.s.vo, { voice: 'zh-CN-XiaoxiaoNeural', rate: '+20%' });
+    const gk = gmap[q._gk];
+    /* 一组只念一次：引言的场馆几个画面共用同一句，不重复合成 */
+    if (!g.voOn || q.s.stage === '🌫' || !q.s.vo || (gk && gk.first !== i)) { out.push(null); continue; }
+    const mp3 = await npcTtsMp3(q.s.vo, g, '+20%');
     out.push(await npcMp3Buf(mp3));
     if (_npCase !== g) return out;
     g.exp.pct = Math.round((i + 1) / queue.length * 100);
@@ -6844,20 +10000,25 @@ async function npcMp3Buf(mp3) {
   const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
   return await ac.decodeAudioData(ab);
 }
-/** BGM 两条程序化循环（16s 一段，缓存）：安静钢琴＝C-Am-F-G 琶音；轻快节奏＝底鼓＋八分拨弦 */
-async function npcBgmBuf(idx) {
-  if (_npcBgmCache[idx]) return _npcBgmCache[idx];
+/** BGM 两条程序化垫底：安静钢琴＝C-Am-F-G 琶音；轻快节奏＝底鼓＋八分拨弦
+ *  传 seconds 就按整条片长渲染（不按 16 秒循环）——一条垫到底，换句处不会重新起 */
+async function npcBgmBuf(idx, seconds) {
   if (idx !== 1 && idx !== 2) return null;
-  const SR = 44100, LEN = 16;
+  const want = Math.min(300, Math.max(16, Math.ceil(Number(seconds) || 16)));
+  const key = idx + '|' + want;
+  if (_npcBgmCache[key]) return _npcBgmCache[key];
+  Object.keys(_npcBgmCache).forEach(k => { delete _npcBgmCache[k]; });   // 只留最近一条，别把整条片长的缓冲攒一堆
+  const SR = 44100, LEN = want;
   const OC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  const octx = new OC(2, SR * LEN, SR);
+  const octx = new OC(2, Math.round(SR * LEN), SR);
   const dest = octx.destination;
   if (idx === 1) {
     const CH = [[130.81, 261.63, 329.63, 392], [110, 220, 261.63, 329.63], [174.61, 349.23, 440, 523.25], [196, 392, 493.88, 587.33]];
-    for (let c = 0; c < 4; c++) {
+    for (let c = 0; c * 4 < LEN - 0.1; c++) {
       const t0 = c * 4;
-      CH[c].forEach((f, n) => {
+      CH[c % 4].forEach((f, n) => {
         const ts = t0 + n * 0.55;
+        if (ts >= LEN - 0.07) return;
         npcTone(octx, dest, f, ts, Math.min(2.2, LEN - ts - 0.05), 'triangle', 0.16);
       });
     }
@@ -6875,7 +10036,7 @@ async function npcBgmBuf(idx) {
     if (p && p.then) p.then(res, rej);
     else octx.oncomplete = (e) => res(e.renderedBuffer);
   });
-  _npcBgmCache[idx] = buf;
+  _npcBgmCache[key] = buf;
   return buf;
 }
 function npcTone(octx, dest, freq, t0, dur, type, gain) {
@@ -6908,17 +10069,18 @@ async function npcRecordFilm(g, queue, voBufs, bgmBuf, pctCb) {
   cv.width = 1080; cv.height = 1920;
   const ctx = cv.getContext('2d');
   const D = npCaseQueueDur();
+  const gmap = npcQueueGroups(queue);
   const ac = npcAudioCtx();
   if (ac.state === 'suspended') { try { await ac.resume(); } catch (_) {} }
   const v = npcPVidMake();
-  v.volume = 1;   // ② 预览把它压到 0.18 过——出片走 srcTap 那一档，这里必须先弹回原样，不然双重衰减
+  v.volume = 1;   // 老链的原声只留给 🌫 过渡段，靠下面 srcTap 按段给（有讲解的段原声＝0，换句处不再重起）
   const vStream = cv.captureStream(30);
   const msd = ac.createMediaStreamDestination();
   const srcBus = npcSrcGraph();
-  const srcTap = ac.createGain(); srcTap.gain.value = 0.18;
+  const srcTap = ac.createGain(); srcTap.gain.value = 0;
   srcBus.connect(srcTap); srcTap.connect(msd);
   const ttsBus = ac.createGain(); ttsBus.gain.value = 1; ttsBus.connect(msd);
-  const bgmBus = ac.createGain(); bgmBus.gain.value = 0.13; bgmBus.connect(msd);
+  const bgmBus = ac.createGain(); bgmBus.gain.value = 0.0001; bgmBus.connect(msd);
   let bgmSrc = null;
   if (bgmBuf) { bgmSrc = ac.createBufferSource(); bgmSrc.buffer = bgmBuf; bgmSrc.loop = true; bgmSrc.connect(bgmBus); }
   const mime = npcPickMime();
@@ -6941,7 +10103,15 @@ async function npcRecordFilm(g, queue, voBufs, bgmBuf, pctCb) {
   await npcSeekVid(v, q0.s.a / 100 * q0.m.dur);
   try { npcDrawFrameTo(ctx, cv.width, cv.height, g, q0, 0, 0, D); } catch (_) {}
   rec.start(250);
-  if (bgmSrc) { try { bgmSrc.start(); } catch (_) {} }
+  /* 一条 BGM 垫到底：开头 0.4 秒淡入、结尾 0.6 秒淡出；中间不按句子重起 */
+  if (bgmSrc) {
+    const bt = ac.currentTime, lvl = 0.13;
+    bgmBus.gain.setValueAtTime(0.0001, bt);
+    bgmBus.gain.linearRampToValueAtTime(lvl, bt + 0.4);
+    bgmBus.gain.setValueAtTime(lvl, Math.max(bt + 0.4, bt + D - 0.6));
+    bgmBus.gain.linearRampToValueAtTime(0.0001, bt + D);
+    try { bgmSrc.start(bt); } catch (_) {}
+  }
   let base = 0;
   try {
     for (let i = 0; i < queue.length; i++) {
@@ -6949,15 +10119,29 @@ async function npcRecordFilm(g, queue, voBufs, bgmBuf, pctCb) {
       const q = queue[i];
       const m = q.m;
       const t1 = q.s.a / 100 * m.dur, t2 = q.s.b / 100 * m.dur;
+      let subAt = base, subDur = t2 - t1;   // 这句念的时间段：字幕按它分屏
       const mute = q.s.stage === '🌫' || !g.voOn;
-      srcTap.gain.value = mute ? 1.0 : 0.18;     // 过渡段 / 解读关：原声全留、压过讲解档
+      srcTap.gain.value = mute ? 1.0 : 0;     // 只有过渡段 / 解读关才留原声；有讲解的段不留——原声在换句处重起才是「BGM 每句重启」的真凶
       if (!(await npcLoadSeg(q))) throw new Error('有一条素材载不进画面——换 mp4 再试');
       await npcSeekVid(v, t1);
       if (!mute && voBufs[i]) {
-        const bs = ac.createBufferSource();
-        bs.buffer = voBufs[i]; bs.connect(ttsBus);
-        try { bs.start(); } catch (_) {}
+        const gk = gmap[q._gk];
+        if (!gk || gk.first === i) {
+          const bs = ac.createBufferSource();
+          bs.buffer = voBufs[i]; bs.connect(ttsBus);
+          let at = 0;
+          /* 引言：场馆先走、人一出来才开口——这句压到整组最后；别的组从第一段就念 */
+          const hasPlace = gk && gk.idxs.some(k => queue[k] && queue[k].m && queue[k].m.cat === 'place');
+          if ((q.m.cat === 'place' || q.m.cat === 'me') && hasPlace && gk.dur > voBufs[i].duration + 0.2) {
+            at = gk.dur - voBufs[i].duration - 0.2;
+          }
+          try { bs.start(ac.currentTime + Math.max(0, at)); } catch (_) {}
+          const bdur = (bs.buffer && bs.buffer.duration > 0.3) ? bs.buffer.duration : (t2 - t1 - Math.max(0, at));
+          subAt = base + Math.max(0, at);
+          subDur = Math.max(0.6, Math.min(t2 - t1 - Math.max(0, at), bdur));
+        }
       }
+      q._sub = { at: subAt, dur: subDur };
       try { await v.play(); } catch (_) { throw new Error('有一条素材播不动——换 mp4 再试'); }
       while (true) {
         if (_npCase !== g) throw new Error('切页了——出片停下');
@@ -7037,6 +10221,10 @@ function npCaseLeave() {
   const g = _npCase;
   if (!g) return;
   clearTimeout(_npCaseTimer); _npCaseTimer = 0;
+  if (_npScriptTimer) {
+    clearTimeout(_npScriptTimer); _npScriptTimer = 0;
+    if (g.filmFlow && g.libBlocks) npcScriptSaveNow().catch(() => {});
+  }
   npCaseFlush().catch(() => {});
   npCaseStopVid();
   npCaseStopPrev();
@@ -7056,7 +10244,7 @@ function npCaseClick(ev, container) {
   if (!el) return false;
   const g = _npCase;
   if (!g) return true;
-  if (g.asmStep >= 0) return true;                       // 出片中：一切交互先停下
+  if (g.asmStep >= 0 || g.filmStep >= 0) return true;    // 出片中：一切交互先停下
   const act = el.getAttribute('data-npc') || '';
   const i = parseInt(el.getAttribute('data-i'), 10);
   const x = parseInt(el.getAttribute('data-x'), 10);
@@ -7137,16 +10325,6 @@ function npCaseClick(ev, container) {
     }
     case 'seopen': g.stageEdit = true; npCaseRender(container); break;
     case 'seclose': g.stageEdit = false; npCaseRender(container); break;
-    case 'sesplit': {
-      const v = String(el.getAttribute('data-v') || '');
-      const hit = NP_CASE_SPLITS.find(p => (p[0] + '~' + p[1]) === v);
-      if (!hit) break;
-      g.split = hit.slice();
-      npCaseSaveSplit(g.split);
-      if (typeof toast === 'function') toast('重蒸环节轴时按 ' + hit[0] + '~' + hit[1] + ' 拆');
-      npCaseRender(container);
-      break;
-    }
     case 'redistill': npCaseRedistill(container); break;
     case 'seadd':
       g.stages.push({ name: '新环节', kb: [] });
@@ -7179,18 +10357,164 @@ function npCaseClick(ev, container) {
       npCaseStopPrev();
       g.queue = null;
       npCaseRender(container);
-      if (typeof toast === 'function') toast(g.libMode ? '按挑段顺序重排了' : '按环节轴重排了');
+      if (typeof toast === 'function') toast(g.libMode ? '按四个大类重排了：工作地点 → 引题 → 内容 → 导流' : '按环节轴重排了');
       break;
     case 'revoq': npCaseReVoiceQ(i, container); break;
-    case 'bgm': if (!isNaN(i)) { g.bgm = i; npCaseTouch(); npCaseRender(container); } break;
+    case 'bgm':
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再换 BGM'); break; }
+      if (!isNaN(i)) { g.bgm = i; npCaseTouch(); npCaseRender(container); }
+      break;
     case 'cover': if (!isNaN(i)) { g.cover = i; npCaseTouch(); npCaseRender(container); } break;
-    case 'subon': g.subOn = !g.subOn; npCaseTouch(); npCaseRender(container); break;
+    case 'voice': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再换音色'); break; }
+      const v = String(el.getAttribute('data-v') || '');
+      if (!v || !/^[A-Za-z0-9_\-]+$/.test(v) || v === npcVoiceOf(g)) break;
+      g.voice = v;
+      npcSayStop();
+      npCaseTouch();
+      npCaseRender(container);
+      if (typeof toast === 'function') toast('配音换成「' + npcVoiceName(g) + '」——预览和出片都用它');
+      break;
+    }
+    case 'voiceaud': npCaseVoiceAudition(); break;
+    case 'subon': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再改字幕'); break; }
+      const v1 = String(el.getAttribute('data-v') || '');
+      g.subOn = v1 ? v1 === 'on' : !g.subOn;
+      npCaseTouch(); npCaseRender(container);
+      break;
+    }
     case 'voon': g.voOn = !g.voOn; npCaseTouch(); npCaseRender(container); break;
+    case 'cvopen': {
+      g.cv2Open = true;
+      if (!g.cv2Title) g.cv2Title = npcCvAutoTitle(g);
+      npCaseRender(container);
+      if (!(g.cv2Frames || []).length && !g.cv2Busy) npcCvMake(container);
+      break;
+    }
+    case 'cvclose': g.cv2Open = false; npCaseRender(container); break;
+    case 'cvroll': npcCvMake(container); break;
+    case 'cvpick': npcCvPick(container, i); break;
+    case 'cvlay': {
+      const lv = String(el.getAttribute('data-v') || '');
+      if (!NPC_CV_LAYS.some(l => l.k === lv)) break;
+      g.cv2Lay = lv;
+      npCaseRender(container);
+      break;
+    }
+    case 'cvfix': npcCvFix(container); break;
+    case 'cvdl': npcCvDownload().catch(() => {}); break;
+    case 'cardon': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再改片头'); break; }
+      const v1 = String(el.getAttribute('data-v') || '');
+      if (v1 !== 'on' && v1 !== 'off') break;
+      g.cardOn = v1 === 'on';
+      npCaseTouch(); npCaseRender(container);
+      break;
+    }
+    case 'carddur': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再改片头'); break; }
+      const d1 = Number(el.getAttribute('data-v'));
+      if (NPC_CARD_DURS.indexOf(d1) < 0) break;
+      g.cardDur = d1;
+      npCaseTouch(); npCaseRender(container);
+      break;
+    }
+    case 'cardlay': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再改片头'); break; }
+      const lv1 = String(el.getAttribute('data-v') || '');
+      if (!NPC_CV_LAYS.some(l => l.k === lv1)) break;
+      g.cardLay = lv1;
+      npCaseTouch(); npCaseRender(container);
+      break;
+    }
     case 'fitcontain': npcFitContain(container); break;
     case 'fitreset': npcFitReset(container); break;
     case 'prevplay': npCasePrevPlay(); break;
     case 'aseek': npCaseASeek(ev); break;
     case 'assemble': npCaseAssemble(container); break;
+    case 'filmgen': npCaseFilmRun(container); break;
+    case 'scedit': {
+      g.editScript = true;
+      g.sc = { b: '', i: -1, ask: '', pend: null, busy: false, text: {}, err: '', again: false, focus: false };
+      npCaseRender(container);
+      break;
+    }
+    case 'scback':
+      g.editScript = false;
+      g.sc = { b: '', i: -1, ask: '', pend: null, busy: false, text: {}, err: '', again: false, focus: false };
+      npCaseRender(container);
+      break;
+    case 'scrow': {
+      const b0 = String(el.getAttribute('data-b') || '');
+      if (!b0 || isNaN(i)) break;
+      if (g.sc.b === b0 && g.sc.i === i) { g.sc.b = ''; g.sc.i = -1; g.sc.pend = null; }
+      else { g.sc.b = b0; g.sc.i = i; g.sc.pend = null; g.sc.err = ''; g.sc.focus = true; }
+      npcScriptBlocksPaint(container);
+      break;
+    }
+    case 'scjump': {
+      const si = parseInt(el.getAttribute('data-si'), 10);
+      const est = npcScEstimate(g);
+      const sen = est.sentences[si];
+      if (!sen) break;
+      const toEdit = !g.editScript;      // 出片台点镜头＝翻到改正文那一页并选中这句
+      if (toEdit) { g.editScript = true; g.sc.text = {}; }
+      g.sc.b = String(sen.group || '');
+      g.sc.i = npcScIdxInBlock(est.sentences, si);
+      g.sc.pend = null; g.sc.err = ''; g.sc.ask = '';
+      if (toEdit) npCaseRender(container);
+      else npcScriptBlocksPaint(container);
+      setTimeout(() => {
+        const row = container.querySelector('.npc-scrow.on');
+        if (!row || !row.scrollIntoView) return;
+        try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { row.scrollIntoView(); }
+      }, 40);
+      break;
+    }
+    case 'sccancel': g.sc.b = ''; g.sc.i = -1; g.sc.pend = null; g.sc.err = ''; g.sc.ask = ''; npcScriptBlocksPaint(container); break;
+    case 'scgo': npcScriptAsk(container); break;
+    case 'scuse': npcScriptUse(container); break;
+    case 'scdrop': g.sc.pend = null; g.sc.err = ''; npcScriptBlocksPaint(container); break;
+    case 'sctext': npcScriptToggleText(container, String(el.getAttribute('data-b') || '')); break;
+    case 'scagain': npcScriptAgain(container); break;
+    case 'scstyle': npcScriptRestyle(container); break;
+    case 'kidname': npcKidNameSet(String(el.getAttribute('data-n') || ''), container); break;
+    case 'scgen': npcScriptStart(container); break;
+    case 'subfs': {
+      if (g.filmStep >= 0) { if (typeof toast === 'function') toast('正在出片——这一趟录完再改字号'); break; }
+      const v0 = String(el.getAttribute('data-v') || '');
+      if (v0 !== 'std' && v0 !== 'lg') break;
+      if (g.subFs === v0) break;
+      g.subFs = v0;
+      npCaseTouch();
+      npCaseRender(container);
+      break;
+    }
+    case 'filmplay': {
+      const v = document.getElementById('npcFilmVid');
+      if (!v) break;
+      if (v.ended) { try { v.currentTime = 0; } catch (_) {} }
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+      break;
+    }
+    case 'filmreplay': {
+      const v = document.getElementById('npcFilmVid');
+      if (!v) break;
+      try { v.currentTime = 0; } catch (_) {}
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+      break;
+    }
+    case 'filmfs': {
+      const el2 = document.getElementById('npcFilmPhone');
+      if (!el2) break;
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else if (el2.requestFullscreen) el2.requestFullscreen().catch(() => { if (typeof toast === 'function') toast('这个浏览器不让全屏——直接看右边这扇小窗也行'); });
+        else if (typeof toast === 'function') toast('这个浏览器不支持全屏');
+      } catch (_) {}
+      break;
+    }
     case 'savearc': npCaseSaveArc(container); break;
     case 'dlfilm':
       if (g.film && g.film.blob) npcDownload(g.film.blob, g.film.name || npcFilmName(g));
@@ -7446,7 +10770,7 @@ function npFilmHeadPaint() {
   const mini = 'border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:11px;font-weight:700;padding:5px 10px;cursor:pointer;flex:none;';
   el.innerHTML =
     '<span style="display:flex;align-items:center;gap:8px;min-width:0;">' +
-      '<span style="white-space:nowrap;flex:none;">✍️ 写稿 · 卖点到发稿</span>' +
+      '<span style="white-space:nowrap;flex:none;">✍️ 写稿 · 人群到发稿</span>' +
       '<span style="font-size:11px;font-weight:500;color:#8a929e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;">' +
         (title ? '这一篇《' + esc(title) + '》' : '') +
         (frLbl ? ' · 这一片：' + frLbl : (kind ? ' · 这一片：' + esc(kind) : '')) +
@@ -7770,6 +11094,15 @@ function npFilmDocDrop(key) {
  *  再并回一站「🎬 分幕」——这一站在字效编辑器那一台里（片台顶上那条条跟着画），向导这边只作展示、不可点。
  *  与 demo 的 WF_STEPS.k 对齐：入口站＝0、出口站 k=-1（不可点，按下即离开向导，回档案）。 */
 function npIsK(w) { return !!(w && w.kOut); }
+/** 🧩 行业选题表那条选题（新建笔记弹层里挑的）：题面 / 组 / 载体 / 写法都挂在 planItem 上。
+ *  这条线没有卖点 / 人群 / 话题那几站——挑完直接出稿改稿，改完在这一屏选成品（图文 / 视频 / 长文）。 */
+function npIsInd(w) {
+  const pi = w && w.planItem;
+  if (!pi) return false;
+  if (pi.src === 'industry') return true;
+  /* 老排产表（行业题重排前存下的）没带 src：题带 tid 又带载体，就是行业题，按行业线走 */
+  return !!(pi.tid && Array.isArray(pi.carriers) && pi.carriers.length);
+}
 /** 档案点「🎬 录片」把某一篇硬推进视频站的记号：知识线没有 5 号站，这一篇也按引流视频那套画条/摆按钮。
  *  只看 4/5 两站：到 0 挑知识那一站仍是知识线自己的条，不然连入口站都画成引流视频的。 */
 function npIsDvForced(w) { return !!(w && String(w.dOut || '') === 'film' && String(w.path || '') === 'video' && Number(w.step || 0) >= 4); }
@@ -7809,788 +11142,29 @@ function npKStations(w) {
  *  文案直出视频线（三十一改 → 四十四改）：③＝分镜出词真站（k=5，可回改稿、点了才生成）；旧「定画面」站已并进写稿流。 */
 function npIsD(w) { return !!(w && w.dOut); }
 /** 这一篇是不是「引流 · 长文」那一档（dOut='long'：出口只有图文／长文，视频撤了） */
-function npIsDLong(w) { return !!(w && npIsD(w) && !npIsI(w) && String(w.dOut || '') === 'long'); }
+function npIsDLong(w) { return !!(w && npIsD(w) && String(w.dOut || '') === 'long'); }
 function npDStations(w) {
   const out = (w && w.dOut) || 'img';
-  /* 🎭 讲故事型玩法的引流篇（2026-10-19 收口）：招式在写稿那一屏顶上那一栏钉，钉到讲故事那几招，第一站换成「AI 编故事」，
-     挑完直接出稿进改稿；「📄 出几版」那站（同批几版里挑）在这条路上撤掉 */
-  const story = npIsDStory(w);
-  const pre = story ? [{ k: 1, t: 'AI 编故事', s: '挑一段' }] : [];
-  const dropPick = (sts) => story ? pre.concat(sts.filter(s => s.k !== 3)) : sts;
-  if (out === 'film') return dropPick([
-    { k: 3, t: '📄 出几版', s: '换写法挑' },
+  if (out === 'film') return [
     { k: 4, t: '改稿', s: '改到满意' },
     { k: 5, t: '🎬 分镜出词', s: '去生成' },
     { k: -1, t: '拼片配音', s: '字幕＋配音' },
     { k: -2, t: '发布', s: '点「🚀 发布」' },
-  ]);
-  /* 📝 2026-10-21 长文回挂引流线：挑稿 → 改稿 → 出长文 → 预览 → 存好；腔由入口定死＝🗣 人设腔 */
-  if (out === 'long') return dropPick([
-    { k: 3, t: '📄 出几版', s: '换写法挑' },
+  ];
+  if (out === 'long') return [
     { k: 4, t: '改稿', s: '改到满意' },
     { k: 5, t: '📝 出长文', s: '拿稿排长文' },
     { k: 6, t: '👀 预览', s: '看长文' },
     { k: -1, t: '✓ 存好回档案', s: '标「代发」' },
-  ]);
-  return dropPick([
-    { k: 3, t: '📄 出几版', s: '换写法挑' },
+  ];
+  return [
     { k: 4, t: '改稿', s: '改到满意' },
     { k: 5, t: '🖋 分镜确认', s: '拆好再生成' },
     { k: 6, t: '👀 预览', s: '看合成＋正文' },
     { k: -2, t: '发布', s: '点「🚀 发布」' },
-  ]);
-}
-
-/* ═══ 🎭 IP 玩法线（从「你电脑那份」复刻：主题×方式选择表）═══
-   账号 IP 层：引流之上立人设——AI 按问卷给账号配一张「IP 卡」（定位一句话 + 招牌 1~3 个）。
-   发内容两步定：🎯 主题（37 个按 7 类码好）× 🎭 方式（21 招：A 互动 / B 追更 / C 共鸣 / D 人设 / E 实用）。
-   三条路：路一 组合卡（按主题×对味的方式码好，🔀 换一批）/ 路二 ✍️ 自己配（先挑主题 → 再挑方式）/ 路三 🎲 随机。
-   选完 AI 编 3 段故事候选，挑一段（或自己写），AI 出稿；出料只出图文（走「造图片」那条子流程）。 */
-function npIsI(w) { return !!(w && w.dir === 'i'); }
-/* 🎭 玩法合并（批3）：新建笔记不再有「IP玩法」那一档——讲故事的那几招并进引流。
-   引流篇钉的招式若属下面这几类来源、或这一招带骨架段（题目／数字），
-   第③步先让 AI 编 3 段故事你挑一段（跟原来 IP 那条一样）；
-   纯干货那几招（避坑／清单／教程／答疑／黑话…）照旧直接出稿，不绕这一步。 */
-const NP_PLAY_TALE_SRC = { tale: 1, echo: 1, hot: 1, meme: 1, ask: 1 };
-function npIsDStory(w) {
-  if (!w || npIsI(w) || !npIsD(w)) return false;
-  const name = String(w.ipPlay || '').trim();
-  if (!name) return false;
-  const p = npPlaySkeleton(name);
-  if (!p) return false;
-  return !!(NP_PLAY_TALE_SRC[p.src] || (p.lock && p.lock.length));
-}
-/** IP 线的步骤条：挑组合(0) / AI 编故事(1) / 改稿(4) / 出料(8，进造图片子流程) / 发布(-2 不可点) */
-function npIStations(w) {
-  return [
-    { k: 0, t: '挑组合', s: '主题×方式' },
-    { k: 1, t: 'AI 编故事', s: '挑一段' },
-    { k: 4, t: '改稿', s: '改到满意' },
-    { k: 8, t: '出料', s: '出图文' },
-    { k: -2, t: '发布', s: '点「🚀 发布」' },
   ];
 }
-/** 挑组合这一趟的会话状态（换篇即复位，见 renderNotePublish）：批次 / 自己配展开 / 暂挑的主题与方法 */
-let _npIp = null;
-/** 账号 IP 卡（会话级缓存，进来重读）：定位一句话＝问卷里「用一句话介绍你自己」那题，没答就看人设第一行 */
-let _npIpCard = null;
-async function npLoadIpCard() {
-  if (_npIpCard) return _npIpCard;
-  let line = '';
-  try {
-    const c = await readConfigPlain();
-    const answers = (c && c.diagnosis && Array.isArray(c.diagnosis.answers)) ? c.diagnosis.answers : [];
-    for (let i = 0; i < answers.length; i++) {
-      const a = answers[i] || {};
-      if (String(a.q || '').indexOf('用一句话介绍你自己') >= 0) { line = String(a.answer || '').trim(); break; }
-    }
-    if (!line) line = String(((c && c.persona && c.persona.text) || '')).split('\n')[0].trim();
-  } catch (_) {}
-  _npIpCard = { line: line, plays: ['出题纠错', '猜价猜量', '工地连续剧'] };
-  return _npIpCard;
-}
-/* 玩法骨架表：name 名 / grp 组 / how 一句话怎么玩 / rhythm 节奏（防疲劳建议）/
-   show 挑方式时的「大概长这样」/ lock 骨架段下标（AI 改稿不碰——手改可以）/ lockWhy 骨架说明 / hint 发布前提醒 */
-const NP_IP_PLAYS = [
-  { name: '出题纠错', grp: 'A 互动型', how: '拿真实施工里的对错出题，让评论区来找茬——互动最猛', rhythm: '每周 2~3 条（别日更——题会枯）', show: '出个题让评论区找茬', lock: [0], lockWhy: '题目是骨架——AI 改稿不碰它，免得把「题眼」改没；发布前自己核对答案。', hint: '题目和答案照你自己的真实经验来——AI 编的是样稿。' },
-  { name: '猜价猜量', grp: 'A 互动型', how: '晒一单活让大家猜价钱 / 用量，竞猜氛围拉评论', rhythm: '每周 1~2 条', show: '晒一单让大家猜价', lock: [0], lockWhy: '数字是骨架——AI 改稿不碰；发布前把样例数字换成你自己工单里的真实数。', hint: '数字建议换成真实工单的数——编的数字被同行一眼看穿。' },
-  { name: '选边投票', grp: 'A 互动型', how: '抛一个同行天天吵的问题，两派自己来站队', rhythm: '每周 1~2 条', show: '抛个争论让大家站队' },
-  { name: '求助军师', grp: 'A 互动型', how: '把接单里答不上来的难题丢出来，请评论区支招', rhythm: '有料才发', show: '把难题丢给评论区支招', hint: '难题用你真实碰到的——AI 编的没那个着急劲儿。' },
-  { name: '答疑翻牌', grp: 'A 互动型', how: '攒几条评论区的问题，一条条翻牌答', rhythm: '每周 1 条（攒几个问题）', show: '攒几个问题挨个翻牌答', hint: '问题用评论区真问的——AI 编的问题评论区没共鸣。' },
-  { name: '编号连载', grp: 'B 追更型', how: '固定栏目编号（小课堂 / 避坑连载），一期一个小点', rhythm: '每周 1 条（编号排好，别断更）', show: '固定栏目一期一个小点' },
-  { name: '工地连续剧', grp: 'B 追更型', how: '手头这单从开工跟到完工，一天一条进度', rhythm: '开工期日更（有工地在跑才更）', show: '从开工跟到完工一天一条', hint: '进度用你手头真在干的单——跟拍的照片/片段直接配。' },
-  { name: '顾客故事连载', grp: 'B 追更型', how: '一个顾客的事分几期讲完，过程和结局吊住人', rhythm: '每周 1 条', show: '一个顾客的事分几期讲', hint: '顾客的事用你手头的真单（隐去隐私）——AI 编的当结构参考。' },
-  { name: '挑战打卡', grp: 'B 追更型', how: '立个小挑战，每天打卡给大家看', rhythm: '打卡期日更（就那几天）', show: '立个挑战每天打卡', hint: '挑战得你真做得到——立了就得跑完，不然掉粉。' },
-  { name: '心情贴图', grp: 'C 共鸣型', how: '当天的心情配一张工地照（可以配一张动漫感的图）', rhythm: '随手发（有情绪的那天）', show: '当天的心情配一张工地照', hint: '心情和照片得是你当天真实的——AI 的只当配文参考。' },
-  { name: '老物件故事', grp: 'C 共鸣型', how: '讲一件跟着你多年的工具 / 老物件', rhythm: '有料才发', show: '讲一件跟了多年的老物件', hint: '物件得是你真有的——拍实拍图，故事挑一件真事。' },
-  { name: '反差人设', grp: 'D 人设型', how: '亮一个和你职业反差的面（粗手写字 / 硬汉养猫）', rhythm: '两周 1 条（多了就腻）', show: '亮一个和职业反差的面', hint: '反差得是你真有的那一面——别立没有的人设。' },
-  { name: '行业黑话解密', grp: 'D 人设型', how: '把行内术语一个个翻译成业主听得懂的话', rhythm: '每周 1~2 条', show: '把行话翻译成大白话' },
-  { name: '公开账本', grp: 'D 人设型', how: '把一单的收支摊开算——透明得让人服', rhythm: '每月 1 条（数字要真）', show: '把一单的收支摊开算', lock: [0], lockWhy: '账目数字是骨架——AI 改稿不碰；发布前照真实单据核一遍。', hint: '账目照真实单据写——AI 编的账别当账报。' },
-  { name: '年度复盘', grp: 'D 人设型', how: '把这一年 / 这一阵的事收一收，讲给人听', rhythm: '每月 / 年末 1 条', show: '把这段时间的事收一收', hint: '经历得是你自己的——AI 编的总结没人信。' },
-  { name: '避坑指南', grp: 'E 实用型', how: '把踩过的坑一条条列出来，先给坑、再给躲法', rhythm: '每周 1~2 条', show: '把坑和躲法列给你', hint: '坑得是你真踩过的——AI 编的当结构参考。' },
-  { name: '清单合集', grp: 'E 实用型', how: '把一类东西收成一张清单，照着买 / 照着做', rhythm: '有料才发', show: '收成一张清单给你' },
-  { name: '教程步骤', grp: 'E 实用型', how: '一步一步带着做，照着能上手', rhythm: '每周 1 条', show: '一步一步带着做' },
-  { name: '测评对比', grp: 'E 实用型', how: '两样东西摆一起比，告诉你哪个值', rhythm: '有料才发', show: '两样摆一起比一比', hint: '两样都得是你真用过的——AI 编的对比经不起评论区问。' },
-  { name: '省钱攻略', grp: 'E 实用型', how: '算一笔省钱的账，把钱省在哪讲清楚', rhythm: '每周 1~2 条', show: '算一笔省钱的账', hint: '省的钱照真实单据算——AI 编的价差经不起对。' },
-  { name: '资源盘点', grp: 'E 实用型', how: '把你攒的好东西盘点一遍，哪来的、怎么用', rhythm: '有料才发', show: '把好用的归一堆给你', hint: '资源得是你真在用的——AI 编的一搜就穿。' },
-];
-const NP_IP_BY_NAME = {};
-NP_IP_PLAYS.forEach(p => { NP_IP_BY_NAME[p.name] = p; });
 
-/* ═══ 🎭 玩法池（2026-10-19 玩法合并）——发笔记工作流第 1 步挑的就是这张表 ═══
-   只管引流笔记：门面那两篇走上面那条横幅，不进这套账。
-   三条口径：一轮只钉一招 · 每次只摊 7 招（「看全部」才铺满）· 系统只摆数，行不行你判。
-   name 与旧玩法表 NP_IP_PLAYS 同名 → 老档案的玩法标照名字接得上，历史数据一个不迁。
-   src＝取材线（note-plan 的 TYPES），kind＝写法（KINDS）——出稿的提示词按这两样说话；
-   out＝默认出口：img 图文笔记 / long 长文笔记（引流这一层没有视频）；rh＝建议频次 */
-const NP_PLAY_OUT = { img: '🖼 图文笔记', long: '📝 长文笔记' };
-const NP_PLAY_POOL = [
-  { name: '避坑指南', src: 'howto', kind: 'pitfall', out: 'img' },
-  { name: '出题纠错', src: 'howto', kind: 'list', out: 'img' },
-  { name: '答疑翻牌', src: 'howto', kind: 'qna', out: 'img' },
-  { name: '猜价猜量', src: 'howto', kind: 'calc', out: 'img' },
-  { name: '行业黑话解密', src: 'howto', kind: 'list', out: 'img' },
-  { name: '教程步骤', src: 'howto', kind: 'steps', out: 'img' },
-  { name: '清单合集', src: 'howto', kind: 'list', out: 'img' },
-  { name: '编号连载', src: 'howto', kind: 'steps', out: 'img', rh: '每周 1 条（编号排好，别断更）' },
-  { name: '公开账本', src: 'howto', kind: 'calc', out: 'long' },
-  { name: '工地连续剧', src: 'tale', kind: 'scene', out: 'long',
-    how: '手头这单从开工跟到完工，一天一篇进度，文字把过程写给人看' },
-  { name: '顾客故事连载', src: 'tale', kind: 'scene', out: 'long' },
-  { name: '反差人设', src: 'tale', kind: 'myway', out: 'long' },
-  { name: '一句能被转发的话', src: 'echo', kind: 'quote', out: 'long',
-    grp: 'C 共鸣型', how: '全篇围着那一句写一篇，最后把这句话摘出来', rh: '每周 1~2 条',
-    show: '围着一句话写一篇', hint: '那句话得是你当天真说得出口的——AI 编的金句没人转。' },
-  { name: '热点唱反调', src: 'hot', kind: 'hotContra', out: 'long',
-    grp: 'D 人设型', how: '大家都在说 A，你偏偏写一篇讲另一面——引一句原话开场', rh: '有热点才发',
-    show: '大家都说好，你讲另一面', hint: '反的那一面要有你真见过的例子——纯抬杠评论区不服。' },
-];
-/* 旧表里没进这 14 招的，默认摆在「候补」签——点一下才提进池，池子不会自己长胖 */
-const NP_PLAY_CAND0 = [
-  { name: '选边投票', src: 'hot', kind: 'hotBreak', out: 'img' },
-  { name: '求助军师', src: 'echo', kind: 'mirror', out: 'img' },
-  { name: '挑战打卡', src: 'tale', kind: 'scene', out: 'img' },
-  { name: '心情贴图', src: 'echo', kind: 'slice', out: 'img' },
-  { name: '老物件故事', src: 'tale', kind: 'history', out: 'img' },
-  { name: '年度复盘', src: 'tale', kind: 'myway', out: 'img' },
-  { name: '测评对比', src: 'howto', kind: 'calc', out: 'img' },
-  { name: '省钱攻略', src: 'howto', kind: 'calc', out: 'img' },
-  { name: '资源盘点', src: 'howto', kind: 'list', out: 'img' },
-];
-const NP_PLAY_BY_NAME = {};
-NP_PLAY_ALL_BUILD();
-function NP_PLAY_ALL_BUILD() {
-  const mk = (r, state) => {
-    const old = NP_IP_BY_NAME[r.name] || {};
-    const row = {
-      name: r.name, state: state, src: r.src, kind: r.kind, out: r.out,
-      grp: r.grp || old.grp || '', how: r.how || old.how || '',
-      rh: r.rh || old.rhythm || '', show: r.show || old.show || '',
-      hint: r.hint || old.hint || '', lock: old.lock || null, lockWhy: old.lockWhy || '',
-    };
-    if (!NP_PLAY_BY_NAME[row.name]) NP_PLAY_BY_NAME[row.name] = row;
-    return row;
-  };
-  NP_PLAY_POOL.forEach(r => mk(r, 'in'));
-  NP_PLAY_CAND0.forEach(r => mk(r, 'cand'));
-}
-/** 这一招的骨架话：玩法池没有就回旧玩法表找（主页上手发的老篇只带旧表里的名字） */
-function npPlaySkeleton(name) {
-  const gen = ((_npPlayState && _npPlayState.gen) || []).find(g => g && g.name === name);
-  return NP_PLAY_BY_NAME[name] || NP_IP_BY_NAME[name] || gen || null;
-}
-/** 玩法账本要归堆的全部名字：旧表 21 招 + 池子里的（含 AI 长出来的）——老档不迁，新招也进账 */
-async function npPlayLedgerNames() {
-  const st = await npPlayStateRead();
-  const out = [];
-  NP_IP_PLAYS.forEach(p => { if (out.indexOf(p.name) < 0) out.push(p.name); });
-  Object.keys(NP_PLAY_BY_NAME).forEach(n => { if (out.indexOf(n) < 0) out.push(n); });
-  st.gen.forEach(g => { if (g && g.name && out.indexOf(g.name) < 0) out.push(g.name); });
-  return out;
-}
-
-/* ── 池态存档：在池 / 候补 / 停用 ＋ 本轮钉的哪一招 ＋ 加过几次频次 ── */
-const NP_PLAY_STATE_KEY = 'np_play_state';
-let _npPlayState = null;
-const npPlaySeedState = () => ({
-  in: NP_PLAY_POOL.map(r => r.name), cand: NP_PLAY_CAND0.map(r => r.name),
-  stop: [], gen: [], cur: null, boost: {},
-});
-async function npPlayStateRead() {
-  if (_npPlayState) return _npPlayState;
-  let st = null;
-  try {
-    const d = await chrome.storage.local.get(NP_PLAY_STATE_KEY);
-    st = d[NP_PLAY_STATE_KEY];
-  } catch (_) { st = null; }
-  _npPlayState = npPlayMerge(Object.assign(npPlaySeedState(), st || {}));
-  return _npPlayState;
-}
-/** 代码里这张表改了（加招/换出口）：把不在任何一签里的招补回默认位，你手动停过/提过的不动 */
-function npPlayMerge(st) {
-  st.in = Array.isArray(st.in) ? st.in : [];
-  st.cand = Array.isArray(st.cand) ? st.cand : [];
-  st.stop = Array.isArray(st.stop) ? st.stop : [];
-  st.gen = Array.isArray(st.gen) ? st.gen : [];
-  st.boost = (st.boost && typeof st.boost === 'object') ? st.boost : {};
-  st.cur = (st.cur && st.cur.name) ? st.cur : null;
-  const has = (n) => st.in.indexOf(n) >= 0 || st.cand.indexOf(n) >= 0 || st.stop.some(x => x && x.name === n);
-  const want = (n) => { const r = NP_PLAY_BY_NAME[n]; return (r && r.state) || 'cand'; };
-  Object.keys(NP_PLAY_BY_NAME).forEach(n => { if (!has(n)) (want(n) === 'in' ? st.in : st.cand).push(n); });
-  st.gen.forEach(g => { if (g && g.name && !has(g.name)) st.cand.push(g.name); });
-  return st;
-}
-async function npPlayStateWrite() {
-  try { await chrome.storage.local.set({ [NP_PLAY_STATE_KEY]: _npPlayState || npPlaySeedState() }); } catch (_) {}
-}
-/** 这一招现在在哪个签上：in / cand / stop */
-function npPlayStateOf(st, name) {
-  if (st.in.indexOf(name) >= 0) return 'in';
-  if (st.stop.some(x => x && x.name === name)) return 'stop';
-  return 'cand';
-}
-/** 池子里摆得下的招（含 AI 长出来的），按签取；stop 那份带「你自己标的：…」那句话 */
-async function npPlayRows(tab) {
-  const st = await npPlayStateRead();
-  const rowOf = (n) => NP_PLAY_BY_NAME[n] || st.gen.find(g => g && g.name === n) || null;
-  if (tab === 'stop') {
-    return st.stop.map(x => { const r = rowOf(x.name); return r ? Object.assign({}, r, { state: 'stop', why: x.why || '', at: x.at || 0 }) : null; }).filter(Boolean);
-  }
-  const list = (tab === 'in' ? st.in : st.cand).map(rowOf).filter(Boolean);
-  return list.map(r => Object.assign({}, r, { state: tab }));
-}
-/** 提进池：候补点一下就去建，建完自动从候补挪进池 */
-async function npPlayPromote(name) {
-  const st = await npPlayStateRead();
-  st.cand = st.cand.filter(n => n !== name);
-  st.stop = st.stop.filter(x => x && x.name !== name);
-  if (st.in.indexOf(name) < 0) st.in.push(name);
-  await npPlayStateWrite();
-}
-/** 停用：记一句「你自己标的」，本轮钉的就是它时把钉的那招一起撤 */
-async function npPlayStop(name, why) {
-  const st = await npPlayStateRead();
-  st.in = st.in.filter(n => n !== name);
-  st.cand = st.cand.filter(n => n !== name);
-  if (!st.stop.some(x => x && x.name === name)) st.stop.push({ name: name, why: String(why || '你自己标的'), at: Date.now() });
-  if (st.cur && st.cur.name === name) st.cur = null;
-  await npPlayStateWrite();
-}
-async function npPlayReopen(name) {
-  const st = await npPlayStateRead();
-  st.stop = st.stop.filter(x => x && x.name !== name);
-  if (st.in.indexOf(name) < 0) st.in.push(name);
-  await npPlayStateWrite();
-}
-/** 钉一轮：这轮就发这一招 */
-async function npCurPlaySet(name) {
-  const st = await npPlayStateRead();
-  st.cur = name ? { name: name, since: Date.now() } : null;
-  await npPlayStateWrite();
-  return st.cur;
-}
-/** AI 补的新招进候补（同名不重复进，池里/停用里有的也不算新的） */
-async function npPlayAddCand(rows) {
-  const st = await npPlayStateRead();
-  const has = (n) => st.in.indexOf(n) >= 0 || st.cand.indexOf(n) >= 0 || st.stop.some(x => x && x.name === n) || st.gen.some(g => g && g.name === n);
-  let added = 0;
-  (rows || []).forEach(r => {
-    if (!r || !r.name || has(r.name)) return;
-    if (!NP_PLAY_BY_NAME[r.name]) NP_PLAY_BY_NAME[r.name] = Object.assign({ state: 'cand' }, r);
-    st.gen.push(r); st.cand.push(r.name); added++;
-  });
-  if (added) await npPlayStateWrite();
-  return added;
-}
-/* 主题池：7 类 37 个；best＝跟这个主题对味的方式（自己配时排前面） */
-const NP_IP_THEMES = [
-  { fam: '💬 社会现象', items: [
-    { n: '平替和消费降级', line: '这两天好几个业主来问，便宜料到底能不能用', best: ['公开账本', '测评对比', '省钱攻略'] },
-    { n: '报价刺客', line: '说好八千的活，结账变一万二——这种吐槽天天有', best: ['避坑指南', '选边投票', '行业黑话解密'] },
-    { n: '业主和师傅的信任', line: '业主盯我干活像防贼，其实他怕的不是我', best: ['心情贴图', '顾客故事连载', '反差人设'] },
-    { n: '年轻人不装修改换租', line: '越来越多年轻人不装修了，你身边是不是也这样', best: ['选边投票', '年度复盘', '答疑翻牌'] },
-    { n: '中年转行的手艺人', line: '四十岁转行干装修的师傅，这两年明显多了', best: ['反差人设', '年度复盘', '求助军师'] },
-  ] },
-  { fam: '📰 时事热点', items: [
-    { n: '暴雨过后', line: '暴雨刚过，漏水报修的电话就没停过', best: ['避坑指南', '教程步骤', '工地连续剧'] },
-    { n: '梅雨季', line: '梅雨季一到，返潮发霉的活就排上了', best: ['清单合集', '答疑翻牌', '心情贴图'] },
-    { n: '高温季施工', line: '四十度的天施工，人遭罪料也遭罪', best: ['心情贴图', '工地连续剧', '挑战打卡'] },
-    { n: '台风前的加固', line: '台风预警一出，屋顶这处得先加固', best: ['教程步骤', '避坑指南', '清单合集'] },
-    { n: '回南天', line: '回南天墙上「流泪」，这锅真不全是防水的', best: ['行业黑话解密', '测评对比', '答疑翻牌'] },
-  ] },
-  { fam: '🎬 娱乐媒体', items: [
-    { n: '装修节目里的翻车', line: '看了档改造节目，里头的防水做得真糙', best: ['出题纠错', '答疑翻牌', '选边投票'] },
-    { n: '影视剧里的工地', line: '电视剧里一句台词，一看编剧就没下过工地', best: ['反差人设', '心情贴图', '出题纠错'] },
-    { n: '装修短剧的套路', line: '最近装修短剧火了，为了流量坑了不少人', best: ['避坑指南', '年度复盘', '公开账本'] },
-  ] },
-  { fam: '🏘 本地生活', items: [
-    { n: '老小区改造', line: '这个老小区又要改造了，防水是老大难', best: ['工地连续剧', '清单合集', '资源盘点'] },
-    { n: '楼上楼下漏水纠纷', line: '楼上楼下为漏水吵到居委会，这局面怎么破', best: ['选边投票', '求助军师', '答疑翻牌'] },
-    { n: '逛建材市场', line: '周末逛了趟建材市场，这里头水太深', best: ['测评对比', '避坑指南', '省钱攻略'] },
-    { n: '房东和租客', line: '房东想花最少的钱修漏水，租客在旁边催', best: ['顾客故事连载', '心情贴图', '求助军师'] },
-  ] },
-  { fam: '🎮 游戏', items: [
-    { n: '游戏里的建造玩法', line: '孩子玩的造房子游戏，讲究得让我有点意外', best: ['心情贴图', '反差人设', '答疑翻牌'] },
-    { n: '和工友开黑', line: '跟工友开黑输了，第二天干活都带着劲', best: ['心情贴图', '挑战打卡', '反差人设'] },
-    { n: '手游里的装修', line: '手游里的装修全是花架子，真干活没这么简单', best: ['行业黑话解密', '出题纠错', '测评对比'] },
-  ] },
-  { fam: '🧱 行内的争论', items: [
-    { n: '装修群的争论', line: '装修群里又吵起来了：全屋防水是不是智商税', best: ['选边投票', '公开账本', '答疑翻牌'] },
-    { n: '全包还是半包', line: '全包半包吵了这么多年，说到底是个信任问题', best: ['选边投票', '公开账本', '避坑指南'] },
-    { n: '老师傅和新工艺', line: '老师傅看不上的新工艺，我悄悄试了半年', best: ['测评对比', '挑战打卡', '教程步骤'] },
-    { n: '低价接单的活法', line: '低价接单再慢慢加钱，这路数能走多远', best: ['选边投票', '公开账本', '年度复盘'] },
-  ] },
-  { fam: '🏗 自己的日常', items: [
-    { n: '刚收工的一单', line: '刚收工的一单，八十平全屋防水', best: ['猜价猜量', '心情贴图', '编号连载'] },
-    { n: '老房翻新', line: '又接了个老房翻新，墙面一敲全是故事', best: ['工地连续剧', '老物件故事', '顾客故事连载'] },
-    { n: '十件老工具', line: '翻工具包，十件老伙计排排坐', best: ['老物件故事', '资源盘点', '心情贴图'] },
-    { n: '收工那一刻', line: '收工那一刻的工地最好看，可惜没人看', best: ['心情贴图', '编号连载', '挑战打卡'] },
-    { n: '漏水三年那家', line: '漏水三年的那家今天收尾，想起第一次进门', best: ['顾客故事连载', '老物件故事', '答疑翻牌'] },
-    { n: '验收现场', line: '验收现场，业主一句话让我挺欣慰', best: ['出题纠错', '清单合集', '答疑翻牌'] },
-    { n: '一次返工', line: '上周返工了一单，原因说出来你不信', best: ['出题纠错', '避坑指南', '年度复盘'] },
-    { n: '带徒弟', line: '带的徒弟问了个问题，把我问住了', best: ['求助军师', '答疑翻牌', '反差人设'] },
-    { n: '接单的规矩', line: '什么样的单我不接？说说我的规矩', best: ['行业黑话解密', '公开账本', '选边投票'] },
-    { n: '辨材料的真假', line: '业主拿了桶料让我辨真假，我教了他一招', best: ['测评对比', '避坑指南', '教程步骤'] },
-    { n: '手写的感谢信', line: '收到一封手写的感谢信，看了好几遍', best: ['顾客故事连载', '老物件故事', '心情贴图'] },
-    { n: '淡季怎么过', line: '冬天淡季，师傅们其实都闲不住', best: ['年度复盘', '答疑翻牌', '挑战打卡'] },
-    { n: '第一单的工地', line: '翻到第一单的老照片，那时候没电梯', best: ['老物件故事', '年度复盘', '顾客故事连载'] },
-  ] },
-];
-function npIpThemeOf(n) {
-  for (const g of NP_IP_THEMES) { const t = g.items.find(x => x.n === n); if (t) return { fam: g.fam, t: t }; }
-  return null;
-}
-function npIpLabelOf(w) { w = w || _npWiz || {}; return (w.ipTheme ? w.ipTheme + ' × ' : '') + (w.ipPlay || ''); }
-function npIpIsStar(m) { return (_npIpCard ? _npIpCard.plays : []).indexOf(m) >= 0; }
-/** 组合池（真实版现配）：37 主题 × 每主题对味的方式平铺；一批 5 套，🔀 换一批往后翻 */
-let _npIpPool = null;
-function npIpComboPool() {
-  if (_npIpPool) return _npIpPool;
-  const out = [];
-  NP_IP_THEMES.forEach(g => g.items.forEach(t => (t.best || []).forEach(m => out.push({ th: t.n, line: t.line, m: m }))));
-  _npIpPool = out;
-  return out;
-}
-function npIpBatchCount() { return Math.max(1, Math.ceil(npIpComboPool().length / 5)); }
-function npIpBatchOf(b) { return npIpComboPool().slice(b * 5, b * 5 + 5); }
-function npIpSt() {
-  if (!_npIp) _npIp = { batch: 0, selfOpen: false, tmpTheme: null, tmpMethod: null };
-  return _npIp;
-}
-/** IP 卡片上的小按钮样式（这一线内共用：白底描边 / 淡底两种） */
-const NP_IP_BTN = 'padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:#555;font-size:11px;font-weight:700;cursor:pointer;';
-/** ① 挑组合站：IP 卡 → 组合卡（AI 配好，一批 5 套）→ ✍️ 自己配（挑主题 → 挑方式两步） */
-function npIpPickHtml() {
-  const card = _npIpCard || { line: '', plays: [] };
-  const st = npIpSt();
-  const starChips = card.plays.map(n => '<span style="font-size:10.5px;background:#e8f7ef;color:#0a7b5a;border:1px solid #bfe3cf;border-radius:8px;padding:1px 8px;">⭐ ' + esc(n) + '</span>').join('');
-  const combos = npIpBatchOf(st.batch);
-  const comboHtml = combos.map((cb, i) => {
-    const p = NP_IP_BY_NAME[cb.m] || {};
-    return '<div class="np-ip-use" data-b="' + st.batch + '" data-i="' + i + '" title="就用这套＝AI 按它编 3 段故事" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;background:#fff;">' +
-      '<div style="font-size:12px;font-weight:700;color:#333;line-height:1.55;">' + esc(cb.line) + '</div>' +
-      '<div style="margin-top:5px;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--c-brand-text);background:var(--c-brand-soft);border:1px solid #d3e7dd;border-radius:999px;padding:1px 9px;">🎯 ' + esc(cb.th) + ' <span style="color:#9fb4ab;">×</span> 🎭 ' + esc(cb.m) + (npIpIsStar(cb.m) ? ' ⭐' : '') + '</span></div>' +
-      '<div style="font-size:11px;color:#8a929e;margin-top:4px;line-height:1.6;">' + esc(p.how || '') + '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;align-items:center;">' +
-        '<span style="font-size:10px;color:#8a929e;">' + esc(p.rhythm || '') + '</span>' +
-        (p.lock ? '<span style="font-size:10px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:0 6px;">🔒 有骨架段</span>' : '') +
-        '<span style="font-size:11px;font-weight:700;color:var(--c-brand-text);margin-left:auto;">就用这套 →</span>' +
-      '</div></div>';
-  }).join('');
-  let selfHtml = '';
-  if (st.selfOpen) {
-    if (!st.tmpTheme) {
-      const total = NP_IP_THEMES.reduce((n, g) => n + g.items.length, 0);
-      const rows = NP_IP_THEMES.map((g, gi) =>
-        '<div style="padding:5px 11px;font-size:10.5px;font-weight:700;color:#6b7280;background:#f7f9fc;border-bottom:1px solid #eef1f5;">' + esc(g.fam) + '</div>' +
-        g.items.map((t, ii) =>
-          '<div class="np-ip-theme" data-g="' + gi + '" data-i="' + ii + '" title="先定这篇讲什么" style="display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid #eef1f5;cursor:pointer;flex-wrap:wrap;">' +
-            '<span style="font-size:12px;font-weight:700;color:#333;white-space:nowrap;">' + esc(t.n) + '</span>' +
-            '<span style="font-size:11px;color:#8a929e;flex:1;min-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(t.line) + '</span>' +
-            '<span style="font-size:11px;font-weight:700;color:var(--c-brand-text);white-space:nowrap;">选它 →</span>' +
-          '</div>').join('')
-      ).join('');
-      selfHtml =
-        '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;margin-bottom:12px;">' +
-          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-            '<b style="font-size:12.5px;">① 挑主题</b>' +
-            '<span style="font-size:10px;color:#8a929e;">这篇讲什么——' + total + ' 个主题按 ' + NP_IP_THEMES.length + ' 类码好</span>' +
-            '<span style="flex:1;"></span>' +
-            '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">收起</button>' +
-          '</div>' +
-          '<div style="border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;margin-top:8px;">' + rows + '</div>' +
-        '</div>';
-    } else {
-      const g = npIpThemeOf(st.tmpTheme.n);
-      const best = (g && g.t.best) || [];
-      const rest = NP_IP_PLAYS.map(p => p.name).filter(n => best.indexOf(n) < 0);
-      const sel = st.tmpMethod;
-      const chip = (name, on) => {
-        const p = NP_IP_BY_NAME[name] || {};
-        const tip = String(p.how || '') + '（' + String(p.rhythm || '') + '）' + (npIpIsStar(name) ? ' · ⭐ 招牌' : '');
-        return '<span class="np-ip-method" data-m="' + escAttr(name) + '" title="' + escAttr(tip) + '" style="display:inline-block;font-size:11px;padding:3px 10px;border:1px solid ' + (on ? 'var(--c-ok)' : 'var(--line)') + ';border-radius:999px;background:' + (on ? 'var(--c-ok-soft)' : '#fff') + ';color:' + (on ? '#0a7b5a' : '#555') + ';font-weight:' + (on ? '700' : '500') + ';cursor:pointer;">' + esc(name) + (npIpIsStar(name) ? ' ⭐' : '') + '</span>';
-      };
-      const preview = sel
-        ? '这篇大概长这样：' + esc(g.t.line) + '，' + esc((NP_IP_BY_NAME[sel] || {}).show || '') + '。'
-        : '挑一个方式——这行字就是这篇大概长什么样。';
-      selfHtml =
-        '<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff;margin-bottom:12px;">' +
-          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-            '<b style="font-size:12.5px;">② 挑方式</b>' +
-            '<span style="font-size:10px;color:var(--c-brand-text);background:var(--c-brand-soft);border:1px solid var(--c-brand-soft2);border-radius:8px;padding:1px 8px;font-weight:700;">🎯 ' + esc(st.tmpTheme.n) + '</span>' +
-            '<span style="font-size:10px;color:#8a929e;">怎么讲——AI 把对味的排前面</span>' +
-            '<span style="flex:1;"></span>' +
-            '<button type="button" class="np-ip-themeback" style="' + NP_IP_BTN + '">‹ 重挑主题</button>' +
-            '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">收起</button>' +
-          '</div>' +
-          '<div style="font-size:10px;color:#8a929e;margin:9px 0 4px;">✨ AI 觉得对味的</div>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + best.map(n => chip(n, n === sel)).join('') + '</div>' +
-          '<div style="font-size:10px;color:#8a929e;margin:10px 0 4px;">其它方式（都挑得动）</div>' +
-          '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + rest.map(n => chip(n, n === sel)).join('') + '</div>' +
-          '<div style="margin-top:10px;font-size:11px;color:#4b5563;line-height:1.7;background:#fff9ec;border:1px solid #f3e3c0;border-radius:8px;padding:6px 10px;">📝 ' + preview + '</div>' +
-          '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;">' +
-            '<button type="button" class="np-ip-selfconfirm" style="padding:6px 14px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">就这套，开始编 →</button>' +
-            '<span style="font-size:10px;color:#8a929e;">定了＝AI 编故事去了——不满意随时回来换。</span>' +
-          '</div>' +
-        '</div>';
-    }
-  }
-  return '<div style="border:1px solid #cfe8d4;border-radius:10px;padding:10px 12px;background:linear-gradient(135deg,#f2fbf6,#f7fbff);margin-bottom:10px;">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-        '<b style="font-size:13px;">🎭 你的账号 IP</b>' +
-        (card.line
-          ? '<span style="font-size:12.5px;font-weight:700;color:#0a7b5a;">' + esc(card.line) + '</span>'
-          : '<span style="font-size:12px;color:#8a929e;">（还没填一句话人设——去「账号规划 → 人设」写一句）</span>') +
-        '<span style="flex:1;"></span>' +
-        '<button type="button" class="np-ip-reip" style="' + NP_IP_BTN + '" title="去「账号规划 → 人设」改那句话——改完回来重进这篇就更新">🔄 重出 IP</button>' +
-      '</div>' +
-      '<div style="font-size:10px;color:#8a929e;margin-top:5px;">⭐ 招牌：' + starChips + ' <span style="color:#8a929e;">——AI 按人设 ＋ 哪招评论带得动的推荐的；这张 IP 卡在「账号规划 → 人设」里看、跟着问卷同步链更新。</span></div>' +
-    '</div>' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 6px;">' +
-      '<span style="font-size:12px;font-weight:700;color:#333;">🎯 AI 给你配好的组合</span>' +
-      '<span style="font-size:10px;color:#8a929e;">主题 × 方式——点一张＝直接开写</span>' +
-      '<span style="flex:1;"></span>' +
-      '<button type="button" class="np-ip-swap" style="' + NP_IP_BTN + '">🔀 换一批</button>' +
-      '<button type="button" class="np-ip-dice" style="' + NP_IP_BTN + '">🎲 给我来一个</button>' +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px;margin-bottom:12px;">' + comboHtml + '</div>' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 6px;">' +
-      '<span style="font-size:12px;font-weight:700;color:#333;">✍️ 自己配</span>' +
-      '<span style="font-size:10px;color:#8a929e;">先挑主题、再挑方式——两步；挑不动就让 AI 提</span>' +
-      '<span style="flex:1;"></span>' +
-      '<button type="button" class="np-ip-selfopen" style="' + NP_IP_BTN + '">' + (st.selfOpen ? '收起' : '展开自己配 →') + '</button>' +
-    '</div>' +
-    selfHtml;
-}
-/* ── ① 站的动作：组合卡 / 换一批 / 🎲 / 自己配两步 ── */
-function npIpUseCombo(b, i, quiet) {
-  const cb = npIpBatchOf(b)[i];
-  const w = _npWiz;
-  if (!cb || !w) return;
-  const th = npIpThemeOf(cb.th);
-  w.ipPlay = cb.m; w.ipTheme = cb.th; w.ipThemeFam = th ? th.fam : '';
-  w.ipCustom = false; w.ipStories = null; w.ipStoryIdx = -1; w.ipStoryErr = '';
-  w.step = 1;
-  npWizRender(npActiveC());
-  if (!quiet) toast('就用这套「' + cb.th + ' × ' + cb.m + '」——AI 正按它编故事');
-}
-function npIpBatchSwap(c) {
-  const st = npIpSt();
-  st.batch = (st.batch + 1) % npIpBatchCount();
-  npWizRender(c || npActiveC());
-  toast('换了一批组合——再看 ' + npIpBatchOf(st.batch).length + ' 套');
-}
-function npIpDice(c) {
-  const st = npIpSt();
-  const arr = npIpBatchOf(st.batch);
-  if (!arr.length) return;
-  const i = Math.floor(Math.random() * arr.length);
-  const cb = arr[i];
-  npIpUseCombo(st.batch, i, true);
-  toast('🎲 让 AI 拍板了——「' + cb.th + ' × ' + cb.m + '」，故事这就编');
-}
-function npIpSelfOpenToggle(c) {
-  const st = npIpSt();
-  st.selfOpen = !st.selfOpen;
-  if (!st.selfOpen) { st.tmpTheme = null; st.tmpMethod = null; }
-  npWizRender(c || npActiveC());
-}
-function npIpThemePick(gi, ii, c) {
-  const g = NP_IP_THEMES[gi];
-  if (!g) return;
-  const t = g.items[ii];
-  if (!t) return;
-  const st = npIpSt();
-  st.tmpTheme = { fam: g.fam, n: t.n };
-  st.tmpMethod = null;
-  npWizRender(c || npActiveC());
-}
-function npIpThemeBack(c) {
-  const st = npIpSt();
-  st.tmpTheme = null; st.tmpMethod = null;
-  npWizRender(c || npActiveC());
-}
-function npIpMethodPick(name, c) {
-  const st = npIpSt();
-  st.tmpMethod = name;
-  npWizRender(c || npActiveC());
-}
-function npIpSelfConfirm(c) {
-  const st = npIpSt();
-  const w = _npWiz;
-  if (!st.tmpTheme || !st.tmpMethod || !w) { toast('先挑一个方式——这行字就是这篇大概长什么样'); return; }
-  w.ipPlay = st.tmpMethod; w.ipTheme = st.tmpTheme.n; w.ipThemeFam = st.tmpTheme.fam;
-  w.ipCustom = false; w.ipStories = null; w.ipStoryIdx = -1; w.ipStoryErr = '';
-  st.selfOpen = false; st.tmpTheme = null; st.tmpMethod = null;
-  w.step = 1;
-  npWizRender(c || npActiveC());
-  toast('配好了「' + w.ipTheme + ' × ' + w.ipPlay + '」——AI 正按这套编故事');
-}
-
-/* ── ② AI 编故事：AI 按「主题 × 方式」编 3 段候选（梗概＋开头第一句）；挑一段＝AI 照它写整篇 ──
-   话题标签种子：AI 没给标签时兜底，也当出稿时的挑词来源 */
-const NP_IP_TAGS = {
-  '出题纠错': ['防水知识', '装修避坑'], '猜价猜量': ['防水施工', '装修经验'], '选边投票': ['装修讨论', '防水'],
-  '求助军师': ['装修求助', '防水师傅'], '答疑翻牌': ['装修问答', '防水答疑'], '编号连载': ['防水小课堂', '装修避坑'], '工地连续剧': ['施工现场', '防水日记'],
-  '顾客故事连载': ['顾客故事', '防水维修'], '挑战打卡': ['工地打卡', '防水日记'], '心情贴图': ['工地日常', '防水人'], '老物件故事': ['工地日常', '手艺人'],
-  '反差人设': ['手艺人', '工地日常'], '行业黑话解密': ['装修黑话', '避坑'], '公开账本': ['防水报价', '装修账本'],
-  '年度复盘': ['防水人', '年度总结'], '避坑指南': ['装修避坑', '防水知识'], '清单合集': ['装修清单', '防水施工'],
-  '教程步骤': ['防水教程', '装修施工'], '测评对比': ['防水材料', '装修评测'], '省钱攻略': ['装修省钱', '防水报价'],
-  '资源盘点': ['装修资源', '手艺人'],
-};
-let _npIpStoryBusy = false;   // 正在编故事候选
-let _npIpDraftBusy = false;   // 正在按挑中的那段出整篇
-/** ② 站整页：IP 卡顶条＋提醒＋3 段候选卡＋自己写一段 */
-function npIpStoryHtml() {
-  const w = _npWiz || {};
-  const st = npIpSt();
-  const p = npPlaySkeleton(w.ipPlay) || null;
-  const hint = (p && p.hint) ? '<div style="margin:0 0 10px;font-size:11px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:5px 9px;line-height:1.7;">📌 ' + esc(p.hint) + '</div>' : '';
-  const wait = _npIpStoryBusy
-    ? '<div id="npIpWait" style="font-size:12px;color:#555;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-bottom:8px;"></div>'
-    : '';
-  const errBox = w.ipStoryErr
-    ? '<div style="font-size:12px;color:#d32f2f;background:#fff5f5;border:1px solid #f3c9c9;border-radius:8px;padding:8px 10px;margin-bottom:8px;">' + esc(w.ipStoryErr) +
-      ' <button type="button" class="np-ip-reroll" style="margin-left:6px;border:1px solid var(--line);background:#fff;color:#666;border-radius:8px;font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;">🔁 再试一次</button></div>'
-    : '';
-  const cards = cands2Html(w.ipStories);
-  /* 🎭 引流篇（2026-10-19 收口）：这一站顶上摆「这一篇用哪一招」那一栏——换招不跑路，就在这屏换 */
-  const pickRow = npIsD(w) ? npPlayPickHtml(w) : '';
-  const draftWait = _npIpDraftBusy
-    ? '<div id="npIpDraftWait2" style="font-size:12px;color:#555;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:8px;">AI 正在把整篇写出来——写完自动落到改稿页</div>'
-    : '';
-  const selfBox = st.storySelf
-    ? '<div style="border:1px solid #cfe3ff;background:#f7fbff;border-radius:10px;padding:10px;margin-top:10px;">' +
-        '<div style="font-size:11px;font-weight:700;color:#1f6feb;">✍️ 自己写一段——你有真事就写你的事，几句话就行</div>' +
-        '<textarea id="npIpSelfTx" rows="4" placeholder="例：今天在老小区修漏，业主递来一瓶水，说上一家来人三次都没修好……" style="width:100%;box-sizing:border-box;margin-top:6px;border:1px solid #dbe4f0;border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.7;resize:vertical;"></textarea>' +
-        '<div style="display:flex;gap:8px;margin-top:8px;align-items:center;">' +
-        '<button type="button" class="np-ip-useself" style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">就用我这段 →</button>' +
-        '<button type="button" class="np-ip-selftoggle" style="border:1px solid var(--line);background:#fff;color:#666;border-radius:8px;font-size:12px;padding:6px 10px;cursor:pointer;">收起</button>' +
-        '<span style="font-size:10px;color:#8a929e;">这段直接当正文起步——AI 会按它顺进整篇</span></div></div>'
-    : '';
-  return pickRow +
-    '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px;">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-        '<b style="font-size:13px;">🎭 ' + esc(npIpLabelOf(w)) + '</b>' +
-        '<span class="note-xs">' + esc(p ? p.how : '') + '</span>' +
-        '<span style="flex:1;"></span>' +
-        (String((p && (p.rhythm || p.rh)) || '') ? '<span style="font-size:10px;color:#8a929e;background:#f4f5f7;border-radius:8px;padding:0 6px;">节奏 ' + esc(p.rhythm || p.rh) + '</span>' : '') +
-      '</div></div>' +
-    hint +
-    '<div style="font-size:12px;font-weight:700;color:#333;margin:4px 0;">AI 按「' + esc(npIpLabelOf(w)) + '」编了 3 段（梗概＋开头第一句）——挑一段最顺眼的，AI 就照它把整篇写出来</div>' +
-    '<div class="note-xs" style="margin-bottom:8px;">故事是编的、调子按你挑的这套来——不满意「🔀 再换 3 段」；你自己有真事，点「✍️ 自己写一段」写多少都行。</div>' +
-    wait + errBox + cards + draftWait + selfBox;
-}
-function cands2Html(cands) {
-  return (cands || []).map((c, i) =>
-    '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:8px;">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-        '<span style="font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;">第 ' + (i + 1) + ' 段</span>' +
-        '<b style="font-size:12.5px;color:#333;">' + esc(c.t || '') + '</b></div>' +
-      (c.first ? '<div style="font-size:12px;color:#4b5563;margin-top:6px;line-height:1.8;background:#fafbfc;border-left:3px solid #d5dbe6;border-radius:0 8px 8px 0;padding:6px 10px;">开头先这样写：<br>' + esc(c.first) + '</div>' : '') +
-      '<div style="margin-top:8px;"><button type="button" class="np-ip-pick" data-i="' + i + '" style="padding:6px 12px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">✍️ 用这段，出稿 →</button></div>' +
-    '</div>').join('');
-}
-/** 编 3 段故事候选（进站自动一发 / 🔀 再换 3 段点发）；loud＝手动点的那发，成了给句 toast */
-async function npIpStoriesLoad(container, loud) {
-  const w = _npWiz;
-  if (!w || _npIpStoryBusy || !w.ipPlay) return;
-  container = container || npActiveC();
-  const arId0 = String(w.arId || '');
-  _npIpStoryBusy = true;
-  w.ipStoryErr = '';
-  if (npS() === w && w.step === 1) await npWizRender(container);   // 先把「正在编」的等待卡画上
-  const stopWait = npWaitInto(container, 'npIpWait', 'AI 正在按「' + npIpLabelOf(w) + '」编 3 段故事', 'ipstory', () => npS() === w && w.step === 1);
-  try {
-    const p = npPlaySkeleton(w.ipPlay) || null;
-    const r = await chrome.runtime.sendMessage({
-      action: 'genIpStories',
-      data: {
-        persona: (function () { try { return _ntPersonaLine(); } catch (_) { return ''; } })(),
-        theme: String(w.ipTheme || ''),
-        themeLine: ((npIpThemeOf(w.ipTheme) || { t: {} }).t || {}).line || '',
-        method: String(w.ipPlay || ''),
-        how: String((p && p.how) || ''),
-        rhythm: String((p && (p.rhythm || p.rh)) || ''),
-        hint: String((p && p.hint) || ''),
-      },
-    });
-    if (String(w.arId || '') !== arId0 || _npWiz !== w) return;   // 趁编故事切去别的篇：这一发作废
-    if (!r || r.ok === false || !(r.items || []).length) throw new Error((r && r.error) || 'AI 这次没编出故事，再点一次试试');
-    w.ipStories = (r.items || []).slice(0, 3).map(x => ({
-      t: String((x && x.t) || ''),
-      first: String((x && x.first) || ''),
-      title: String((x && x.title) || ''),
-      alts: (Array.isArray(x && x.alts) ? x.alts : []).map(String),
-    })).filter(x => x.t || x.first);
-  } catch (e) { w.ipStoryErr = '编故事失败：' + ((e && e.message) || e); }
-  stopWait();
-  _npIpStoryBusy = false;
-  if (_npWiz === w && npS() === w && w.step === 1) await npWizRender(container);
-  if (loud && !w.ipStoryErr && typeof toast === 'function') toast('又编了一批——挑一段');
-}
-/** 🔀 再换 3 段：把这一批丢掉重编（报过错的这句也清掉——手动点了就该重试） */
-function npIpReroll(container) {
-  const w = _npWiz;
-  if (!w || _npIpStoryBusy) return;
-  w.ipStories = null; w.ipStoryErr = '';
-  npIpStoriesLoad(container || npActiveC(), true);
-}
-/** ✍️ 自己写一段 / 收起 */
-function npIpSelfToggle(container) {
-  const st = npIpSt();
-  st.storySelf = !st.storySelf;
-  npWizRender(container || npActiveC());
-}
-/** 挑中哪段 → AI 照它出整篇；自己写的走 selfText；🔄 再出一版走 vAsk（同一段故事换个收法） */
-async function npIpBuildDraft(container, how) {
-  const w = _npWiz;
-  if (!w || _npIpDraftBusy) return;
-  container = container || npActiveC();
-  const story = (how && how.story) || null;
-  const selfText = String((how && how.selfText) || '').trim();
-  const vAsk = String((how && how.vAsk) || '').trim();
-  if (!story && !selfText) return;
-  const custom = !!selfText;
-  const arId0 = String(w.arId || '');
-  _npIpDraftBusy = true;
-  const same = !!vAsk && !!(w.draft && String(w.draft.content || '').trim());   // 🔄 再出一版：留旧稿当「上一版」
-  if (same) w.revisePrev = String((w.draft && w.draft.content) || '');
-  else {
-    w.revisePrev = '';
-    w.revSentPend = null;
-    w.draft = null;
-    _npNote = { draft: null, title: '', tags: [], titleIdx: 0 };
-    w.ipCustom = custom;
-    w.ipStoryIdx = custom ? -1 : (w.ipStories || []).indexOf(story);
-  }
-  w.revSentIdx = -1; w.revTextMode = false;
-  w.step = 4;
-  await npWizRender(container);   // 落到改稿页（正文格先空着，状态行报进度）
-  const stopWait = npWaitInto(container, 'npDraftStatus', custom ? 'AI 正按你写的那段把整篇顺出来' : 'AI 正按这段故事把整篇写出来', 'ipdraft', () => npS() === w && w.step === 4);
-  let okMsg = '', errMsg = '';
-  try {
-    const p = npPlaySkeleton(w.ipPlay) || null;
-    const r = await chrome.runtime.sendMessage({
-      action: 'genIpDraft',
-      data: {
-        persona: (function () { try { return _ntPersonaLine(); } catch (_) { return ''; } })(),
-        theme: String(w.ipTheme || ''),
-        themeLine: ((npIpThemeOf(w.ipTheme) || { t: {} }).t || {}).line || '',
-        method: String(w.ipPlay || ''),
-        how: String((p && p.how) || ''),
-        lockWhy: String((p && p.lockWhy) || ''),
-        lock: (p && p.lock) || [],
-        story: story ? { t: String(story.t || ''), first: String(story.first || '') } : null,
-        selfText: selfText,
-        vAsk: vAsk,
-        tagSeed: (NP_IP_TAGS[w.ipPlay] || []).slice(),
-      },
-    });
-    if (String(w.arId || '') !== arId0 || _npWiz !== w) return;   // 趁写稿切去别的篇：这一发作废
-    if (!r || r.ok === false || !String(r.content || '').trim()) throw new Error((r && r.error) || 'AI 这次没把稿子写出来，再点一次试试');
-    const titles = (Array.isArray(r.titles) ? r.titles : []).map(t => String(t).trim()).filter(Boolean);
-    if (!titles.length && story) { titles.push(String(story.title || '').trim()); (story.alts || []).forEach(x => titles.push(String(x || '').trim())); }
-    const ft = titles.filter(Boolean).slice(0, 6);
-    const tags = (Array.isArray(r.tags) ? r.tags : []).map(t => String(t).trim().replace(/^#/, '')).filter(Boolean);
-    w.draft = { content: String(r.content || ''), titles: ft, tags: tags.length ? tags.slice(0, 4) : (NP_IP_TAGS[w.ipPlay] || []).slice(), timeTip: '' };
-    _npNote = { draft: w.draft, title: (ft[0] || ''), tags: w.draft.tags.slice(), titleIdx: 0 };
-    okMsg = custom ? '就用你写的这段——稿子照它顺好了，进改稿' : '就用这段——AI 按「' + npIpLabelOf(w) + '」的调子把整篇写出来了，进改稿';
-  } catch (e) { errMsg = '出稿失败：' + ((e && e.message) || e); }
-  stopWait();
-  _npIpDraftBusy = false;
-  if (_npWiz === w && npS() === w) {
-    if (w.step === 4) await npWizRender(container);
-    const stEl = _npEl(container, 'npDraftStatus');
-    if (stEl) { stEl.textContent = okMsg ? '✅ ' + okMsg : errMsg; stEl.style.color = okMsg ? '#2e7d32' : '#d33'; }
-    if (okMsg && typeof toast === 'function') toast(okMsg);
-  }
-}
-/** ✍️ 用这段，出稿 →（挑中的那段故事编整篇） */
-function npIpPickCand(i, container) {
-  const w = _npWiz;
-  if (!w || _npIpDraftBusy) return;
-  const c = (w.ipStories || [])[i];
-  if (!c) return;
-  npIpBuildDraft(container || npActiveC(), { story: c });
-}
-/** ✍️ 自己写一段 →：用户那段直接当底子，AI 顺着写完整 */
-function npIpUseSelf(container) {
-  const w = _npWiz;
-  if (!w || _npIpDraftBusy) return;
-  const c = container || npActiveC();
-  const ta = _npEl(c, 'npIpSelfTx');
-  const v = String((ta && ta.value) || '').trim();
-  if (!v) { if (typeof toast === 'function') toast('先把你那段写两句——一句话也行，AI 顺着写'); if (ta) ta.focus(); return; }
-  npIpSelfToggle(c);   // 收起输入框
-  npIpBuildDraft(c, { selfText: v });
-}
-/** 🔄 再出一版（同一个故事、换个收法）：只对 AI 编的故事有效——自己写的那版由用户自己改 */
-function npIpRewrite(container) {
-  const w = _npWiz;
-  if (!w || _npIpDraftBusy) return;
-  if (w.ipCustom) { if (typeof toast === 'function') toast('这版是你自己写的——「再出一版」只对 AI 编的故事有效；想重写就点句子改'); return; }
-  const story = (w.ipStories || [])[Math.max(0, Number(w.ipStoryIdx) || 0)] || null;
-  if (!story) { if (typeof toast === 'function') toast('先挑一段故事——回上一步点「↩ 换一段故事」'); return; }
-  npIpBuildDraft(container || npActiveC(), { story: story, vAsk: '同一个故事，换一个收法：开头第一句原样保留，过程和收尾换一种讲法（别复读上一版的句子）。' });
-}
-/* ── 🔒 骨架段（出题纠错 / 猜价猜量 / 公开账本）：AI 改稿不碰，逐句改不进；「✍️ 全文手改」照旧能改 ── */
-function npIpLockSetOf(w) {
-  w = w || _npWiz || {};
-  if (w.ipCustom) return null;   // 自己写的：没有骨架
-  const p = npPlaySkeleton(w.ipPlay) || null;
-  const lock = (p && p.lock) || [];
-  return lock.length ? new Set(lock) : null;
-}
-/** 锁住的句（[{i, t}]）——改稿 payload 的 keepSents 与补位守卫都用它 */
-function npIpLockTextsOf(w, sents) {
-  const set = npIpLockSetOf(w);
-  if (!set) return [];
-  const out = [];
-  (sents || []).forEach((s, i) => { if (set.has(i) && s && s.t) out.push({ i: i, t: s.t }); });
-  return out;
-}
-/** AI 改稿回来：锁的句子要是被改写 / 弄丢了，按原句原位补回去（before＝改之前的正文） */
-function npIpKeepGuard(before, after) {
-  const locks = npIpLockTextsOf(_npWiz, npSplitSents(before));
-  if (!locks.length) return after;
-  const sents = npSplitSents(after);
-  locks.forEach(lk => {
-    if (sents.some(s => s && s.t === lk.t)) return;
-    const at = Math.max(0, Math.min(lk.i, sents.length));
-    sents.splice(at, 0, { t: lk.t });
-  });
-  return npJoinSents(sents);
-}
-/* ── ④ 出料站：IP 玩法只出图文——点卡片＝标「代发」并进「造图片」的分镜确认站 ── */
-function npIpOutHtml() {
-  const w = _npWiz || {};
-  const again = (w.imgDocs || []).some(d => d && (d.items || []).length > 0);
-  return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:10px;">' +
-      '<b style="font-size:13px;">🎭 ' + esc(npIpLabelOf(w)) + ' · 出料</b>' +
-      '<div class="note-xs" style="margin-top:4px;line-height:1.7;">IP 玩法只出图文——走「造图片」：AI 把正文切成几条并配好画面提示词（🖋 分镜确认）→ 👀 预览看合成 → ✓ 存好回档案（图多选 / 粘贴都行；封面单独出一张；字效片 / 口播不走这条线）。</div>' +
-    '</div>' +
-    '<div class="np-ip-fin" style="border:1.5px solid #2e7d32;box-shadow:0 0 0 3px rgba(46,125,50,.12);border-radius:10px;background:#fff;padding:12px 14px;cursor:pointer;">' +
-      '<b style="font-size:14px;">🖼 出图文</b>' +
-      (again ? '<span style="font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;margin-left:6px;">接着出——上次的格还在</span>' : '') +
-      '<p style="margin:5px 0 0;font-size:11px;color:#666;line-height:1.7;">正文照发＋一套卡图——进「造图片」：分镜确认 → 每张一条提示词、单独复制去生成 → 图传回来「👀 预览」看合成 → ✓ 存好就完（封面单独出一张）。</p>' +
-      '<span style="display:inline-block;margin-top:6px;font-size:10px;color:#1d4ed8;background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;padding:0 6px;">出一套卡图</span>' +
-    '</div>';
-}
-/** 点「🖼 出图文」：稿子落档标「代发」，原地进「🖋 分镜确认」（走造图片子流程；排期方式还没定——不自动找位子） */
-async function npIpFinish() {
-  const w = _npWiz;
-  if (!w) return;
-  if (!String((w.draft && w.draft.content) || '').trim()) { if (typeof toast === 'function') toast('这篇还没稿子——先挑一段故事', 'error'); return; }
-  w.dOut = 'img';          // 出料只出图文：先把分流定上，落档才带得走（排期由老板自己在「🗓 笔记规划」勾日子）
-  const n = await npDFinishBase('image');
-  if (!w || !n || w !== _npWiz) return;
-  npDshSeedDocs(w, n);
-  npDshEnsureRow(w);
-  w.step = 5;
-  if (typeof toast === 'function') toast('标成「代发」了——出料走图文：分镜确认 → 每张一条提示词单独复制去生成 → 图传回来预览，✓ 存好就完');
-  await npWizRender(npActiveC() || _npActiveContainer);
-}
 
 /* ── 工作流圆点条的唯一画法（七十二改）：写稿向导那几条站 ＋ 片台那一屏的外壳共用这三件。
    以前片台在 iframe 里自己画一条按钮款、步进还撤了——从「改稿」跳过去条子没了、也回不去上一站，像换了个软件。 ── */
@@ -8620,16 +11194,19 @@ function npStepBar(container) {
   /* 📝 长文独立成方向（2026-10-20）：dir==='l' 画自己的四站条 */
   if (npIsL(_npWiz)) { npLStepBar(el, container); return; }
   const step = _npWiz.step;
+  // 🧩 行业选题表那条：整条线都只画三站（选题 → 改稿 → 出成品）——没卖点 / 人群 / 话题那几站
+  if (npIsInd(_npWiz)) { npIndStepBar(el, step); return; }
   if (npIsK(_npWiz) && !npIsDvForced(_npWiz)) { npStepBarK(el, step, container); return; }
-  if (npIsI(_npWiz)) { npStepBarI(el, step, container); return; }   // 🎭 IP 线（五十二改）：必须先于 npIsD——出料后 dOut='img'，npIsD 也会真
   if (npIsD(_npWiz)) { npStepBarD(el, step, container); return; }
+  // ① 卖点站已藏起（2026-11-05）：正文不再按卖点写，条上从 ② 开始数；内部步号不动（npGo 还按原号跳）
+  const shown = _npWizKeys.map((s, i) => ({ s: s, i: i })).filter(x => x.i > 0);
   el.innerHTML =
     '<div style="display:flex;align-items:flex-start;">' +
-    _npWizKeys.map((s, i) =>
+    shown.map((x, n) =>
       '<div style="display:flex;flex-direction:column;align-items:center;width:44px;flex:none;">' +
-      npDotBadge({ lit: i <= step, cur: i === step, done: i < step, n: i + 1, attr: i <= step ? 'data-ngo="' + i + '"' : '' }) +
-      npDotLabel({ t: s, s: onLabel(i), cur: i === step, done: i < step }) + '</div>' +
-      (i < _npWizKeys.length - 1 ? npDotLink(i <= step) : '')
+      npDotBadge({ lit: x.i <= step, cur: x.i === step, done: x.i < step, n: n + 1, attr: x.i <= step ? 'data-ngo="' + x.i + '"' : '' }) +
+      npDotLabel({ t: x.s, s: onLabel(x.i), cur: x.i === step, done: x.i < step }) + '</div>' +
+      (n < shown.length - 1 ? npDotLink(x.i <= step) : '')
     ).join('') + '</div>';
   el.querySelectorAll('[data-ngo]').forEach(elBtn => elBtn.addEventListener('click', function () {
     npGo(container, parseInt(this.getAttribute('data-ngo'), 10));
@@ -8637,10 +11214,30 @@ function npStepBar(container) {
 }
 /** 知识线的步骤条：只画它自己的三站/四站——已过或当前的站可点回去；出口站与「发布」站不可点（往下走＝按出口钮） */
 function npStepBarK(el, step, container) { npStepBarSt(el, step, container, npKStations(_npWiz)); }
+/** 🧩 行业选题表那条的三站条：选题（已过）→ 改稿 → 出成品（出口在选题时就定死了，这站直接写它） */
+function npIndStepBar(el, step) {
+  const w = _npWiz || {};
+  const pi = w.planItem || {};
+  const out = (typeof TopicTable !== 'undefined' && TopicTable.outFor)
+    ? TopicTable.outFor(pi.carrier || (pi.carriers || [])[0], pi.form || (pi.forms || [])[0])
+    : (pi.carrier || 'image');
+  const outName = { image: '图文', video: '视频', long: '长文' }[out] || '成品';
+  const sts = [
+    { t: '选题', s: '表上挑一条' },
+    { t: '改稿', s: '改到满意' },
+    { t: '出成品', s: outName },
+  ];
+  const cur = Number(step || 0) >= 5 ? 2 : 1;
+  el.innerHTML = '<div style="display:flex;align-items:flex-start;">' +
+    sts.map((s, i) =>
+      '<div style="display:flex;flex-direction:column;align-items:center;min-width:72px;flex:none;padding:0 3px;">' +
+      npDotBadge({ lit: i <= cur, cur: i === cur, done: i < cur, n: i + 1 }) +
+      npDotLabel({ t: s.t, s: s.s, cur: i === cur, done: i < cur }) + '</div>' +
+      (i < sts.length - 1 ? npDotLink(i < cur) : '')
+    ).join('') + '</div>';
+}
 /** 引流线的步骤条：同上，站点按 npDStations */
 function npStepBarD(el, step, container) { npStepBarSt(el, step, container, npDStations(_npWiz)); }
-/** 🎭 IP 线的步骤条（五十二改）：站点 5/6/7＝出料里的分镜/配文/提示词半段——显示上并到「出料」站（step>=5 一律按 8 画） */
-function npStepBarI(el, step, container) { npStepBarSt(el, step >= 5 ? 8 : step, container, npIStations(_npWiz)); }
 /** 知识 / 引流两条线步骤条的通用形：站点表喂进来，画法（可点巡航 / 出口站灰态）一致。
  *  带 go 的站（知识线出片那两站）＝还没走到、但条件到了就放开（浅底深字）：
  *  go:'film' 正文有了才放开（点了跟底那颗「下一步 →」同一条路）、go:'pub' 这一篇出过片才放开（点了回档案那一行）。 */
@@ -8686,18 +11283,10 @@ function npStepBarSt(el, step, container, sts) {
 }
 function npGo(container, i) {
   if (!_npWiz || _npWiz.loading) return;
-  const isI = npIsI(_npWiz);
   /* 📝 2026-10-21 长文回挂两条线：知识 text / 引流 long 都走到 ⑥ 预览（5 出长文 / 6 预览）；老 dir='l' 走自己的条 */
-  const top = isI ? 8 : (npIsD(_npWiz) ? (_npWiz.dOut === 'long' ? 6 : (_npWiz.dOut === 'film' ? 5 : 6)) : (npIsK(_npWiz) ? (String(_npWiz.kOut || '') === 'voice' ? 7 : 6) : (_npWizKeys.length - 1)));   // 图文线站到 ⑥ 预览（三十改）；🎭 IP 线的「出料」站＝k 8；📚 知识线：口播到 7、长文/图文到 6（2026-11-02 图文改成 5 分镜确认、6 预览）
-  // 🎭 IP 线：出料半段（step 5/6/7＝分镜确认/预览/存好）在步骤条上显示为第 4 站——它已达成，允许点回
-  const reached = isI ? ((_npWiz.step >= 5 && _npWiz.step < 8) ? 8 : _npWiz.step) : _npWiz.step;
+  const top = npIsD(_npWiz) ? (_npWiz.dOut === 'long' ? 6 : (_npWiz.dOut === 'film' ? 5 : 6)) : (npIsK(_npWiz) ? (String(_npWiz.kOut || '') === 'voice' ? 7 : 6) : (_npWizKeys.length - 1));   // 图文线站到 ⑥ 预览（三十改）；📚 知识线：口播到 7、长文/图文到 6（2026-11-02 图文改成 5 分镜确认、6 预览）
+  const reached = _npWiz.step;
   if (i < 0 || i > top || i > reached) return; // 只能回到已达步骤，不许跳未来
-  // 点在「出料」站上：出料半段有哪站就落哪站（没出过就从头）
-  if (isI && i === 8 && _npWiz.step >= 5 && _npWiz.step < 8) {
-    _npWiz.step = npDshLandOf(_npWiz);
-    npWizRender(container);
-    return;
-  }
   if (_npWiz.step === 5 && i < 5 && !npIsLongLine(_npWiz)) npVerRestoreBase(_npWiz);   // 从出图退回写稿半段：视图落回小红书原稿（长文站没有各平台版本，退回去不重置稿子）
   _npWiz.step = i;
   // 回到某一步 = 想重来这一步：把上一次的报错清掉，让它能重新拉一次
@@ -8727,13 +11316,12 @@ function npPlatformPickHtml() {
         '<input type="checkbox" class="np-pfm" data-pid="' + npArAttr(p.id) + '"' + (on ? ' checked' : '') + '>' +
         p.icon + ' ' + esc(p.name) + '</label>';
     }).join('') + '</div>' +
-    '<div style="font-size:10px;color:#8a929e;margin-top:6px;">正文先按 📕 小红书的口径写；勾了别的平台，点「下一步 →」定稿时按各自的规矩各改写一版（事实、卖点不变），各成一档、各标各的发布状态。</div></div>';
+    '<div style="font-size:10px;color:#8a929e;margin-top:6px;">正文先按 📕 小红书的口径写；勾了别的平台，点「下一步 →」定稿时按各自的规矩各改写一版（事实、人设不变），各成一档、各标各的发布状态。</div></div>';
 }
 /** 成稿/出图页顶部：本次发笔记的工作流选择汇总（「底稿来源」那行只在出图页给，成稿页同一屏里不再重复一遍） */
 function npChoicesSummary(withOrigin) {
   const w = _npWiz; if (!w) return '';
   const topic = (w.topics && w.topics[w.chosenTopicIdx] && w.topics[w.chosenTopicIdx].topic) || '';
-  const sell = (w.chosen || []).map(x => x.point || x).filter(Boolean);
   const people = (w.chosenPeople || []).map(p => (p && p.name) || '').filter(Boolean);
   const kb = (w.chosenKb || []).map(e => (e && e.title) || '').filter(Boolean);
   const cell = (label, icon, items, fallback) =>
@@ -8759,19 +11347,15 @@ function npChoicesSummary(withOrigin) {
     lineItems.push('📄 ' + _tSum.name + (_kSum ? ' · ' + _kSum.name : '') +
       (_wSum ? '（这条换过）' : (_piSum.kDefault ? '（知识线默认）' : (_piSum.fromTopic ? '（AI 按题判的）' : '（规划里那篇）'))));
   }
-  const shSum = npShape(w);
-  const shapeText = shSum ? ('铺垫 ' + shSum.build + '% / 广告 ' + shSum.sell + '%') : '';
-  const talk = npTalk(w);
   const words = npWords(w);
-  const styleItems = lineItems.concat(shapeText ? ['📐 ' + shapeText] : []).concat(talk ? ['卖货话术 ' + talk.name] : []).concat(words ? ['字数 ' + words.range] : []);
+  const styleItems = lineItems.concat(words ? ['字数 ' + words.range] : []);
   return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 10px;">' +
     cell('发到', '📮', pfItems, '未选') +
-    cell('① 卖点', '🎯', sell, '未选') +
-    cell('② 人群', '👥', people, '未选') +
-    cell('③ ' + (P ? Platforms.topicNoun(P.id) : '话题'), '💬', topic ? [topic] : [], '未选') +
-    cell('④ 挑稿', '📄', styleItems, '未选') +
-    cell('📚 素材', '', kb, '不选＝按卖点自动筛') +
-    (withOrigin ? '<div style="width:100%;font-size:10px;color:#9aa0ac;">以上卖点/人群/话题/写法就是这篇的底稿来源（各平台版本都从它改写），📚 决定正文引用哪些知识库素材。</div>' : '') +
+    cell('① 人群', '👥', people, '未选') +
+    cell('② ' + (P ? Platforms.topicNoun(P.id) : '话题'), '💬', topic ? [topic] : [], '未选') +
+    cell('③ 挑稿', '📄', styleItems, '未选') +
+    cell('📚 素材', '', kb, '不选＝按素材自动筛') +
+    (withOrigin ? '<div style="width:100%;font-size:10px;color:#9aa0ac;">以上人群/话题/写法就是这篇的底稿来源（各平台版本都从它改写），📚 决定正文引用哪些知识库素材。</div>' : '') +
     '</div>';
 }
 /** ⑤ 改稿页顶部：只留一句「这篇在写什么」——卖点 / 人群 / 话题（原来那一排工作流汇总格整排撤了）；
@@ -8779,17 +11363,43 @@ function npChoicesSummary(withOrigin) {
 function npBriefLineHtml() {
   const w = _npWiz; if (!w) return '';
   const topic = (w.topics && w.topics[w.chosenTopicIdx] && w.topics[w.chosenTopicIdx].topic) || '';
-  const sell = (w.chosen || []).map(x => x.point || x).filter(Boolean).join('、');
   const people = (w.chosenPeople || []).map(p => (p && p.name) || '').filter(Boolean).join('、');
   const kb = (w.chosenKb || []).map(x => String(x.title || '')).filter(Boolean).join('、');
   const seg = (icon, label, val) => val
     ? '<span style="color:#8a929e;">' + icon + ' ' + label + '</span> <b style="color:#333;font-weight:600;">' + esc(val) + '</b>'
     : '';
   const parts = npIsK(w)
-    ? [seg('🎯', '卖点', sell), seg('📚', '知识', kb)]
-    : [seg('🎯', '卖点', sell), seg('👥', '人群', people), seg('💬', '话题', topic)];
+    ? [seg('📚', '知识', kb)]
+    : [seg('👥', '人群', people), seg('💬', '话题', topic)];
   const line = parts.filter(Boolean).join('<span style="color:#ddd;margin:0 8px;">｜</span>');
   return '<div style="font-size:11px;line-height:1.8;margin-bottom:8px;">' + (line || '<span style="color:#bbb;">（没带前面的选择）</span>') + '</div>';
+}
+/** 🧩 行业选题表那条改稿页顶部那一行：组 · 选题 · 出什么 · 写法（写法可当场换：换完按新写法重写一版） */
+function npIndBriefHtml(w) {
+  const ww = w || _npWiz; if (!ww) return '';
+  const it = ww.planItem || {};
+  const T = (typeof TopicTable !== 'undefined') ? TopicTable : null;
+  const pid = npPid(ww);
+  const formKey = T ? T.formKey(it.form || 'list') : String(it.form || '');
+  const outs = T ? T.outletsFor(it.carriers, formKey, pid) : [];
+  const car = T ? (outs.indexOf(it.carrier) >= 0 ? it.carrier : T.defaultCarrierFor(it.carriers, formKey, pid)) : it.carrier;
+  const seg = (icon, label, val) => val
+    ? '<span style="color:#8a929e;">' + icon + ' ' + label + '</span> <b style="color:#333;font-weight:600;">' + esc(val) + '</b>'
+    : '';
+  const outIcon = car === 'video' ? '🎬' : (car === 'long' ? '📝' : '🖼');
+  const parts = [
+    seg('📱', '平台', String(((Platforms.get(pid) || {}).name) || '小红书')),
+    seg('📚', '组', String(it.group || '')),
+    seg('💬', '选题', String(it.title || '')),
+    seg(outIcon, '出什么', car ? ((T ? T.carrierName(car) : String(car)) + (T && T.isVideoPlatform(pid) ? '（' + ((Platforms.get(pid) || {}).name || '这个平台') + '一律视频）' : '')) : ''),
+  ].filter(Boolean);
+  const formTxt = T ? T.formName(formKey) : String(formKey || '');
+  const formSeg = formTxt
+    ? '<span style="color:#8a929e;">✍️ 写法</span> <b style="color:#333;font-weight:600;">' + esc(formTxt) + '</b>' +
+      (it.tid ? ' <button type="button" class="np-ind-openform" style="border:1px solid var(--line,#e2e6ec);background:#fff;color:#6b7280;border-radius:999px;font-size:10.5px;font-weight:700;padding:1px 8px;cursor:pointer;font-family:var(--font-ui);vertical-align:1px;">换写法 ▾</button>' : '')
+    : '';
+  const line = parts.concat(formSeg ? [formSeg] : []).join('<span style="color:#ddd;margin:0 8px;">｜</span>');
+  return '<div style="font-size:11px;line-height:1.8;margin-bottom:8px;">' + (line || '（没带选题）') + '</div>';
 }
 /** 汇总行外面包一层：⑤ 勾平台/⑥ 切版本时就地重绘这一块，不动页面上其他东西 */
 function npChoicesSummaryWrap(withOrigin) {
@@ -8807,8 +11417,8 @@ function btnWiz(cls, label, primary, disabled, why) {
   return '<button class="' + cls + '" type="button" style="padding:8px 14px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;' + (primary ? 'border:none;background:var(--grad-brand);color:var(--c-brand-on);' : 'border:1px solid var(--line);background:#fff;color:#666;') + '"' + (why ? ' title="' + escAttr(why) + '"' : '') + '>' + label + '</button>';
 }
 
-/* ═══ 📐 内容基调（四十五改：调子已退市）：账号默认＝五条线与每种写法各自的「篇幅配比 + 字数」，在 ③ 挑稿页「📄 内容基调」就地改；
-   发笔记默认按它写，④ 挑稿那一步可就地改这一条的 🎚 卖货话术比例与 🖋 字数 ═══ */
+/* ═══ 📐 内容基调（四十五改：调子已退市）：账号默认＝五条线与每种写法各自的「字数」，在 ③ 挑稿页「📄 内容基调」就地改；
+   发笔记默认按它写，④ 挑稿那一步可就地改这一条的 🖋 字数 ═══ */
 let _npStyleState = { dirty: false };
 async function npLoadNoteStyle() {
   try { const c = await readConfigPlain(); return (c && c.noteStyle) || null; } catch (_) { return null; }
@@ -8921,7 +11531,7 @@ function npCfgFoldHtml(kind) {
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
       '<b style="font-size:12px;color:#333;">' + (isTone ? '📄 内容基调 · 账号默认' : '🎨 出图风格 · 账号默认') + '</b>' +
       '<span class="note-xs">' + (isTone
-        ? '四条基调的铺垫 / 广告配比与字数——发笔记 ③④⑤ 全按这里走'
+        ? '四条基调各自写多长——发笔记 ③④⑤ 全按这里走'
         : '画风（跟 IP 角色）/ 印记 / 笔记分类 / 配文版式——出图时一起写进每张提示词') + '</span>' +
       '<button type="button" class="btn btn-outline ' + (isTone ? 'npCfgToneToggle' : 'npCfgLookToggle') + '" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">' + (open ? '收起' : '点开看 / 改 ▾') + '</button>' +
     '</div>' +
@@ -9025,13 +11635,13 @@ function npLinePickHtml() {
   const baseK = (baseT && base.kind && NotePlan.kindOf(base.kind)) ? NotePlan.kindOf(base.kind) : null;
   let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:8px;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-    '<b style="font-size:12px;color:#333;">🔀 内容类型（五条线）· 这条讲哪一类</b>' +
+    '<b style="font-size:12px;color:#333;">🔀 内容类型 · 讲了哪一类</b>' +
     (pick ? '<span style="font-size:10px;color:#b45309;background:#fff8ee;border:1px solid #f3e2c7;border-radius:8px;padding:0 6px;">这条换过</span>' : '') +
     (pick && baseT ? '<button type="button" class="btn btn-outline npWriteRestore" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">↺ 回默认「' +
       esc(baseT.name + (baseK ? ' · ' + baseK.name : '')) + '」</button>' : '') +
     '</div>' +
-    '<div style="font-size:11px;color:#8a929e;margin-top:2px;">点一条就换，换完自动按它的几种写法各出一篇。</div>' +
-    '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px;">' + NotePlan.TYPES.map(x => {
+    '<div style="font-size:11px;color:#8a929e;margin-top:2px;">日常只发两类：知识（干货）和案例。旧稿上的感悟 / 情绪 / 热梗 / 热点标签照旧显示，只是这里不再新建。</div>' +
+    '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px;">' + NotePlan.TYPES.filter(x => x.key === 'howto').concat(NotePlan.CASE_TYPE ? [NotePlan.CASE_TYPE] : []).map(x => {
       const on = x.key === now.type;
       return '<button type="button" class="npWriteType" data-type="' + x.key + '" title="' + escAttr(x.what + '（作用：' + x.role + '）') + '" style="font-size:12px;padding:4px 11px;border-radius:14px;cursor:pointer;' +
         (on ? 'border:1.5px solid var(--c-brand);color:var(--c-brand-text);background:var(--c-brand-soft);font-weight:700;' : 'border:1px solid #d5dae2;color:#444;background:#fff;') + '">' + (on ? '● ' : '○ ') + esc(x.name) + '</button>';
@@ -9114,35 +11724,32 @@ function _styleWordsHtml(cur, def) {
     (pfBase !== 'note' ? '；这个平台的成稿另有总长规则，以平台为准' : '') + '</div>' +
     '</div>';
 }
-/** ④ 底部那一行摘要 + 折叠的「就改这一条」：配比的家在 ③ 的内容基调卡上，这里只留话术比例与字数两个旋钮 */
+/** ④ 底部那一行摘要 + 折叠的「就改这一条」：配比/广告占比已随卖点一起撤（2026-11-05），只留字数一个旋钮 */
 function npStyleSummaryHtml() {
   const w = _npWiz || {};
-  const sh = npShape(w);
-  const talk = npTalk(w);
   const words = npWords(w);
   const cur = w.noteStyle || {};
-  const touched = !!(cur.sellTalk || cur.words);
+  const touched = !!cur.words;
   let h = '<div style="border:1px solid #e5e8ee;border-radius:10px;background:#fff;padding:8px 12px;margin-bottom:8px;">' +
     '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:#444;">' +
     '<b style="font-size:12px;color:#333;">🎚 这一条</b>' +
-    '<span class="qhelp" tabindex="0" data-tip="📐 篇幅配比和🖋 建议字数都挂在每条基调上，账号默认在 ③ 挑稿页「📄 内容基调」那几张卡上改；这里改的广告占比与字数只影响这一篇。">?</span>' +
-    '配比 ' + (sh ? sh.build + '/' + sh.sell : '—') + ' · 广告占比 ' + esc(talk ? talk.name : '') + ' · 字数 ' + esc(words ? words.range : '') +
+    '<span class="qhelp" tabindex="0" data-tip="🖋 建议字数挂在每条基调上，账号默认在 ③ 挑稿页「📄 内容基调」那几张卡上改；这里改的字数只影响这一篇。">?</span>' +
+    '字数 ' + esc(words ? words.range : '') +
     (touched ? '<span style="color:#b45309;">（这条改过）</span>' : '') +
     '<button type="button" class="btn btn-outline npStyleToggle" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">' + (w.styleOpen ? '收起' : '就改这一条 ▾') + '</button>' +
     '</div>' +
     (w.styleOpen ? npStyleKnobsHtml() : '') + '</div>';
   return h;
 }
-/** 折叠块里的旋钮（就改这一条）：📐 配比预览（跟着比例与字数变）+ 🎚 卖货话术比例 + 🖋 字数 */
+/** 折叠块里的旋钮（就改这一条）：只剩 🖋 字数（配比/卖货话术随卖点撤了） */
 function npStyleKnobsHtml() {
   const w = _npWiz || {};
   const cur = w.noteStyle || {};
   const def = w.styleDefault || {};
-  let h = _styleShapeHtml();
-  if (cur.sellTalk || cur.words) {
-    h += '<div style="margin-top:8px;"><button type="button" class="btn btn-outline npStyleRestore" style="font-size:11px;padding:1px 8px;">↺ 这两个回到跟账号默认</button></div>';
+  let h = '';
+  if (cur.words) {
+    h += '<div style="margin-top:8px;"><button type="button" class="btn btn-outline npStyleRestore" style="font-size:11px;padding:1px 8px;">↺ 字数回到跟账号默认</button></div>';
   }
-  h += _styleTalkHtml(cur, def);
   h += _styleWordsHtml(cur, def);
   return h;
 }
@@ -9158,13 +11765,10 @@ function npVarKeyOf(w) {
   return [now.type || '', npPid(w), tp, npTopicFactOf(w), npSellPointStr(),
     (w.chosenPeople || []).map(p => (p && p.name) || '').join('|'), npKbKeyOf(w.chosenKb), hotName].join(' · ');
 }
-/** 这批样稿当时的「怎么写」：📐 篇幅配比 / 卖货话术比例 / 🖋 字数——变了只在页上提示重写，不自动再烧一发 */
+/** 这批样稿当时的「怎么写」：只剩 🖋 字数——变了只在页上提示重写，不自动再烧一发 */
 function npVarSigOf(w) {
-  const sh = npShape(w);
-  const talk = npTalk(w);
   const words = npWords(w);
-  return ['配比 ' + (sh ? sh.build + '/' + sh.sell : '—'),
-    '话术 ' + ((talk && talk.name) || ''), '字数 ' + ((words && words.key) || '')].join(' · ');
+  return '字数 ' + ((words && words.key) || '');
 }
 let _npVariantsBusy = false;
 let _npVariantsGen = 0;   // 代次：换线时上一批可能还在路上，回来的结果按代次丢掉，别覆盖成新线的稿子
@@ -9376,276 +11980,6 @@ function npVarAgain(container) {
   _npVariantsInvalidate();
   npVariantsLoad(container, true);
 }
-/* ═══ 🔀 引流线（dir='d'）专属：挑稿 ＋ 出稿器——六类料 × 每类 3 版（demo v41 引流挑稿页） ═══
-   料类＝这版从哪儿起笔（六类），写法＝以什么姿态讲；每版 {cat,title,line,body,turn}：
-   line＝这版挂的基调线（显示名）、turn＝「料由头 → 转法」——turn 的末段＝转法那句，进改稿当硬约束。 */
-const NP_DRAIN_CATS = ['🔥 热点', '😹 热梗', '🧭 生活场景', '💢 情绪', '🎯 被生活打了一下', '🏘 本地感悟'];
-const NP_DRAIN_PER = 3;     // 每类几版（demo：六类每类 3 版＝18 版）
-const NP_DRAIN_BATCH = 2;   // 每批发几类（6 类分 3 批发，一次请求别太大）
-let _npDrainBusy = false;
-let _npDrainGen = 0;
-let _npDrainStage = null;   // 这次出稿用的账号阶段那一份（阶段会变，进入这篇/刷新会话时重置）
-
-/** 这版挂的基调线（显示名）→ NotePlan 的线键：'情绪 · 干货' 先段 '情绪'→echo；'知识·干货' 整名→howto；认不出兜底 echo */
-function npDrainLineKeyOf(line) {
-  const l = String(line || '');
-  const T = (typeof NotePlan !== 'undefined' && NotePlan.TYPES) || [];
-  const parts = l.split(/[·・/／]/).map(x => x.trim()).filter(Boolean);
-  for (const p of parts) {
-    const t = T.filter(t => t.name === p)[0];
-    if (t) return t.key;
-  }
-  let best = -1, key = '';
-  for (const t of T) { const i = l.indexOf(t.name); if (i >= 0 && (best < 0 || i < best)) { best = i; key = t.key; } }
-  return key || 'echo';
-}
-/** 转法那句（demo dTurnHook 同口径）：turn '料由头 → 转法' 取末段，去掉「转句/反打/…」这类前缀与标点 */
-function npDrainTurnHook(turn) {
-  return String(turn || '').split('→').pop().trim()
-    .replace(/^(转句|反打|转到|造句转到|教业主一句保命话)[：:]?/, '')
-    .replace(/^[，,、\s]+/, '').trim();
-}
-/** 改稿页的备选标题（demo dAlts 同口径：转法那句能独立成钩就用它，不行给「为什么说 / 不敢说满」） */
-function npDrainAlts(v) {
-  const t = String((v && v.title) || '').replace(/[。！？?～~]+$/, '');
-  const hook = npDrainTurnHook((v && v.turn) || '');
-  const a1 = (hook && !/^转/.test(hook) && hook.length >= 6 && hook.length <= 22) ? hook : ('为什么说：' + t);
-  const m = t.match(/\d+/);
-  const a2 = m ? (t + '——第 ' + m[1] + ' 处最容易漏看') : ('「' + t + '」这话，干这行的都不敢说满');
-  return [a1, a2];
-}
-/** 这版的标签：AI 给了用 AI 的，没给＝料类＋产品名兜底（demo DRAIN_TAGS 同用） */
-function npDrainTags(v) {
-  const own = (v && Array.isArray(v.tags) ? v.tags : []).map(x => String(x).trim()).filter(Boolean).slice(0, 8);
-  if (own.length) return own;
-  const cat = String((v && v.cat) || '').replace(/[^\u4e00-\u9fa5a-zA-Z0-9]/g, '').trim();
-  const name = String((_npWiz && _npWiz.prodName) || '').trim();
-  return [cat, name].filter(Boolean).slice(0, 2);
-}
-/** ③ 挑稿页的抬头＋这一批说明（demo renderD dStep1 上半，逐字） */
-function npDPickIntroHtml() {
-  const cats = ((_npDrainStage && _npDrainStage.drainCats) || []);
-  let stageName = '';
-  try { stageName = _ntStageName(); } catch (_) { stageName = ''; }
-  return '<div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;">📄 出几版：这条线底下的几种写法各出一篇——点中哪台就按那篇进改稿</div>' +
-    '<div class="note-xs" style="margin-bottom:8px;">同一个料池，只换料类与写法——挑中哪篇就按那篇接着改。窗口拉宽一点，几台会一起变宽、字更好认；窄了自动折成两列往下排。</div>' +
-    '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px 12px;margin-bottom:2px;">' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-    '<b style="font-size:12px;color:#333;">🔀 内容类型 · 引流</b>' +
-    '<span class="note-xs">线是档案建卡时定的——引流稿通篇不带产品卖点，行业最多一句身份，话术固定「不提产品」。</span>' +
-    '</div>' +
-    '<div class="note-xs" style="margin-top:3px;">🎚 这一批　AI 照料池写好 18 版（六类料每类 3 版），行业最多一句、多数不提，字数跟各版的线走' +
-    (cats.length ? ' · 这一阶段（' + esc(stageName) + '）抓人用：' + esc(cats.join('、')) + '，这几类的排前面' : '') + '</div>' +
-    '</div>';
-}
-/** 一台「手机」料稿（demo dPhoneHtml 同款）：料类 chip ＋ 查重小标 ＋ 标题 ＋ 线 ＋ 正文；点「就用这篇 →」带稿进改稿 */
-function npDPickCardHtml(v, i) {
-  const near = String((v && v.near) || '').trim();
-  const dm = near.match(/(\d{1,2}-\d{1,2})/);
-  return '<div class="npPhone">' +
-    '<div class="npPhoneScreen"' + (near ? ' style="border-style:dashed;border-color:#e8c8b8;"' : '') + '>' +
-    npPhoneBarHtml() +
-    '<div style="padding:6px 10px 8px;flex:none;">' +
-    '<span style="font-size:10px;font-weight:700;color:var(--c-brand-text);">' + esc(String((v && v.cat) || '')) + '</span>' +
-    (near ? ' <span style="font-size:9px;color:#b45309;background:#fff8ee;border:1px solid #f3e2c7;border-radius:8px;padding:0 6px;" title="' + escAttr('跟 ' + near + ' 的角度相近——挑它就换个角度写') + '">⚠ 与 ' + esc(dm ? dm[1] : '已发') + ' 相近</span>' : '') +
-    '<div style="font-size:12.5px;font-weight:600;color:#333;line-height:1.5;margin-top:3px;">' + esc(String((v && v.title) || '')) + '</div>' +
-    '<div class="note-xs" style="margin-top:2px;">' + esc(String((v && v.line) || '')) + '</div>' +
-    '</div>' +
-    '<div class="npPhoneBody">' + esc(String((v && v.body) || '')) + '</div>' +
-    '</div>' +
-    '<button type="button" class="btn btn-primary btn-block np-drain-pick" data-i="' + i + '" style="font-size:12px;padding:6px 0;margin-top:8px;">就用这篇 →</button>' +
-    '</div>';
-}
-/** ③ 挑稿页（引流）：抬头 ＋ 状态/错误 ＋ 18 台料稿（本阶段抓人的料类排前面）＋ 查重说明 */
-function npDPickStepHtml() {
-  const w = _npWiz || {};
-  let h = npPlayPickHtml(w) + npDPickIntroHtml() + npCfgFoldHtml('tone');
-  h += '<div id="npDrainStatus" style="font-size:12px;color:#888;margin:2px 0 6px;"></div>';
-  if (_npDrainBusy) h += '<div style="font-size:11px;color:#0a7b5a;margin:2px 0 8px;">AI 正在写这批…</div>';
-  if (w.drainError) {
-    h += '<div style="font-size:11px;color:#d32f2f;background:var(--c-brand-soft);border:1px solid #f6cfcf;border-radius:8px;padding:8px 10px;margin-bottom:8px;">❌ ' + esc(w.drainError) + '</div>';
-  }
-  const vs = (w.drainVariants || []);
-  if (vs.length) {
-    const cats = ((_npDrainStage && _npDrainStage.drainCats) || []);
-    const priOf = (v) => { const i = cats.indexOf(String((v && v.cat) || '')); return i >= 0 ? i : 99; };
-    const ordered = vs.map((v, i) => ({ v: v, i: i })).sort((a, b) => priOf(a.v) - priOf(b.v) || a.i - b.i);
-    h += '<div class="npPhoneRow">' + ordered.map(o => npDPickCardHtml(o.v, o.i)).join('') + '</div>';
-    h += '<div class="note-xs" style="margin-top:8px;">查重两层：出稿前把你历史引流稿的选题清单喂 AI 规避；出稿后每版再标「⚠ 与已发相近」。挑中哪台，收尾那句就跟着进改稿当硬约束。</div>';
-  } else if (!w.drainError && !_npDrainBusy) {
-    h += '<div style="font-size:12px;color:#444;background:#f7f9fc;border:1px solid #e5e8ee;border-radius:8px;padding:10px;">' +
-      '六类料（热点 / 热梗 / 生活场景 / 情绪 / 被生活打了一下 / 本地感悟），点页脚「🔀 重写这批」就各出几版给你挑。</div>';
-  }
-  return h;
-}
-/** 引流出稿器：六类料每类 3 版（NP_DRAIN_BATCH 类一批，共 3 批 18 版）。
- *  先备料——账号阶段（排前用）＋历史引流稿的选题清单（给 AI 出稿前规避）；回来按料类排好落 w.drainVariants。 */
-async function npDrainLoad(container, force) {
-  const w = _npWiz;
-  if (!w || w.step !== 3 || _npDrainBusy) return;
-  if (!force && (w.drainVariants || []).length) return;   // 会话里已有这批：重进 ③ 直接摆出来
-  _npDrainBusy = true;
-  const gen = ++_npDrainGen;
-  w.drainError = '';
-  w.drainVariants = null;
-  // 这一阶段的「抓人类」（排序用；阶段会变——进入这篇时重置过 _npDrainStage，这里补算）
-  if (!_npDrainStage) {
-    try {
-      const stKey = await npStageKeyNow();
-      const plan = await npStagePlanRead();
-      _npDrainStage = (stKey && plan && plan[stKey]) || null;
-    } catch (_) { _npDrainStage = null; }
-  }
-  // 查重第一层：「出稿前把你历史引流稿的选题清单喂 AI 规避」——日期＋标题（没定稿的不算）
-  let history = [];
-  try {
-    const list = await npNotesAll();
-    history = list.filter(n => n && n.dir === 'd' && String(n.title || '').trim() && String(n.title).indexOf('（还没定稿）') < 0)
-      .slice(0, 40)
-      .map(n => {
-        const at = Number(n.updatedAt || n.createdAt || 0);
-        const dt = at ? new Date(at) : null;
-        const md = dt ? (('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2)) : '';
-        return (md ? md + '《' + String(n.title).trim() + '》' : '《' + String(n.title).trim() + '》');
-      });
-  } catch (_) { history = []; }
-  // 引流线可以直达 ③（不经过 ①）：库还没读过时补读一次，kbList（专业的话的取材源）才有料
-  if (!w.kbLoaded) { try { await npLoadKbEntries(); } catch (_) {} }
-  const kbList = (w.kbEntries || []).slice(0, 40)
-    .map(e => ({ title: String((e && e.title) || ''), content: String((e && e.content) || '').slice(0, 240) }))
-    .filter(e => e.title || e.content);
-  const groups = [];
-  for (let i = 0; i < NP_DRAIN_CATS.length; i += NP_DRAIN_BATCH) groups.push(NP_DRAIN_CATS.slice(i, i + NP_DRAIN_BATCH));
-  const stopWait = npWaitInto(container, 'npDrainStatus',
-    'AI 正照料池写这一批（六类料每类 3 版' + (groups.length > 1 ? '，共 ' + groups.length + ' 批' : '') + '）',
-    'notewrite', () => _npWiz === w && _npWiz.step === 3);
-  let failMsg = '';
-  const got = [];
-  try {
-    for (let gi = 0; gi < groups.length; gi++) {
-      if (_npWiz !== w || w.step !== 3 || gen !== _npDrainGen) return;
-      const st = _npEl(container, 'npDrainStatus');
-      if (st && groups.length > 1) {
-        st.textContent = '第 ' + (gi + 1) + '/' + groups.length + ' 批：正在写「' + groups[gi].join('」「') + '」的料稿' +
-          (got.length ? '（已写好 ' + got.length + ' 版）' : '');
-      }
-      const res = await chrome.runtime.sendMessage({
-        action: 'aiGenerateDrainVariants',
-        platform: npPid(w),
-        cats: groups[gi],
-        per: NP_DRAIN_PER,
-        productName: w.prodName,
-        kbList: kbList,
-        history: history,
-        stageKey: (w.stageKey || ''),
-        stageCats: ((_npDrainStage && _npDrainStage.drainCats) || []),
-      });
-      if (_npWiz !== w || gen !== _npDrainGen) return;
-      const vs = res && res.variants;
-      if (Array.isArray(vs) && vs.length) got.push.apply(got, vs);
-      else failMsg = (res && (res.error || res.message)) || 'AI 没按这六类料出稿';
-    }
-    if (got.length) w.drainVariants = got;
-    if (failMsg) {
-      const miss = NP_DRAIN_CATS.length * NP_DRAIN_PER - got.length;
-      failMsg = got.length ? ('这批里有 ' + miss + ' 版没写出来（' + failMsg + '）') : failMsg;
-    }
-  } catch (e) {
-    failMsg = String((e && e.message) || e);
-    if (got.length) w.drainVariants = got;
-  } finally {
-    stopWait();
-    if (gen !== _npDrainGen) return;   // 已被新一轮（重写这批）顶掉：这一发的结果不作数
-    _npDrainBusy = false;
-    if (_npWiz === w) {
-      if (failMsg) w.drainError = failMsg;
-      if (w.step === 3) npWizRender(container);
-    }
-  }
-}
-/** 页脚「🔀 重写这批」：清掉旧 18 版、按现在的料池与阶段重打 */
-function npDrainAgain(container) {
-  const w = _npWiz;
-  if (!w || _npDrainBusy) return;
-  w.drainVariants = null;
-  w.drainError = '';
-  npDrainLoad(container, true);
-}
-/** 点中一台料稿：这版记进档案（草稿），正文直接当改稿页的底稿；转法那句跟着进改稿当硬约束 */
-function npDrainPick(i, container) {
-  const w = _npWiz;
-  const v = ((w && w.drainVariants) || [])[i];
-  if (!v || !String(v.body || '').trim()) return;
-  w.drainPick = {
-    cat: String(v.cat || ''), title: String(v.title || ''),
-    line: String(v.line || ''), turn: String(v.turn || ''), body: String(v.body || ''),
-  };
-  w.write = { type: npDrainLineKeyOf(v.line), kind: '' };   // 这版挂哪条线，配比/字数/改稿都按它走
-  w.draft = { titles: [String(v.title || '')].concat(npDrainAlts(v)), content: String(v.body || ''), tags: npDrainTags(v), timeTip: '' };
-  // 这篇的旧账先清了：老路径 / 画面 / 口播都是上一版的事
-  w.path = ''; w.visual = null; w.shots = null;
-  w.voice = ''; w.voiceError = ''; w.voicePrev = '';
-  w.revisePrev = ''; w.revSentIdx = -1; w.revTextMode = false;
-  w.dgen = null;   // 换了一版稿子：旧分镜对不上这份正文，进分镜页会按新稿现排
-  _npNote = { draft: w.draft, title: String(v.title || ''), tags: (w.draft.tags || []).slice(), titleIdx: 0 };
-  _npStyleState.dirty = false;
-  w.step = 4;
-  npWizRender(container);
-  npArchiveSave(w);   // 挑中的这篇也当场进档案（草稿），关掉弹窗不丢
-  if (typeof toast === 'function') toast('挑好了《' + String(v.title || '').slice(0, 18) + '》——这版记进档案，进改稿');
-}
-/** 引流改稿页顶部「简报行」（demo rvBriefHtml('d') 同款）：卖点＝不带 / 人群＝人设自动对准 / 话题＝挑中那版的题 */
-function npDBriefLineHtml() {
-  const dp = (_npWiz && _npWiz.drainPick) || {};
-  let persona = '';
-  try { persona = String(_ntPersonaLine() || '').trim(); } catch (_) { persona = ''; }
-  const seg = (icon, label, val) => val
-    ? '<span style="color:#8a929e;">' + icon + ' ' + label + '</span> <b style="color:#333;font-weight:600;">' + esc(val) + '</b>'
-    : '';
-  const line = [
-    seg('🎯', '卖点', '不带（引流稿通篇不卖）'),
-    seg('👥', '人群', persona ? persona + '（人设自动对准）' : '人设自动对准'),
-    seg('💬', '话题', String(dp.title || '')),
-  ].filter(Boolean).join('<span style="color:#ddd;margin:0 8px;">｜</span>');
-  return '<div style="font-size:11px;line-height:1.8;margin-bottom:6px;">' + line + '</div>';
-}
-/** 引流改稿页顶部「风格行」（demo rvStyleLineHtml('d') 同口径）：线＝挑中那版的线、料类＝cat、配比/话术/字数 */
-function npDStyleLineHtml() {
-  const dp = (_npWiz && _npWiz.drainPick) || {};
-  const sh = npShape();
-  const talk = npTalk();
-  const words = npWords();
-  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#8a929e;margin-bottom:6px;">' +
-    '📄 ' + esc(String(dp.line || '（这条线还没定）')) + ' · ' + esc(String(dp.cat || '')) + ' · ' +
-    '📐 铺垫 ' + (sh ? sh.build : '—') + '% · 广告 ' + (sh ? sh.sell : '—') + '% · ' +
-    '卖货话术 ' + esc(talk ? talk.name : '') + ' · 字数 ' + esc(words ? words.range : '') +
-    '<button type="button" class="np-d-back btn btn-outline" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">✏️ 换内容类型和写法</button>' +
-    '</div>';
-}
-/** 🎭 IP 线改稿页简报行：🎯 主题 ｜ 🎭 方式 ｜ ⏱ 节奏 */
-function npIpBriefLineHtml() {
-  const w = _npWiz || {};
-  const ip = npPlaySkeleton(w.ipPlay) || {};
-  const seg = (icon, label, val) => val
-    ? '<span style="color:#8a929e;">' + icon + ' ' + label + '</span> <b style="color:#333;font-weight:600;">' + esc(val) + '</b>'
-    : '';
-  const line = [seg('🎯', '主题', w.ipTheme), seg('🎭', '方式', w.ipPlay), seg('⏱', '节奏', ip.rhythm || ip.rh)]
-    .filter(Boolean).join('<span style="color:#ddd;margin:0 8px;">｜</span>');
-  return '<div style="font-size:11px;line-height:1.8;margin-bottom:6px;">' + line + '</div>';
-}
-/** 🎭 IP 线改稿页风格行：这稿不卖货、不报配比——调子由这招自带；出口＝换一段故事 / 再出一版 */
-function npIpStyleLineHtml() {
-  const w = _npWiz || {};
-  const ip = npPlaySkeleton(w.ipPlay) || {};
-  const outTxt = npIsD(w)
-    ? (w.dOut === 'long' ? ' · 出口 📝 长文（这一版先把正文写好，下一步出长文）' : ' · 出口 🖼 图文')
-    : ' · 📝 字数 60~150';
-  return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#8a929e;margin-bottom:6px;">' +
-    '🎭 ' + esc(npIpLabelOf(w)) + (ip.grp ? ' · ' + esc(ip.grp) : '') + ' · AI 按这套的调子直出' + outTxt +
-    '<button type="button" class="btn btn-outline np-ip-backstory" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">↩ 换一段故事</button>' +
-    (w.ipCustom ? '' : '<button type="button" class="btn btn-outline np-ip-rewrite" style="font-size:11px;padding:1px 8px;">🔄 再出一版</button>') +
-    '</div>';
-}
 // 成稿页顶部那一行：这条按哪条线·哪种写法、三块配比多少、卖货话术占多少、写多长 + 一点就回 ④ 改
 // 知识线这行整行不摆了（2026-10-15 老板口径：这排信息不用展示）——只留「回上一步重写」的提醒；
 // 🎲/✏️ 那两颗挪进了上面的 AI 改稿块（npReviseHtml 头部）
@@ -9653,8 +11987,6 @@ function npStyleLineHtml() {
   if (npIsK(_npWiz)) {
     return _npStyleState.dirty ? '<div style="font-size:11px;color:#c77700;margin-bottom:6px;">这条改过了，回上一步点「🔀 重写这批」才会按新的写</div>' : '';
   }
-  const sh = npShape();
-  const talk = npTalk();
   const words = npWords();
   const cur = (_npWiz && _npWiz.noteStyle) || {};
   let now = { type: '', kind: '' };
@@ -9663,8 +11995,8 @@ function npStyleLineHtml() {
   const wK = now.kind ? NotePlan.kindOf(now.kind) : null;
   return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:#8a929e;margin-bottom:6px;">' +
     '📄 ' + (wT ? esc(wT.name + (wK ? ' · ' + wK.name : '')) : '（没带内容类型）') + (npWritePick(_npWiz) ? '（这条换过）' : '') + ' · ' +
-    '📐 ' + (sh ? sh.build + '/' + sh.sell : '—') + ' · 广告占比 ' + esc(talk ? talk.name : '') + ' · 字数 ' + esc(words ? words.range : '') +
-    ((cur.sellTalk || cur.words) ? '（占比／字数这条改过）' : '') +
+    '🖋 字数 ' + esc(words ? words.range : '') +
+    (cur.words ? '（字数这条改过）' : '') +
     (_npStyleState.dirty ? '<span style="color:#c77700;"> · 这条改过了，回上一步点「🔀 重写这批」才会按新的写</span>' : '') +
     '<button type="button" id="npStyleOpenFromDraft" class="btn btn-outline" style="font-size:11px;padding:1px 8px;margin:0 0 0 auto;">✏️ 换内容类型和写法</button>' +
     '</div>';
@@ -9674,19 +12006,26 @@ async function npWizRender(container) {
   if (!_npWiz) return;
   /* 📝 长文独立成方向（2026-10-20）：dir==='l' 走新 4 屏流程，不进 6 步向导 */
   if (npIsL(_npWiz)) { npLRender(container); return; }
-  if (npIsI(_npWiz)) {
-    // 🎭 IP 线：① 站要的是「IP 卡」（问卷那句话 + 招牌）——没读过先读一次；其余站不烧 AI，点了才动
-    if (_npWiz.step === 0 && !_npIpCard && !_npWiz.loading) await npLoadIpCard();
-  } else if (npIsK(_npWiz)) {
+  if (npIsK(_npWiz)) {
     // 知识线：① 站要的是知识库清单＋卖点候选（候选不摆出来让人挑——出稿时 AI 自己挑 1~2 个轻带；没维护也不拦路）
     if (_npWiz.step === 0 && !_npWiz.kbLoaded && !_npWiz.loading) { await npLoadSellPoints(container); return; }
-  } else if (_npWiz.step === 0 && !_npWiz.sellPoints.length && !_npWiz.loading) { await npLoadSellPoints(container); return; }
-  // 🎭 玩法合并（批3）：引流篇的「AI 编故事」那一站不读卖点/人群/话题——玩法就是它的题
-  const npNoPre = npIsK(_npWiz) || npIsI(_npWiz) || npIsDStory(_npWiz);
+  } else if (_npWiz.step === 0) {
+    // ① 卖点站已藏起（2026-11-05）：正文不再按卖点写——素材清单静默读一次就落到 ②，
+    // 卖点什么也不摆、不勾（人群/话题照旧按产品与素材推，不在正文里带产品）
+    if (!_npWiz.kbLoaded) { try { await npLoadKbEntries(); } catch (_) {} }
+    if (!_npWiz || _npWiz.step !== 0) return;
+    _npWiz.step = 1;
+    return npWizRender(container);
+  }
+  const npNoPre = npIsK(_npWiz);
   if (!npNoPre && _npWiz.step === 1 && !_npWiz.people && !_npWiz.peopleError && !_npWiz.loading) { await npLoadPeople(container); return; }
   if (!npNoPre && _npWiz.step === 2 && !_npWiz.topics && !_npWiz.topicError && !_npWiz.loading) { await npLoadTopics(container); return; }
   // 话题到手就自动勾第一个：否则「就用这篇 →」是禁用的，点了毫无反应（像卡死）
   if (!npNoPre && _npWiz.step === 2 && _npWiz.chosenTopicIdx < 0 && (_npWiz.topics || []).length) _npWiz.chosenTopicIdx = 0;
+  /* 🖼 照片图文：分镜站要按「缺料／不是同一批」上色，进站先把开关读进来（读一次就缓存） */
+  if (_npWiz.step === 5) {
+    try { await npPhotoPostRead(); } catch (_) {}
+  }
   npStepBar(container);
   renderStep(container);
   npNav(container, navForStep());
@@ -10182,14 +12521,19 @@ function npKbNomUse(nc) {
 }
 
 /** 「📚 按规划发」点某一行：这篇的取材就换成这条规划配的那条知识（标题对上才换；对不上留着不动，让用户自己挑） */
+/** 「📚 按规划发」点某一行：这篇的取材就换成这条规划配的那条知识（标题对上才换；对不上留着不动，让用户自己挑）。
+ *  排产表里的条目多半是复盘分析「排进本周计划」排的——那种只有题（＝知识标题），没有 kb 字段，所以题也拿来对。 */
 function npKbPickForPlan(it) {
   const w = _npWiz;
-  const kbTitle = String((it && it.kb) || '').trim();
-  if (!w || !kbTitle) return false;
+  if (!w || !it) return false;
+  const want = [String(it.kb || '').trim(), String(it.title || '').trim()].filter(Boolean);
+  if (!want.length) return false;
   const list = w.kbEntries || [];
   let i = -1;
-  for (let k = 0; k < list.length; k++) {
-    if (String((list[k] && list[k].title) || '').trim() === kbTitle) { i = k; break; }
+  for (let a = 0; a < want.length && i < 0; a++) {
+    for (let k = 0; k < list.length; k++) {
+      if (String((list[k] && list[k].title) || '').trim() === want[a]) { i = k; break; }
+    }
   }
   if (i < 0) return false;
   w.chosenKb = [Object.assign({ __i: i }, list[i])];
@@ -10205,8 +12549,6 @@ function renderStep(container) {
     return;
   }
   if (s === 0) {
-    // 🎭 IP 线：① 站＝挑组合——IP 卡＋组合卡＋自己配；不回摆通用卖点表
-    if (npIsI(_npWiz)) { npBody(container, npIpPickHtml()); return; }
     const sp = _npWiz.sellPoints || [];
     const chosenIdx = _npWiz.chosen.map(x => x.__i);
     const strategyHtml = (_npWiz.strategy ? '<div style="font-size:11px;color:#666;background:var(--c-brand-soft);border-radius:8px;padding:6px 10px;margin-bottom:8px;">🎯 你的产品整体打法：' + esc(_npWiz.strategy) + '</div>' : '');
@@ -10244,8 +12586,10 @@ function renderStep(container) {
       const planItems = ((_npPlanCache && Array.isArray(_npPlanCache.items)) ? _npPlanCache.items.slice() : [])
         .sort((a, b) => ((a && a.done) ? 1 : 0) - ((b && b.done) ? 1 : 0));
       const planHas = planItems.length > 0;
-      const chosenPlan = _npWiz.planItem || null;
-      const nextPlan = planItems.find(it => it && !it.done) || null;
+      const chosenPlan0 = _npWiz.planItem || null;
+      const chosenPlan = (chosenPlan0 && !npPlanRetired(chosenPlan0)) ? chosenPlan0 : null;
+      const planRetiredN = planItems.filter(it => it && !it.done && npPlanRetired(it)).length;
+      const nextPlan = planItems.find(it => it && !it.done && !npPlanRetired(it)) || null;
       let kbTab = _npWiz.kbTab;
       if (kbTab !== 'plan' && kbTab !== 'ai' && kbTab !== 'self') kbTab = (chosenPlan || planHas) ? 'plan' : 'ai';
       const tabBar = '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">' + [
@@ -10265,11 +12609,12 @@ function renderStep(container) {
               '<button type="button" id="npPlanClear" class="btn btn-outline" style="margin-left:8px;font-size:11px;padding:1px 8px;">不用规划，自己挑知识写</button></div>'
             : '';
           const rows = planItems.map((it, i) => {
-            const isSel = chosenPlan && String(chosenPlan.no) === String(it.no);
-            const isNext = nextPlan && String(nextPlan.no) === String(it.no);
-            return '<div style="display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #f2f3f5;background:' + (isSel ? 'var(--c-brand-soft)' : '#fff') + ';">' +
+            const off = npPlanRetired(it);
+            const isSel = !off && chosenPlan && String(chosenPlan.no) === String(it.no);
+            const isNext = !off && nextPlan && String(nextPlan.no) === String(it.no);
+            return '<div style="display:flex;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid #f2f3f5;background:' + (off ? '#fafbfc' : (isSel ? 'var(--c-brand-soft)' : '#fff')) + ';">' +
               '<div style="flex:1;min-width:0;">' +
-                '<div style="font-size:12px;font-weight:600;color:#333;line-height:1.5;">' + esc(String(it.no || '') + '. ' + (it.title || '')) + _npPlanColTag(it) +
+                '<div style="font-size:12px;font-weight:' + (off ? '400' : '600') + ';color:' + (off ? '#8a929e' : '#333') + ';line-height:1.5;">' + esc(String(it.no || '') + '. ' + (it.title || '')) + _npPlanColTag(it) +
                   (isSel ? ' <span style="font-size:10px;color:var(--c-brand-text);">✓ 已选</span>' : (isNext ? ' <span style="font-size:10px;color:#b45309;">← 下一篇该写它</span>' : '')) + '</div>' +
                 '<div style="font-size:10px;color:#8a929e;margin-top:1px;">' + esc(_npPlanMeta(it)) +
                   (it.arc ? ' · 系列 ' + esc(it.arc.name || '') + ' ' + it.arc.part + '/' + it.arc.total : '') +
@@ -10277,12 +12622,15 @@ function renderStep(container) {
               '</div>' +
               (it.done
                 ? '<span style="flex:none;font-size:10px;color:#2e7d32;background:#eaf7ef;border:1px solid #cde9d8;border-radius:8px;padding:1px 7px;">✅ 写过</span>'
-                : '<button type="button" class="np-plan-row-use" data-i="' + i + '" style="flex:none;font-size:11px;font-weight:700;border-radius:8px;padding:3px 10px;cursor:pointer;border:' + (isNext ? 'none' : '1px solid var(--line)') + ';background:' + (isNext ? 'var(--grad-brand)' : '#fff') + ';color:' + (isNext ? 'var(--c-brand-on, #fff)' : '#666') + ';">按这条写</button>') +
+                : (off
+                  ? '<span style="flex:none;font-size:10px;color:#8a929e;background:#f4f5f7;border:1px solid #e2e6ec;border-radius:8px;padding:1px 7px;white-space:nowrap;">旧线 · 已下架</span>'
+                  : '<button type="button" class="np-plan-row-use" data-i="' + i + '" style="flex:none;font-size:11px;font-weight:700;border-radius:8px;padding:3px 10px;cursor:pointer;border:' + (isNext ? 'none' : '1px solid var(--line)') + ';background:' + (isNext ? 'var(--grad-brand)' : '#fff') + ';color:' + (isNext ? 'var(--c-brand-on, #fff)' : '#666') + ';">按这条写</button>')) +
               '</div>';
           }).join('');
           pane = weekLine + selHtml +
             '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;">' + rows + '</div>' +
-            '<div style="font-size:10px;color:#9aa0ac;margin-top:4px;">已成稿 ' + doneN + '/' + planItems.length + ' 篇——「✅ 写过」的篇不再重复推；点「按这条写」，成稿就按它的类型与写法写。</div>';
+            '<div style="font-size:10px;color:#9aa0ac;margin-top:4px;">已成稿 ' + doneN + '/' + planItems.length + ' 篇——「✅ 写过」的篇不再重复推；点「按这条写」，成稿就按它的类型与写法写。' +
+              (planRetiredN ? ' 另有 ' + planRetiredN + ' 条旧线（感悟 / 情绪 / 热梗 / 热点）已下架，只能看不能写。' : '') + '</div>';
         }
       } else if (kbTab === 'ai') {
         // —— AI推荐：推哪条＋为什么推它（哪类最薄、跟阶段计划什么关系）——
@@ -10326,11 +12674,18 @@ function renderStep(container) {
       // 规划表每一行的「按这条写」
       container.querySelectorAll('.np-plan-row-use').forEach(b => b.addEventListener('click', function () {
         const it = planItems[parseInt(this.getAttribute('data-i'), 10) || 0];
-        if (!it || !_npWiz) return;
-        _npWiz.planItem = it;
+        if (!it || !_npWiz || npPlanRetired(it)) return;
+        /* 行业题：题面 / 真事 / 写法都在题上——点了就是选了这条，直接进改稿，不再问挑知识 */
+        if (npIsInd({ planItem: it })) {
+          npWizIndustryPreset(it);
+          if (typeof toast === 'function') toast('题定了——直接去写这一篇，不用再挑知识');
+          npWizRender(container);
+          return;
+        }
+        _npWiz.planItem = npPlanItemWithCell(it);
         _npWiz.write = null;   // 换底子了：写法回到跟规划走
-        if (!npKbPickForPlan(it) && String(it.kb || '').trim() && typeof toast === 'function') {
-          toast('规划这条配的是「' + String(it.kb).trim() + '」——知识库里还没这条，切「🗂 自己选」挑一条取材');
+        if (!npKbPickForPlan(it) && String(it.kb || it.title || '').trim() && typeof toast === 'function') {
+          toast('这条在知识库里没找到——没关系，直接按题写；想加料可到「🗂 自己选」挑');
         }
         npWizRender(container);
       }));
@@ -10343,14 +12698,6 @@ function renderStep(container) {
     return;
   }
   if (s === 1) {
-    // 🎭 IP 线 / 引流讲故事型玩法：这一步是「AI 编故事」——AI 按挑好的招式编 3 段候选（梗概＋开头第一句）；点了挑一段
-    if (npIsI(_npWiz) || npIsDStory(_npWiz)) {
-      npBody(container, npIpStoryHtml());
-      const w = _npWiz;
-      if (npIsD(w)) npPlayPickLoad(container);
-      if (w.ipPlay && !(w.ipStories || []).length && !w.ipStoryErr && !_npIpStoryBusy) npIpStoriesLoad(container, false);
-      return;
-    }
     const opts = (_npWiz.people && _npWiz.people.people_options) || [];
     const selIdx = (_npWiz.chosenPeople || []).map(p => p && p.__i);
     const pTip = (p) => ['痛点：' + (p.pain || ''), '场景：' + (p.scene || ''), '时机：' + (p.timing || '')]
@@ -10405,9 +12752,16 @@ function renderStep(container) {
     const use = _npEl(container, 'npPlanUse');
     if (use) use.addEventListener('click', function () {
       const items = (_npPlanCache && _npPlanCache.items) || [];
-      const next = items.find(it => it && !it.done);
+      const next = items.find(it => it && !it.done && !npPlanRetired(it));
       if (!next) return;
-      _npWiz.planItem = next;
+      /* 行业题：点了就是选了这条——直接进改稿，别再停在这一屏等「下一步」 */
+      if (npIsInd({ planItem: next })) {
+        npWizIndustryPreset(next);
+        if (typeof toast === 'function') toast('题定了——直接去写这一篇，不用再挑知识');
+        npWizRender(container);
+        return;
+      }
+      _npWiz.planItem = npPlanItemWithCell(next);
       _npWiz.chosenTopicIdx = -1;
       _npWiz.write = null;   // 换底子了：④ 里改过的线/写法作废
       npWizRender(container);
@@ -10417,13 +12771,6 @@ function renderStep(container) {
     return;
   }
   if (s === 3) {
-    // 引流线：同一步是「挑稿」——AI 照行业＋料池出 18 版（六类料每类 3 版），点中哪台走哪台
-    if (npIsD(_npWiz)) {
-      npBody(container, npDPickStepHtml());
-      npPlayPickLoad(container);
-      if (!_npDrainBusy && !_npWiz.drainError && !(_npWiz.drainVariants || []).length) npDrainLoad(container, false);
-      return;
-    }
     npBody(container, npPickStepHtml());
     // 进这一步就把这条线底下的几种写法各出一篇（老板：「你已经按照这个类型写了好几篇了，我来选」）；
     //   报过错就别自动重试，让他自己点「✍️ 再写一次」
@@ -10437,36 +12784,17 @@ function renderStep(container) {
     return;
   }
   if (s === 4) {
-    // 🎭 IP 线改稿页：简报行（主题×方式×节奏）＋风格行（不卖货、不报配比）＋🔒 骨架段提示；稿子＝AI 按挑中那段故事直出
-    //   🎭 玩法合并（批3）：引流篇钉的若是讲故事型招式，也走这一页（出口按这一篇定的图文／长文）
-    if (npIsI(_npWiz) || npIsDStory(_npWiz)) {
-      const ipP = npPlaySkeleton(_npWiz.ipPlay) || null;
-      const ipLocks = (ipP && ipP.lock) ? npIpLockTextsOf(_npWiz, npSplitSents(String(((_npWiz.draft || {}).content) || ''))) : [];
-      npBody(container, npIpBriefLineHtml() + npIpStyleLineHtml() +
-        '<div style="font-size:12px;font-weight:700;color:#333;margin:2px 0 4px;">改稿</div>' +
-        ('<div class="note-xs" style="margin-bottom:8px;">这版是 AI 按「' + esc(npIpLabelOf(_npWiz)) + '」的调子直出的' + (_npWiz.ipCustom ? '（你写的底子）' : '') + '——想换段故事点右上「↩ 换一段故事」' + (_npWiz.ipCustom ? '。' : '，想换个收法点「🔄 再出一版」。') + '</div>') +
-        (ipLocks.length ? '<div style="margin:0 0 8px;font-size:11px;color:#8a6d3b;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:5px 9px;line-height:1.7;">🔒 ' + esc((ipP && ipP.lockWhy) || '骨架段——AI 改稿不碰；要改点「✍️ 全文手改」。') + '</div>' : '') +
+    // 🧩 行业选题表那条：跟通用改稿页同一套（状态行 / AI 改稿 / 标题 / 正文 / 标签），顶上那行换成组 · 载体 · 写法
+    if (npIsInd(_npWiz)) {
+      npBody(container, npIndBriefHtml(_npWiz) +
+        '<div style="font-size:12px;font-weight:700;color:#333;margin-bottom:6px;">改稿</div>' +
         '<div id="npDraftStatus" style="font-size:12px;color:#888;margin-bottom:6px;"></div>' +
         '<div id="npRevise" style="margin:0 0 8px;">' + npReviseHtml() + '</div>' +
         '<div id="npTitles" style="margin:8px 0;"></div>' +
         '<div id="npDraftBody">' + npDraftBodyHtml(_npWiz) + '</div>' +
         '<div id="npTags" style="margin:8px 0;"></div>');
       renderNpMaterial(container, _npWiz.draft);
-      return;
-    }
-    // 引流线改稿页（demo renderD dStep2 同款）：简报行＋风格行＋转法那句当硬约束；稿子＝挑中那版正文
-    if (npIsD(_npWiz)) {
-      const dp = _npWiz.drainPick || {};
-      npBody(container, npDBriefLineHtml() +
-        npDStyleLineHtml() +
-        '<div style="font-size:12px;font-weight:700;color:#333;margin:2px 0 4px;">改稿</div>' +
-        (String(dp.turn || '').trim() ? '<div class="note-xs" style="margin-bottom:8px;">收尾那句（' + esc(String(dp.turn)) + '）是硬约束——料讲满全篇，行业最多一句身份，最后那一两句收着落回自己身上；AI 改稿也不许动它。</div>' : '') +
-        '<div id="npDraftStatus" style="font-size:12px;color:#888;margin-bottom:6px;"></div>' +
-        '<div id="npRevise" style="margin:0 0 8px;">' + npReviseHtml() + '</div>' +
-        '<div id="npTitles" style="margin:8px 0;"></div>' +
-        '<div id="npDraftBody">' + npDraftBodyHtml(_npWiz) + '</div>' +
-        '<div id="npTags" style="margin:8px 0;"></div>');
-      renderNpMaterial(container, _npWiz.draft);
+      if (!_npWiz.draft && !_npDraftBusy) npBuildDraft(container);
       return;
     }
     npBody(container, npBriefLineHtml() +
@@ -10587,10 +12915,6 @@ function renderStep(container) {
     return;
   }
   // 🎭 IP 线的「出料」站：只出图文——点卡片＝标「代发」并进「造图片」的分镜确认
-  if (s === 8 && npIsI(_npWiz)) {
-    npBody(container, npIpOutHtml());
-    return;
-  }
 }
 
 /** 这篇的底子是哪条线：优先 ③ 里点选的排产表那一篇；自己想的题就用话题自带的那条线（③ 里 AI 判的）。
@@ -10625,9 +12949,34 @@ function npEffPlanItem(w) {
 }
 function npPlanItemPayload(pi) {
   if (!pi) return null;
-  return { no: pi.no || null, title: pi.title || '', type: pi.type, kind: pi.kind || '', goal: pi.goal || '',
+  const o = { no: pi.no || null, title: pi.title || '', type: pi.type, kind: pi.kind || '', goal: pi.goal || '',
     scope: pi.scope, credential: pi.credential || '', arc: pi.arc || null,
     col: pi.col || '', day: pi.day || 0 };   // 📅 长期栏目里的那一篇（发笔记里显示"星期几 · 栏目名"）
+  // 🧩 行业选题表那条：组目的 / 载体 / 写法 / 题面那句真事——后台按它们拼提示词
+  if (pi.src === 'industry') {
+    o.src = 'industry'; o.industryKey = pi.industryKey || '';
+    o.tid = pi.tid || ''; o.gid = pi.gid || '';
+    o.group = pi.group || ''; o.groupGoal = pi.groupGoal || pi.goal || '';
+    o.carrier = pi.carrier || ''; o.carriers = Array.isArray(pi.carriers) ? pi.carriers.slice() : [];
+    o.form = pi.form || ''; o.variant = pi.variant || ''; o.forms = Array.isArray(pi.forms) ? pi.forms.slice() : [];
+    o.brief = pi.brief || ''; o.fact = pi.fact || ''; o.picked = !!pi.picked;
+  }
+  return o;
+}
+/** 档案那格里的「这条排产表」（继续编辑时原样灌回向导）——行业选题表那条要把组 / 载体 / 写法带全，
+ *  不然重进这一篇，改稿与重新生成就丢了底子 */
+function npPlanItemWip(pi) {
+  if (!pi) return null;
+  const o = { no: pi.no || null, title: String(pi.title || ''), type: String(pi.type || ''), kind: String(pi.kind || ''), col: String(pi.col || ''), day: Number(pi.day || 0) || 0 };
+  if (pi.src === 'industry') {
+    o.src = 'industry'; o.industryKey = String(pi.industryKey || '');
+    o.tid = String(pi.tid || ''); o.gid = String(pi.gid || '');
+    o.group = String(pi.group || ''); o.goal = String(pi.goal || pi.groupGoal || ''); o.groupGoal = String(pi.groupGoal || pi.goal || '');
+    o.carrier = String(pi.carrier || ''); o.carriers = Array.isArray(pi.carriers) ? pi.carriers.slice() : [];
+    o.form = String(pi.form || ''); o.variant = String(pi.variant || ''); o.forms = Array.isArray(pi.forms) ? pi.forms.slice() : [];
+    o.brief = String(pi.brief || ''); o.fact = String(pi.fact || ''); o.picked = !!pi.picked;
+  }
+  return o;
 }
 /** 🔥 本篇借的那条公开由头：只有「这一篇走的线是热点线」才带上——
     话题是话题、由头是由头（由头在 ④ 点热点线时才找回来）；切到别的线，或还没找回来，
@@ -10650,9 +12999,11 @@ function npTopicFactOf(w) {
 }
 
 let _npDraftBusy = false;   // 正在写稿时别再点「重新生成」，省一次重复请求
+let _npDraftSeq = 0;        // 每次出稿领一个号：换写法 / 换了一篇之后，上一发回来的结果作废
 async function npBuildDraft(container) {
   if (_npDraftBusy) return;
   _npDraftBusy = true;
+  const seq = ++_npDraftSeq;
   const w = _npWiz;
   const tl = (w.topics || []);
   const t = tl[(w.chosenTopicIdx >= 0 && w.chosenTopicIdx < tl.length) ? w.chosenTopicIdx : 0] || {};
@@ -10687,6 +13038,7 @@ async function npBuildDraft(container) {
       topic: planTopic || t.topic || '',
       topicFact: npTopicFactOf(w),                     // 📌 这个题底下的一句真事（题只是方向，正文落在这件具体的事上）
       planItem: npPlanItemPayload(npEffPlanItem(w)),   // 排产表那一篇 或 ③ 里 AI 给这个题判的那一类（自己想的题也能带上类型）
+      formWhy: npFormWhyOf(w),                         // 这格选这个写法的理由（拼提示词时就写在【这一篇的写法】后面）
       hot: npHotOf(w),                                 // 🔥 热点线那条公开由头（当上下文喂给写手；别的线 / 还没找到就是 null）
       usedPool: usedPool,                              // 📚 写过的，别撞（知识线自挑角度时避开；别的线为空数组）
       avoidDraft: angleAvoid,                          // 🎲 换个角度重写：上一版的开头，写手换一个切入角度
@@ -10705,8 +13057,12 @@ async function npBuildDraft(container) {
       productName: w.prodName,
       kbList: (w.chosenKb || []).map(e => ({ title: e.title || '', content: e.content || '', tags: e.tags || [] })),
     });
+    if (seq !== _npDraftSeq || _npWiz !== w) return;   // 这一发回来时已经换篇 / 换写法了：不写、不画
     const d = res && res.data;
     if (_npWiz === w) w.draft = d || null;
+    /* 🧩 卡片式写法（清单 / 对比 / 问答）：写稿这一发就把每张卡交回来了——出图直接照它排；
+       分幕式写法（讲故事 / 吐槽）没有这份，清掉上一篇留下的 */
+    if (d) w.cards = Array.isArray(d.cards) && d.cards.length ? d.cards : null;
     if (d && d.content) {
       renderNpMaterial(container, d);
       ok = true;
@@ -10736,15 +13092,18 @@ async function npBuildDraft(container) {
     const te = _npEl(container, 'npResult'); if (te) te.value = '生成成稿失败：' + failMsg;
   } finally {
     stopWait();
-    _npDraftBusy = false;
-    if (ok && _npWiz === w) { npArchiveSave(w); npPlanMarkDone(w.planItem); }   // 成稿一落地就进档案（草稿）：关掉弹窗也不丢；规划里那篇同时标记完成
-    if (ok) { _npStyleState.dirty = false; _npRefreshStyleStep(); }   // 新成稿已是当前配比/字数写的
-    const st = _npEl(container, 'npDraftStatus');
-    if (st) st.innerHTML = ok
-      ? (looseWarn ? '<span style="color:#b45309;">⚠️ AI 这次没按格式交稿，正文已整段放进下面——可直接手改，或用下面的「🖊 AI 改整篇」换一版</span>' : '')
-      : ('<span style="color:#d32f2f;">❌ ' + esc(failMsg || '这次没写出内容') + '，点「上一步」再点「🔀 重写这批」再试一次</span>');
-    const navEl = _npEl(container, 'npWizNav');
-    if (navEl) npNav(container, navForStep());   // 按钮复位
+    /* 这一发回来时已经换写法 / 换篇了：只收尾自己的计时，别把新那一发的状态、档案和导航冲掉 */
+    if (seq === _npDraftSeq) {
+      _npDraftBusy = false;
+      if (ok && _npWiz === w) { npArchiveSave(w); npPlanMarkDone(w.planItem); }   // 成稿一落地就进档案（草稿）：关掉弹窗也不丢；规划里那篇同时标记完成
+      if (ok) { _npStyleState.dirty = false; _npRefreshStyleStep(); }   // 新成稿已是当前配比/字数写的
+      const st = _npEl(container, 'npDraftStatus');
+      if (st && _npWiz === w) st.innerHTML = ok
+        ? (looseWarn ? '<span style="color:#b45309;">⚠️ AI 这次没按格式交稿，正文已整段放进下面——可直接手改，或用下面的「🖊 AI 改整篇」换一版</span>' : '')
+        : ('<span style="color:#d32f2f;">❌ ' + esc(failMsg || '这次没写出内容') + '，点「上一步」再点「🔀 重写这批」再试一次</span>');
+      const navEl = _npEl(container, 'npWizNav');
+      if (navEl && _npWiz === w) npNav(container, navForStep());   // 按钮复位
+    }
   }
 }
 
@@ -10757,13 +13116,35 @@ function npSellPointStr() {
   }).filter(Boolean).join('；');
 }
 
+/** 🧩 行业选题表那条：改稿屏底右只有一颗「下一步：出××」——形态在选题那一下就跟题定死了，
+ *  改稿不再选、也不许换；缺料不换形态，点下去先过素材闸，缺什么就去素材库补。 */
+function npIndOutNav() {
+  const w = _npWiz || {};
+  const it = w.planItem || {};
+  const pid = npPid(w);
+  const pool = (Array.isArray(it.carriers) && it.carriers.length) ? it.carriers : (it.carrier ? [it.carrier] : []);
+  const ok = (typeof TopicTable !== 'undefined' && TopicTable.outletsFor)
+    ? TopicTable.outletsFor(pool, it.form || 'list', pid) : pool;
+  const k = ok[0] || it.carrier || 'image';
+  const has = !!String((w.draft && w.draft.content) || '').trim();
+  const why = has ? '' : '稿子还在写——等它写出来再出成品';
+  const lab = { image: '🖼 下一步：出图文', video: '🎬 下一步：出视频', long: '📝 下一步：出长文' };
+  const kn = (typeof TopicTable !== 'undefined' && TopicTable.carrierName) ? TopicTable.carrierName(k) : k;
+  return btnWiz('np-ind-pick', '↩ 换一条选题', false) +
+    ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">这条题的出口：' + esc(kn) + '（跟着写法走）　</span> ' +
+    btnWiz('np-ind-' + k, lab[k], true, false, why);
+}
 function navForStep() {
   const s = _npWiz.step;
+  if (npIsInd(_npWiz) && s === 4) return npIndOutNav();
   // 知识线（二十九改：撤了「定话题」站）：只有 0 / 4 两站——「挑知识 → 直接出稿 → 改稿定稿」，
   // 末站的主钮＝这篇选的出口（✨ 出片 / 🎙 口播）；词表照三十七改：步进只放底右、含义降小灰字
   if (npIsK(_npWiz) && !npIsDvForced(_npWiz)) {
     const backK = (s > 0) ? btnWiz('np-wiz-prev', '上一步', false) : '';
-    if (s === 0) return backK + ' <span style="flex:1;"></span> ' + btnWiz('np-wiz-next', '下一步 →', true, false, '先挑 1~3 条知识——这篇正文从它取材') + ' <span style="font-size:11px;color:#8a929e;">出稿（用挑的知识写）</span>';
+    if (s === 0) {
+      const kbN = (_npWiz.chosenKb || []).length;
+      return backK + ' <span style="flex:1;"></span> ' + btnWiz('np-wiz-next', '下一步 →', true, false, kbN ? '没挑知识也行——直接按这道题写' : '点「📚 按规划发」里一条题的「按这条写」直接写这一篇；也可以在「🗂 自己选」挑素材') + ' <span style="font-size:11px;color:#8a929e;">' + (kbN ? '出稿（用挑的素材写）' : '出稿（按这道题写）') + '</span>';
+    }
     if (s === 7) return btnWiz('np-k-prev-back', '← 回改', false) +
       ' <span style="flex:1;"></span> ' +
       (_npWiz.kGate === 'talk' ? btnWiz('np-k-prev-tp', '🎙 复制提词卡', false) + ' ' : '') +
@@ -10800,35 +13181,19 @@ function navForStep() {
           ' <span style="font-size:11px;color:#8a929e;">' + (String(_npWiz.kGate || '').trim() ? '出口：' + (npFacadeGate(_npWiz.kGate) || {}).t : '先在上面选一条出路') + ' · 去预览</span>';
     return backK + ' <span style="flex:1;"></span> ' + prim;
   }
-  // 🎭 IP 玩法线：站点 0 挑组合 / 1 编故事 / 4 改稿 / 8 出料；出料半段（5·6）落到下面图文线那套共用
-  if (npIsI(_npWiz) && (s <= 4 || s === 8)) {
-    const backI = (s > 0) ? btnWiz('np-wiz-prev', '上一步', false) : '';
-    if (s === 0) return backI + ' <span style="flex:1;"></span> ' + btnWiz('np-ip-next', '下一步 →', true, false, '上面点一套组合、或自己配一套') + ' <span style="font-size:11px;color:#8a929e;">去编故事</span>';
-    if (s === 1) return btnWiz('np-ip-backcombo', '‹ 重挑组合', false) + ' <span style="flex:1;"></span> ' +
-      btnWiz('np-ip-reroll', '🔀 再换 3 段', false) + ' ' + btnWiz('np-ip-selftoggle', '✍️ 自己写一段', false);
-    if (s === 4) return btnWiz('np-ip-backstory', '上一步', false) +
-      ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">出料（图文）——分镜确认 → 预览，图传回来就完</span> ' +
-      btnWiz('np-ip-toout', '下一步 →', true, false, '正文还没写出来——等它写完');
-    // s === 8 出料站
-    return btnWiz('np-ip-backdraft', '上一步', false) + ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">点这张卡＝标「代发」并进「造图片」</span>';
-  }
   // 引流线（三十一改 → 四十四改）：图文线 3 挑稿 / 4 改稿；文案直出视频线多一站 5 分镜出词
   // （知识视频被档案「🎬 录片」推进来的，4/5 两站也按这套摆：改稿 → 分镜出词 → 拼片配音）
   if (npIsD(_npWiz) || npIsDvForced(_npWiz)) {
-    // 🎭 玩法合并（批3）：讲故事型玩法的引流篇——1 站＝AI 编故事（没「挑稿」那站），改稿那站「上一步」回故事
-    const dStory = npIsDStory(_npWiz);
-    if (dStory && s === 1) return btnWiz('np-pk-clear', '✕ 不指定招式', false) + ' <span style="flex:1;"></span> ' +
-      btnWiz('np-ip-reroll', '🔀 再换 3 段', false) + ' ' + btnWiz('np-ip-selftoggle', '✍️ 自己写一段', false);
-    const backD = (s > 3) ? btnWiz(dStory ? 'np-ip-backstory' : 'np-wiz-prev', '上一步', false) : '';
+    const backD = (s > 3) ? btnWiz('np-wiz-prev', '上一步', false) : '';
     // 📝 长文（2026-10-21 回挂引流线）：3/1 挑稿/编故事 → 4 改稿 → 5 出长文 → 6 预览 → ✓ 存好；腔入口定死＝人设腔
     if (_npWiz.dOut === 'long') {
-      const backL = (s > 4) ? btnWiz('np-wiz-prev', '上一步', false) : btnWiz(dStory ? 'np-ip-backstory' : 'np-wiz-prev', '上一步', false);
+      const backL = (s > 4) ? btnWiz('np-wiz-prev', '上一步', false) : '';
       if (s === 6) return backL + ' <span style="flex:1;"></span> ' +
         btnWiz('np-d-long-done', '✓ 存好，回档案', true, false, '长文还是空的——回上一站先出一版') + ' <span style="font-size:11px;color:#8a929e;">标「代发」，到档案行尾点「🚀 发布」</span>';
       if (s === 5) return backL + ' <span style="flex:1;"></span> ' +
         btnWiz('np-wiz-next', '下一步 →', true, false, '长文还没出来——先点「✨ 出长文」') + ' <span style="font-size:11px;color:#8a929e;">预览这篇长文</span>';
       return backL + ' <span style="flex:1;"></span> ' +
-        btnWiz('np-wiz-next', '下一步 →', true, false, dStory ? '正文还没写出来——回上一步换一段故事' : '正文还没写出来——回上一步挑一篇') + ' <span style="font-size:11px;color:#8a929e;">出长文（拿改好的稿排）</span>';
+        btnWiz('np-wiz-next', '下一步 →', true, false, '正文还没写出来——回上一步挑一篇') + ' <span style="font-size:11px;color:#8a929e;">出长文（拿改好的稿排）</span>';
     }
     if (s === 3) return backD + ' ' + btnWiz('np-wiz-again', '🔀 重写这批', false) +
       ' <span style="flex:1;"></span> <span style="font-size:11px;color:#8a929e;">挑中哪篇就走哪篇</span>';
@@ -10865,11 +13230,12 @@ function navForStep() {
       }
     }
     const primD = _npWiz.dOut !== 'film'
-      ? btnWiz('np-d-fin-img', '下一步 →', true, false, dStory ? '正文还没写出来——等它写完（回上一步换一段故事）' : '正文还没写出来——回上一步挑一篇') + ' <span style="font-size:11px;color:#8a929e;">拆分镜（标成「代发」）</span>'
+      ? btnWiz('np-d-fin-img', '下一步 →', true, false, '正文还没写出来——回上一步挑一篇') + ' <span style="font-size:11px;color:#8a929e;">拆分镜（标成「代发」）</span>'
       : btnWiz('np-d-fin-film', '下一步 →', true, false, '正文还没写出来——回上一步挑一篇') + ' <span style="font-size:11px;color:#8a929e;">分镜出词（片拼出来才标「代发」）</span>';
     return backD + ' <span style="flex:1;"></span> ' + primD;
   }
-  const back = (s > 0) ? btnWiz('np-wiz-prev', '上一步', false) : '';
+  // ① 卖点站已藏起（2026-11-05）：② 站不再有「上一步」（退回去也只会被弹回 ②）
+  const back = (s > 1) ? btnWiz('np-wiz-prev', '上一步', false) : '';
   // 下一步一律亮着可点：没勾东西时点了会 toast 提示（先勾…），不再用置灰挡住
   if (s === 0) return back + ' <span style="flex:1;"></span> ' + btnWiz('np-wiz-again', '🔀 换一批', false) + ' ' + btnWiz('np-wiz-next', '下一步 →', true, false, '先在左边勾 1~2 个卖点');
   if (s === 1) return back + ' <span style="flex:1;"></span> ' + btnWiz('np-wiz-again', '🔀 换成别人群', false) + ' ' + btnWiz('np-wiz-next', '下一步 →', true, false, '先勾一个人群') + ' <span style="font-size:11px;color:#8a929e;">去看话题</span>';
@@ -10883,7 +13249,7 @@ function navForStep() {
   return back + ' ' + btnWiz('np-copy-all', '📋 复制这版发布文案', false, false) +
     ' <span style="flex:1;"></span> ' +
     (hasVer ? btnWiz('np-out-go', '下一步 →', true, false) + ' <span style="font-size:11px;color:#8a929e;">去笔记档案做料</span> ' : '') +
-    btnWiz('np-wiz-again2', '↩ 再来一篇(新卖点)', false);
+    btnWiz('np-wiz-again2', '↩ 再来一篇', false);
 }
 
 // 🤖 AI 生成文案：选参考素材 + 引导话题 → AI 生成 → 复制
@@ -10964,12 +13330,19 @@ function ensureNpDelegation() {
         npShotsPaintPromptOnly(npActiveC()); npArchiveTouch(w);
       }
     }
-    if (t.classList && (t.classList.contains('np-cover-copy') || t.classList.contains('np-cover-prompt'))) {
-      // ② 那两栏（封面文案／封面提示词）：落进 cv 就是真源，没有任何本地拼装会顶它；只刷档位条上那颗状态
+    if (t.classList && (t.classList.contains('np-cover-copy') || t.classList.contains('np-cover-sub') || t.classList.contains('np-cover-prompt'))) {
+      // ② 那几栏（封面主标题／副标题／封面提示词）：落进 cv 就是真源，没有任何本地拼装会顶它
       const cv = npCoverOf(w);
       if (cv) {
         if (t.classList.contains('np-cover-copy')) cv.copy = String(t.value || '');
-        else cv.prompt = String(t.value || '');
+        else if (t.classList.contains('np-cover-sub')) cv.sub = String(t.value || '');
+        else { cv.prompt = String(t.value || ''); cv.src = 'manual'; cv.cardKey = ''; }
+        /* 卡片式写法：主标题/副标题一改，自动拼的那份跟着重拼；人改过的提示词不动 */
+        if (npCardModeOf(w) && cv.src !== 'manual') {
+          cv.prompt = npCardCoverPrompt(w);
+          cv.src = 'card';
+          cv.cardKey = String(cv.copy || '').trim() + '|' + String(cv.sub || '').trim();
+        }
         npShotsCompose(w);
         const bar2 = _npEl(npActiveC(), 'npImgTabs');
         if (bar2) bar2.innerHTML = npImgTabsHtml(w);
@@ -11131,6 +13504,12 @@ function ensureNpDelegation() {
       return;
     }
     if (t && t.closest('.np-k-fin-film')) { npKFinishFilm(nc); return; }
+    // 🧩 行业选题表那条：改稿屏三颗成品 + 换一条选题 + 换写法
+    if (t && t.closest('.np-ind-openform')) { npIndOpenFormPanel(t.closest('.np-ind-openform')); return; }
+    if (t && t.closest('.np-ind-pick')) { npDirOpen(); return; }
+    if (t && t.closest('.np-ind-image')) { npIndToOut('image'); return; }
+    if (t && t.closest('.np-ind-video')) { npIndToOut('video'); return; }
+    if (t && t.closest('.np-ind-long')) { npIndToOut('long'); return; }
     if (t && t.closest('.np-k-fin-voice')) { npKFinishVoice(nc); return; }
     if (t && t.closest('.np-k-fin-text')) { npKFinishLongform(nc); return; }
     // 📝 长文新流（知识/引流共用）：✓ 存好回档案
@@ -11197,12 +13576,6 @@ function ensureNpDelegation() {
     }
     if (t && t.closest('.np-long-gen')) { npGenLongform(nc); return; }            // ✨ 出长文 / 🔁 再出一版（长文站与老 l 流共用）
     if (t && t.closest('.np-long-regen')) { npGenLongform(nc, { fresh: true }); return; }   // 🔁 重新出长文：短稿改过，旧长文不喂
-    // 引流线：挑稿 → 改稿 → 出口（demo dPickDraft / dFinish 同口径）
-    if (t && t.closest('.np-drain-pick')) {
-      const di = parseInt(t.closest('.np-drain-pick').getAttribute('data-i'), 10);
-      if (!isNaN(di)) npDrainPick(di, nc);
-      return;
-    }
     if (t && t.closest('.np-d-back')) { npGo(nc, 3); return; }   // ✏️ 换内容类型和写法＝回挑稿页
     if (t && t.closest('.np-d-fin-img')) { npDFinishImg(nc); return; }
     if (t && t.closest('.np-d-fin-long')) { npDFinishLong(nc); return; }
@@ -11220,6 +13593,12 @@ function ensureNpDelegation() {
     // 🖋 分镜确认 / 👀 预览（三十改 → 四十八改·图文线 → 11-03 一张一条提示词）：风格两轴 / 张数档位 / 拾图 / 重试 / 步进 / 封面那几颗
     if (t && t.closest('.np-char-godiag')) { wbGate('diag', function () { switchMainTab('diagnose'); diagGo(7); }); return; }
     if (t && t.closest('.np-dsh-motif')) { npDshMotif(nc, String(t.closest('.np-dsh-motif').getAttribute('data-k') || '')); return; }
+    if (t && t.closest('.np-dsh-pack')) { npDshPack(nc, String(t.closest('.np-dsh-pack').getAttribute('data-k') || '')); return; }
+    if (t && t.closest('.np-dsh-picklib')) {
+      npDshPickFromLib(String(t.closest('.np-dsh-picklib').getAttribute('data-id') || ''));
+      return;
+    }
+    if (t && t.closest('.np-dsh-pt')) { npDshTypeAll(); return; }
     if (t && t.closest('.np-dsh-pen')) {
       const id = String(t.closest('.np-dsh-pen').getAttribute('data-id') || '');
       _npDshOpen = (_npDshOpen === id ? '' : id);
@@ -11252,7 +13631,8 @@ function ensureNpDelegation() {
       }
       return;
     }
-    if (t && t.closest('.np-img-open')) { npImgStart(nc); return; }
+    if (t && t.closest('.np-dsh-filllib')) { npDshFillFromLib(nc); return; }
+    if (t && t.closest('.np-img-open')) { npImgStart(nc, !!t.closest('.np-img-all')); return; }
     if (t && t.closest('.np-img-stop')) {
       if (_npImgGen) _npImgGen.stop = true;
       if (typeof toast === 'function') toast('停了——出好的留着，没出的不扣张数');
@@ -11271,43 +13651,6 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-long-export')) { npLongExport(); return; }
     if (t && t.closest('.np-long-re')) { npLongExport(); return; }
     if (t && t.closest('.np-long-dl')) { npLongDownload(); return; }
-    // 🎭 IP 玩法线：挑组合（点卡 / 换批 / 骰子 / 自己配两步）→ 编故事（用这段 / 自己写 / 再换 3 段）→ 改稿出口（换故事 / 再出一版）→ 出料
-    if (t && t.closest('.np-ip-use')) {
-      const card = t.closest('.np-ip-use');
-      npIpUseCombo(parseInt(card.getAttribute('data-b'), 10) || 0, parseInt(card.getAttribute('data-i'), 10) || 0, false);
-      return;
-    }
-    if (t && t.closest('.np-ip-swap')) { npIpBatchSwap(nc); return; }
-    if (t && t.closest('.np-ip-dice')) { npIpDice(nc); return; }
-    if (t && t.closest('.np-ip-selfopen')) { npIpSelfOpenToggle(nc); return; }
-    if (t && t.closest('.np-ip-theme')) {
-      const row = t.closest('.np-ip-theme');
-      npIpThemePick(parseInt(row.getAttribute('data-g'), 10) || 0, parseInt(row.getAttribute('data-i'), 10) || 0, nc);
-      return;
-    }
-    if (t && t.closest('.np-ip-themeback')) { npIpThemeBack(nc); return; }
-    if (t && t.closest('.np-ip-method')) { npIpMethodPick(String(t.closest('.np-ip-method').getAttribute('data-m') || ''), nc); return; }
-    if (t && t.closest('.np-ip-selfconfirm')) { npIpSelfConfirm(nc); return; }
-    if (t && t.closest('.np-ip-reip')) { wbGate('diag', function () { switchMainTab('diagnose'); diagGo(3); }); return; }
-    if (t && t.closest('.np-ip-next')) { if (typeof toast === 'function') toast('上面点一套组合、或自己配一套——点了 AI 就按它编 3 段故事'); return; }
-    if (t && t.closest('.np-ip-pick')) { npIpPickCand(parseInt(t.closest('.np-ip-pick').getAttribute('data-i'), 10) || 0, nc); return; }
-    if (t && t.closest('.np-ip-useself')) { npIpUseSelf(nc); return; }
-    if (t && t.closest('.np-ip-selftoggle')) { npIpSelfToggle(nc); return; }
-    if (t && t.closest('.np-ip-reroll')) { npIpReroll(nc); return; }
-    if (t && t.closest('.np-ip-backcombo')) { npGo(nc, 0); return; }
-    // 🎭 这一篇用哪一招（2026-10-19 收口：玩法是写稿屏顶上那一栏，点一下才钉）
-    if (t && t.closest('[data-pkplay]')) { npPkPick(String(t.closest('[data-pkplay]').getAttribute('data-pkplay') || ''), nc); return; }
-    if (t && t.closest('.np-pk-clear')) { npPkClear(nc); return; }
-    if (t && (t.closest('.np-pk-swap') || t.closest('.np-pk-all'))) { _npPkNc = nc; npPwOpen('inpage'); return; }
-    if (t && t.closest('.np-ip-backstory')) { if (_npWiz) { _npWiz.step = 1; npWizRender(nc); } return; }
-    if (t && t.closest('.np-ip-rewrite')) { npIpRewrite(nc); return; }
-    if (t && t.closest('.np-ip-toout')) {
-      if (_npWiz && String(((_npWiz.draft || {}).content) || '').trim()) { _npWiz.step = 8; npWizRender(nc); }
-      else if (typeof toast === 'function') toast('正文还没写出来——等它写完，或回上一步点「↩ 换一段故事」');
-      return;
-    }
-    if (t && t.closest('.np-ip-backdraft')) { if (_npWiz) { _npWiz.step = 4; npWizRender(nc); } return; }
-    if (t && t.closest('.np-ip-fin')) { npIpFinish(); return; }
     if (t && t.closest('.np-dsh-cv-on')) { npDshCvOn(String(t.closest('.np-dsh-cv-on').getAttribute('data-v') || ''), nc); return; }
     if (t && t.closest('.np-dsh-cv-gen')) { npDshCvGen(nc); return; }
     if (t && t.closest('.np-dsh-cv-copy')) { npDshCvCopy(); return; }
@@ -11433,7 +13776,6 @@ function ensureNpDelegation() {
     if (t && t.closest('.np-sent-use')) { npSentUse(nc); return; }
     if (t && t.closest('.np-sent-drop')) { if (_npWiz) _npWiz.revSentPend = null; npSentPaint(nc); return; }
     // 🎭 IP 线：骨架段点一下只提示——改它走「✍️ 全文手改」
-    if (t && t.closest('.np-ip-lock')) { if (typeof toast === 'function') toast('🔒 骨架段——AI 改稿不碰它；想改点右上「✍️ 全文手改」'); return; }
     const sentRow = t && t.closest('.np-sent-row');
     if (sentRow) {
       const i = parseInt(sentRow.getAttribute('data-i'), 10);
@@ -11623,7 +13965,14 @@ async function npWizNext(nc) {
   if (npIsK(_npWiz) && !npIsDvForced(_npWiz)) {
     if (_npWiz.step === 0) {
       npCollectChosen(nc); npCollectKb(nc);
-      if (!(_npWiz.chosenKb || []).length) { if (typeof toast === 'function') toast('先挑 1~3 条知识——这篇正文从它取材', 'error'); return; }
+      /* 行业题自带题面与事实：题就是素材，不再拦「先挑知识」 */
+      if (!npIsInd(_npWiz) && !(_npWiz.chosenKb || []).length) {
+        const planT = String(((_npWiz.planItem && (_npWiz.planItem.kb || _npWiz.planItem.title)) || '')).trim();
+        if (!planT) {
+          if (typeof toast === 'function') toast('先点「📚 按规划发」里一条题的「按这条写」，或在「🗂 自己选」挑 1~3 条知识', 'error');
+          return;
+        }
+      }
       _npWiz.step = 4;
       _npWiz.topicError = '';
     } else if (npIsKLong(_npWiz) && _npWiz.step === 4) {
@@ -11711,8 +14060,6 @@ async function npWizAgain(nc) {
     _npWiz.write = null;
     _npTopicsReady = ''; _npTopicsGen++;
   } else if (s === 3) {
-    // 引流线：页脚同一颗「🔀 重写这批」，但走自己的出稿器（六类料 × 每类 3 版）
-    if (npIsD(_npWiz)) { npDrainAgain(nc); return; }
     npVarAgain(nc); return;
   }
   await npWizRender(nc);
@@ -11839,7 +14186,18 @@ function renderNpMaterial(container, d) {
   npSentPaint(container);   // 默认视图是逐句列表，新正文要按它重拆
   renderNpTags(container);
   const ext = _npEl(container, 'npExtras');
-  if (ext) ext.innerHTML = d.timeTip ? '⏰ 建议发布：' + esc(d.timeTip) : '';
+  if (ext) {
+    const bits = [];
+    if (d.timeTip) bits.push('⏰ 建议发布：' + esc(d.timeTip));
+    if (d.location) bits.push('📍 发布定位：' + esc(d.location));   // 行业选题表那几篇：写的时候就把定位挂上
+    ext.innerHTML = bits.join('　') + (d.location ? npLocPickTip(d.location) : '');
+  }
+}
+/** 发布定位只是挂在稿子上的一行：真去小红书选地点还得人点一下（执行器只填标题/正文/话题） */
+function npLocPickTip(location) {
+  const seg = String(location || '').split('·').map(s => s.trim()).filter(Boolean);
+  const key = seg.length > 2 ? seg[2] : (seg[1] || seg[0] || '');
+  return '<div style="margin-top:5px;color:#9a6a12;">⚠ 程序不替你点地点：发布时（或发完在笔记「编辑」里）到小红书点「📍 添加地点」，搜「' + esc(key) + '」选中它。</div>';
 }
 
 /* 🖊 改稿：成稿出来先停在这一步，让用户说一句就改（改到满意再往下走出图） */
@@ -11876,10 +14234,9 @@ function npJoinSents(arr) { return (arr || []).map(x => x.t || x.br || '').join(
 function npDraftBodyHtml(w) {
   const content = String((w && w.draft && w.draft.content) || '');
   const textMode = !!(w && w.revTextMode);
-  const lockSet = ((npIsI(w) || npIsDStory(w)) && !textMode) ? npIpLockSetOf(w) : null;   // 🎭 IP 线：骨架段只标给逐句视图，全文手改不受限
   const bar = '<div style="display:flex;align-items:center;gap:8px;margin:8px 0 4px;">' +
     '<span style="font-size:11px;font-weight:700;color:#333;">📝 正文</span>' +
-    '<span style="font-size:10px;color:#8a929e;">' + (textMode ? '手改会当场回写档案' : (lockSet ? '点哪句改那句；🔒 骨架段 AI 不碰' : '点哪句改那句')) + '</span>' +
+    '<span style="font-size:10px;color:#8a929e;">' + (textMode ? '手改会当场回写档案' : '点哪句改那句') + '</span>' +
     '<span style="flex:1;"></span>' +
     '<button type="button" class="np-draft-mode" style="border:none;background:none;color:#1f6feb;font-size:11px;font-weight:700;cursor:pointer;padding:0;">' +
     (textMode ? '🖱 回到逐句' : '✍️ 全文手改') + '</button></div>';
@@ -11893,10 +14250,6 @@ function npDraftBodyHtml(w) {
   return bar + '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;overflow:hidden;">' +
     sents.map((s, i) => {
       if (s.br) return '<div style="height:8px;background:#fafbfc;"></div>';
-      if (lockSet && lockSet.has(i)) {
-        // 骨架段：不带 .np-sent-row（点选委托认它就进改句面板了）——手改仍可（全文手改）
-        return '<div class="np-ip-lock" title="骨架段：AI 改稿不碰；手改可以" style="padding:8px 10px;font-size:12px;line-height:1.75;cursor:default;border-bottom:1px solid #f2f3f5;color:#8a6d3b;background:#fffbf0;">🔒 ' + esc(s.t) + '</div>';
-      }
       const on = (w.revSentIdx === i);
       // 🎯 批准制：AI 改好的先对照（原句 → 改后），点「✓ 用这版」才真正换进正文
       const pend = (w && w.revSentPend && w.revSentPend.i === i) ? w.revSentPend : null;
@@ -11951,10 +14304,6 @@ function npDraftModeToggle(container) {
 async function npReviseSentence(container) {
   const w = _npWiz; if (!w || w.step !== 4 || _npReviseBusy) return;
   const idx = w.revSentIdx;
-  if (npIsI(w) || npIsDStory(w)) {   // 🎭 骨架段：AI 逐句改不碰它——手改走「✍️ 全文手改」
-    const lk = npIpLockSetOf(w);
-    if (lk && lk.has(idx)) { npSentMsg(container, '🔒 骨架段——AI 改稿不碰它；想改点右上「✍️ 全文手改」', '#d33'); return; }
-  }
   const content = String((w.draft && w.draft.content) || '');
   const sents = npSplitSents(content);
   const cur = (sents[idx] || {}).t || '';
@@ -12011,27 +14360,6 @@ function npSentUse(container) {
 }
 /** 改稿那一发的上下文：整篇改与逐句改共用一份（少一处字段，AI 就会把这一篇写成通用稿） */
 function npRevisePayload(w, extra) {
-  // 🎭 IP 线：改稿守的是「主题×方式」的调子与骨架段——通篇不卖、不带任何承接；
-  //   keepSents＝标了骨架的段原文，AI 改稿一个都不许动（逐句改那一发不带它，那时只改单句）
-  if (npIsI(w) || npIsDStory(w)) {
-    const lk = npIpLockTextsOf(w, npSplitSents(String((w.draft && w.draft.content) || '')));
-    return Object.assign({
-      platform: npPid(w),
-      topic: String(w.ipTheme || ''),
-      topicFact: '',
-      sellPoint: '',
-      people: (w.chosenPeople || []).map(p => ({ name: (p && p.name) || '' })),
-      tags: (_npNote.tags || []),
-      noteStyle: null,
-      talkKey: 'none',
-      ipTheme: String(w.ipTheme || ''),
-      ipPlay: String(w.ipPlay || ''),
-      ipHow: String(w.ipHow || ((npPlaySkeleton(w.ipPlay) || {}).how) || ''),
-      keepSents: lk.map(x => x.t),
-      planItem: null,
-      hot: null,
-    }, extra || {});
-  }
   // 🔥 引流线：改稿守的是「料」与「转法」——不带 planItem（那是知识 / 栏目那套节拍，会把引流结构带跑偏），
   //   话题＝挑中那版的题、话术固定「不提产品」、转法那句当硬约束传给 AI
   if (npIsD(w)) {
@@ -12092,7 +14420,6 @@ async function npReviseGo(container, ask) {
     w.revisePrev = content;
     w.revSentPend = null;   // 整篇换了：在先的「用这版」对比作废
     let nextContent = String(r.content);
-    if (npIsI(w) || npIsDStory(w)) nextContent = npIpKeepGuard(content, nextContent);   // 🎭 骨架段一个都不许丢——AI 漏抄了原位补回
     if (ta) ta.value = nextContent;
     if (w.draft) w.draft.content = nextContent;
     if (Array.isArray(r.tags) && r.tags.length) { _npNote.tags = r.tags.slice(); renderNpTags(container); }
@@ -12621,6 +14948,7 @@ async function npClipsRead() {
 }
 async function npClipsWrite(list) {
   try { await chrome.storage.local.set({ [NP_CLIPS_KEY]: list }); } catch (_) {}
+  try { _npPhotoLibPlan.sig = ''; } catch (_) {}   // 素材库变了：分镜台那颗「从素材库出图」重新算能不能按
 }
 function npClipId() {
   return 'clip' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -13026,38 +15354,6 @@ function ensureNpRvDelegation() {
   root.addEventListener('click', async function (ev) {
     const t = ev.target;
     if (!t || !t.closest) return;
-    /* 🎭 玩法效果 */
-    if (t.closest('.npar-pw-back')) { _npArPlayView = null; npAuditPlayPaint(); return; }
-    const pwBecome = t.closest('.npar-pw-become');
-    if (pwBecome) {
-      const nm = String(pwBecome.getAttribute('data-pw-become') || '');
-      if (!nm) return;
-      await npCurPlaySet(nm);
-      _npArPlayView = null;
-      toast('本轮改钉「' + nm + '」了——它以前发过的账还在，连发从今天这篇算起；下一篇文章照这一招写');
-      npAuditPlayPaint();
-      return;
-    }
-    const pwAgain = t.closest('.npar-pw-again');
-    if (pwAgain) {
-      const nm = String(pwAgain.getAttribute('data-pw-again') || '');
-      const sk = npPlaySkeleton(nm);
-      if (!nm || !sk) return;
-      await npPwCreate(nm, sk.out === 'long' ? 'long' : 'img');   // 照这招起一篇：出口按这招默认，进写稿那条路
-      return;
-    }
-    if (t.closest('.npar-pw-swap')) { _npArPlayView = null; await npPwOpen('swap'); return; }
-    if (t.closest('.npar-pw-ai')) { _npArPlayView = null; await npPwOpen('new', 'in'); await npPwAiAdd(); return; }
-    const pwStop = t.closest('.npar-pw-stop');
-    if (pwStop) {
-      const nm = String(pwStop.getAttribute('data-pw-stop') || '');
-      if (!nm) return;
-      await npPlayStop(nm, '你在复盘「🎭 玩法效果」上标的：这一阵不用了');
-      _npArPlayView = null;
-      toast('「' + nm + '」进停用了（留底，这条横幅上「🔁 换个玩法」进去、点「停用」那一签再点一下能复活）');
-      npAuditPlayPaint();
-      return;
-    }
     /* 🪟 主页门面 */
     const fn = t.closest('.npar-fnew');
     if (fn) { await npFacadeCreate(fn.getAttribute('data-fk') || ''); return; }
@@ -13074,124 +15370,11 @@ function npAuditGo(which) {
   document.querySelectorAll('.audit-tab').forEach(x => x.classList.toggle('active', x.getAttribute('data-atab') === which));
   const tp = document.getElementById('auditTopicsPane');
   const sp = document.getElementById('auditSentPane');
-  const pp = document.getElementById('auditPlayPane');
   if (tp) tp.style.display = (which === 'topics' ? '' : 'none');
   if (sp) sp.style.display = (which === 'sent' ? '' : 'none');
-  if (pp) pp.style.display = (which === 'play' ? '' : 'none');
   if (which === 'topics') npAuditTopicsPaint();
-  else if (which === 'play') npAuditPlayPaint();
   else npAuditSentPaint();
 }
-
-/* ═══ 🎭 玩法效果（复盘分析第三签）═══
-   2026-10-19 玩法合并：这一页只摆数，不替你下结论——档位判定（≥1.5× 好用主推 / <0.7× 该换）与
-   「💡 玩法结论」那套话撤了；每招发过几篇、平均评 / 赞、比账号平均几倍、最高哪一篇，你对着账号平均自己看。
-   动作（📤 再发一篇 / 🔁 换玩法 / 📈 加频次 / ⏸ 停用）就在这一页顶上那条「🎭 本轮玩法」里，点完就地重画。
-   数字就着「已发复盘」那份抓主页快照现算；没玩法标的篇（主页手发）不进账。 */
-
-/** 按玩法归堆算账：带玩法标的已发篇（统计口径与「已发复盘」同一份 note_stats 快照） */
-async function npAuditPlayAlgo() {
-  const all = await npNotesAll();
-  const statsAll = await npStatsReadAll();
-  const now = Date.now();
-  const sent = all.filter(n => n && n.status === '已发');
-  const withStat = (n) => {
-    const m = (n.url || '').match(/\/explore\/([^?#]+)/);
-    const st = m ? statsAll[m[1]] : null;
-    return (st && (st.likes || st.collects || st.comments)) ? st : null;
-  };
-  const sentTimes = sent.map(n => (n.statusAt && n.statusAt['已发']) || n.updatedAt || 0);
-  const alive = sent.map((n, i) => ({ n: n, st: withStat(n), at: sentTimes[i] })).filter(x => x.st);
-  const accC = alive.length ? alive.reduce((t, x) => t + (Number(x.st.comments) || 0), 0) / alive.length : null;
-  const accL = alive.length ? alive.reduce((t, x) => t + (Number(x.st.likes) || 0), 0) / alive.length : null;
-  const fetchedAt = alive.reduce((t, x) => Math.max(t, Number(x.st.fetchedAt) || 0), 0);
-  const byPlay = {};
-  const playOf = (n) => npNotePlayOf(n);
-  alive.forEach(x => {
-    const play = playOf(x.n);
-    if (play) (byPlay[play] = byPlay[play] || []).push(x);
-  });
-  // 发了但还没抓到数的篇也算「发过几篇」：玩法卡上那句「已发 N 篇 · 数还没回填」靠它
-  const allByPlay = {};
-  sent.forEach(n => { const play = playOf(n); if (play) (allByPlay[play] = allByPlay[play] || []).push(n); });
-  const sentAtOf = (n) => (n.statusAt && n.statusAt['已发']) || n.updatedAt || 0;
-  const rows = (await npPlayLedgerNames()).map(nm => {
-    const p = npPlaySkeleton(nm) || { name: nm, grp: '' };
-    const arr = byPlay[p.name] || [];
-    const all = allByPlay[p.name] || [];
-    if (!all.length) return { name: p.name, grp: p.grp, n: 0, nSent: 0 };
-    if (!arr.length) return { name: p.name, grp: p.grp, n: 0, nSent: all.length, lastAt: Math.max.apply(null, all.map(sentAtOf)) };
-    const avgC = arr.reduce((t, x) => t + (Number(x.st.comments) || 0), 0) / arr.length;
-    const avgL = arr.reduce((t, x) => t + (Number(x.st.likes) || 0), 0) / arr.length;
-    const days = Math.max(...arr.map(x => Math.max(1, Math.floor((now - x.at) / 86400e3))));
-    const topX = arr.reduce((a, b) => ((Number(b.st.comments) || 0) > (Number(a.st.comments) || 0) ? b : a), arr[0]);
-    return {
-      name: p.name, grp: p.grp, n: arr.length, nSent: all.length, avgC: avgC, avgL: avgL, days: days,
-      ratio: accC ? avgC / accC : null,
-      topC: Number((topX && topX.st && topX.st.comments) || 0) || 0,
-      topTitle: String((topX && topX.n && (topX.n.title || (topX.n.draft || '').split('\n')[0])) || '').trim().slice(0, 30),
-      lastAt: Math.max.apply(null, all.map(sentAtOf)),
-    };
-  });
-  // 只摆数：有数的排前面（发得多→少），一篇没发的沉底
-  rows.sort((a, b) => (b.n ? 1 : 0) - (a.n ? 1 : 0) || (b.n - a.n) || (b.nSent - a.nSent) || String(a.name).localeCompare(String(b.name), 'zh'));
-  return { rows: rows, accC: accC, accL: accL, nAll: alive.length, fetchedAt: fetchedAt };
-}
-const plFmt = v => { const x = Math.round(Number(v) * 10) / 10; return Number.isInteger(x) ? String(x) : x.toFixed(1); };
-
-async function npAuditPlayPaint() {
-  const pane = document.getElementById('auditPlayPane');
-  if (!pane) return;
-  pane.innerHTML = '<div class="audit-loading">🎭 玩法效果在算——按玩法标归堆，只摆数…</div>';
-  let pl, st;
-  try { pl = await npAuditPlayAlgo(); st = await npPlayStateRead(); }
-  catch (e) { pane.innerHTML = '❌ 出错了：' + esc(String((e && e.message) || e)); return; }
-  const sb = { by: {}, accC: pl.accC };                 // 顶上那条横幅的账：就在这一份里取，别再算一遍
-  pl.rows.forEach(r => { if (r && r.name) sb.by[r.name] = r; });
-  const bar = npArPlayBarHtml(st, sb, _npArPlayView);
-  const rows = pl.rows.filter(r => r.nSent);            // 发过才进这本账（一篇没发的不占地方，去档案那条挑）
-  const stoppedSet = new Set(((st && st.stop) || []).map(x => x && x.name).filter(Boolean));
-  const curName = (st && st.cur && st.cur.name) || '';
-  const chip = (txt, fg, bg, bd) => '<span style="font-size:10px;font-weight:700;color:' + fg + ';background:' + bg + ';border:1px solid ' + bd + ';border-radius:8px;padding:0 7px;">' + txt + '</span>';
-  const head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px;">' +
-    '<span class="note-xs">📕 就着「已发复盘」那份抓主页快照现算' + (pl.fetchedAt ? '（' + npArAgo(pl.fetchedAt) + '抓的）' : '') + ' · 主页上手发的没玩法标、不进账</span>' +
-    '<span style="flex:1;"></span></div>';
-  const emptyBox = (txt) => '<div style="max-width:720px;"><div class="card card-pad"><div class="audit-hd">玩法效果 —— 每一招发过几篇、数怎么样</div>' + head +
-    '<div class="audit-empty">' + txt + '</div>' +
-    '<div class="note-xs" style="margin-top:10px;">📌 这一页<b>只摆数、不替你下结论</b>——哪招接着发、哪招停一停，在上面那条「🎭 本轮玩法」上动手（📤 再发一篇 / 🔁 换玩法 / 📈 加频次 / ⏸ 停用都在那儿）。</div>' +
-    '</div></div>';
-  if (!pl.nAll) { pane.innerHTML = '<div style="max-width:720px;">' + bar + emptyBox('还没抓过主页的数——先去「📈 已发复盘」页抓一次（点赞 / 收藏 / 评论都是抓主页时顺带读的），这页才算得出账。') + '</div>'; return; }
-  if (!rows.length) { pane.innerHTML = '<div style="max-width:720px;">' + bar + emptyBox('还没有带玩法标的已发篇——「📒 笔记档案 → ✍️ 新建笔记」点 🔥 引流 那一格起一篇，写稿那一屏顶上点一招（或上面那条点「🎭 去挑一招」），发出去两天后这页就有它的账。') + '</div>'; return; }
-  const accLine = '账号平均：就着 <b>' + pl.nAll + '</b> 篇已发（玩法篇 + 平常篇一起算）· 平均 <b style="color:#1f2329;">💬' + plFmt(pl.accC) + ' 评</b> / 👍' + Math.round(pl.accL) + ' 赞 —— 下面每一招的倍数都是对着这条线算的，用哪招你自己拿主意。';
-  const rowsHtml = rows.map(r => {
-    const line1 = r.n
-      ? '有数的 <b>' + r.n + '</b> 篇（已发 ' + r.nSent + ' 篇）· 跑了 <b>' + r.days + '</b> 天 · 平均 <b style="color:#1f2329;">💬' + plFmt(r.avgC) + ' 评</b> / 👍' + Math.round(r.avgL) + ' 赞' +
-        (r.ratio != null ? '　· 是账号平均的 <b style="color:#1f2329;">' + r.ratio.toFixed(2) + ' 倍</b>' : '')
-      : '已发 <b>' + r.nSent + '</b> 篇 · <span style="color:#8a929e;">评论数还没回填（发出去两天后自动补）</span>';
-    return '<div style="border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 12px;margin-bottom:8px;' + (stoppedSet.has(r.name) ? 'opacity:.62;' : '') + '">' +
-      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-        '<b style="font-size:12.5px;color:#1f2329;">🎭 ' + esc(r.name) + '</b>' +
-        (r.name === curName ? chip('本轮在用', '#0a7b5a', '#eaf7f0', '#c9e9d8') : '') +
-        (stoppedSet.has(r.name) ? chip('⏸ 已停用', '#8a929e', '#f5f6f8', '#e5e8ee') : '') +
-        (r.grp ? chip(esc(r.grp), '#616b78', '#f5f6f8', '#e5e8ee') : '') +
-        '<span style="flex:1;"></span><span style="font-size:10.5px;color:#8a929e;">最近一次 ' + (npArAgo(r.lastAt) || '—') + '</span>' +
-      '</div>' +
-      '<div style="font-size:11px;color:#4b5563;margin-top:5px;line-height:1.8;">' + line1 + '</div>' +
-      (r.topC ? '<div style="font-size:11px;color:#4b5563;line-height:1.8;">最高的一篇：💬' + r.topC + ' 评 · 《' + esc(r.topTitle || '') + '》</div>' : '') +
-    '</div>';
-  }).join('');
-  pane.innerHTML = '<div style="max-width:720px;">' +
-    bar +
-    '<div class="card card-pad">' +
-      '<div class="audit-hd">玩法效果 —— 每一招发过几篇、数怎么样（只摆数，结论你自己下）</div>' + head +
-      '<div style="border:1px solid var(--line);border-radius:9px;background:#fafbfc;padding:8px 11px;margin-bottom:10px;font-size:11.5px;color:#4b5563;line-height:1.8;">' + accLine + '</div>' +
-      rowsHtml +
-      '<div class="note-xs" style="margin-top:10px;">📌 玩法标是建篇那一刻自动记的，不用手标；主指标看「💬 评论」——玩法戏都在评论区。' +
-        '要换招 / 停用 / 加频次：上面那条「🎭 本轮玩法」上动手，这一页不代你做决定。</div>' +
-    '</div></div>';
-}
-
-/* 玩法的效果与动作都归到一处：「📈 复盘 → 🎭 玩法效果」——顶上那条横幅动手，下面这本账只摆数。 */
 
 async function npAuditTopicsPaint() {
   const pane = document.getElementById('auditTopicsPane');
@@ -13637,6 +15820,8 @@ function npLookShape(raw) {
   if (/^data:image\//.test(markImg)) out.markImg = markImg;
   const markPos = String(o.markPos || '').trim();
   if (markPos === 'br' || markPos === 'bl') out.markPos = markPos;
+  const pack = String(o.pack || '').trim().toUpperCase();
+  if (pack && NP_CARD_PACKS.some(x => x.k === pack)) out.pack = pack;   // 卡片图那四套版面（一篇一套）
   if (o.classify) out.classify = true;
   return out;
 }
@@ -14176,10 +16361,19 @@ function npCoverShape(raw) {
     on: o ? o.on !== false : true,                      // 默认要封面（首图那一张）；关掉＝这一套只出那几张配图
     text: '',                                           // 派生物：② 顶上那行读数用的那一句，npShotsCompose 里现算
     copy: String((o && o.copy) || ''),
+    sub: String((o && o.sub) || ''),                    // 封面第二行（卡片式写法：副标题）
+    src: String((o && o.src) || ''),                    // card＝按卡片自动拼的（卡片一变就重拼）；manual＝人改过，不再顶掉
+    cardKey: String((o && o.cardKey) || ''),
     prompt: String((o && (o.prompt || o.desc)) || ''),
     // 本波「字后压」：那一句文案（copy）就是压上去的大字，所以这一档的字参数只剩「重点那几个字怎么标 ＋ 字位」两样，默认下中那一格
     cap: VisualMotif.captionShape({ zone: (o && o.cap && o.cap.zone) || 'bc', em: (o && o.cap && o.cap.em) || [] }),
     imgs: (Array.isArray(o && o.imgs) ? o.imgs : []).map(String).filter(Boolean),
+    imgClip: String((o && o.imgClip) || ''),             // 封面这张是不是素材库里的（从库里铺的才记）
+    imgGrp: String((o && o.imgGrp) || ''),               // 属于哪一批（同一批＝同一场地、同一身衣服）
+    imgSrc: (['ai', 'lib', 'own'].indexOf(String((o && o.imgSrc) || '')) >= 0 ? String(o.imgSrc) : ''),
+    txtImg: String((o && o.txtImg) || ''),               // ✍ 封面也排（跟配图同一套算法）
+    txtPos: (String((o && o.txtPos) || '') === 'top' ? 'top' : (String((o && o.txtPos) || '') === 'bottom' ? 'bottom' : '')),
+    txtTxt: String((o && o.txtTxt) || ''),
   };
 }
 
@@ -14230,6 +16424,8 @@ function npShotsShape(raw) {
       face: String((x && x.face) || ''),                 // 什么表情、什么脸色
       chars: (Array.isArray(x && x.chars) ? x.chars : []).map(String).filter(Boolean),   // 这一张谁出场（IP 角色 id；空＝整篇主角）
       role: String((x && x.role) || ''),                // 分镜角色（三十改：开场 / 展开 / 细节 / 对照 / 转折 / 收束）
+      dim: String((x && x.dim) || ''),                  // 对比写法：这张维度页比的是哪个维度
+      cols: (Array.isArray(x && x.cols) ? x.cols : []).map(c => String(c || '').trim()).filter(Boolean).slice(0, 4),   // 表格横着比的几个对象
       topic: String((x && x.topic) || ''),              // 配图主题（≤12 字，进生图提示词的那句「画面主角」）
       prompt: String((x && x.prompt) || ''),            // 这一屏整句生图提示词（手改 / 生成的那条优先；空＝本地现拼）
       cap: VisualMotif.captionShape(x && x.cap),        // 图上那套字（{档,大字,承接,标注,小注,重点,字位}）：按档只填用得上的那几格
@@ -14240,6 +16436,13 @@ function npShotsShape(raw) {
       cands: (Array.isArray(x && x.cands) ? x.cands : []).map(c => String(c || '')).filter(Boolean).slice(0, 3),   // 🔁 一次回的三条分镜候选（主推／换视角／极简）
       pick: (x && Number(x.pick) >= 0) ? Number(x.pick) : -1,                           // 在用第几条候选（-1＝上面那格是自己写的）
       imgs: (Array.isArray(x && x.imgs) ? x.imgs : []).map(String).filter(Boolean),
+      need: String((x && x.need) || ''),                 // 这一张要的是哪组素材（me/place/work/guest/result；空＝按写法兜底）
+      imgClip: String((x && x.imgClip) || ''),           // 贴上的这张＝素材库哪一条（从库里挑的才记；⬆ 传图的不记）
+      imgGrp: String((x && x.imgGrp) || ''),             // 贴上的这张属于哪一批（同一批＝同一场地、同一身衣服）
+      imgSrc: (['ai', 'lib', 'own'].indexOf(String((x && x.imgSrc) || '')) >= 0 ? String(x.imgSrc) : ''),   // ai＝服务器画的 / lib＝素材库铺的 / own＝自己传的
+      txtImg: String((x && x.txtImg) || ''),             // ✍ 排好字的那张（画面仓 id）；空＝还没排，发原图
+      txtPos: (String((x && x.txtPos) || '') === 'top' ? 'top' : (String((x && x.txtPos) || '') === 'bottom' ? 'bottom' : '')),   // 字放上／放下
+      txtTxt: String((x && x.txtTxt) || ''),             // 排进去的是哪句（稿子改过要重排）
     };
   }).filter(x => x.text || x.desc || x.scene || x.sids.length);
   return {
@@ -14270,13 +16473,18 @@ function npShotsPack(sh) {
     scene: String(i.scene || ''), act: String(i.act || ''), face: String(i.face || ''),
     chars: (Array.isArray(i.chars) ? i.chars : []).map(String).filter(Boolean),
     role: String(i.role || ''), topic: String(i.topic || ''), prompt: String(i.prompt || ''),
+    dim: String(i.dim || ''), cols: (Array.isArray(i.cols) ? i.cols : []).map(String).filter(Boolean).slice(0, 4),
     cap: VisualMotif.captionShape(i.cap), clock: !!i.clock,
     sids: (i.sids || []).map(String).filter(Boolean), imgs: (i.imgs || []).map(String),
+    need: String(i.need || ''), imgClip: String(i.imgClip || ''), imgGrp: String(i.imgGrp || ''), imgSrc: String(i.imgSrc || ''),
+    txtImg: String(i.txtImg || ''), txtPos: String(i.txtPos || ''), txtTxt: String(i.txtTxt || ''),
     cands: (Array.isArray(i.cands) ? i.cands : []).map(c => String(c || '')).filter(Boolean).slice(0, 3),
     pick: Number(i.pick) >= 0 ? Number(i.pick) : -1,
   }));
   const cv = npCoverShape(sh.cv);
-  const cvPack = { on: cv.on, copy: cv.copy, prompt: cv.prompt, cap: cv.cap, imgs: cv.imgs };
+  const cvPack = { on: cv.on, copy: cv.copy, sub: cv.sub, src: cv.src, cardKey: cv.cardKey, prompt: cv.prompt, cap: cv.cap, imgs: cv.imgs,
+                   imgClip: cv.imgClip, imgGrp: cv.imgGrp, imgSrc: cv.imgSrc,
+                   txtImg: cv.txtImg, txtPos: cv.txtPos, txtTxt: cv.txtTxt };
   const style = String(sh.style || ''), seed = String(sh.seed || '');
   const total = Number(sh.total) || 0;
   if (!npShotsLive(sh) && !style) return null;
@@ -14482,16 +16690,18 @@ function npFilmPicks(w) {
   const cv = npCoverOf(w) || {};
   const look = npLookOf(w);
   const th = NP_DEMO_THEME[String(look && look.theme || '')] || NP_DEMO_THEME['暗调实拍·单一暖光源'];
-  const pick = (ids) => {
-    const id = (ids || []).find(x => _npShotImgs[x]);
+  const pick = (it) => {
+    const t = String((it && it.txtImg) || '');
+    const ids = t ? [t].concat((it && it.imgs) || []) : ((it && it.imgs) || []);   // 排过字就摆排好的那张
+    const id = ids.find(x => _npShotImgs[x]);
     if (!id) return null;
     const v = _npShotImgs[id];
     return { aid: id, name: v.name, thumb: v.thumb };
   };
   const out = [];
-  if (cv.on) out.push({ k: 'cv', tag: vw.cover, img: pick(cv.imgs), ph: th.pic, cap: String(cv.copy || '').trim() || npCoverText(w), text: String(cv.copy || '') });
+  if (cv.on) out.push({ k: 'cv', tag: vw.cover, img: pick(cv), ph: th.pic, cap: String(cv.copy || '').trim() || npCoverText(w), text: String(cv.copy || '') });
   npShotsOn(w).forEach((it, i) => {
-    out.push({ k: it.id, tag: vw.image + ' ' + (i + 1), img: pick(it.imgs), ph: th.pic, cap: npCapOnImage(it, w), text: String(it.text || '') });
+    out.push({ k: it.id, tag: vw.image + ' ' + (i + 1), img: pick(it), ph: th.pic, cap: npCapOnImage(it, w), text: String(it.text || '') });
   });
   return out;
 }
@@ -15836,13 +18046,17 @@ function npCoverPaneHtml(w) {
     return '<div style="border:1px solid #e9e4fb;border-radius:10px;background:#fdfcff;padding:9px 11px;">' + bar +
       '<div style="font-size:11px;color:#8a929e;line-height:1.7;margin-top:6px;">这一版不要' + vw.cover + '：这一套就从第 1 屏那张图开始排（发笔记时首图就是它）。已经写过的那两句没丢，点「要这一张」就回来了。</div></div>';
   }
+  const cardCv = npCardModeOf(w);
   const body = '<div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;margin-top:8px;">' +
       '<div style="flex:1;min-width:220px;">' +
-        '<div style="' + lab + '">' + vw.cover + '那一句文案（图上配文依据，一行）</div>' +
+        '<div style="' + lab + '">' + (cardCv ? vw.cover + '主标题（大字卡第一行，≤14 字）' : vw.cover + '那一句文案（图上配文依据，一行）') + '</div>' +
         '<input class="np-cover-copy" type="text" maxlength="40" spellcheck="false" value="' + npArAttr(cv.copy) + '" ' +
-          'placeholder="例：跑了两周，腰围先骗了我一次" style="' + ta + 'margin-top:4px;background:' + (String(cv.copy || '').trim() ? '#fff' : '#fffaf3') + ';">' +
+          'placeholder="' + (cardCv ? '例：3–6岁该会哪些动作' : '例：跑了两周，腰围先骗了我一次') + '" style="' + ta + 'margin-top:4px;background:' + (String(cv.copy || '').trim() ? '#fff' : '#fffaf3') + ';">' +
+        (cardCv ? '<div style="' + lab + 'margin-top:8px;">' + vw.cover + '副标题（第二行，≤18 字）</div>' +
+          '<input class="np-cover-sub" type="text" maxlength="24" spellcheck="false" value="' + npArAttr(cv.sub) + '" ' +
+            'placeholder="例：在家一眼看出到没到" style="' + ta + 'margin-top:4px;background:' + (String(cv.sub || '').trim() ? '#fff' : '#fffaf3') + ';">' : '') +
         '<div style="font-size:10px;color:#9aa0ac;line-height:1.6;margin-top:4px;">' +
-          (String(cv.copy || '').trim() ? '这一句会写进下面那份提示词（≤40 字），由豆包直接画在图上。'
+          (String(cv.copy || '').trim() ? (cardCv ? '主标题和副标题会写进下面那份提示词，由豆包直接画在图上。' : '这一句会写进下面那份提示词（≤40 字），由豆包直接画在图上。')
             : '还没写：现在先顶一句「' + esc(String(cv.text || '').slice(0, 40) || '（下面也还没有第 1 屏）') + '」，写了就以你写的为准。') +
           '</div>' +
       '</div>' +
@@ -16215,7 +18429,7 @@ async function npShotUpload(files) {
       await npAsPrevSave(id, t);
       list.push({ id: id, kind: 'local', ref: String(f.name || '本机图'), name: String(f.name || '本机图'), thumb: t.thumb, w: t.w, h: t.h,
                   shotOf: String((w.arId || '') + '#' + it.id), addedAt: Date.now() });
-      it.imgs.push(id); ok++;
+      it.imgs.push(id); it.imgSrc = 'own'; it.imgClip = ''; it.imgGrp = ''; ok++;
     } catch (e) { bad = String((e && e.message) || e); }
   }
   if (ok) await npAsAssetsWrite(list);
@@ -16228,6 +18442,7 @@ async function npShotUpload(files) {
 async function npShotUnlink(container, shotId, assetId) {
   const w = npS(); const it = w && npShotOf(w, shotId); if (!it) return;
   it.imgs = (it.imgs || []).filter(x => x !== assetId);
+  if (!it.imgs.length) { it.imgSrc = ''; it.imgClip = ''; it.imgGrp = ''; }
   npArchiveSave(w);
   npRenderOutput(container);
 }
@@ -16245,7 +18460,7 @@ async function npVoiceRevise(container, ask) {
   const btn = container.querySelector('.np-voice-rv');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ 改稿中…'; }
   say('AI 正在改…');
-  const ctx = [(_npNote.title ? '【本篇标题】' + _npNote.title : ''), (w.draft && w.draft.content) ? '【原笔记正文】\n' + w.draft.content : '', npSellPointStr() ? '【主打卖点】' + npSellPointStr() : ''].filter(Boolean).join('\n\n');
+  const ctx = [(_npNote.title ? '【本篇标题】' + _npNote.title : ''), (w.draft && w.draft.content) ? '【原笔记正文】\n' + w.draft.content : ''].filter(Boolean).join('\n\n');
   let okMsg = '', errMsg = '';
   try {
     const r = await chrome.runtime.sendMessage({ action: 'voiceRewrite', data: { platform: npPid(w), script, ask: a, ctx } });
@@ -16771,19 +18986,15 @@ const npArAttr = (s) => esc(String(s == null ? '' : s)).replace(/"/g, '&quot;');
 
 /* ══════════════════════ A2：周排 + 队列 ══════════════════════ */
 
-/** 周排位：一天一篇（2026-10-29 起）——按「线 · 交付方式」六选一：
- *  📚 知识·图文 / 📚 知识·长文 / 📚 知识·视频 / 🔥 引流·图文 / 🔥 引流·长文 / 🔥 引流·视频。
+/** 周排位：一天一篇（2026-10-29 起）——日常只排「📚 知识·图文」一种（2026-11-09 老板拍）。
+ *  案例只出视频、要现场素材，不进自动备稿：做成片后到「📒 笔记档案」点发布。
  *  weekPlan = { mon:[], tue:[], …, sun:[] }，存成 0 或 1 个元素，空数组 = 休。
- *  「发到哪」单独一列（weekPlanPlat）：小红书 / 抖音 / 视频号 逐条列出、可多勾。
- *  视频篇只写口播稿＋分镜，成片到档案里点「出片」录（浏览器里实时录，不占服务器）。 */
+ *  「发到哪」单独一列（weekPlanPlat）：知识图文只发小红书。 */
 const NP_WEEK_KINDS = [
   { k: '知识·图文', line: 'k', form: '图文', icon: '📚' },
-  { k: '知识·长文', line: 'k', form: '长文', icon: '📚' },
-  { k: '知识·视频', line: 'k', form: '视频', icon: '📚' },
-  { k: '引流·图文', line: 'd', form: '图文', icon: '🔥' },
-  { k: '引流·长文', line: 'd', form: '长文', icon: '🔥' },
-  { k: '引流·视频', line: 'd', form: '视频', icon: '🔥' },
 ];
+/** 老格子那几种已经下架的排法：不再出题，格子上给一句「已下架」；档案里写好的稿不动 */
+const NP_WEEK_KINDS_OFF = ['知识·长文', '知识·视频', '引流·图文', '引流·长文', '引流·视频'];
 /** 发到哪（2026-10-31 改）：三家平台逐条列出、可多勾；抖音 / 视频号只收视频，小红书三种都收。
  *  weekPlanPlat 存逗号串（如 'xhs,douyin'）；老值 xhs|douyin|channels|dy_ch|all 读时自动归一。 */
 const NP_PLAN_PLATS = [
@@ -16847,13 +19058,18 @@ function npPlanPlatsFor(plat, form) {
   if (f === '图文' || f === '长文') return ['xhs'];
   return p;
 }
-/** 老档三种叫法：知识 / 引流 → 图文；案例 → 休（案例要人交片，不再进自动规划） */
-const NP_WEEK_KIND_OLD = { '知识': '知识·图文', '引流': '引流·图文', '案例': '' };
+/** 老档三种叫法：知识 → 图文；引流 / 案例 → 休（引流下架、案例要人交片，都不再进自动规划） */
+const NP_WEEK_KIND_OLD = { '知识': '知识·图文', '引流': '', '案例': '' };
 function npWeekKindNorm(x) {
   const s = String(x == null ? '' : x).trim();
   if (NP_WEEK_KINDS.some(w => w.k === s)) return s;
   const old = NP_WEEK_KIND_OLD[s];
   return old === undefined ? '' : old;
+}
+/** 老格子是不是「已下架」的那几种排法（只在界面上给提示；读的时候一律当休） */
+function npWeekKindIsOff(x) {
+  const s = String(x == null ? '' : x).trim();
+  return NP_WEEK_KINDS_OFF.indexOf(s) >= 0 || s === '引流' || s === '引流·图文';
 }
 function npWeekKindMeta(k) { return NP_WEEK_KINDS.find(w => w.k === String(k == null ? '' : k)) || null; }
 const NP_WEEK_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -17008,44 +19224,26 @@ async function npPlanSetDay(wp, day, kind) {
    一天三格各管各的线；抖音/视频号只收视频，图文长文只在小红书那行；
    同一天视频只认一条线，共用一支片（改了一格，其余视频格自动跟线）。 */
 const NP_PLAN_GRID_FORMS = {
-  xhs: ['知识·图文', '知识·长文', '知识·视频', '引流·图文', '引流·长文', '引流·视频'],
-  douyin: ['知识·视频', '引流·视频'],
-  channels: ['知识·视频', '引流·视频'],
+  xhs: ['知识·图文'],
+  douyin: [],
+  channels: [],
 };
 let _npPlanGridMigrated = { case: false };
 let _npPlanGridExpanding = null;
+/** 读到的老格子（已下架那几种）：{mon:{xhs:'引流·图文'}}——只给界面提示用，不当排法使 */
+let _npPlanGridOff = {};
 function npPlanGridEmpty() {
   const g = {};
   NP_WEEK_DAYS.forEach(d => { g[d] = { xhs: '', douyin: '', channels: '' }; });
   return g;
 }
-/** 某格归一：不认的写法丢掉；抖音/视频号收了图文长文＝换成同线的视频 */
+/** 某格归一：日常只认「知识·图文」，而且只在小红书那行；其余（下架的老排法）一律当休 */
 function npPlanGridCellNorm(pid, kind) {
-  const k = npWeekKindNorm(kind);
-  if (!k) return '';
-  const m = npWeekKindMeta(k) || {};
-  if (pid === 'xhs') return k;
-  if (m.form === '视频') return k;
-  return (m.line === 'd' ? '引流' : '知识') + '·视频';
+  if (String(pid || '') !== 'xhs') return '';
+  return npWeekKindNorm(kind) === '知识·图文' ? '知识·图文' : '';
 }
-/** 同一天视频只认一条线：先见到的线为准，其余视频格改成同线；返回被改的平台名 */
-function npPlanGridAlign(row) {
-  let line = '';
-  NP_PLAN_PLATS.forEach(p => {
-    const m = npWeekKindMeta(row[p.id]);
-    if (m && m.form === '视频' && !line) line = m.line;
-  });
-  if (!line) return [];
-  const changed = [];
-  NP_PLAN_PLATS.forEach(p => {
-    const m = npWeekKindMeta(row[p.id]);
-    if (m && m.form === '视频' && m.line !== line) {
-      row[p.id] = (line === 'd' ? '引流' : '知识') + '·视频';
-      changed.push((npPlanPlatMeta(p.id) || {}).nm || p.id);
-    }
-  });
-  return changed;
-}
+/** 同一天视频只认一条线（现在没有排视频的档，保留给老数据；改了这边不用动） */
+function npPlanGridAlign(row) { return []; }
 /** 老结构（一天一个形式 + 发到哪多选）展开成三行：小红书保留原形式，抖音/视频号补成同线视频 */
 function npPlanGridFromLegacy(c) {
   const g = npPlanGridEmpty();
@@ -17084,9 +19282,17 @@ async function npPlanGridRead() {
     }
   }
   const out = npPlanGridEmpty();
+  _npPlanGridOff = {};
   NP_WEEK_DAYS.forEach(d => {
     const row = (raw && raw[d] && typeof raw[d] === 'object') ? raw[d] : {};
-    NP_PLAN_PLATS.forEach(p => { out[d][p.id] = npPlanGridCellNorm(p.id, row[p.id]); });
+    NP_PLAN_PLATS.forEach(p => {
+      const rawK = String(row[p.id] == null ? '' : row[p.id]).trim();
+      out[d][p.id] = npPlanGridCellNorm(p.id, rawK);
+      if (!out[d][p.id] && npWeekKindIsOff(rawK)) {
+        _npPlanGridOff[d] = _npPlanGridOff[d] || {};
+        _npPlanGridOff[d][p.id] = rawK;
+      }
+    });
     npPlanGridAlign(out[d]);
   });
   return out;
@@ -17119,6 +19325,116 @@ function npPlanGridPieces(row, usable) {
   });
   return { txt: txt, vid: vid, n: txt + vid };
 }
+/* ── 按分类排（2026-11-05）：选了行业的号，weekTopicGrid = {mon:{xhs:{gid,tid},douyin:{…},channels:{…}},…}
+   一格放一个组，系统从这组里挑还没写的那条（tid 有值＝点名要那条）；gid='' ＝那天休。
+   抖音/视频号两格联动：同一组、同一条（视频本来就只有视频，挑题留给出稿之后再定形式）。 */
+const NP_TCELL_EMPTY = { gid: '', tid: '', carrier: '', form: '', variant: '' };
+function npPlanTopicGridEmpty() {
+  const g = {};
+  NP_WEEK_DAYS.forEach(d => { g[d] = { xhs: Object.assign({}, NP_TCELL_EMPTY), douyin: Object.assign({}, NP_TCELL_EMPTY), channels: Object.assign({}, NP_TCELL_EMPTY) }; });
+  return g;
+}
+function npPlanTopicCellNorm(cell) {
+  const c = (cell && typeof cell === 'object') ? cell : {};
+  return {
+    gid: String(c.gid || ''), tid: String(c.tid || ''),
+    carrier: String(c.carrier || ''), form: String(c.form || ''), variant: String(c.variant || ''),
+  };
+}
+/** 抖音/视频号联动：有组的那格带另一格（怎么发、怎么讲一起带）；两格都没组＝两格都空 */
+function npPlanTopicGridLink(row) {
+  const a = row.douyin || NP_TCELL_EMPTY, b = row.channels || NP_TCELL_EMPTY;
+  const src = a.gid ? a : (b.gid ? b : null);
+  row.douyin = src ? Object.assign({}, NP_TCELL_EMPTY, src) : Object.assign({}, NP_TCELL_EMPTY);
+  row.channels = src ? Object.assign({}, NP_TCELL_EMPTY, src) : Object.assign({}, NP_TCELL_EMPTY);
+  return row;
+}
+let _npPlanTopicSeeded = false;
+/** 读周表：没有就从全休开始，并把旧的形式排期清空（老板拍的「现在就清掉，全部重排」；
+ *  老 weekPlan / weekPlanGrid 的原值不再回读，留在库里当回滚底） */
+async function npPlanTopicGridRead() {
+  let c = null;
+  try { c = await readConfigPlain(); } catch (_) { c = null; }
+  const raw = (c && c.product && c.product.weekTopicGrid) || null;
+  const out = npPlanTopicGridEmpty();
+  if (raw && typeof raw === 'object') {
+    NP_WEEK_DAYS.forEach(d => {
+      const row = (raw[d] && typeof raw[d] === 'object') ? raw[d] : {};
+      NP_PLAN_PLATS.forEach(p => {
+        const cell = npPlanTopicCellNorm(row[p.id]);
+        out[d][p.id] = cell.gid ? cell : Object.assign({}, NP_TCELL_EMPTY);
+      });
+      npPlanTopicGridLink(out[d]);
+    });
+    return out;
+  }
+  if (!_npPlanTopicSeeded) {
+    _npPlanTopicSeeded = true;
+    try {
+      const cc = await readConfigPlain();
+      await writeConfigPlain(Object.assign({}, cc, {
+        product: Object.assign({}, (cc && cc.product) || {}, {
+          weekTopicGrid: out,
+          weekPlanGrid: npPlanGridEmpty(),
+        }),
+      }));
+    } catch (_) {}
+  }
+  return out;
+}
+async function npPlanTopicGridSave(g) {
+  const safe = npPlanTopicGridEmpty();
+  NP_WEEK_DAYS.forEach(d => {
+    const row = (g && g[d] && typeof g[d] === 'object') ? g[d] : {};
+    NP_PLAN_PLATS.forEach(p => { safe[d][p.id] = npPlanTopicCellNorm(row[p.id]); });
+    npPlanTopicGridLink(safe[d]);
+  });
+  const c = await readConfigPlain();
+  await writeConfigPlain(Object.assign({}, c, {
+    product: Object.assign({}, (c && c.product) || {}, { weekTopicGrid: safe }),
+  }));
+  npPubRearmPing();
+  return safe;
+}
+function npPlanTopicHasDay(row) { return NP_PLAN_PLATS.some(p => !!(row && row[p.id] && row[p.id].gid)); }
+/** 这天要出几篇：小红书那格有组＝一篇；抖音/视频号有组＝另一篇（两家共用） */
+function npPlanTopicPieces(row, usable) {
+  let n = 0;
+  if ((usable || []).indexOf('xhs') >= 0 && !!(row && row.xhs && row.xhs.gid)) n++;
+  if ((usable || []).some(pid => pid !== 'xhs' && row && row[pid] && row[pid].gid)) n++;
+  return n;
+}
+/** 这一格现在该出哪条题（tid 点名优先；否则组里还没写、且写得了这种写法的第一条）；null＝这组写完了 */
+function npPlanTopicPick(pack, plan, cell, form, skip, pid) {
+  if (!pack || !cell || !cell.gid || typeof TopicTable === 'undefined') return null;
+  const carrier = String(form || (cell.carrier ? TopicTable.carrierToForm(cell.carrier) : ''));
+  const items = (plan && Array.isArray(plan.items)) ? plan.items : [];
+  let it = null;
+  if (cell.tid) {
+    const hit = items.find(x => x && x.tid && String(x.tid) === String(cell.tid));
+    if (hit && !hit.done) it = hit;
+  }
+  if (!it) it = TopicTable.nextForGroup(pack.key, plan, cell.gid, carrier, skip, cell.form || '', pid);
+  return it ? npPlanTopicApply(it, cell, carrier, pid) : null;
+}
+/** 格子选的「怎么发 / 怎么讲」盖到题上（格子没选就用题自己的默认；口按平台收口） */
+function npPlanTopicApply(it, cell, carrier, pid) {
+  if (!it || typeof TopicTable === 'undefined') return it;
+  const out = Object.assign({}, it);
+  const pk = String((cell && cell.form) || '');
+  if (pk) {
+    const fi = TopicTable.formInfo(pk, String((cell && cell.variant) || ''));
+    out.form = fi.key;
+    out.variant = fi.variant;
+  }
+  /* 载体跟着写法收口：格子选的是中文载体名（图文/长文/视频），先折回键；清单不出图文→换成同档长文 */
+  const raw = String(carrier || '').trim();
+  const c = /^(video|image|long)$/.test(raw) ? raw
+    : (TopicTable.formToCarrier(raw) || String((cell && cell.carrier) || '') || String(out.carrier || ''));
+  out.carrier = TopicTable.resolveCarrierFor(out.carriers, out.form || 'list', pid || 'xhs', c);
+  return out;
+}
+
 /** 账号规划页「🗓 每周排法」那几颗胶囊：每天一条线（先看小红书那格，没有就看视频格）；[] ＝休 */
 async function npPlanWeekViewRead() {
   const g = await npPlanGridRead();
@@ -17369,6 +19685,13 @@ async function npPubStageFromArchive(n) {
   const byId = {};
   assets.forEach(a => { if (a && a.id) byId[String(a.id)] = a; });
   let picks = null;
+  /* 发出去用哪张：排过字就用排好的那张，没排过用原图（封面同一口径） */
+  const pickIdOf = (it) => {
+    const t = String((it && it.txtImg) || '');
+    if (t && byId[t]) return t;
+    const ids = (it && it.imgs) || [];
+    return ids.length ? String(ids[ids.length - 1]) : '';
+  };
   const rows = npImgRowsOf(n) || [];
   for (const r of rows) {
     const sh = r.shots || {};
@@ -17376,17 +19699,17 @@ async function npPubStageFromArchive(n) {
     if (sh.cv && sh.cv.on !== false) list.push(sh.cv);
     (sh.items || []).forEach(it => { if (it && !it.off) list.push(it); });
     if (!list.length) continue;
-    const hasAll = list.every(it => { const ids = it.imgs || []; return ids.length && byId[String(ids[ids.length - 1])]; });
+    const hasAll = list.every(it => !!pickIdOf(it));
     if (hasAll) { picks = list; break; }
-    if (!picks && list.some(it => (it.imgs || []).length)) picks = list;   // 凑不齐也先记一套，只搬有图的
+    if (!picks && list.some(it => !!pickIdOf(it))) picks = list;   // 凑不齐也先记一套，只搬有图的
   }
   if (!picks) return { ok: false, why: '这篇的画面表里还没有图' };
   const files = [], sig = [];
   for (const it of picks) {
-    const ids = it.imgs || [];
-    if (!ids.length) continue;
-    const f = await npPubAssetFile(ids[ids.length - 1], byId);
-    if (f) { files.push(f); sig.push(String(ids[ids.length - 1])); }
+    const pid = pickIdOf(it);
+    if (!pid) continue;
+    const f = await npPubAssetFile(pid, byId);
+    if (f) { files.push(f); sig.push(pid); }
   }
   if (!files.length) return { ok: false, why: '档案里这套图取不回文件（原图丢了，要重出一遍）' };
   const ok = await npPubStageFiles(n.id, files, false, picks.length, { src: 'archive', sig: sig.join(',') });
@@ -17495,15 +19818,25 @@ function npArchiveData(w) {
     people: (w.chosenPeople || []).map(p => String((p && p.name) || '')).filter(Boolean),
     sellPoints: (w.chosen || []).map(x => ({ point: String(x.point || ''), why: String(x.why || ''), hasImage: !!x.image })),
     kb: (w.chosenKb || []).map(e => ({ id: String(e.id || ''), title: String(e.title || '') })).filter(x => x.id || x.title),
-    form: w.path === 'video' ? '视频' : (w.path === 'image' ? '图文' : (w.path === 'voice' ? '口播稿' : (w.path === 'text' ? '长文' : ''))),
+    form: w.path === 'video' ? '视频' : (w.path === 'image' ? '图文' : (w.path === 'voice' ? '口播稿' : (w.path === 'text' ? '长文'
+      : ((w.planItem && w.planItem.src === 'industry' && typeof TopicTable !== 'undefined') ? (TopicTable.carrierToForm(w.planItem.carrier) || '') : '')))),
     style: w.path === 'video' ? npStyleOf(w, 'video') : '',   // 表现形式这格只剩视频在用（由成片形式派生的口播写法口径）；图文＝画面流派，记在 imgDocs 那一行上
     filmKind: String(w.filmKind || ''),   // 这一档的成片形式（字效编辑器第一步那三选一；视频才有）
     draft: String(d.content || ''),
     titles: (d.titles || []).map(String),
     tags: (note.tags || []).map(String),
     timeTip: String(d.timeTip || ''),
+    location: String(d.location || ''),   // 📍 发布定位（行业选题表那几篇按账号资料里的城市 · 区 · 门店给）
     visual: img ? img.visual : (w.visual ? { cover: String(w.visual.cover || ''), images: String(w.visual.images || '') } : null),
     shots: img ? img.shots : npShotsPack(w.shots),   // 出图那张画面表（划好的每屏：★那句＋收了哪几行 + 分镜 + 这一套的风格含流派 + 回传的图引用）
+    /* 🧩 卡片式写法（清单 / 对比 / 问答）：写稿一起交回来的每张卡（角色 + 标题 + 几行字）；
+       分幕式写法（讲故事 / 吐槽）没有这一份，存 null */
+    cards: (Array.isArray(w.cards) && w.cards.length) ? w.cards.map(c => ({
+      role: String((c && c.role) || ''), title: String((c && c.title) || ''),
+      lines: (Array.isArray(c && c.lines) ? c.lines : []).map(x => String(x || '')).filter(Boolean),
+      dim: String((c && c.dim) || ''),
+      cols: (Array.isArray(c && c.cols) ? c.cols : []).map(x => String(x || '')).filter(Boolean).slice(0, 4),
+    })) : null,
     imgDocs: Array.isArray(w.imgDocs) ? npImgPack(w.imgDocs) : null,   // 图片列表：一行一份（没这一页的存档＝ null，别动）
     filmDocs: Array.isArray(w.filmDocs) ? npFilmPack(w.filmDocs) : null,   // 片列表：一行一片（分幕内容在 xhsFilmDocs 按 key 存，这里只存指针）
     voice: String(w.voice || ''),
@@ -17516,13 +19849,13 @@ function npArchiveData(w) {
       path: String(w.path || ''),
       noteStyle: Object.assign({}, w.noteStyle || {}),
       write: w.write ? { type: String(w.write.type || ''), kind: String(w.write.kind || '') } : null,
-      planItem: w.planItem ? { no: w.planItem.no || null, title: String(w.planItem.title || ''), type: String(w.planItem.type || ''), kind: String(w.planItem.kind || ''), col: String(w.planItem.col || ''), day: Number(w.planItem.day || 0) || 0 } : null,
+      planItem: npPlanItemWip(w.planItem),
       // 🔥 引流线挑中的那版（改稿页的底子＋转法硬约束）：只有这一份进档，18 版池子只在台上、重进 ③ 自动重出
       drainPick: (w.drainPick && String(w.drainPick.body || '').trim()) ? {
         cat: String(w.drainPick.cat || ''), title: String(w.drainPick.title || ''),
         line: String(w.drainPick.line || ''), turn: String(w.drainPick.turn || ''), body: String(w.drainPick.body || ''),
       } : null,
-      // 🎭 IP 线：挑中的主题×方式——接着写时 npIsI 要认它；故事候选不进档（重进 ② 自动重编一批）
+      // IP 玩法已下架：字段只留给旧稿显牌子，不再生成
       ipPlay: String(w.ipPlay || ''), ipTheme: String(w.ipTheme || ''),
       ipThemeFam: String(w.ipThemeFam || ''), ipCustom: !!w.ipCustom,
     },
@@ -17630,6 +19963,9 @@ function npArchiveSave(w, forceStatus, opts) {
       longSrc: snap.longSrc || ((prev && prev.longSrc) || ''),
       // 画面表只有出图那页才有：从「写稿」那页存过来的那一次带的是空，别把已断好的擦掉
       shots: snap.shots || (snap.imgDocs ? null : ((prev && prev.shots) || null)),
+      // 🧩 卡片式写法的每张卡：只有写稿那一次带得出；别处存档带的是空，别把已出的卡擦掉
+      cards: (Array.isArray(snap.cards) && snap.cards.length) ? snap.cards
+        : ((prev && Array.isArray(prev.cards) && prev.cards.length) ? prev.cards : null),
       // 图片列表：出图那页带着 imgDocs 就照它存（删空了＝[]，不能拿旧的回灌）；别的页没这一键
       imgDocs: snap.imgDocs || ((prev && prev.imgDocs) || null),
       // 片列表只有字效编辑器那边才动：出图／写稿那次带的是镜像或没这一键，别把已排好的几片擦掉
@@ -18099,32 +20435,29 @@ function npArThumb(n) {
 
 /** 分类那一格：这一篇属于哪条线（篇还没备料发出去，不显示平台；老档没方向＝📄 老路） */
 function npArCatCell(n) {
-  const m = NP_DIR_META[String((n && n.dir) || '')];
+  const dir = String((n && n.dir) || '');
+  const m = NP_DIR_META[dir];
   if (!m) return '<span class="npar-pf" title="老档：办这件篇的时候还没三方向的走法">📄 老路</span>';
+  if (NP_DIR_OFF[dir]) return '<span class="npar-pf" title="' + npArAttr('这条线已经下架——这一篇不删、还能看能发，只是不再往下改') + '">' + m.chip + '</span>' +
+    '<div style="font-size:10px;color:#9aa0ac;margin-top:2px;">旧线 · 已下架</div>';
   return '<span class="npar-pf" title="' + npArAttr('这一篇属于「' + m.chip + '」这条线') + '">' + m.chip + '</span>';
 }
 
-/** 分类＋玩法合成一格（预览弹窗 / 发布队列还在用）：
- *  🪟 门面（· 介绍／承接）照旧；引流篇建的时候钉过玩法＝🎭 招式名；
- *  引流篇没钉过（玩法池落地之前发的）＝（老档）🔥 引流——老档不迁数据；
- *  知识／案例／IP 三条线不进玩法账，照旧显示各自的线名；没分流的老档＝📄 老路 */
+/** 分类一格（预览弹窗 / 发布队列还在用）：
+ *  🪟 门面（· 介绍／承接）照旧；引流 / IP 玩法已下架，老档标「旧线 · 已下架」；
+ *  知识／案例照旧显示各自的线名；没分流的老档＝📄 老路 */
 function npArDirCell(n) {
   const m = NP_DIR_META[String((n && n.dir) || '')];
   if (!m) return '<span class="npar-pf" title="老档：办这件篇的时候还没三方向的走法，点「下一步」回原来的写稿向导">📄 老路</span>';
+  if (NP_DIR_OFF[String(n.dir || '')]) {
+    return '<span class="npar-pf" title="' + npArAttr('这条线 2026-11-09 下架了——这一篇不删、还能看能发，只是不再往下改') + '">' + m.chip +
+      '<div style="font-size:10px;color:#9aa0ac;margin-top:2px;">旧线 · 已下架</div></span>';
+  }
   if (n.dir === 'f') {
     // 那一格只有 58px：叫法收短成「🪟 介绍 / 🪟 承接」，全称与说明挂在悬停上
     const lab = '🪟 ' + (n.fkind === 'deal' ? '承接' : '介绍');
     return '<span class="npar-pf" title="' + npArAttr('主页门面那一格：' + npFacadeLab(n.fkind) + '——不进每周排法，发一次钉住就行' + (n.status === '已归档' ? '；这一篇是被新版顶下来的旧版' : '')) + '">' + lab +
       (n.status === '已归档' ? '<div style="font-size:10px;color:#9aa0ac;margin-top:2px;">旧版·已被新的顶上</div>' : '') + '</span>';
-  }
-  const play = npNotePlayOf(n);
-  if ((n.dir === 'd' || n.dir === 'i') && play) {
-    return '<button type="button" class="npar-pf npar-play" data-play="' + npArAttr(play) + '" title="' + npArAttr('这一篇建的时候钉的玩法：🎭 ' + play + '——点一下跳去复盘，看这一招的账') + '">🎭 ' + esc(play) + '</button>';
-  }
-  if (n.dir === 'd' || n.dir === 'i') {
-    return '<span class="npar-pf" title="' + npArAttr(n.dir === 'i'
-      ? '老档：这一条是「🎭 IP玩法」那一档建的（这一档已并进「🔥 引流」）——不迁数据，点「下一步」照样接着走完'
-      : '老档：玩法池落地之前发的这篇，没记招式（新发的篇会自动记）——不迁数据，就照旧叫法显示') + '">（老档）' + m.chip + '</span>';
   }
   return '<span class="npar-pf">' + m.chip + '</span>';
 }
@@ -18254,6 +20587,8 @@ function npGateNext(n, gate) {
 function npArNext(n, film) {
   if (n.status === '已归档') return { lab: '已归档', tip: '已归档不再跟进——想继续就先把状态改回「待发」或「已发」', dim: true, to: '' };
   if (n.status === '已发') return { lab: '👀 预览', tip: '这篇发完了——点开看看它的存档（正文 / 图 / 片）', dim: false, to: 'preview' };
+  /* 旧线下架（2026-11-09）：引流 / IP 玩法不再有生成链——老稿不删，只给「看稿」，不给「继续编辑」 */
+  if (NP_DIR_OFF[String(n.dir || '')]) return { lab: '👀 看稿', tip: '旧线 · 已下架：这篇不删、还能看能发；只是不再往下改了', dim: false, to: 'preview' };
   /* 🎬 分镜出词那条视频路（引流视频 / 规划排的视频 / 已出过文案直出片的）：下一步只看片子走到哪一步——
      录片 → 拼成片 → 成片预览。素材传齐不等于片子出来了：「拼片配音」那一下才算成片，所以中间那档单独说。
      知识线走字效编辑器的那篇（kOut=film·没 gen）不在这条路上，照旧落到下面「编辑」。 */
@@ -18281,8 +20616,8 @@ function npArNext(n, film) {
     const asmC = (n.asm && typeof n.asm === 'object') ? n.asm : null;
     const matN = (asmC && Array.isArray(asmC.mats)) ? asmC.mats.length : 0;
     const libN = (asmC && Array.isArray(asmC.libClips)) ? asmC.libClips.filter(x => x && x.clipId).length : 0;
-    if (!matN && !libN) return { lab: '📚 去挑素材', tip: '这条案例还没有素材——先去素材库挑几段（或拆一条新视频），挑好回来直接大组装', dim: false, to: 'libpick' };
-    if (!(asmC.film && asmC.film.at)) return { lab: '✏️ 编辑', tip: '素材挑好了——回视频生成台做「大组装」出片；想换段点顶上的「素材库挑段」', dim: false, to: 'case' };
+    if (!matN && !libN) return { lab: '📚 去挑素材', tip: '这条案例还没有素材——先去素材库挑几段（或拆一条新视频），挑好回来直接写正文', dim: false, to: 'libpick' };
+    if (!(asmC.film && asmC.film.at)) return { lab: '✏️ 编辑', tip: '素材挑好了——回视频生成台看正文、出片；想换段点「🎞 换素材」', dim: false, to: 'case' };
     return { lab: '🎬 成片预览', tip: '成片已存回档案——点开能看片、也能再下一遍', dim: false, to: 'preview' };
   }
   if (n.dir === 'f') {
@@ -18659,14 +20994,6 @@ function ensureNpArDelegation(container) {
     }
     const pg = t.closest('.npar-plan-go');
     if (pg) { ev.preventDefault(); switchMainTab('notePlan'); return; }   // 去「笔记规划」看 / 改那份排产表
-    /* 🎭 玩法：预览弹窗 / 发布队列里那颗玩法标＝去「复盘 → 🎭 玩法效果」翻到这一招的账（只看不改钉；动作都在那一页顶上） */
-    const pl = t.closest('.npar-play');
-    if (pl) {
-      _npArPlayView = String(pl.getAttribute('data-play') || '') || null;
-      switchMainTab('noteReview');
-      npAuditGo('play');
-      return;
-    }
     // ▶️ 下一步：一行只有这一颗主按钮——按这篇的「方向 × 最终形式」算出做到哪了，按下直接送到下一站
     const nb = t.closest('.npar-next');
     if (nb) {
@@ -18870,10 +21197,10 @@ async function renderNoteArchive(container) {
   container.innerHTML =
     '<div style="padding:6px 2px;">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">' +
-        '<div style="font-weight:600;color:var(--ink);font-size:13px;">🗂 笔记档案<span class="qhelp" tabindex="0" data-tip="这一块的主页。写过的每一篇都在这（连没写完的草稿），一行一篇：篇目 / 分类（这一篇属于哪条线：知识 📚、引流 🔥、案例 🎬、门面 🪟、长文 📝）/ 玩法（引流篇＝建的时候钉的那一招 🎭；门面＝介绍 / 承接；其余线不记玩法）/ 最终形式（图文·长文·视频·口播稿——新建时选好的交付层；视频按片台里真选的画面形式显示 混剪 / 字体动效 / 卡片轮播）/ 内容（正文开头 + 已出哪些料 + 还缺什么）/ 发布时间 / 更新时间 / 状态（行末就地改，颜色跟着状态变）。操作列只有一颗「下一步」，按这篇走到哪一步给：没稿「✏️ 编辑」、视频没录完「🎬 录片」、素材齐了「🎬 拼成片」、片出来了「🎬 成片预览」，其它做完的是「👀 预览」。&#10;&#10;主页门面那两篇、本轮玩法那一招的账和动作，都在「📈 复盘」里（📋 选题盘点 / 🎭 玩法效果）。">?</span></div>' +
+        '<div style="font-weight:600;color:var(--ink);font-size:13px;">🗂 笔记档案<span class="qhelp" tabindex="0" data-tip="这一块的主页。写过的每一篇都在这（连没写完的草稿），一行一篇：篇目 / 分类（这一篇属于哪条线：知识 📚、引流 🔥、案例 🎬、门面 🪟、长文 📝）/ 玩法（引流篇＝建的时候钉的那一招 🎭；门面＝介绍 / 承接；其余线不记玩法）/ 最终形式（图文·长文·视频·口播稿——新建时选好的交付层；视频按片台里真选的画面形式显示 混剪 / 字体动效 / 卡片轮播）/ 内容（正文开头 + 已出哪些料 + 还缺什么）/ 发布时间 / 更新时间 / 状态（行末就地改，颜色跟着状态变）。操作列只有一颗「下一步」，按这篇走到哪一步给：没稿「✏️ 编辑」、视频没录完「🎬 录片」、素材齐了「🎬 拼成片」、片出来了「🎬 成片预览」，其它做完的是「👀 预览」。&#10;&#10;主页门面那两篇、门面那两篇的账和动作，在「📈 复盘」里的「📋 选题盘点与规划」顶上。">?</span></div>' +
         '<span style="flex:1;"></span>' +
         // 主入口：新建笔记（原来挂在左栏二级，现在收进档案页顶——这里是这一块的家）
-        '<button type="button" class="npar-new" title="起新的一篇：主页门面那两篇（个人介绍 / 成交承接）＋📚知识 / 🔥引流 / 🎬案例 三条线，一页摊开——📝 长文 在📚知识、🔥引流里各有一张卡，点进去默认对应那路的腔（🔬 科普 / 🗣 人设），第 1 屏还能改；🎭 招式进到写稿那一屏顶上那一栏挑（不挑也行）" style="padding:6px 14px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">✍️ 新建笔记</button>' +
+        '<button type="button" class="npar-new" title="起新的一篇：📚 知识（图文 / 长文）和 🎬 案例（只视频）两张卡——点一张进去，从行业选题表里挑一条；出口跟着写法走（清单→长文、对比 / 问答→图文、案例讲故事→视频），在挑题时就定死。下面一行小入口是主页门面那两篇（个人介绍 / 成交承接）" style="padding:6px 14px;border:none;border-radius:8px;background:var(--grad-brand);color:var(--c-brand-on);font-size:12px;font-weight:700;cursor:pointer;">✍️ 新建笔记</button>' +
       '</div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">' +
         chip('all', '全部', list.length) + NP_AR_STATUS.map(s => chip(s, npStLabel(s), cnt[s])).join('') +
@@ -19080,6 +21407,12 @@ function ensureNpPlanDelegation(container) {
     if (keep) { await npPlanGenResume(again); return; }
     const arch = t.closest('[data-npp="genarch"]');
     if (arch) { switchMainTab('noteArchive'); return; }
+    const topics = t.closest('[data-npp="topics"]');
+    if (topics) {
+      switchMainTab('noteArchive');
+      setTimeout(() => { try { npDirOpen(); } catch (_) {} }, 150);
+      return;
+    }
     const drop = t.closest('[data-npp="gendrop"]');
     if (drop) { await npGenClear(); return; }
     const gen = t.closest('[data-npp="genplan"]');
@@ -19126,11 +21459,12 @@ function npPlanNoteForPlat(dayNotes, pid) {
     return plats.indexOf(String(pid)) >= 0;
   }) || null;
 }
+/** 老档里排在这天的篇 → 现在只认知识图文；视频/长文/引流那几篇不再回到排法里（篇本身不动） */
 function npPlanNoteKind(n) {
   if (!n) return '';
-  const line = n.dir === 'd' ? '引流' : '知识';
   const f = String(n.form || '图文');
-  return line + '·' + (f === '长文' || f === '视频' ? f : '图文');
+  if (n.dir === 'd') return '';
+  return f === '图文' ? '知识·图文' : '';
 }
 let _npPlanCellMenuCtx = null;
 function npPlanCloseCellMenu() {
@@ -19181,6 +21515,7 @@ function npPlanCellMenuEl() {
   return m;
 }
 function npPlanOpenCellMenu(btn) {
+  if (btn.getAttribute('data-topic') === '1') { npPlanOpenTopicMenu(btn); return; }
   const day = btn.getAttribute('data-day') || '';
   const pid = btn.getAttribute('data-p') || '';
   const why = String(btn.getAttribute('data-why') || '');
@@ -19188,8 +21523,10 @@ function npPlanOpenCellMenu(btn) {
   const cur = String(btn.getAttribute('data-cur') || '');
   const m = npPlanCellMenuEl();
   const nm = (npPlanPlatMeta(pid) || {}).nm || pid;
+  const wasOff = btn.getAttribute('data-off') === '1';
   let h = '<div style="font-size:10.5px;color:#8a929e;padding:3px 8px 5px;white-space:nowrap;">' +
-    esc((NP_WEEK_DAY_LABEL[day] || day) + ' · ' + nm) + '</div>';
+    esc((NP_WEEK_DAY_LABEL[day] || day) + ' · ' + nm) + '</div>' +
+    (wasOff ? '<div style="font-size:10.5px;color:#b91c1c;background:#fee2e2;border-radius:7px;padding:4px 8px;margin:0 2px 5px;line-height:1.5;">这个格子原来的排法已下架——点「📚 知识·图文」换掉，或选休</div>' : '');
   npPlanGridOffers(pid).forEach(k => {
     h += '<button type="button" data-k="' + npArAttr(k) + '" style="display:flex;align-items:center;gap:6px;width:100%;border:0;background:' +
       (k === cur ? 'var(--c-brand-soft,#ffecec)' : 'transparent') + ';color:' + (k === cur ? 'var(--c-brand-text,var(--xhs-red))' : '#374151') +
@@ -19217,12 +21554,491 @@ async function npPlanSetCell(day, pid, kind) {
   return changed;
 }
 
+/* ── 按分类排：点一格 = 给这格挑一组题（抖音/视频号两格联动） ── */
+let _npPlanTopicMenuCtx = null;
+function npPlanCloseTopicMenu() {
+  const m = document.getElementById('nppTopicMenu');
+  if (!m || m.style.display === 'none') return;
+  m.style.display = 'none';
+  const ctx = _npPlanTopicMenuCtx;
+  if (ctx && ctx.dirty && ctx.container) {
+    ctx.dirty = false;
+    try { renderNotePlan(ctx.container); } catch (_) {}
+  }
+}
+async function npPlanTopicSetCell(day, pid, gid, tid, pick) {
+  const g = await npPlanTopicGridRead();
+  const prev = (g[day] && g[day][pid]) || NP_TCELL_EMPTY;
+  const base = (pick && typeof pick === 'object') ? pick : { carrier: prev.carrier, form: prev.form, variant: prev.variant };
+  const cell = {
+    gid: String(gid || ''), tid: String(gid ? (tid || '') : ''),
+    carrier: gid ? String(base.carrier || '') : '',
+    form: gid ? String(base.form || '') : '',
+    variant: gid ? String(base.variant || '') : '',
+  };
+  g[day][pid] = cell;
+  if (pid !== 'xhs') { g[day].douyin = Object.assign({}, cell); g[day].channels = Object.assign({}, cell); }
+  await npPlanTopicGridSave(g);
+  return g;
+}
+function npPlanTopicMenuEl() {
+  let m = document.getElementById('nppTopicMenu');
+  if (m) return m;
+  m = document.createElement('div');
+  m.id = 'nppTopicMenu';
+  m.style.cssText = 'position:fixed;z-index:99999;display:none;background:#fff;border:1px solid var(--line,#e2e6ec);border-radius:10px;box-shadow:0 14px 40px rgba(17,24,39,.18);padding:5px;min-width:196px;max-height:340px;overflow:auto;font-family:var(--font-ui);';
+  document.body.appendChild(m);
+  m.addEventListener('click', async function (ev) {
+    const t = ev.target.closest('[data-tg],[data-tact],[data-tview],[data-tcar],[data-tform]');
+    if (!t) return;
+    const ctx = _npPlanTopicMenuCtx;
+    if (!ctx) return;
+    const day = m.getAttribute('data-day') || '';
+    const pid = m.getAttribute('data-p') || '';
+    const dayLab = NP_WEEK_DAY_LABEL[day] || day;
+    const pnm = (npPlanPlatMeta(pid) || {}).nm || pid;
+    const cell = ctx.cell || Object.assign({}, NP_TCELL_EMPTY);
+    const gnameOf = gid => (TopicTable.groupName((ctx.pack.groups || []).find(x => x.id === gid)) || gid);
+    const done = () => {
+      ctx.dirty = true;
+      npPlanCloseTopicMenu();
+    };
+    try {
+      /* 只在菜单里换页：不关、不重画整个页面 */
+      if (t.hasAttribute('data-tview')) {
+        ctx.view = t.getAttribute('data-tview') === 'group' ? 'group' : 'pick';
+        npPlanTopicMenuPaint(m, ctx);
+        return;
+      }
+      if (!cell.gid) { toast('这格还没选组'); return; }
+      /* 怎么发：换成这条题支持的另一个载体，写法保留；留着菜单接着挑写法 */
+      if (t.hasAttribute('data-tcar')) {
+        const c = String(t.getAttribute('data-tcar') || '');
+        await npPlanTopicSetCell(day, pid, cell.gid, cell.tid, { carrier: c, form: cell.form, variant: cell.variant });
+        ctx.cell = Object.assign({}, cell, { carrier: c });
+        ctx.dirty = true;
+        npPlanTopicMenuPaint(m, ctx);
+        return;
+      }
+      /* 怎么讲：换成另一个写法（带它的版本）；载体跟着收口（比如清单不出图文，自动换成同档长文），留着菜单 */
+      if (t.hasAttribute('data-tform')) {
+        const raw = String(t.getAttribute('data-tform') || '');
+        const cut = raw.indexOf('|');
+        const k = cut >= 0 ? raw.slice(0, cut) : raw;
+        const v = cut >= 0 ? raw.slice(cut + 1) : '';
+        const itx = cell.gid ? npPlanTopicPick(ctx.pack, ctx.plan, cell, '', {}, pid) : null;
+        const car = itx ? TopicTable.resolveCarrierFor(itx.carriers, k, pid, cell.carrier || itx.carrier) : cell.carrier;
+        await npPlanTopicSetCell(day, pid, cell.gid, cell.tid, { carrier: car, form: k, variant: v });
+        ctx.cell = Object.assign({}, cell, { carrier: car, form: k, variant: v });
+        ctx.dirty = true;
+        npPlanTopicMenuPaint(m, ctx);
+        return;
+      }
+      const act = String(t.getAttribute('data-tact') || '');
+      const tg = t.getAttribute('data-tg');
+      if (tg !== null) {
+        /* 换组：载体和写法清掉，回这一条重新选（不同组的写法不一样） */
+        await npPlanTopicSetCell(day, pid, tg, '', { carrier: '', form: '', variant: '' });
+        if (!tg) toast(dayLab + ' ' + pnm + ' 那天不发——清掉了');
+        else toast(dayLab + ' ' + pnm + ' 发「' + gnameOf(tg) + '」的题——写哪条系统自己挑（还没写的第一条）');
+      } else if (act === 'auto') {
+        await npPlanTopicSetCell(day, pid, cell.gid, '');
+        toast('这条交给系统挑——写稿时取「' + gnameOf(cell.gid) + '」里还没写的第一条');
+      } else if (act === 'swap') {
+        /* 先认出现在摆的是哪条，再从它后面找下一条（不然「换一条」还是同一条） */
+        const cur = npPlanTopicPick(ctx.pack, ctx.plan, { gid: cell.gid, tid: cell.tid, carrier: cell.carrier, form: '', variant: '' }, '', {}, pid);
+        const skip = {};
+        if (cur) skip[String(cur.tid)] = 1;
+        const it = npPlanTopicPick(ctx.pack, ctx.plan, cell, '', skip, pid);
+        if (!it) { toast('「' + gnameOf(cell.gid) + '」里的题都写过了——换个组吧', 'error'); return; }
+        /* 下一条用不用得了现在这个写法：用得了就留着，用不了退回它自己默认 */
+        const keep = !cell.form || (Array.isArray(it.forms) && it.forms.indexOf(cell.form) >= 0);
+        await npPlanTopicSetCell(day, pid, cell.gid, it.tid, {
+          carrier: cell.carrier, form: keep ? cell.form : '', variant: keep ? cell.variant : '',
+        });
+        toast('换成这一条：' + it.title);
+      }
+    } catch (e) {
+      toast('没改成：' + ((e && e.message) || e), 'error');
+      return;
+    }
+    done();
+  });
+  document.addEventListener('click', function (ev) {
+    const t = ev.target;
+    if (!t || !t.closest) return;
+    if (t.closest('#nppTopicMenu') || t.closest('[data-topic="1"]')) return;
+    npPlanCloseTopicMenu();
+  });
+  window.addEventListener('scroll', function (ev) {
+    if (ev && ev.target && ev.target.closest && ev.target.closest('#nppTopicMenu')) return;
+    npPlanCloseTopicMenu();
+  }, true);
+  window.addEventListener('resize', npPlanCloseTopicMenu);
+  return m;
+}
+/** 菜单两页：group＝挑一组；pick＝这一条 + 怎么发（载体）+ 怎么讲（写法，带读起来什么样和为什么） */
+function npPlanTopicMenuPaint(m, ctx) {
+  if (!m || !ctx) return;
+  const day = ctx.day || '', pid = ctx.pid || '';
+  const pack = ctx.pack || {};
+  const cell = ctx.cell || Object.assign({}, NP_TCELL_EMPTY);
+  const nm = (npPlanPlatMeta(pid) || {}).nm || pid;
+  const dayLab = NP_WEEK_DAY_LABEL[day] || day;
+  const items = (ctx.plan && Array.isArray(ctx.plan.items)) ? ctx.plan.items : [];
+  const gnameOf = gid => (TopicTable.groupName((pack.groups || []).find(x => x.id === gid)) || gid);
+  const base = 'display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;color:#374151;border-radius:7px;padding:6px 8px;font-size:11.5px;cursor:pointer;text-align:left;font-family:var(--font-ui);white-space:nowrap;';
+  const hd = txt => '<div style="font-size:10.5px;color:#8a929e;padding:3px 8px 5px;white-space:nowrap;">' + esc(txt) + '</div>';
+
+  if ((ctx.view || '') === 'group') {
+    const leftOf = gid => items.filter(x => x && x.gid === gid && !x.done).length;
+    let h = hd(dayLab + ' · ' + nm + ' —— 发哪一组？');
+    /* 抖音 / 视频号日常只发案例视频；知识只在小红书那行排（出口跟着写法走） */
+    TopicTable.planGroupsFor(pack.key, pid).forEach(gr => {
+      const left = leftOf(gr.id);
+      const cur = gr.id === cell.gid;
+      const off = !left;
+      h += '<button type="button" data-tg="' + npArAttr(gr.id) + '"' + (off ? ' disabled' : '') + ' style="' + base + 'background:' +
+        (cur ? 'var(--c-brand-soft,#ffecec)' : 'transparent') + ';color:' + (off ? '#c3c8d0' : (cur ? 'var(--c-brand-text,var(--xhs-red))' : '#374151')) +
+        ';' + (cur ? 'font-weight:700;' : '') + 'cursor:' + (off ? 'not-allowed' : 'pointer') + ';">' +
+        esc(TopicTable.groupName(gr)) +
+        '<span style="margin-left:auto;font-size:9.5px;color:' + (off ? '#cbd0d7' : '#9aa3ae') + ';font-weight:400;">' +
+        (off ? '写完了' : ('还剩 ' + left + ' 条')) + '</span></button>';
+    });
+    if (cell.gid) {
+      h += '<div style="height:1px;background:var(--line,#eceef0);margin:4px 2px;"></div>' +
+        '<button type="button" data-tview="pick" style="' + base + '">↩️ 回到这一格（选载体 / 写法）</button>';
+    }
+    h += '<div style="height:1px;background:var(--line,#eceef0);margin:4px 2px;"></div>' +
+      '<button type="button" data-tg="" style="' + base + 'background:' + (!cell.gid ? 'var(--c-brand-soft,#ffecec)' : 'transparent') +
+      ';color:' + (!cell.gid ? 'var(--c-brand-text,var(--xhs-red))' : '#374151') + ';">休（那天不发）</button>';
+    m.style.width = '';
+    m.innerHTML = h;
+    return;
+  }
+
+  const it = cell.gid ? npPlanTopicPick(pack, ctx.plan, cell, '', {}, pid) : null;
+  const curForm = cell.form || (it && it.form) || '';
+  const curVar = cell.form ? String(cell.variant || '') : String((it && it.variant) || '');
+  /* 怎么发：按这个平台＋这个写法给口——视频平台只有视频；小红书清单一律长文，其余默认视频、可换图文 */
+  const cars = it ? TopicTable.outletsFor(it.carriers, curForm, pid).filter(c => TopicTable.CARRIERS[c]) : [];
+  const effCar = it ? TopicTable.resolveCarrierFor(it.carriers, curForm, pid, cell.carrier || it.carrier) : '';
+  let h = hd(dayLab + ' · ' + nm + ' · ' + gnameOf(cell.gid));
+  const gOff = !!(cell.gid && typeof TopicTable !== 'undefined' && TopicTable.groupOff(cell.gid));
+  /* 组还在、但这一行排不了它（知识只发小红书；抖音 / 视频号只排案例）＝这一格是旧的，得换 */
+  const platOk = !cell.gid || typeof TopicTable === 'undefined' ||
+    TopicTable.planGroupsFor(pack.key, pid).some(g => g.id === cell.gid);
+  const staleCell = gOff || !platOk;
+  const staleWhy = gOff ? '这组已下架，换一组' : '知识只发小红书，这行排不了';
+  h += '<div style="padding:0 8px 3px;font-size:11.5px;color:' + (staleCell ? '#b91c1c' : '#1f2329') + ';font-weight:700;line-height:1.5;">' +
+    esc(staleCell ? '这一格要换' : (it ? it.title : '这组写完了')) + '</div>' +
+    '<div style="padding:0 8px 5px;font-size:10px;color:' + (staleCell ? '#b91c1c' : '#9aa3ae') + ';">' +
+    esc(staleCell ? staleWhy : (it ? (cell.tid ? '点名这条' : '系统按组里还没写的第一条挑') : '换一组接着写')) + '</div>';
+
+  if (it && !staleCell) {
+    if (cars.length > 1) {
+      h += '<div style="padding:2px 8px 4px;font-size:10px;color:#8a929e;">怎么发</div><div style="display:flex;gap:5px;padding:0 8px 6px;">';
+      cars.forEach(c => {
+        const cur = c === effCar;
+        h += '<button type="button" data-tcar="' + c + '" style="border:1px solid ' + (cur ? 'var(--xhs-red,#ff2442)' : 'var(--line,#e2e6ec)') +
+          ';background:' + (cur ? 'var(--c-brand-soft,#ffecec)' : '#fff') + ';color:' + (cur ? 'var(--c-brand-text,var(--xhs-red))' : '#4b5563') +
+          ';border-radius:999px;padding:3px 10px;font-size:11px;' + (cur ? 'font-weight:700;' : '') + 'cursor:pointer;font-family:var(--font-ui);">' +
+          esc(TopicTable.carrierName(c)) + '</button>';
+      });
+      h += '</div>';
+    } else if (cars.length) {
+      h += '<div style="padding:2px 8px 6px;font-size:10px;color:#8a929e;">怎么发：<b style="color:#4b5563;">' + esc(TopicTable.carrierName(cars[0])) + '</b>（这条题就这一种）</div>';
+    }
+
+    /* 同一种写法只露一次（不同版本不摊两份）；当前用的那个版本优先 */
+    const rawChoices = TopicTable.formChoices(it);
+    const seenCh = {};
+    const choices = [];
+    rawChoices.forEach(ch => {
+      if (!ch || !ch.key || seenCh[ch.key]) return;
+      seenCh[ch.key] = 1;
+      let show = ch;
+      if (ch.key === curForm && curVar) {
+        const hit = rawChoices.find(x => x && x.key === curForm && String(x.variant || '') === curVar);
+        if (hit) show = hit;
+      }
+      choices.push(Object.assign({}, show, { def: rawChoices.some(x => x && x.key === show.key && x.def) }));
+    });
+    let curIdx = choices.findIndex(ch => ch.key === curForm && String(ch.variant || '') === curVar);
+    if (curIdx < 0) curIdx = choices.findIndex(ch => ch.key === curForm);
+    h += '<div style="padding:2px 8px 3px;font-size:10px;color:#8a929e;">怎么讲</div><div style="padding:0 8px 4px;">';
+    choices.forEach((ch, i) => {
+      const cur = i === curIdx;
+      const rec = !cell.form && ch.def;
+      h += '<button type="button" data-tform="' + escAttr(ch.key + (ch.variant ? '|' + ch.variant : '')) + '" style="display:block;width:100%;text-align:left;border:1px solid ' +
+        (cur ? 'var(--xhs-red,#ff2442)' : 'var(--line,#e2e6ec)') + ';background:' + (cur ? 'var(--c-brand-soft,#fff5f6)' : '#fff') +
+        ';border-radius:8px;padding:5px 8px;margin:0 0 5px;cursor:pointer;font-family:var(--font-ui);">' +
+        '<span style="display:flex;align-items:center;gap:6px;">' +
+          '<span style="font-size:11.5px;font-weight:700;color:' + (cur ? 'var(--c-brand-text,var(--xhs-red))' : '#374151') + ';">' +
+            esc(ch.altName ? (ch.altName + '·' + ch.name) : ch.name) + '</span>' +
+          '<span style="margin-left:auto;font-size:9px;font-weight:400;color:' + (cur ? 'var(--c-brand-text,var(--xhs-red))' : '#9aa3ae') + ';">' +
+            (cur ? '当前' : (rec ? '推荐' : '')) + '</span>' +
+        '</span>' +
+        '<span style="display:block;font-size:10.5px;color:#6b7280;margin-top:2px;line-height:1.5;white-space:normal;">' + esc(ch.look) + '</span>' +
+        '<span style="display:block;font-size:10px;color:#9aa3ae;margin-top:1px;line-height:1.5;white-space:normal;">因为：' + esc(ch.why) + '</span>' +
+      '</button>';
+    });
+    h += '</div>' +
+      '<div style="height:1px;background:var(--line,#eceef0);margin:2px 2px 4px;"></div>' +
+      '<button type="button" data-tact="swap" style="' + base + '">🔄 换一条（同组 · 写法不变）</button>' +
+      (cell.tid ? '<button type="button" data-tact="auto" style="' + base + 'color:#6b7280;">↩️ 不用点名，交系统挑</button>' : '');
+  }
+  h += '<div style="height:1px;background:var(--line,#eceef0);margin:4px 2px;"></div>' +
+    '<button type="button" data-tview="group" style="' + base + '">📚 换一组</button>' +
+    '<button type="button" data-tg="" style="' + base + '">休（那天不发）</button>';
+  m.style.width = '292px';
+  m.innerHTML = h;
+}
+async function npPlanOpenTopicMenu(btn) {
+  const day = btn.getAttribute('data-day') || '';
+  const pid = btn.getAttribute('data-p') || '';
+  const why = String(btn.getAttribute('data-why') || '');
+  if (why) { toast(why); return; }
+  const key = String(btn.getAttribute('data-ind') || '');
+  const pack = (key && typeof TopicTable !== 'undefined') ? TopicTable.industry(key) : null;
+  if (!pack) { toast('还没选行业——到「🧭 账号规划」把行业选上，再来排'); return; }
+  let plan = null;
+  try { plan = await npIndustryEnsurePlan(pack.key, await npLoadPlanCache()); } catch (_) {}
+  const g = await npPlanTopicGridRead();
+  const cell = (g[day] && g[day][pid]) || Object.assign({}, NP_TCELL_EMPTY);
+  const m = npPlanTopicMenuEl();
+  _npPlanTopicMenuCtx = {
+    container: _npPlanCellMenuCtx, pack: pack, plan: plan, cell: cell,
+    day: day, pid: pid, view: cell.gid ? 'pick' : 'group', dirty: false,
+  };
+  m.setAttribute('data-day', day);
+  m.setAttribute('data-p', pid);
+  npPlanTopicMenuPaint(m, _npPlanTopicMenuCtx);
+  m.style.display = 'block';
+  const r = btn.getBoundingClientRect();
+  const mw = m.offsetWidth || 220, mh = m.offsetHeight || 320;
+  m.style.left = Math.min(Math.max(8, r.left), window.innerWidth - mw - 8) + 'px';
+  m.style.top = (r.bottom + 6 + mh > window.innerHeight - 8 ? Math.max(8, r.top - mh - 6) : r.bottom + 6) + 'px';
+}
+
+/** 选了行业的号：周表按「周几 → 哪一组题」排（2026-11-05 老板拍的口径）。
+ *  一格一个组，写哪条系统自己挑；载体在这之后的改稿屏再选，这页不管形式。 */
+async function renderNotePlanTopic(container, indKey, pack) {
+  let grid = npPlanTopicGridEmpty(), times = {}, list = [], plan = null;
+  try {
+    [grid, times, list, plan] = await Promise.all([npPlanTopicGridRead(), npPlanTimesRead(), npNotesAll(), npLoadPlanCache()]);
+    plan = await npIndustryEnsurePlan(indKey, plan);
+    await npPlanChBoundTick();
+  } catch (_) {}
+  const days = npPlanDays7();
+  const stOf = n => NP_AR_STATUS.includes(n.status) ? n.status : '草稿';
+  let autoImg = true;
+  try { const c = await readConfigPlain(); autoImg = !(c && c.product && c.product.planAutoImg === false); } catch (_) {}
+  const multi = npPubMultiPlatOn();
+  const showPlat = pid => pid === 'xhs' || multi;
+  const usablePlat = pid => pid === 'xhs' || (multi && !(pid === 'channels' && _npPlanChBound === false));
+  const usable = NP_PLAN_PLATS.map(p => p.id).filter(usablePlat);
+  const notesOfDay = {};
+  days.forEach(d => { notesOfDay[d.day] = npPlanNotesOf(list, d.dateStr); });
+  const anyPlan = days.some(d => npPlanTopicHasDay(grid[d.day]) || notesOfDay[d.day].length);
+  const gnameOf = gid => (typeof TopicTable !== 'undefined' ? (TopicTable.groupName((pack.groups || []).find(g => g.id === gid) || null) || '') : '');
+  /** 格子第二行：选了就写「点名·图文·清单」，没选就写题自己的默认 */
+  const cellLine = (cell, it) => {
+    if (!cell.gid) return '那天不发';
+    if (typeof TopicTable === 'undefined') return cell.tid ? '点名那条' : '系统挑';
+    const bits = [];
+    const car = cell.carrier || (it && it.carrier) || '';
+    if (car) bits.push(TopicTable.carrierName(car));
+    const fi = (it || cell.form) ? TopicTable.formInfo(cell.form || (it && it.form) || 'list', cell.form ? cell.variant : ((it && it.variant) || '')) : null;
+    if (fi) bits.push(fi.name);
+    if (!bits.length) return cell.tid ? '点名那条' : '系统挑';
+    return (cell.tid ? '点名 · ' : '') + bits.join(' · ');
+  };
+  const items = (plan && Array.isArray(plan.items)) ? plan.items : [];
+  const doneN = items.filter(x => x && x.done).length;
+
+  const cellInfo = (d, pid) => {
+    const cell = (grid[d.day] && grid[d.day][pid]) || { gid: '', tid: '' };
+    const n = npPlanNoteForPlat(notesOfDay[d.day], pid);
+    const skip = {};
+    notesOfDay[d.day].forEach(x => { if (x && x.planTid) skip[String(x.planTid)] = 1; });
+    const it = cell.gid ? npPlanTopicPick(pack, plan, cell, '', skip, pid) : null;
+    /* 旧格子那组下架了 / 知识组排到了抖音、视频号那行——题不再出，格子上给一句「已下架」 */
+    const gOff = !!(cell.gid && typeof TopicTable !== 'undefined' && TopicTable.groupOff(cell.gid));
+    const platOff = !!(cell.gid && !gOff && typeof TopicTable !== 'undefined' &&
+      !TopicTable.planGroupsFor(indKey, pid).some(g => g.id === cell.gid));
+    return { cell: cell, n: n, it: it, gOff: gOff, platOff: platOff };
+  };
+
+  const head = '<div class="npp-mrow npp-mhead">' +
+    '<div class="npp-mrh" style="border-right:1px solid var(--c-line,#eceef0);">平台 ＼ 天</div>' +
+    days.map(d => '<div class="npp-mth' + (d.today ? ' today' : '') + '">' + (NP_WEEK_DAY_LABEL[d.day] || d.day) +
+      (d.today ? ' · 今天' : '') + '<span class="npp-mday">' + (d.date.getMonth() + 1) + '/' + d.date.getDate() + '</span></div>').join('') +
+  '</div>';
+
+  const body = NP_PLAN_PLATS.filter(p => showPlat(p.id)).map(p => {
+    const off = !usablePlat(p.id);
+    const why = off ? '还没绑视频号——先到顶栏「绑定」那步把视频号扫上' : '';
+    const cells = days.map(d => {
+      const info = cellInfo(d, p.id);
+      const cell = info.cell;
+      const hasG = !!cell.gid;
+      const stale = !!(hasG && (info.gOff || info.platOff));
+      const cls = ['npp-topic'];
+      if (!hasG) cls.push('rest');
+      if (info.n) cls.push('done');
+      else if (hasG && !info.it && !stale) cls.push('empty');
+      const tip = off ? why : (stale
+        ? '这组已下架——点一下换一组（知识只发小红书；抖音 / 视频号只发案例视频）'
+        : (hasG ? '点一下：换这组 / 换一条 / 换怎么发（图文 / 视频）/ 换怎么讲（清单·对比·问答；案例固定讲故事）' : '点一下＝这家那天发哪一组、怎么讲'));
+      let meta;
+      if (off) meta = '<span style="color:#c9d0d9;">用不了</span>';
+      else if (info.n) {
+        const st = stOf(info.n);
+        const stCol = st === '已发' ? '#2e7d32' : '#1d4ed8';
+        const stBg = st === '已发' ? '#e7f6ec' : '#eef3fe';
+        meta = '<span class="npp-st" style="color:' + stCol + ';background:' + stBg + ';">' + esc(npStLabel(st)) + '</span>' +
+          '<button type="button" data-npp="open" data-id="' + npArAttr(info.n.id) + '" title="点开继续弄这一篇" style="border:none;background:none;padding:0;font:inherit;color:#8a929e;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">' + esc(npNoteTitleOf(info.n)) + '</button>';
+      } else if (stale) meta = '<span class="npp-st" style="color:#b91c1c;background:#fee2e2;">已下架</span><span style="color:#9aa3ae;">换一组</span>';
+      else if (hasG && info.it) meta = '<span class="npp-st" style="color:#b45309;background:#fff2dc;">待出稿</span>' + esc(info.it.title);
+      else if (hasG) meta = '<span style="color:#b45309;">这组写完了</span>';
+      else meta = '<span style="color:#c9d0d9;">不发</span>';
+      return '<div class="npp-mcell"' + (d.today ? ' style="background:#fffdf7;"' : '') + '>' +
+        '<button type="button" class="' + cls.join(' ') + '" data-npp="cell" data-topic="1" data-ind="' + escAttr(indKey) + '" data-day="' + d.day + '" data-p="' + p.id + '"' +
+          (off ? ' data-why="' + escAttr(why) + '"' : '') + ' title="' + escAttr(tip) + '">' +
+          '<span class="g">' + esc(hasG ? gnameOf(cell.gid) : '休') + '</span>' +
+          '<span class="q">' + esc(stale ? '已下架 · 换一组' : cellLine(cell, info.it)) + '</span>' +
+        '</button>' +
+        '<div class="npp-mmeta" title="' + escAttr(info.n ? npNoteTitleOf(info.n) : (stale ? '这组已下架' : (info.it ? info.it.title : ''))) + '">' + meta + '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="npp-mrow npp-row-' + p.id + '">' +
+      '<div class="npp-mrh"><span style="font-size:13px;">' + p.ico + '</span><span>' + esc(p.nm) +
+        '<small>' + (off ? '未绑 · 用不了' : (p.id === 'xhs' ? '知识图文' : '只排案例 · 与视频号联动')) + '</small></span></div>' +
+      cells +
+    '</div>';
+  }).join('');
+
+  const timeRow = '<div class="npp-mrow npp-trow">' +
+    '<div class="npp-mrh">发布时间<small>三行共用</small></div>' +
+    days.map(d => {
+      const hasDay = npPlanTopicHasDay(grid[d.day]) || notesOfDay[d.day].length;
+      const hm = String(times[d.day] || (notesOfDay[d.day][0] || {}).planTime || '');
+      return '<div class="npp-mcell npp-mtime"' + (d.today ? ' style="background:#fffdf7;"' : '') + '>' + (hasDay
+        ? '<input type="time" data-npp="time" data-day="' + d.day + '" value="' + npArAttr(hm || NP_PUB_DEF_TIME) + '" title="这天几点发（没改过＝' + NP_PUB_DEF_TIME + '）">'
+        : '<span style="font-size:10.5px;color:#c9d0d9;">—</span>') + '</div>';
+    }).join('') + '</div>';
+
+  let sumDays = 0, sumN = 0;
+  const groupUse = {};
+  days.forEach(d => {
+    const pc = npPlanTopicPieces(grid[d.day], usable);
+    if (pc) sumDays++;
+    sumN += pc;
+    const seen = {};
+    usable.forEach(pid => {
+      const c = grid[d.day][pid];
+      if (!c || !c.gid) return;
+      const gid = c.gid;
+      if (seen[gid]) return;
+      seen[gid] = 1;
+      groupUse[gid] = (groupUse[gid] || 0) + 1;
+    });
+  });
+  const groupTxt = Object.keys(groupUse).map(gid => gnameOf(gid) + ' ×' + groupUse[gid]).join('、');
+  const sumLine = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f8fafb;border:1px solid var(--c-line,#eceef0);border-radius:9px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#4b5563;">' +
+    '<span>本周有安排 <b style="color:#1f2329;">' + sumDays + '</b> 天</span>' +
+    '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">预计 <b>' + sumN + '</b> 篇</span>' +
+    '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">📋 选题表已写 <b>' + doneN + '/' + items.length + '</b></span>' +
+    (groupTxt ? '<span style="color:#8a929e;">本周各组：' + esc(groupTxt) + '</span>' : '') +
+    (multi ? '' : '<span style="color:#9aa3ae;">这台只做小红书——要发抖音/视频号，先开全平台版并绑号</span>') +
+  '</div>';
+
+  const genLive = _npGenLive > 0;
+  container.innerHTML = NP_PLAN_BASE_CSS +
+    '<div style="padding:6px 2px;">' +
+      '<div class="npp-hd"><span class="t">🗓 笔记规划</span>' +
+        '<span class="qhelp" tabindex="0" data-tip="' + escAttr('一周一张表：每格选一组题，日常只出两类——知识（讲法只收清单 / 对比 / 问答，只发小红书；清单出长文、对比 / 问答出图文）和案例（只出视频，固定按讲故事讲，三平台都能发，成片要现场素材）。点开那格能换组、换一条，也能改怎么讲——每种写法旁边写着它读起来是什么样、为什么这条题适合这么写。凌晨 02:00 系统从这组里挑一条还没写的，按你定好的写法写成稿，进「📒 笔记档案」。旧的人设 / 本地场景 / 过程 / 资料测评四组已下架：格子会标「已下架 · 换一组」，写好的稿不动。抖音、视频号两格联动，同一组同一条。时间一天一个点，三行共用。') + '">?</span>' +
+        '<label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#4b5563;cursor:pointer;" title="打开网页时顺手把今天这篇图文配好（一天只试一次；额度不够就留着缺，稿子不删）。关掉＝图到「📒 笔记档案」这篇里自己出"><input type="checkbox" data-npp="autoimg"' + (autoImg ? ' checked' : '') + ' style="width:13px;height:13px;margin:0;"> 开页面自动配图</label>' +
+        '<span style="flex:1;"></span>' +
+        '<button type="button" class="npp-btn pri" data-npp="prep"' + (genLive ? ' disabled style="opacity:.55;cursor:not-allowed;"' : '') + ' title="' + (genLive ? '正在生成上一篇，跑完再点' : '点一下立刻出一篇：今天那组里还没写的第一条，写成稿进「📒 笔记档案」——今天没排会先让你选一组') + '">' + (genLive ? '⏳ 正在生成…' : '⚡ 立即生成一篇') + '</button>' +
+        '<button type="button" class="npp-btn" data-npp="topics" title="看这张行业选题表（已写 ' + doneN + '/' + items.length + '），点一条直接出稿">📋 选题表</button>' +
+        '<button type="button" class="npp-btn" data-npp="diag" title="账号资料（基本盘 / 问卷 / 人设 / 卖点 / 知识库）">🧭 账号规划</button>' +
+      '</div>' +
+      '<div id="nppProg" style="margin-bottom:8px;"></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;margin:2px 0 6px;">' +
+        '<span style="font-size:11.5px;color:#6b7280;font-weight:700;">🗓 本周排期 · 周几发哪一组</span>' +
+      '</div>' +
+      (anyPlan ? '' : '<div style="margin-top:8px;font-size:11.5px;color:#b45309;background:#fff8ef;border:1px solid #f3d3a3;border-radius:8px;padding:8px 12px;">还没排——点下面任一格，选这周那天发哪一组题。知识只在小红书那行；抖音、视频号只排案例（案例只出视频）。选好凌晨就自动写稿。</div>') +
+      sumLine +
+      '<div class="npp-matrix"><div class="npp-mx">' + head + body + timeRow + '</div></div>' +
+      '<div style="margin-top:10px;font-size:11px;color:#8a929e;line-height:1.8;">' +
+        '· 一格＝一组题 ＋ 怎么讲；系统从这组里挑还没写的第一条。<br>' +
+        '· 知识只发小红书（清单→长文、对比 / 问答→图文）；案例只出视频（固定讲故事），成片后到「📒 笔记档案」点发布。<br>' +
+        '· 点开那格能换组、换一条、换写法；写法旁边那行「因为」就是它为什么适合这条题。<br>' +
+        '· 旧的人设 / 本地场景 / 过程 / 资料测评四组已下架：格子标「已下架 · 换一组」，点一下换掉；写好的稿不动。<br>' +
+        '· 抖音、视频号两格联动：同一天同一组、同一条；发布时一家一支片。' +
+      '</div>' +
+    '</div>';
+  try { npGenSync(); } catch (_) {}
+}
+
+const NP_PLAN_BASE_CSS = '<style>' +
+  '#notePlanContent .npp-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}' +
+  '#notePlanContent .npp-hd .t{font-weight:600;color:#1f2329;font-size:14px;}' +
+  '.npp-btn{border:1px solid var(--line,#e2e6ec);background:#fff;color:#4b5563;border-radius:8px;font-size:11.5px;font-weight:600;padding:4px 11px;cursor:pointer;font-family:var(--font-ui);}' +
+  '.npp-btn.pri{border:none;background:var(--grad-brand);color:var(--c-brand-on);}' +
+  '#notePlanContent .npp-spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid rgba(29,78,216,.25);border-top-color:#1d4ed8;border-radius:50%;animation:nppSpin .8s linear infinite;}' +
+  '@keyframes nppSpin{to{transform:rotate(360deg)}}' +
+  '#notePlanContent .npp-matrix{overflow-x:auto;border:1px solid var(--c-line,#eceef0);border-radius:12px;background:#fff;}' +
+  '#notePlanContent .npp-mx{min-width:960px;}' +
+  '#notePlanContent .npp-mrow{display:grid;grid-template-columns:94px repeat(7,minmax(112px,1fr));border-top:1px solid var(--c-line,#eceef0);}' +
+  '#notePlanContent .npp-mrow:first-child{border-top:0;}' +
+  '#notePlanContent .npp-mth{background:#fbfcfd;padding:7px 8px;font-size:11.5px;color:#6b7280;font-weight:700;text-align:center;white-space:nowrap;}' +
+  '#notePlanContent .npp-mth.today{background:#fff8e8;color:#b45309;}' +
+  '#notePlanContent .npp-mday{display:block;font-size:9.5px;font-weight:400;color:#9aa3ae;margin-top:1px;}' +
+  '#notePlanContent .npp-mrh{display:flex;align-items:center;gap:6px;padding:8px 9px;font-size:11.5px;font-weight:700;color:#374151;background:#fbfcfd;border-right:1px solid var(--c-line,#eceef0);white-space:nowrap;}' +
+  '#notePlanContent .npp-mrh small{display:block;font-size:9px;font-weight:400;color:#9aa3ae;margin-top:1px;}' +
+  '#notePlanContent .npp-row-xhs{background:#fffbfc;}' +
+  '#notePlanContent .npp-row-douyin{background:#fbfbfc;}' +
+  '#notePlanContent .npp-row-channels{background:#fbfefc;}' +
+  '#notePlanContent .npp-mcell{padding:6px;border-left:1px solid var(--c-line,#eceef0);min-width:0;}' +
+  '#notePlanContent .npp-cellbtn{width:100%;border:1px solid var(--c-line-2,#e2e6ec);background:#fff;border-radius:8px;padding:5px 6px;font-size:11px;font-weight:700;color:#6b7280;cursor:pointer;font-family:var(--font-ui);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+  '#notePlanContent .npp-cellbtn:hover{border-color:var(--c-brand,#e1306c);}' +
+  '#notePlanContent .npp-cellbtn.rest{color:#b6bcc6;font-weight:400;background:#fcfcfd;border-style:dashed;}' +
+  '#notePlanContent .npp-cellbtn.xhs.on{border-color:#f6c6d5;background:#ffeef3;color:#c2185b;}' +
+  '#notePlanContent .npp-cellbtn.douyin.on{border-color:#d9dde3;background:#f1f2f4;color:#111827;}' +
+  '#notePlanContent .npp-cellbtn.channels.on{border-color:#bfe7d2;background:#e9f8f0;color:#07823f;}' +
+  '#notePlanContent .npp-cellbtn.off{background:#f3f4f6;color:#b6bcc6;border-color:#eceff3;cursor:not-allowed;}' +
+  '#notePlanContent .npp-mmeta{margin-top:3px;font-size:9.5px;color:#9aa3ae;line-height:1.5;min-height:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+  '#notePlanContent .npp-st{font-size:9px;font-weight:700;border-radius:5px;padding:0 4px;margin-right:3px;}' +
+  '#notePlanContent .npp-mtime{display:flex;align-items:center;justify-content:center;}' +
+  '#notePlanContent .npp-mtime input{font-family:var(--font-ui);font-size:11px;border:1px solid var(--c-line-2,#e2e6ec);border-radius:6px;padding:2px 4px;width:72px;}' +
+  '#notePlanContent .npp-topic{display:block;width:100%;padding:6px 7px;border-radius:8px;border:1px solid var(--c-line-2,#e2e6ec);background:#fff;font-family:var(--font-ui);text-align:left;cursor:pointer;overflow:hidden;}' +
+  '#notePlanContent .npp-topic:hover{border-color:var(--c-brand,#e1306c);}' +
+  '#notePlanContent .npp-topic .g{display:block;font-size:11px;font-weight:700;color:#1f2329;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+  '#notePlanContent .npp-topic .q{display:block;margin-top:1px;font-size:9px;color:#8a929e;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+  '#notePlanContent .npp-topic.rest{background:#fcfcfd;border-style:dashed;}' +
+  '#notePlanContent .npp-topic.rest .g{color:#b6bcc6;font-weight:400;}' +
+  '#notePlanContent .npp-topic.done{background:#f6fbf7;border-color:#cfe8d8;}' +
+  '#notePlanContent .npp-topic.empty{background:#fff8ef;border-color:#f3d3a3;}' +
+  '#notePlanContent .npp-topic.empty .g{color:#b45309;}' +
+  '</style>';
+
 async function renderNotePlan(container) {
   if (!container) return;
   ensureNpPlanDelegation(container);
   npPlanCloseCellMenu();
+  npPlanCloseTopicMenu();
   try { npPlanAutoPrep(container, renderNotePlan); } catch (_) {}
   try { npPlanAutoImg(container, renderNotePlan); } catch (_) {}
+  let pack = null, indKey = '';
+  try {
+    const c0 = await readConfigPlain();
+    indKey = String((c0 && c0.topicIndustry) || '');
+    if (indKey && typeof TopicTable !== 'undefined') pack = TopicTable.industry(indKey);
+  } catch (_) {}
+  if (pack) return await renderNotePlanTopic(container, indKey, pack);
   let grid = npPlanGridEmpty(), times = {}, list = [], plan = null;
   try {
     [grid, times, list, plan] = await Promise.all([npPlanGridRead(), npPlanTimesRead(), npNotesAll(), npLoadPlanCache()]);
@@ -19243,8 +22059,10 @@ async function renderNotePlan(container) {
   /* 每格：表里定的形式优先；表里没定但档案有篇排在这天（手排 / 老数据）就按篇的来 */
   const cellInfo = (d, pid) => {
     const n = npPlanNoteForPlat(notesOfDay[d.day], pid);
-    const kind = grid[d.day][pid] || npPlanNoteKind(n);
-    return { n: n, kind: kind, form: (npWeekKindMeta(kind) || {}).form || '' };
+    const gk = grid[d.day][pid] || '';
+    const kind = gk || npPlanNoteKind(n);
+    const offKind = (!gk && !kind && _npPlanGridOff[d.day] && _npPlanGridOff[d.day][pid]) || '';
+    return { n: n, kind: kind, offKind: offKind, form: (npWeekKindMeta(kind) || {}).form || '' };
   };
 
   const head = '<div class="npp-mrow npp-mhead">' +
@@ -19256,15 +22074,19 @@ async function renderNotePlan(container) {
   const body = NP_PLAN_PLATS.filter(p => showPlat(p.id)).map(p => {
     const off = !usablePlat(p.id);
     const why = off ? '还没绑视频号——先到顶栏「绑定」那步把视频号扫上' : '';
+    const noOffer = !npPlanGridOffers(p.id).length;
+    const why2 = off ? why : (noOffer ? '抖音 / 视频号日常只发案例视频——案例要现场素材，做成片后到「📒 笔记档案」点发布；这页只排知识（发小红书）' : '');
     const cells = days.map(d => {
       const info = cellInfo(d, p.id);
       const has = !!info.kind;
+      const hasOff = !!(info.offKind && !has);
       const st = info.n ? stOf(info.n) : '';
       const cls = ['npp-cellbtn', p.id];
       if (has) cls.push('on');
       if (!has) cls.push('rest');
       if (off) cls.push('off');
-      const tip = off ? why : (has ? '点一下换这家那天的形式' : '点一下＝这家那天发什么');
+      const tip = why2 || (has ? '点一下换这家那天的排法' :
+        (hasOff ? '这个格子原来的排法已下架——点一下换成「知识·图文」，或选休' : '点一下＝这家那天发什么'));
       let meta;
       if (off) meta = '<span style="color:#c9d0d9;">用不了</span>';
       else if (info.n) {
@@ -19273,18 +22095,19 @@ async function renderNotePlan(container) {
         meta = '<span class="npp-st" style="color:' + stCol + ';background:' + stBg + ';">' + esc(npStLabel(st)) + '</span>' +
           '<button type="button" data-npp="open" data-id="' + npArAttr(info.n.id) + '" title="点开继续弄这一篇" style="border:none;background:none;padding:0;font:inherit;color:#8a929e;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;">' + esc(npNoteTitleOf(info.n)) + '</button>';
       } else if (has) meta = '<span class="npp-st" style="color:#b45309;background:#fff2dc;">等备稿</span>';
+      else if (hasOff) meta = '<span class="npp-st" style="color:#b91c1c;background:#fee2e2;">已下架</span><span style="color:#9aa3ae;">点一下换</span>';
       else meta = '<span style="color:#c9d0d9;">不发</span>';
       return '<div class="npp-mcell"' + (d.today ? ' style="background:#fffdf7;"' : '') + '>' +
         '<button type="button" class="' + cls.join(' ') + '" data-npp="cell" data-day="' + d.day + '" data-p="' + p.id + '" data-cur="' + npArAttr(info.kind) + '"' +
-          (off ? ' data-why="' + escAttr(why) + '"' : '') + ' title="' + escAttr(tip) + '">' +
-          esc(has ? npPlanCellLabel(info.kind) : '休') +
+          (why2 ? ' data-why="' + escAttr(why2) + '"' : '') + (hasOff ? ' data-off="1"' : '') + ' title="' + escAttr(tip) + '">' +
+          esc(has ? npPlanCellLabel(info.kind) : (hasOff ? '已下架' : '休')) +
         '</button>' +
-        '<div class="npp-mmeta" title="' + escAttr(info.n ? npNoteTitleOf(info.n) : '') + '">' + meta + '</div>' +
+        '<div class="npp-mmeta" title="' + escAttr(info.n ? npNoteTitleOf(info.n) : (info.offKind || '')) + '">' + meta + '</div>' +
       '</div>';
     }).join('');
     return '<div class="npp-mrow npp-row-' + p.id + '">' +
       '<div class="npp-mrh"><span style="font-size:13px;">' + p.ico + '</span><span>' + esc(p.nm) +
-        '<small>' + (p.id === 'xhs' ? '图文/长文/视频' : (off ? '未绑 · 用不了' : '只有视频')) + '</small></span></div>' +
+        '<small>' + (off ? '未绑 · 用不了' : (p.id === 'xhs' ? '只排知识 · 发小红书' : '案例片在档案里发')) + '</small></span></div>' +
       cells +
     '</div>';
   }).join('');
@@ -19308,8 +22131,7 @@ async function renderNotePlan(container) {
   const sumLine = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#f8fafb;border:1px solid var(--c-line,#eceef0);border-radius:9px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#4b5563;">' +
     '<span>本周有安排 <b style="color:#1f2329;">' + sum.days + '</b> 天</span>' +
     '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">预计 <b>' + sum.n + '</b> 篇</span>' +
-    '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">📕 图文/长文 <b>' + sum.txt + '</b> 篇</span>' +
-    '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">🎬 视频 <b>' + sum.vid + '</b> 支（共用）</span>' +
+    '<span style="font-size:10px;font-weight:700;border-radius:999px;padding:1px 7px;background:#fff;border:1px solid var(--c-line,#eceef0);">📕 知识图文 <b>' + sum.txt + '</b> 篇</span>' +
     (multi ? '' : '<span style="color:#9aa3ae;">这台只做小红书——要发抖音/视频号，先开全平台版并绑号</span>') +
   '</div>';
 
@@ -19322,41 +22144,10 @@ async function renderNotePlan(container) {
   const planItems0 = (plan && Array.isArray(plan.items)) ? plan.items : [];
   const planHas = planItems0.length > 0;
   const planRest = planItems0.filter(x => x && !x.done).length;   // 这批复的还剩几篇没写
-  container.innerHTML = '<style>' +
-      '#notePlanContent .npp-hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}' +
-      '#notePlanContent .npp-hd .t{font-weight:600;color:#1f2329;font-size:14px;}' +
-      '.npp-btn{border:1px solid var(--line,#e2e6ec);background:#fff;color:#4b5563;border-radius:8px;font-size:11.5px;font-weight:600;padding:4px 11px;cursor:pointer;font-family:var(--font-ui);}' +
-      '.npp-btn.pri{border:none;background:var(--grad-brand);color:var(--c-brand-on);}' +
-      '#notePlanContent .npp-spin{display:inline-block;flex:none;width:12px;height:12px;border:2px solid rgba(29,78,216,.25);border-top-color:#1d4ed8;border-radius:50%;animation:nppSpin .8s linear infinite;}' +
-      '@keyframes nppSpin{to{transform:rotate(360deg)}}' +
-      '#notePlanContent .npp-matrix{overflow-x:auto;border:1px solid var(--c-line,#eceef0);border-radius:12px;background:#fff;}' +
-      '#notePlanContent .npp-mx{min-width:960px;}' +
-      '#notePlanContent .npp-mrow{display:grid;grid-template-columns:94px repeat(7,minmax(112px,1fr));border-top:1px solid var(--c-line,#eceef0);}' +
-      '#notePlanContent .npp-mrow:first-child{border-top:0;}' +
-      '#notePlanContent .npp-mth{background:#fbfcfd;padding:7px 8px;font-size:11.5px;color:#6b7280;font-weight:700;text-align:center;white-space:nowrap;}' +
-      '#notePlanContent .npp-mth.today{background:#fff8e8;color:#b45309;}' +
-      '#notePlanContent .npp-mday{display:block;font-size:9.5px;font-weight:400;color:#9aa3ae;margin-top:1px;}' +
-      '#notePlanContent .npp-mrh{display:flex;align-items:center;gap:6px;padding:8px 9px;font-size:11.5px;font-weight:700;color:#374151;background:#fbfcfd;border-right:1px solid var(--c-line,#eceef0);white-space:nowrap;}' +
-      '#notePlanContent .npp-mrh small{display:block;font-size:9px;font-weight:400;color:#9aa3ae;margin-top:1px;}' +
-      '#notePlanContent .npp-row-xhs{background:#fffbfc;}' +
-      '#notePlanContent .npp-row-douyin{background:#fbfbfc;}' +
-      '#notePlanContent .npp-row-channels{background:#fbfefc;}' +
-      '#notePlanContent .npp-mcell{padding:6px;border-left:1px solid var(--c-line,#eceef0);min-width:0;}' +
-      '#notePlanContent .npp-cellbtn{width:100%;border:1px solid var(--c-line-2,#e2e6ec);background:#fff;border-radius:8px;padding:5px 6px;font-size:11px;font-weight:700;color:#6b7280;cursor:pointer;font-family:var(--font-ui);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
-      '#notePlanContent .npp-cellbtn:hover{border-color:var(--c-brand,#e1306c);}' +
-      '#notePlanContent .npp-cellbtn.rest{color:#b6bcc6;font-weight:400;background:#fcfcfd;border-style:dashed;}' +
-      '#notePlanContent .npp-cellbtn.xhs.on{border-color:#f6c6d5;background:#ffeef3;color:#c2185b;}' +
-      '#notePlanContent .npp-cellbtn.douyin.on{border-color:#d9dde3;background:#f1f2f4;color:#111827;}' +
-      '#notePlanContent .npp-cellbtn.channels.on{border-color:#bfe7d2;background:#e9f8f0;color:#07823f;}' +
-      '#notePlanContent .npp-cellbtn.off{background:#f3f4f6;color:#b6bcc6;border-color:#eceff3;cursor:not-allowed;}' +
-      '#notePlanContent .npp-mmeta{margin-top:3px;font-size:9.5px;color:#9aa3ae;line-height:1.5;min-height:14px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
-      '#notePlanContent .npp-st{font-size:9px;font-weight:700;border-radius:5px;padding:0 4px;margin-right:3px;}' +
-      '#notePlanContent .npp-mtime{display:flex;align-items:center;justify-content:center;}' +
-      '#notePlanContent .npp-mtime input{font-family:var(--font-ui);font-size:11px;border:1px solid var(--c-line-2,#e2e6ec);border-radius:6px;padding:2px 4px;width:72px;}' +
-    '</style>' +
+  container.innerHTML = NP_PLAN_BASE_CSS +
     '<div style="padding:6px 2px;">' +
       '<div class="npp-hd"><span class="t">🗓 笔记规划</span>' +
-        '<span class="qhelp" tabindex="0" data-tip="' + escAttr('一周一张表：三行平台 × 七列天，点每格选这家那天发什么。📕 小红书：图文 / 长文 / 视频；🎵 抖音、🎥 视频号只收视频，图文和长文在那两行不出现。同一天视频只认一条线，共用一支片——哪家改了视频的线，其余视频格自动跟过去。图文/长文 ＋ 视频平台＝两篇（小红书一篇 ＋ 一支片）。时间一天一个点，三行共用。排好的那天凌晨 02:00 自动备稿：图文打开页面自动配图；视频写好口播稿＋切分镜，录片要页面开着；长文到点只提醒、不自动发。混剪 / 数字人 / 案例不进规划，做好后在「📒 笔记档案」点「🚀 发布」。') + '">?</span>' +
+        '<span class="qhelp" tabindex="0" data-tip="' + escAttr('一周一张表：三行平台 × 七列天。日常只排一类：📚 知识·图文，只发小红书——点那天那格选上，凌晨 02:00 自动写稿，打开页面自动配图，到点自动发。🎬 案例只出视频、要现场素材（现场 / 本人出镜 / 前后对比），不进自动备稿：做成片后到「📒 笔记档案」点这一篇行尾「🚀 发布」，抖音 / 视频号都在那一步勾。时间一天一个点。旧排法（引流 / 知识长文 / 知识视频）已经下架，格子上会标「已下架」，点一下换掉就行，写好的稿不动。') + '">?</span>' +
         '<label style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#4b5563;cursor:pointer;" title="打开网页时顺手把今天这篇图文配好（一天只试一次；额度不够就留着缺，稿子不删）。关掉＝图到「📒 笔记档案」这篇里自己出"><input type="checkbox" data-npp="autoimg"' + (autoImg ? ' checked' : '') + ' style="width:13px;height:13px;margin:0;"> 开页面自动配图</label>' +
         '<span style="flex:1;"></span>' +
         '<button type="button" class="npp-btn pri" data-npp="prep"' + (genLive ? ' disabled style="opacity:.55;cursor:not-allowed;"' : '') + ' title="' + (genLive ? '正在生成上一篇，跑完再点' : '点一下立刻出一篇（稿＋3~4 张图），进「📒 笔记档案」标「代发」——今天没排会先让你选哪种') + '">' + (genLive ? '⏳ 正在生成…' : '⚡ 立即生成一篇') + '</button>' +
@@ -19365,14 +22156,16 @@ async function renderNotePlan(container) {
       '</div>' +
       caseNote +
       '<div id="nppProg" style="margin-bottom:8px;"></div>' +
-      (anyPlan ? '' : '<div style="margin-top:8px;font-size:11.5px;color:#b45309;background:#fff8ef;border:1px solid #f3d3a3;border-radius:8px;padding:8px 12px;">还没排——下面三行哪家哪天发，就点那一格选形式；抖音、视频号只有视频。选好就自动备稿、自动发。</div>') +
+      '<div style="display:flex;align-items:center;gap:8px;margin:2px 0 6px;">' +
+        '<span style="font-size:11.5px;color:#6b7280;font-weight:700;">🗓 本周排期</span>' +
+      '</div>' +
+      (anyPlan ? '' : '<div style="margin-top:8px;font-size:11.5px;color:#b45309;background:#fff8ef;border:1px solid #f3d3a3;border-radius:8px;padding:8px 12px;">还没排——点📕 小红书那一行、哪天要发就点那一格选「知识·图文」，选好就自动备稿、自动发。案例视频做成片后在「📒 笔记档案」点发布。</div>') +
       sumLine +
       '<div class="npp-matrix"><div class="npp-mx">' + head + body + timeRow + '</div></div>' +
       '<div style="margin-top:10px;font-size:11px;color:#8a929e;line-height:1.8;">' +
-        '· 抖音、视频号只收视频；图文/长文只在小红书那行。<br>' +
-        '· 同一天视频共用一支片（只录一次）：改了一家的视频线，其余视频格自动跟过去。<br>' +
-        '· 图文/长文 ＋ 视频平台＝两篇：小红书一篇 ＋ 一支片；档案里视频只出一行，发布时勾那几家。<br>' +
-        '· 长文到点只提醒你点一下发；视频篇要打开页面录片；没绑/没料只跳过那一家，另外两家照发。' +
+        '· 日常只排「知识·图文」，发小红书；凌晨 02:00 写稿，开页面自动配图，到点自动发。<br>' +
+        '· 抖音 / 视频号日常只发案例视频（现场 / 本人出镜 / 前后对比三样），不进自动备稿——成片后在「📒 笔记档案」点「🚀 发布」，勾那几家。<br>' +
+        '· 旧排法（引流 / 知识长文 / 知识视频）已下架：格子标「已下架」，点一下换成知识或休；写好的稿不动。' +
       '</div>' +
     '</div>';
   try { npGenSync(); } catch (_) {}
@@ -19419,6 +22212,26 @@ async function npPlanGenNow(container, after) {
   const days = npPlanDays7();
   const today = days.find(d => d.today) || null;
   if (!today) return;
+  /* 选了行业的号：按「今天那组」出；今天没排就先选一组 */
+  let indPack = null;
+  try {
+    const c0 = await readConfigPlain();
+    const k0 = String((c0 && c0.topicIndustry) || '');
+    if (k0 && typeof TopicTable !== 'undefined') indPack = TopicTable.industry(k0);
+  } catch (_) {}
+  if (indPack) {
+    let tg = null;
+    try { tg = await npPlanTopicGridRead(); } catch (_) {}
+    if (!tg || !npPlanTopicHasDay(tg[today.day])) {
+      const gid = await npPlanPickTopicGroup(today.day);
+      if (!gid) return;
+      await npPlanTopicSetCell(today.day, 'xhs', gid, '');
+      toast((NP_WEEK_DAY_LABEL[today.day] || '今天') + ' 排上「' + TopicTable.groupName((indPack.groups || []).find(g => g.id === gid) || null) + '」——这就出一篇');
+      try { if (after) after(); } catch (_) {}
+    }
+    await npPlanPrepNow(after, { noPick: true });
+    return;
+  }
   try {
     const g = await npPlanGridRead();
     if (!npPlanGridHasDay(g[today.day])) {
@@ -19480,6 +22293,48 @@ function npPlanPickCombo() {
       const idx = Number(b.getAttribute('data-pc'));
       const c = NP_PLAN_GEN_COMBOS[idx];
       done(c ? { plat: c.plat, form: c.form, line: c.line } : null);
+    });
+  });
+}
+
+/** 选了行业的号「立即生成」时今天还没排：选一组（只列还有没写过的组）。返回 gid；点算了＝null */
+async function npPlanPickTopicGroup(day) {
+  let pack = null, plan = null;
+  try {
+    const c = await readConfigPlain();
+    const k = String((c && c.topicIndustry) || '');
+    if (k && typeof TopicTable !== 'undefined') pack = TopicTable.industry(k);
+    if (pack) plan = await npIndustryEnsurePlan(k, await npLoadPlanCache());
+  } catch (_) {}
+  if (!pack) return null;
+  const items = (plan && Array.isArray(plan.items)) ? plan.items : [];
+  const leftOf = gid => items.filter(it => it && it.gid === gid && !it.done).length;
+  return await new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(17,24,39,.3);z-index:99999;display:flex;align-items:center;justify-content:center;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.22);padding:16px 18px;width:min(470px,92vw);max-height:86vh;overflow:auto;font-family:var(--font-ui);';
+    box.innerHTML = '<div style="font-size:13.5px;font-weight:700;color:#1f2329;margin-bottom:4px;">现在生成，发哪一组？</div>' +
+      '<div style="font-size:11.5px;color:#6b7280;line-height:1.7;margin-bottom:12px;">' + esc((NP_WEEK_DAY_LABEL[day] || '今天') + ' 还没排——选一组，系统从这组里挑还没写的第一条出稿；选完这格就记下来，以后每周这天都发这组。') + '</div>' +
+      (pack.groups || []).map(gr => {
+        const left = leftOf(gr.id);
+        return '<button type="button" data-gp="' + npArAttr(gr.id) + '"' + (left ? '' : ' disabled') +
+          ' style="display:flex;width:100%;align-items:center;gap:8px;border:1px solid #e5e7eb;background:' + (left ? '#fff' : '#f8f9fa') + ';border-radius:10px;padding:9px 11px;margin-bottom:7px;font-size:12.5px;font-weight:600;color:' + (left ? '#374151' : '#a8aeb8') + ';cursor:' + (left ? 'pointer' : 'not-allowed') + ';text-align:left;font-family:var(--font-ui);">' +
+          '<span>' + esc(TopicTable.groupName(gr)) + '</span><span style="flex:1;"></span>' +
+          '<span style="font-size:11px;color:' + (left ? '#9ca3af' : '#c2410c') + ';font-weight:400;">' + (left ? ('还剩 ' + left + ' 条') : '写完了') + '</span></button>';
+      }).join('') +
+      '<button type="button" data-gp="-1" style="width:100%;border:none;background:none;color:#9ca3af;font-size:11.5px;padding:4px;cursor:pointer;font-family:var(--font-ui);">算了</button>';
+    wrap.appendChild(box);
+    document.body.appendChild(wrap);
+    const done = (v) => { try { wrap.remove(); } catch (_) {} resolve(v); };
+    wrap.addEventListener('click', (ev) => {
+      const t = ev.target;
+      if (t === wrap) { done(null); return; }
+      const b = t && t.closest ? t.closest('[data-gp]') : null;
+      if (!b) return;
+      if (b.disabled) return;
+      const gid = String(b.getAttribute('data-gp') || '');
+      done(gid && gid !== '-1' ? gid : null);
     });
   });
 }
@@ -19904,13 +22759,35 @@ async function npPlanImgFill(note, cfg) {
     shots: npShotsShape(null),
     visual: null,
     imgDocs: [],
+    // 🧩 这一篇的排产底子与卡片：卡片式写法照卡出图（不切分幕），分幕式还是老一套
+    planItem: (note.wip && note.wip.planItem) ? Object.assign({}, note.wip.planItem) : null,
+    cards: Array.isArray(note.cards) ? note.cards : null,
   };
   const title = String(note.title || (w.draft.titles || [])[0] || '');
   const rng = npDshRange(w);
   /* 上次跑到一半（分镜已经落档、图出过几张）：接着用那套分镜——id 不变，已经出好的图不会再画一遍 */
   const pre = (note.shots && Array.isArray(note.shots.items)) ? note.shots.items : [];
-  if (pre.length) {
+  const cardFi0 = npCardModeOf(w);
+  let cards0 = (Array.isArray(note.cards) && note.cards.length) ? note.cards : [];
+  if (cardFi0 && !cards0.length) {
+    /* 老稿没带卡：按正文补一次卡，补上就照卡出图（补不上由下面的分支报错，绝不退回分幕） */
+    let got = null;
+    try { got = await npCardsEnsure(w, w.draft.content, title); } catch (_) { got = null; }
+    if (got) cards0 = got;
+  }
+  if (cardFi0 && cards0.length) {
+    /* 卡片式写法：写稿时交回来的每张卡就是一张图，直接排，不再问 AI 切分幕 */
+    w.shots = npShotsShape({ items: npCardShotsOf(cards0, cardFi0), story: null, cv: (note.shots && note.shots.cv) || null });
+    const cv1 = npCoverOf(w);
+    const cc1 = npCardCoverOf(w) || {};
+    if (!String(cv1.copy || '').trim() && String(cc1.title || '').trim()) cv1.copy = String(cc1.title).trim();
+    if (!String(cv1.sub || '').trim() && cc1.lines && cc1.lines[0]) cv1.sub = String(cc1.lines[0]).trim();
+  } else if (pre.length) {
     w.shots = npShotsShape(note.shots);
+  } else if (npNoImgFormOf(w)) {
+    return { ok: false, why: '这条是「' + (npNoImgFormOf(w).name || '清单') + '」写法——这种写法出长文、不出图：回改稿屏点「📝 下一步：出长文」' };
+  } else if (cardFi0) {
+    return { ok: false, why: '这篇还没卡片——回「✏️ 继续编辑」重新出一次稿（写法选「' + String(cardFi0.name || '对比') + '」），让 AI 把每张卡交回来' };
   } else {
     let r = null;
     try {
@@ -19919,6 +22796,9 @@ async function npPlanImgFill(note, cfg) {
         isKnow: rng.key === 'howto', typeKey: rng.key, typeName: rng.name, coverOn: !!rng.cover,
         chars: ((_npChars && _npChars.list) || []).map(c => ({ id: c.id, name: c.name })),
         mainChar: (npCharFor(w) || {}).name || '',
+        form: String((w.planItem && w.planItem.form) || ''),
+        variant: String((w.planItem && w.planItem.variant) || ''),
+        carrier: String((w.planItem && w.planItem.carrier) || ''),
       } });
     } catch (_) {}
     if (!r || r.ok === false || !(r.items || []).length) {
@@ -19989,6 +22869,7 @@ async function npPlanImgFill(note, cfg) {
         list.push(asset);
         if (!Array.isArray(it.imgs)) it.imgs = [];
         it.imgs.push(aid);
+        it.imgSrc = 'ai'; it.imgClip = ''; it.imgGrp = '';
         ok++; done = true;
         await npGenPut({ done: ok });
       } catch (_) {}
@@ -20769,29 +23650,18 @@ async function npPubStageFiles(id, files, isVideo, need, extra) {
 const NP_DIR_META = {
   k: { chip: '📚 知识' }, l: { chip: '📝 长文' }, d: { chip: '🔥 引流' }, c: { chip: '🎬 案例' }, i: { chip: '🎭 IP玩法' }, f: { chip: '🪟 门面' },
 };
-const NP_DIR_SUB = { k: '立专业：拿知识库讲一条', d: '抓流量：AI 图文 / 长文，直接开工', c: '加信度：散素材拼成片', i: '立人设：挑一招招牌，AI 编故事你挑', f: '配门面：钉主页顶上的两篇，一次配齐、长期不动' };
+/* 旧线（2026-11-09 下架）：入口不再出；老稿还能看能发，档案里标「旧线 · 已下架」 */
+const NP_DIR_OFF = { d: 1, i: 1 };
+const NP_DIR_SUB = { k: '立专业：拿知识库讲一条', c: '加信度：散素材拼成片', f: '配门面：钉主页顶上的两篇，一次配齐、长期不动' };
 /** 方向 × 最终效果（白话口径：选了卡，这条工作流就定了——跟着「下一步」一步步走到发布）
- *  2026-10-21 长文回挂两行：📚 知识、🔥 引流各一张「📝 长文笔记」卡（腔由入口定死、不再另选）；
- *  不再单列「📝 长文」一行，两张卡各回各线的长文站（dir='k' kOut='text' / dir='d' dOut='long'）。 */
+ *  2026-11-09 收口：日常只剩知识（图文 / 长文）＋案例（只出成片）＋门面；引流 / IP 玩法两张入口下架。
+ *  知识那行的视频 / 口播稿 / 长文卡一并收起（老稿照旧能看能发，只是不再从新建笔记出）。 */
 const NP_DIR_EFFECTS = {
   k: [
     { f: '图文', ic: '🖼', t: '图文笔记', d: '写一段话、配一套图，发出去就是一篇笔记。', lv: '一套图＋正文' },
-    { f: '视频', ic: '🎬', t: '视频笔记', kind: 'PPT字体动效', d: '一屏一句大字＋配音，直接出一条能发的视频。', lv: '出一支成片' },
-    { f: '口播稿', ic: '🎙', t: '真人口播', d: 'AI 出这篇要念的稿，你照着镜头念。', lv: '出一份口播稿＋一条出路' },
-    { f: '长文', ic: '📝', t: '长文笔记', tone: 'k', d: '一篇 600~1200 字的长文，平台自己排版。', lv: '一篇长文 · 科普腔' },
-  ],
-  /* 🔥 引流：AI 图文一张——建好篇进写稿那台，第一站顶上有一栏「这一篇用哪一招」，点一下才钉上（不挑也行）；
-     长文一张——点这张就定「🗣 人设腔」，流程是挑稿 → 改稿 → 出长文 → 预览，腔不再另选。 */
-  d: [
-    { f: '图文', ic: '🖼', t: 'AI 图文笔记', d: '一段文＋一套图，图按分镜出，实拍传回来就成。', lv: '一套图＋正文' },
-    { f: '长文', ic: '📝', t: '长文笔记', tone: 'd', d: '一篇 800~1500 字长文，拿这行身份说、开头先钉人。', lv: '一篇长文 · 人设腔' },
   ],
   c: [
     { f: '案例成片', ic: '🎬', t: '案例成片', d: '自己的散素材合并成一条，每段配讲解配音——加信度。', lv: '出一支成片' },
-  ],
-  /* 🎭 IP 玩法：一张卡进五站流——挑组合 → AI 编故事 → 改稿 → 出料（图文）→ 发布；只出图文 */
-  i: [
-    { f: '', ic: '🎭', t: 'IP 玩法', d: '先挑主题、再挑方式（或让 AI 直接配好一套）——AI 按这套编几段故事给你挑，挑完直接出稿，出料就出图文（AI 把正文切成几条并配好画面提示词，图传回来就完）。', lv: '一条有梗、有人味的内容' },
   ],
   /* 🪟 门面：主页顶上那两格，一次配齐长期不动——fk 定死这篇是介绍还是承接，走的是门面那条独立流 */
   f: [
@@ -20821,31 +23691,64 @@ function npDirBind() {
     // 🪟 门面：置顶指引复用这一层（弹层里的颗各走各的）
     const fp = t.closest('[data-fpinok]');
     if (fp) { npFacadeMarkPinned(String(fp.getAttribute('data-fpinok') || '')); return; }
+    // 🧩 行业选题表（新建笔记弹层的主屏）：选组 / 只看没写的 / 收起自己的六卡 / 点一条去写
+    const dg = t.closest('[data-dind="g"]');
+    if (dg) { if (_npDirCtx) { _npDirCtx.gid = String(dg.getAttribute('data-gid') || ''); npDirPaint(); } return; }
+    if (t.closest('[data-dind="todo"]')) { if (_npDirCtx) { _npDirCtx.todo = !_npDirCtx.todo; npDirPaint(); } return; }
+    if (t.closest('[data-dind="tbl"]')) { if (_npDirCtx) { _npDirCtx.tblOpen = !_npDirCtx.tblOpen; npDirPaint(); } return; }
+    if (t.closest('#npDirSelfTg')) { if (_npDirCtx) { _npDirCtx.selfOpen = !_npDirCtx.selfOpen; npDirPaint(); } return; }
+    const dw = t.closest('[data-dind="write"]');
+    if (dw) { npDirPickTopic(String(dw.getAttribute('data-tid') || '')); return; }
+    const df = t.closest('[data-dind="form"]');
+    if (df) { npDirOpenFormPanel(String(df.getAttribute('data-tid') || ''), df); return; }
+    const ded = t.closest('[data-dind="edit"]');
+    if (ded) { npDirOpenNote(String(ded.getAttribute('data-ar') || '')); return; }
+    const di = t.closest('[data-dind="ind"]');
+    if (di) { npDirPickIndustry(String(di.getAttribute('data-ind') || '')); return; }
     const card = t.closest('[data-direff]');
     if (card) {
       const seg = String(card.getAttribute('data-direff') || '').split('|');
       npDirPick(seg[0], seg[1]);
       return;
     }
-    // 🎭 玩法池这本账（2026-10-19 收口：只管钉招／停用／候补／让 AI 补，出口不在这里定）
-    const pwTab = t.closest('[data-pwtab]');
-    if (pwTab) { const pw = npPw(); pw.tab = String(pwTab.getAttribute('data-pwtab') || 'in'); pw.play = null; npPwPaint(); return; }
-    const pwPlay = t.closest('[data-pwplay]');
-    if (pwPlay) { npPwPickPlay(String(pwPlay.getAttribute('data-pwplay') || '')); return; }
-    if (t.closest('.np-pw-all')) { const pw = npPw(); pw.full = !pw.full; if (pw.tab !== 'in') pw.tab = 'in'; npPwPaint(); if (typeof toast === 'function') toast(pw.full ? '全 ' + (pw.rows || []).length + ' 招都摊开了' : '收回去，一次只给你 7 招'); return; }
-    if (t.closest('.np-pw-ai')) { npPwAiAdd(); return; }
     if (t.closest('.np-dir-close')) npDirClose();
   });
 }
-function npDirOpen() {
+/** 新建笔记弹层这一趟的账：账号资料里选了行业就摆选题表（表 / 筛选 / 已写数），没选就还是六卡 */
+let _npDirCtx = null;
+async function npDirOpen() {
   const mask = document.getElementById('dirModal');
   const box = document.getElementById('dirBox');
   if (!mask || !box) return;
   npDirBind();
-  box.innerHTML = npDirPageHtml();
+  box.innerHTML = '<h3>新建笔记</h3><div style="font-size:12px;color:#8a929e;padding:14px 2px;">正在读选题表…</div>';
   mask.classList.add('open');
+  const ctx = { ind: '', pack: null, plan: null, notes: [], loc: null, gid: '', todo: false, selfOpen: false, tblOpen: false, photo: null };
+  try {
+    const c = await readConfigPlain();
+    const k = String((c && c.topicIndustry) || '');
+    if (k && typeof TopicTable !== 'undefined' && TopicTable.industry(k)) {
+      ctx.ind = k; ctx.pack = TopicTable.industry(k); ctx.loc = (c && c.myCity) || null;
+      ctx.plan = await npIndustryEnsurePlan(k, await npLoadPlanCache());
+      try { ctx.notes = await npNotesAll(); } catch (_) { ctx.notes = []; }
+    }
+  } catch (_) {}
+  try { ctx.photo = await npPhotoCtxRead(); } catch (_) { ctx.photo = null; }
+  try { ctx.vgate = await npDirVideoGate(); } catch (_) { ctx.vgate = null; }   // 这次缺哪类料：只拿来提示，不拦开工
+  if (!mask.classList.contains('open')) return;   // 读的时候已经被关掉了
+  _npDirCtx = ctx;
+  box.innerHTML = npDirPageHtml(ctx);
 }
-function npDirClose() { const m = document.getElementById('dirModal'); if (m) m.classList.remove('open'); npDirSyncBack(); }
+function npDirPaint() {
+  const box = document.getElementById('dirBox');
+  if (!box || !_npDirCtx) return;
+  const oldTbl = box.querySelector('.np-dir-tbl');
+  const top = oldTbl ? oldTbl.scrollTop : 0;
+  box.innerHTML = npDirPageHtml(_npDirCtx);
+  const newTbl = box.querySelector('.np-dir-tbl');
+  if (newTbl) newTbl.scrollTop = top;
+}
+function npDirClose() { if (typeof npFormClose === 'function') npFormClose(); const m = document.getElementById('dirModal'); if (m) m.classList.remove('open'); npDirSyncBack(); }
 /** 弹层（交工单／看进度）关掉之后：拿档案那格最新的料皮回填到台上——门面站③卡底下、知识线定稿屏跟着变 */
 async function npDirSyncBack() {
   const arId = String((_lipD && _lipD.arId) || '');
@@ -20857,33 +23760,607 @@ async function npDirSyncBack() {
   if (_npWiz && String(_npWiz.arId) === arId) { _npWiz.lip = lip; if (_npActiveContainer) npWizRender(_npActiveContainer); }
 }
 
-/** 新建笔记弹层（镜像 demo dirPageHtml）：门面一行 + 今天发什么三行——左边方向条，右边这一路的最终效果卡 */
-function npDirPageHtml() {
-  const effCard = (dir, e) =>
-    '<div class="np-dir-eff" data-direff="' + dir + '|' + npArAttr(e.id || e.f) + '" title="点这张卡直接开工：建一篇「' + npArAttr(e.t) + '」的草稿，进这条工作流">' +
+/** 表上这一条现在走到哪：档案里按 tid 找（取最近更新的一篇；归档的只在没别的时才顶上）。
+ *  题库不清空——出稿、发布都只改这一行的小字，选题始终留在表里。 */
+function npDirStOf(notes, it) {
+  if (!it) return null;
+  const tid = String(it.tid || '');
+  if (!tid) return it.done ? { k: 'done', label: '已出稿', arId: '' } : null;
+  let best = null;
+  (notes || []).forEach(n => {
+    const pi = n && n.wip && n.wip.planItem;
+    if (!pi || String(pi.tid || '') !== tid) return;
+    if (!best) { best = n; return; }
+    const na = String(n.status || '') === '已归档', ba = String(best.status || '') === '已归档';
+    if (ba && !na) { best = n; return; }
+    if (ba === na && Number(n.updatedAt || 0) > Number(best.updatedAt || 0)) best = n;
+  });
+  const st = String((best && best.status) || '');
+  if (st === '已发') return { k: 'sent', label: '已发', arId: best.id };
+  if (st === '已归档') return { k: 'archived', label: '已归档', arId: best.id };
+  if (st === '代发' || st === '待发') return { k: 'ready', label: '待发', arId: best.id };
+  if (st) return { k: 'draft', label: '已出稿', arId: best.id };
+  if (it.done) return { k: 'done', label: '已出稿', arId: '' };
+  return null;
+}
+/* 选题时就告诉他这篇交什么（2026-11-09 老板要）：旧叫法「收藏型 · 图文 / 长文」看着不知道出什么，
+   改成直白的「出图文 / 出长文 / 出视频」，后面再跟一句交付物。 */
+function npDirOutLabel(c) {
+  return c === 'video' ? '🎬 出视频' : (c === 'long' ? '📝 出长文' : '🖼 出图文');
+}
+function npDirOutWhat(c) {
+  return c === 'video' ? '一支成片' : (c === 'long' ? '清单，800~1500 字' : '一套图＋短正文');
+}
+/** 这题在选题表上要不要因为素材不够把「图文」灰掉：开关开着＋这写法真要本人照片＋这组料不够
+ *  （问答/对比仍是信息卡，不拦；清单不出图，也不涉及） */
+function npDirPhotoRate(ctx, form) {
+  const photo = (ctx && ctx.photo) || null;
+  if (!photo || typeof npPhotoRate !== 'function' || typeof npPhotoGatedForm !== 'function') return null;
+  const pr = npPhotoRate(photo.counts || {}, form);
+  pr.gate = !!photo.on && npPhotoGatedForm(form) && !pr.ok;
+  return pr;
+}
+/** 案例成片的料（2026-11-09 四类改版）：工作地点 ≥1 段、引题（我本人）≥1 段、内容（现场）≥1 段。
+ *  只数视频段（照片不出片）；到店指引缺了只提示、不挡。缺了停住补，不换形态。 */
+/* 案例成片闸：只按视频段算——工作地点 / 引题 / 内容 三类各至少一段；到店指引缺了只提示、不挡 */
+function npLibGateOf(clips, videos) {
+  const vOf = (c) => (videos || []).find(v => v && String(v.id) === String(c && c.videoId)) || null;
+  const n = { me: 0, place: 0, work: 0, door: 0, wait: 0 };
+  (clips || []).forEach(c => {
+    if (!c || c.imgOnly || !c.videoId) return;
+    const v = vOf(c);
+    if (!v) return;
+    let k = '';
+    try { k = (typeof npMatCatOfClip === 'function') ? npMatCatOfClip(c, v) : ''; } catch (_) { k = ''; }
+    if (!k) { n.wait++; return; }
+    n[k] = (n[k] || 0) + 1;
+  });
+  const miss = [];
+  if (!n.place) miss.push('工作地点（场馆）');
+  if (!n.me) miss.push('引题（我本人）');
+  if (!n.work) miss.push('内容段（现场）');
+  return { ok: !miss.length, me: n.me, place: n.place, work: n.work, door: n.door, wait: n.wait, miss: miss };
+}
+async function npDirVideoGate() {
+  let clips = [], videos = [];
+  try { clips = await npClipsRead(); } catch (_) { clips = []; }
+  try { videos = await npVideosRead(); } catch (_) { videos = []; }
+  return npLibGateOf(clips, videos);
+}
+function npDirPhotoCellHtml(pr, form) {
+  if (!pr) return '<span style="color:#c3cad4;">—</span>';
+  if (typeof npPhotoFormNone === 'function' && npPhotoFormNone(form)) return '<span style="color:#c3cad4;font-size:10px;">不涉及</span>';
+  const s = 'font-size:10.5px;border-radius:8px;padding:1px 7px;white-space:nowrap;';
+  const tone = pr.ok ? 'background:#f0fbf6;border:1px solid #c6efdd;color:#0a7b5a;'
+    : (pr.gate ? 'background:#fdf2f2;border:1px solid #f0d9d9;color:#b23b3b;' : 'background:#fff7e6;border:1px solid #f0dcb0;color:#a16207;');
+  return '<span style="' + s + tone + '" title="' + escAttr(pr.ok ? '这题要的几组照片都有了' : ('还缺：' + pr.miss.join('、') + (pr.gate ? '——「出图文」先灰着' : ''))) + '">' + (pr.ok ? '素材齐 ✓' : '素材缺') + '</span>' +
+    (pr.ok ? '' : '<div style="font-size:9.5px;color:' + (pr.gate ? '#b23b3b' : '#a16207') + ';margin-top:1px;line-height:1.4;">缺 ' + esc(pr.miss.join('、')) + '</div>');
+}
+/** 新建笔记主屏（2026-11-09）：知识、案例两张卡 + 门面单独一行；
+ *  行业选题表退到最下面那个入口里——点开才铺表，表里挑一条直接出稿。 */
+function npDirMainHtml(c, pack) {
+  const inds = (typeof TopicTable !== 'undefined' && TopicTable.list) ? TopicTable.list() : [];
+  let entry = '';
+  if (pack) {
+    const items = (c.plan && Array.isArray(c.plan.items)) ? c.plan.items : [];
+    const notes = Array.isArray(c.notes) ? c.notes : [];
+    const total = items.length || TopicTable.topics(c.ind).length;
+    const doneN = items.filter(x => x && (x.done || npDirStOf(notes, x))).length;
+    entry = '<button type="button" data-dind="tbl" style="width:100%;text-align:left;border:1px solid var(--line,#e2e6ec);background:#fff;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:var(--font-ui);display:flex;align-items:center;gap:8px;">' +
+      '<span style="font-size:12px;font-weight:700;color:#374151;">📋 ' + esc(pack.name) + ' · 选题表</span>' +
+      '<span style="font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 8px;background:#f0fbf6;border:1px solid #c6efdd;color:#0a7b5a;white-space:nowrap;">已出稿 ' + doneN + '/' + total + '</span>' +
+      '<span style="margin-left:auto;font-size:11px;color:#9aa3ae;">点开挑一条 →</span>' +
+    '</button>';
+  } else if (inds.length) {
+    const indChip = x => '<button type="button" data-dind="ind" data-ind="' + escAttr(x.key) + '" style="border:1px solid var(--c-brand,#e1306c);background:var(--c-brand-soft,#ffecec);color:var(--c-brand-text,var(--xhs-red));border-radius:999px;font-size:12px;font-weight:700;padding:5px 14px;cursor:pointer;font-family:var(--font-ui);">📋 ' + esc(x.name) + ' 选题表</button>';
+    entry = '<div style="border:1px solid #f3e1e1;border-radius:10px;background:#fffafa;padding:10px 12px;margin-top:10px;">' +
+      '<div style="font-size:11px;color:#6b7280;line-height:1.7;margin-bottom:7px;">这个号还没选行业——点一下，直接给你这个行业的选题表（挑一条就出稿）。选过以后，这里随时能点开。</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;">' + inds.map(indChip).join('') + '</div>' +
+    '</div>';
+  }
+  return '<h3>新建笔记 · 点一张卡直接开工</h3>' + npDirSelfHtml(true) + entry;
+}
+function npDirPageHtml(ctx) {
+  const c = ctx || {};
+  const pack = (c.ind && typeof TopicTable !== 'undefined') ? TopicTable.industry(c.ind) : null;
+  const foot = '<div class="modal-footer" style="align-items:center;justify-content:flex-end;gap:8px;margin-top:10px;">' +
+    '<button type="button" class="np-dir-close" style="flex:none;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#555;font-weight:700;cursor:pointer;">✕ 先不建，回档案</button>' +
+    '</div>';
+  if (!pack || !c.tblOpen) return npDirMainHtml(c, pack) + foot;
+  const items = (c.plan && Array.isArray(c.plan.items)) ? c.plan.items : [];
+  const notes = Array.isArray(c.notes) ? c.notes : [];
+  const total = items.length || TopicTable.topics(c.ind).length;
+  const doneN = items.filter(x => x && (x.done || npDirStOf(notes, x))).length;
+  const pct = total ? Math.round(doneN * 100 / total) : 0;
+  const gid = String(c.gid || '');
+  const todo = !!c.todo;
+  const chip = (id, label) => '<button type="button" data-dind="g" data-gid="' + escAttr(id) + '" style="border:1px solid ' +
+    (gid === id ? 'var(--c-brand,#e1306c)' : 'var(--line,#e2e6ec)') + ';background:' + (gid === id ? 'var(--c-brand-soft,#ffecec)' : '#fff') +
+    ';color:' + (gid === id ? 'var(--c-brand-text,var(--xhs-red))' : '#4b5563') +
+    ';border-radius:999px;font-size:11px;font-weight:600;padding:3px 10px;cursor:pointer;font-family:var(--font-ui);white-space:nowrap;">' + esc(label) + '</button>';
+  const loc = c.loc || {};
+  const locTxt = [String(loc.city || '').trim(), String(loc.district || '').trim(), String(loc.poi || '').trim()].filter(Boolean).join(' · ');
+  const rows = items.filter(it => it && (!gid || String(it.gid || '') === gid) && (!todo || !(it.done || npDirStOf(notes, it))));
+  let h = '<h3 style="display:flex;align-items:center;gap:8px;">新建笔记 · 从选题表里挑一条' +
+    '<button type="button" data-dind="tbl" style="margin-left:auto;font-size:11px;font-weight:700;border:1px solid var(--line,#e2e6ec);border-radius:8px;padding:3px 9px;background:#fff;color:#4b5563;cursor:pointer;font-family:var(--font-ui);">← 回知识 / 案例</button></h3>' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">' +
+      '<span style="font-weight:700;font-size:13px;color:#1f2329;">📚 ' + esc(pack.name) + ' · 选题表</span>' +
+      '<span style="font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 8px;background:#f0fbf6;border:1px solid #c6efdd;color:#0a7b5a;white-space:nowrap;">已出稿 ' + doneN + '/' + total + '</span>' +
+      '<span style="flex:1;min-width:80px;height:6px;background:#eef1f4;border-radius:999px;overflow:hidden;"><span style="display:block;height:100%;width:' + pct + '%;background:linear-gradient(90deg,#34d399,#10b981);"></span></span>' +
+      '<button type="button" data-dind="todo" style="border:1px solid ' + (todo ? 'var(--c-brand,#e1306c)' : 'var(--line,#e2e6ec)') + ';background:' + (todo ? 'var(--c-brand-soft,#ffecec)' : '#fff') +
+        ';color:' + (todo ? 'var(--c-brand-text,var(--xhs-red))' : '#4b5563') + ';border-radius:999px;font-size:11px;font-weight:600;padding:3px 10px;cursor:pointer;font-family:var(--font-ui);white-space:nowrap;">' + (todo ? '✓ 只看没写的' : '只看没写的') + '</button>' +
+    '</div>' +
+    '<div style="font-size:10.5px;color:' + (locTxt ? '#4b5563' : '#b45309') + ';line-height:1.7;margin-bottom:7px;">' +
+      (locTxt ? '📍 发布定位：' + esc(locTxt) + '<span style="color:#9aa3ae;">（过程 / 案例 / 本地场景这三组挂到门店，其余挂到区）</span>'
+              : '📍 还没填发布定位——到「🧭 账号规划 → 基础配置」把城市、区（门店可选）填上，每篇稿都会挂上。') +
+    '</div>' +
+    '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;">' + chip('', '全部') +
+      TopicTable.groups(c.ind).map(g => chip(g.id, TopicTable.groupName(g))).join('') + '</div>';
+  if (!rows.length) {
+    h += '<div style="border:1px dashed var(--line,#e2e6ec);border-radius:9px;padding:12px;font-size:11.5px;color:#8a929e;">' +
+      (todo ? '这一筛里没有还没出稿的了——题库不清空，去掉「只看没写的」能看全部。' : '这一组没有选题。') + '</div>';
+  } else {
+    h += '<div class="np-dir-tbl"><table style="width:100%;border-collapse:collapse;font-size:11.5px;font-family:var(--font-ui);">' +
+      '<thead><tr style="text-align:left;color:#6b7280;font-size:10.5px;">' +
+      ['#', '选题', '出什么', '组', '写法', '素材', '这一篇'].map(x => '<th>' + x + '</th>').join('') +
+      '</tr></thead><tbody>';
+    rows.forEach(it => {
+      const st = npDirStOf(notes, it);
+      // 写法钮跟菜单同源：案例组（d3）一律只有「讲故事」，别照题上原始的 form 显示成问答
+      const formCh = (typeof TopicTable.formChoices === 'function') ? TopicTable.formChoices(it) : null;
+      const formEff = (formCh && formCh[0]) || null;
+      const formIt = TopicTable.formInfo(formEff ? formEff.key : (it.form || 'list'), formEff ? (formEff.variant || '') : (it.variant || ''));
+      const pr = npDirPhotoRate(c, formIt.key);
+      let outs = TopicTable.outletsFor(it.carriers, formIt.key, 'xhs').filter(x => x && x !== '');
+      if (pr && pr.gate) outs = outs.filter(x => x !== 'image');   // 照片不够：这题先不给图文
+      const defCar = TopicTable.defaultCarrierFor(it.carriers, formIt.key, 'xhs');
+      const car = outs.indexOf(it.carrier) >= 0 ? it.carrier : (outs[0] || defCar);
+      const outHtml = '<span style="font-size:10.5px;font-weight:700;border-radius:8px;padding:1px 8px;white-space:nowrap;' +
+        (car === 'video' ? 'background:#eef4ff;border:1px solid #d5e3ff;color:#2b5cb8;' : 'background:#f0fbf6;border:1px solid #c6efdd;color:#0a7b5a;') +
+        '" title="出什么跟着写法走：清单→长文、对比/问答→图文、案例讲故事→视频；想换就点后面「写法」换一种">' + esc(npDirOutLabel(car)) + '</span>' +
+        '<div style="font-size:9.5px;color:#9aa3ae;margin-top:2px;line-height:1.4;">' + esc(npDirOutWhat(car)) + '</div>';
+      const formHtml = '<button type="button" data-dind="form" data-tid="' + escAttr(it.tid || '') + '" title="点开看这条题几种写法的开头三句，选一种再写" style="border:1px solid var(--line,#e2e6ec);background:#fff;color:#374151;border-radius:999px;font-size:11px;font-weight:700;padding:2px 9px;cursor:pointer;font-family:var(--font-ui);white-space:nowrap;">' +
+        esc(formIt.name) + ' <span style="color:#9aa3ae;font-weight:400;">▾</span></button>';
+      let act = '';
+      if (st) {
+        const tone = st.k === 'sent' ? 'background:#eaf7ef;border:1px solid #cde9d8;color:#2e7d32;'
+          : st.k === 'ready' ? 'background:#fff7e6;border:1px solid #f0dcb0;color:#a16207;'
+          : st.k === 'archived' ? 'background:#f4f5f7;border:1px solid #e2e6ec;color:#8a929e;'
+          : 'background:#eef4ff;border:1px solid #d5e3ff;color:#2b5cb8;';
+        act = '<span style="font-size:10px;border-radius:8px;padding:1px 7px;white-space:nowrap;' + tone + '">' + esc(st.label) + '</span>';
+        if (st.arId) act += '<button type="button" data-dind="edit" data-ar="' + escAttr(st.arId) + '" style="margin-left:5px;font-size:11px;font-weight:700;border:none;border-radius:8px;padding:3px 9px;cursor:pointer;background:#fff;border:1px solid var(--line,#e2e6ec);color:#4b5563;font-family:var(--font-ui);">' + (st.k === 'sent' || st.k === 'archived' ? '看稿' : '改稿') + '</button>';
+        else act += '<button type="button" data-dind="write" data-tid="' + escAttr(it.tid || '') + '" style="margin-left:5px;font-size:11px;font-weight:700;border:1px solid var(--line,#e2e6ec);border-radius:8px;padding:3px 9px;cursor:pointer;background:#fff;color:#4b5563;font-family:var(--font-ui);">再写一篇</button>';
+      } else {
+        act = '<button type="button" data-dind="write" data-tid="' + escAttr(it.tid || '') + '" style="font-size:11px;font-weight:700;border:none;border-radius:8px;padding:3px 10px;cursor:pointer;background:var(--grad-brand);color:var(--c-brand-on,#fff);font-family:var(--font-ui);">写这篇</button>';
+      }
+      h += '<tr' + (st ? ' class="np-dir-done"' : '') + '>' +
+        '<td style="color:#9aa3ae;white-space:nowrap;">' + esc(String(it.no || '')) + '</td>' +
+        '<td style="min-width:190px;">' +
+          '<div style="font-weight:' + (st ? '400' : '600') + ';color:' + (st ? '#8a929e' : '#1f2329') + ';line-height:1.55;">' + esc(it.title || '') + '</div>' +
+          (it.brief ? '<div style="font-size:10px;color:#9aa3ae;margin-top:1px;line-height:1.5;">' + esc(it.brief) + '</div>' : '') +
+        '</td>' +
+        '<td style="white-space:nowrap;">' + outHtml + '</td>' +
+        '<td style="white-space:nowrap;color:#4b5563;">' + esc(it.group || '') + '</td>' +
+        '<td style="min-width:90px;">' + formHtml + '</td>' +
+        '<td style="white-space:nowrap;">' + npDirPhotoCellHtml(pr, formIt.key) + '</td>' +
+        '<td style="white-space:nowrap;">' + act + '</td></tr>';
+    });
+    h += '</tbody></table></div>' +
+      '<div style="font-size:10px;color:#9aa0ac;margin-top:5px;line-height:1.7;">「出什么」＝这篇最后交的东西，按这条题现在的写法算：<b>清单 → 📝 长文；对比 / 问答 → 🖼 图文；案例·讲故事 → 🎬 视频</b>。点「写法」能看这条题几种写法各自的开头三句，换一种，这一格跟着变。写好后缺料就停住补，不退回别的形态。「素材齐 / 素材缺」＝这题要的几组你自己的照片有没有；视频题另外要一条能露脸的本人、一条自家场地镜头。补料去「📚 素材库」顶上那四个大类。出稿、发布都只标状态，题库不清空。</div>';
+  }
+  return h + foot;
+}
+/** 主屏那排卡：知识（图文 / 长文）→ 案例（只成片）→ 门面单独一行 */
+function npDirSelfHtml(open) {
+  /* 🎬 案例卡：不再看料齐不齐——店里料少也能开工，缺的那类出片时会借别的画面顶上；
+     卡下只留一句灰字说清这次缺什么。 */
+  const vg = (_npDirCtx && _npDirCtx.vgate) || null;
+  const cMiss = (vg && !vg.ok) ? String((vg.miss || []).join('、')) : '';
+  const effCard = (dir, e) => {
+    return '<div class="np-dir-eff" data-direff="' + dir + '|' + npArAttr(e.id || e.f) + '" title="点这张卡直接开工：建一篇「' + npArAttr(e.t) + '」的草稿，进这条工作流">' +
       '<b>' + e.ic + ' ' + esc(e.t) + '</b>' +
       '<p class="np-dir-eff-d">' + esc(e.d) + '</p>' +
       '<span class="np-dir-eff-lv">' + esc(e.lv) + '</span></div>';
+  };
   const dirRow = (dir, hi) =>
     '<div class="np-dir-row"' + (hi ? ' style="background:var(--c-brand-soft,#fdf2f2);border-radius:10px;padding:10px;margin-bottom:6px;"' : '') + '>' +
-      '<div class="np-dir-side"><b>' + NP_DIR_META[dir].chip + '</b><span>' + esc(NP_DIR_SUB[dir]) + '</span></div>' +
-      /* 这一路的几张做法：等宽网格，卡少时自动等分撑满整行（原来 flex 会把换行的那张拉满整条，看着像多出来一档） */
+      '<div class="np-dir-side"><b>' + NP_DIR_META[dir].chip + '</b><span>' + esc(NP_DIR_SUB[dir] || '') + '</span></div>' +
       '<div style="flex:1 1 240px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:8px;align-items:stretch;">' +
       NP_DIR_EFFECTS[dir].map(e => effCard(dir, e)).join('') + '</div>' +
     '</div>';
-  return '<h3>新建笔记 · 点一张卡直接开工</h3>' +
-    dirRow('f', true) + dirRow('k') + dirRow('d') + dirRow('c') +
-    '<div class="modal-footer" style="align-items:center;justify-content:flex-end;gap:8px;">' +
-      '<button type="button" class="np-dir-close" style="flex:none;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#555;font-weight:700;cursor:pointer;">✕ 先不建，回档案</button>' +
+  /* 🪟 门面单独一行小入口（不占日常两张卡）：介绍 / 承接各一颗小扬钮 */
+  const fRow = '<div style="margin-top:2px;border-top:1px solid var(--line,#eceef0);padding-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:#6b7280;">' +
+    '<span style="font-weight:700;">🪟 主页门面</span>' +
+    '<span style="color:#9aa3ae;">钉主页顶上的两篇，一次配齐、长期不动</span>' +
+    '<span style="flex:1;"></span>' +
+    NP_DIR_EFFECTS.f.map(e => '<button type="button" data-direff="f|' + npArAttr(e.fk) + '" style="border:1px solid var(--line,#e2e6ec);background:#fff;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;color:#4b5563;cursor:pointer;font-family:var(--font-ui);">' + e.ic + ' ' + esc(e.t) + '</button>').join('') +
+  '</div>';
+  const cNote = cMiss
+    ? '<div style="margin:-2px 0 8px;font-size:11.5px;line-height:1.7;color:#8a929e;background:#fafbfd;border:1px solid #e8eaf0;border-radius:9px;padding:7px 10px;">🎬 案例成片照样能开工——这次还没有「' + esc(cMiss) + '」的段，出片时会用你挑的别的画面顶上；想补就去「📚 素材库」加一段。</div>'
+    : '';
+  const rows = dirRow('k') + dirRow('c') + cNote + fRow;
+  if (open) return '<div style="margin-top:10px;">' + rows + '</div>';
+  return '<div style="margin-top:8px;border-top:1px solid var(--line,#eceef0);padding-top:8px;">' +
+    '<button type="button" id="npDirSelfTg" style="border:none;background:none;padding:2px 0;font-size:12px;font-weight:700;color:#6b7280;cursor:pointer;font-family:var(--font-ui);">▸ 点一张卡直接开工</button>' +
     '</div>';
+}
+/** 没选行业的号在弹层里点「📋 某行业选题表」：记下这个行业，弹层当场换成表（存不下也先给看） */
+async function npDirPickIndustry(key) {
+  if (!key || typeof TopicTable === 'undefined' || !TopicTable.industry(key)) return;
+  const pack = TopicTable.industry(key);
+  try {
+    const c = await readConfigPlain();
+    c.topicIndustry = key;
+    await writeConfigPlain(c);
+  } catch (_) {}
+  const ctx = { ind: key, pack: pack, plan: null, notes: [], loc: null, gid: '', todo: false, selfOpen: false, tblOpen: true, photo: null };
+  try {
+    const c2 = await readConfigPlain();
+    ctx.loc = (c2 && c2.myCity) || null;
+    ctx.plan = await npIndustryEnsurePlan(key, await npLoadPlanCache());
+    try { ctx.notes = await npNotesAll(); } catch (_) { ctx.notes = []; }
+  } catch (_) {}
+  try { ctx.photo = await npPhotoCtxRead(); } catch (_) { ctx.photo = null; }
+  try { ctx.vgate = await npDirVideoGate(); } catch (_) { ctx.vgate = null; }   // 这次缺哪类料：只拿来提示，不拦开工
+  _npDirCtx = ctx;
+  npDirPaint();
+  if (typeof toast === 'function') toast('以后「新建笔记」直接出「' + pack.name + '」的选题表');
+}
+/** 表上点「写这篇」：关掉弹层，带着这一条进写稿，直接落到改稿屏出稿。
+ *  缺料不在这里拦——先让人把稿子写出来，到「下一步：出××」那一下再过素材闸。 */
+async function npDirPickTopic(tid) {
+  const plan = (_npDirCtx && _npDirCtx.plan) || await npLoadPlanCache();
+  const it = ((plan && Array.isArray(plan.items)) ? plan.items : []).find(x => x && String(x.tid || '') === String(tid));
+  if (!it) { toast('这条选题没找着——关掉重开一次再试'); return; }
+  npDirClose();
+  /* 案例题不进写稿向导：建一条案例成片（选题挂在篇上），直接去素材库挑段/大组装 */
+  if (String(it.type || '') === 'case') {
+    const n = await npDirNewNote('c', '案例成片');
+    n.title = String(it.title || n.title);
+    n.topic = String(it.title || '');
+    n.wip.planItem = it;
+    await npNotesSync(async () => {
+      const list = await npNotesAll();
+      const x = list.find(y => y && String(y.id) === String(n.id));
+      if (x) {
+        x.title = n.title; x.topic = n.topic; x.wip = Object.assign({}, x.wip, { planItem: it });
+        x.updatedAt = Date.now();
+        try { await chrome.storage.local.set({ [NP_NOTES_KEY]: list }); } catch (_) {}
+      }
+    });
+    npDirGo(n);
+    return;
+  }
+  switchMainTab('notePublish', { __industryItem: it });
+}
+/** 表上点「看稿 / 改稿」：把档案里那一篇灌回写稿页 */
+async function npDirOpenNote(arId) {
+  if (!arId) return;
+  let n = null;
+  try { n = await npArFindById(arId); } catch (_) {}
+  if (!n) { toast('这篇档案没找着——回「笔记档案」里再看一眼'); return; }
+  npDirClose();
+  switchMainTab('notePublish', n);
+}
+/** 表上改了一条写法 / 出口：排产表与手上的向导一起改，标 picked（下次重排不被默认值盖掉） */
+async function npPlanPickSave(it, form, variant, carrier) {
+  const tid = String((it && it.tid) || '');
+  if (!tid) return;
+  const set = (o) => {
+    if (!o || !Array.isArray(o.items)) return;
+    o.items.forEach(x => {
+      if (x && String(x.tid || '') === tid) { x.form = form; x.variant = variant; x.carrier = carrier; x.picked = true; }
+    });
+  };
+  let indKey = String((it && it.industryKey) || (_npDirCtx && _npDirCtx.ind) || '');
+  try {
+    const p = await npLoadPlanCache();
+    if (p && p.src === 'industry') {
+      if (!indKey) indKey = String(p.industryKey || '');
+      set(p); await chrome.storage.local.set({ note_plan: p }); _npPlanCache = p;
+    }
+  } catch (_) {}
+  try {
+    const picks = await npPlanPicksLoad();
+    picks[indKey + '|' + tid] = { form: form, variant: variant, carrier: carrier, at: Date.now() };
+    const ks = Object.keys(picks);
+    if (ks.length > 300) {
+      ks.sort((a, b) => (picks[a].at || 0) - (picks[b].at || 0)).slice(0, ks.length - 300).forEach(k => delete picks[k]);
+    }
+    await chrome.storage.local.set({ [NP_PLAN_PICK_KEY]: picks });
+  } catch (_) {}
+  if (_npDirCtx && _npDirCtx.plan) set(_npDirCtx.plan);
+  if (_npWiz && _npWiz.planItem && String(_npWiz.planItem.tid || '') === tid) {
+    _npWiz.planItem.form = form; _npWiz.planItem.variant = variant;
+    _npWiz.planItem.carrier = carrier; _npWiz.planItem.picked = true;
+  }
+}
+/* 🧩 写法下拉：同一个选题，把几种写法的开头三句一次写出来，让人一眼选写法。
+   结果按「行业|题|写法|平台」缓存在本机；同一条题第二次点开秒开，「换一组」只重写那一张。 */
+const NP_FORM_OPEN_CACHE_KEY = 'np_form_open_cache';
+let _npFormOpen = null;
+let _npFormOpenEl = null;
+function npFormOptsOf(it) {
+  if (typeof TopicTable === 'undefined' || !it) return [];
+  const raw = TopicTable.formOpts(it);
+  const curKey = TopicTable.formKey(it.form || '');
+  const curVar = String(it.variant || '');
+  const seen = {};
+  const out = [];
+  raw.forEach(o => {
+    if (!o || !o.key || seen[o.key]) return;
+    seen[o.key] = 1;
+    let use = o;
+    if (o.key === curKey && curVar) {
+      const hit = raw.find(x => x && x.key === curKey && String(x.variant || '') === curVar);
+      if (hit) use = hit;
+    }
+    out.push(use);
+  });
+  return out;
+}
+function npFormSig(ind, tid, o, pid) {
+  return [String(ind || ''), String(tid || ''), String((o && o.key) || ''), String((o && o.variant) || ''), String(pid || 'xhs'), 'v2'].join('|');
+}
+async function npFormCacheGet(sigs) {
+  const out = {};
+  try {
+    const d = await chrome.storage.local.get(NP_FORM_OPEN_CACHE_KEY);
+    const all = (d && d[NP_FORM_OPEN_CACHE_KEY]) || {};
+    sigs.forEach(s => {
+      const row = all[s];
+      if (row && Array.isArray(row.lines) && row.lines.length === 3) out[s] = row.lines;
+    });
+  } catch (_) {}
+  return out;
+}
+async function npFormCachePut(sig, lines) {
+  try {
+    const d = await chrome.storage.local.get(NP_FORM_OPEN_CACHE_KEY);
+    const all = (d && d[NP_FORM_OPEN_CACHE_KEY]) || {};
+    all[sig] = { lines: lines, at: Date.now() };
+    const ks = Object.keys(all);
+    if (ks.length > 240) {
+      ks.sort((a, b) => Number((all[a] || {}).at || 0) - Number((all[b] || {}).at || 0))
+        .slice(0, ks.length - 240).forEach(k => { delete all[k]; });
+    }
+    await chrome.storage.local.set({ [NP_FORM_OPEN_CACHE_KEY]: all });
+  } catch (_) {}
+}
+async function npFormCacheDel(sig) {
+  try {
+    const d = await chrome.storage.local.get(NP_FORM_OPEN_CACHE_KEY);
+    const all = (d && d[NP_FORM_OPEN_CACHE_KEY]) || {};
+    delete all[sig];
+    await chrome.storage.local.set({ [NP_FORM_OPEN_CACHE_KEY]: all });
+  } catch (_) {}
+}
+async function npDirOpenFormPanel(tid, anchor) {
+  const ctx = _npDirCtx;
+  const it = ((ctx && ctx.plan && Array.isArray(ctx.plan.items)) ? ctx.plan.items : [])
+    .find(x => x && String(x.tid || '') === String(tid));
+  if (!it) { toast('这条选题没找着'); return; }
+  await npFormOpen(String(tid), it, anchor, 'table', 'xhs', null);
+}
+async function npIndOpenFormPanel(anchor) {
+  const w = _npWiz;
+  if (!w || !w.planItem || !w.planItem.tid) return;
+  await npFormOpen(String(w.planItem.tid), w.planItem, anchor, 'writer', npPid(w), w);
+}
+async function npFormOpen(tid, it, anchor, src, pid, wiz) {
+  npFormClose();
+  if (typeof TopicTable === 'undefined') return;
+  const opts = npFormOptsOf(it);
+  if (!opts.length) { toast('这条题没有可选写法'); return; }
+  let ind = String(it.industryKey || (_npDirCtx && _npDirCtx.ind) || '');
+  if (!ind) {
+    try { const c = await readConfigPlain(); ind = String((c && c.topicIndustry) || ''); } catch (_) {}
+  }
+  const out = {};
+  opts.forEach(o => {
+    out[o.key] = TopicTable.resolveCarrierFor(it.carriers, o.key, pid, (TopicTable.formKey(it.form || '') === o.key) ? it.carrier : '');
+  });
+  const st = { tid, it, anchor, src, pid, ind, opts, out, wiz, lines: {}, busy: {}, err: '' };
+  _npFormOpen = st;
+  const el = document.createElement('div');
+  el.className = 'np-form-pop';
+  el.style.cssText = 'position:fixed;z-index:2147483647;width:min(760px,calc(100vw - 24px));max-height:76vh;overflow:auto;background:#fff;border:1px solid #e6e9ef;border-radius:14px;box-shadow:0 18px 60px rgba(17,24,39,.22);padding:12px 14px 10px;font-family:var(--font-ui);';
+  document.body.appendChild(el);
+  _npFormOpenEl = el;
+  el.addEventListener('click', (e) => npFormClick(e));
+  st._doc = (e) => {
+    if (_npFormOpenEl && !_npFormOpenEl.contains(e.target) && !(anchor && anchor.contains(e.target))) npFormClose();
+  };
+  setTimeout(() => { if (_npFormOpen === st) document.addEventListener('mousedown', st._doc); }, 0);
+  npFormPaint();
+  npFormPlace();
+  await npFormEnsure(st, opts);
+}
+function npFormClose() {
+  const st = _npFormOpen;
+  if (st && st._doc) { try { document.removeEventListener('mousedown', st._doc); } catch (_) {} }
+  if (_npFormOpenEl) { try { _npFormOpenEl.remove(); } catch (_) {} }
+  _npFormOpenEl = null;
+  _npFormOpen = null;
+}
+function npFormPlace() {
+  const st = _npFormOpen, el = _npFormOpenEl;
+  if (!st || !el || !st.anchor) return;
+  const r = st.anchor.getBoundingClientRect();
+  el.style.visibility = 'hidden';
+  const w = el.offsetWidth || 440, h = el.offsetHeight || 420;
+  if (typeof innerWidth !== 'undefined' && typeof innerHeight !== 'undefined') {
+    const left = Math.min(Math.max(8, r.left - 12), innerWidth - w - 8);
+    let top = r.bottom + 8;
+    if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 8);
+    el.style.left = left + 'px';
+    el.style.top = top + 'px';
+  }
+  el.style.visibility = 'visible';
+}
+async function npFormEnsure(st, opts) {
+  if (!st || !opts || !opts.length) return;
+  const sigs = opts.map(o => npFormSig(st.ind, st.tid, o, st.pid));
+  const cached = await npFormCacheGet(sigs);
+  Object.keys(cached).forEach(s => { st.lines[s] = cached[s]; });
+  if (_npFormOpen === st) npFormPaint();
+  const miss = opts.filter((o, i) => !st.lines[sigs[i]] && !st.busy[sigs[i]]);
+  if (!miss.length) return;
+  miss.forEach(o => { st.busy[npFormSig(st.ind, st.tid, o, st.pid)] = 1; });
+  st.err = '';
+  if (_npFormOpen === st) npFormPaint();
+  let res = null;
+  try {
+    res = await chrome.runtime.sendMessage({
+      action: 'formOpenings',
+      industryKey: st.ind,
+      tid: st.tid,
+      platform: st.pid,
+      forms: miss.map(o => ({ key: o.key, variant: o.variant || '' })),
+    });
+  } catch (e) { res = { ok: false, error: String((e && e.message) || e) }; }
+  miss.forEach(o => { delete st.busy[npFormSig(st.ind, st.tid, o, st.pid)]; });
+  if (res && res.ok && Array.isArray(res.forms)) {
+    res.forms.forEach(f => {
+      if (!f || !Array.isArray(f.lines) || f.lines.length !== 3) return;
+      const sig = npFormSig(st.ind, st.tid, { key: f.key, variant: f.variant }, st.pid);
+      st.lines[sig] = f.lines.map(x => String(x || ''));
+      npFormCachePut(sig, st.lines[sig]);
+    });
+  } else {
+    st.err = String((res && (res.error || res.message)) || 'AI 没给出可用的开头，再试一次');
+  }
+  if (_npFormOpen === st) { npFormPaint(); npFormPlace(); }
+}
+function npFormRegen(st, o) {
+  if (!st || !o) return;
+  const sig = npFormSig(st.ind, st.tid, o, st.pid);
+  delete st.lines[sig];
+  st.err = '';
+  npFormCacheDel(sig);
+  npFormPaint();
+  npFormEnsure(st, [o]);
+}
+function npFormCardHtml(st, o) {
+  const T = TopicTable;
+  const inf = T.formInfo(o.key, o.variant);
+  const sig = npFormSig(st.ind, st.tid, o, st.pid);
+  const lines = st.lines[sig];
+  const busy = !!st.busy[sig];
+  const curKey = T.formKey(st.it.form || '');
+  const isCur = curKey === o.key && String(st.it.variant || '') === String(o.variant || '');
+  const firstKey = T.formKey((Array.isArray(st.it.forms) && st.it.forms[0]) || st.it.form || '');
+  const isRec = firstKey === o.key;
+  const pid = st.pid;
+  const out = (T.outletsFor(st.it.carriers, o.key, pid)[0]) || st.out[o.key] || st.it.carrier || 'image';
+  const outTxt = out === 'video' ? '🎬 视频' : (out === 'long' ? '📝 长文' : '🖼 图文');
+  const outLine = '<div style="font-size:10px;line-height:1.6;color:#4b5563;background:#f8fafc;border:1px solid #eef1f5;border-radius:8px;padding:4px 7px;margin-top:5px;">' +
+    (T.isVideoPlatform(pid)
+      ? esc(((Platforms.get(pid) || {}).name || '视频平台') + ' → 视频（题定死的）')
+      : ('<span>这个写法出：' + esc(outTxt) + '</span><span style="color:#9aa3ae;">　换写法会连出口一起换</span>')) + '</div>';
+  const body = lines
+    ? '<div style="margin-top:5px;">' + lines.map((l, i) =>
+        '<div style="display:flex;gap:5px;font-size:11px;line-height:1.6;color:#374151;margin-bottom:2px;"><span style="color:#c3c8d0;flex:none;width:10px;">' + (i + 1) + '</span><p style="margin:0;">' + esc(l) + '</p></div>'
+      ).join('') + '</div>'
+    : '<div style="margin-top:5px;">' +
+        '<div style="height:8px;background:#f1f3f6;border-radius:4px;margin-bottom:4px;"></div>' +
+        '<div style="height:8px;background:#f1f3f6;border-radius:4px;margin-bottom:4px;width:88%;"></div>' +
+        '<div style="height:8px;background:#f1f3f6;border-radius:4px;width:72%;"></div>' +
+        '<div style="font-size:10px;color:#9aa3ae;margin-top:5px;">' + (busy ? '正在按这条题写开头…' : '还没写出来') + '</div>' +
+      '</div>';
+  const ft = '<div style="display:flex;gap:6px;align-items:center;margin-top:7px;">' +
+    '<button type="button" data-fp-regen="' + escAttr(o.key) + '" data-fp-var="' + escAttr(o.variant || '') + '" style="border:none;background:none;color:#8a929e;font-size:10.5px;cursor:pointer;font-family:var(--font-ui);">' +
+      (lines ? '↻ 换一组' : (busy ? '正在写开头…' : '重写这三句')) + '</button>' +
+    '<span style="flex:1;"></span>' +
+    '<button type="button" data-fp-pick="' + escAttr(o.key) + '" data-fp-var="' + escAttr(o.variant || '') + '" style="border:none;border-radius:7px;background:var(--grad-brand);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;font-family:var(--font-ui);">就用这个写</button></div>';
+  return '<div style="border:1px solid ' + (isCur ? 'var(--c-brand,#e1306c)' : '#e6e9ef') + ';border-radius:11px;background:' + (isCur ? '#fffafa' : '#fff') + ';padding:8px 10px;">' +
+    '<div style="display:flex;align-items:center;gap:6px;">' +
+      '<b style="font-size:12px;color:' + (isCur ? 'var(--c-brand-text,var(--xhs-red))' : '#1f2329') + ';">' + esc(inf.name) + '</b>' +
+      (isRec ? '<span style="font-size:9px;color:#0a7b5a;background:#f0fbf6;border:1px solid #c6efdd;border-radius:6px;padding:0 5px;">推荐</span>' : '') +
+      (isCur ? '<span style="font-size:9px;color:var(--c-brand-text,var(--xhs-red));background:var(--c-brand-soft,#ffecec);border:1px solid #ffd6d6;border-radius:6px;padding:0 5px;">当前</span>' : '') +
+    '</div>' +
+    body + outLine +
+    '<div style="font-size:10px;line-height:1.55;color:#8a929e;margin-top:4px;">' + esc(inf.look) + '</div>' +
+    ft + '</div>';
+}
+function npFormPaint() {
+  const st = _npFormOpen, el = _npFormOpenEl;
+  if (!st || !el) return;
+  const title = String(st.it.title || '');
+  const head = '<div style="display:flex;align-items:flex-start;gap:8px;">' +
+      '<div style="flex:1;min-width:0;"><b style="font-size:13px;color:#1f2329;">这条题用哪种写法？</b>' +
+        '<div style="font-size:11px;color:#6b7280;line-height:1.6;margin-top:1px;">' + esc(title) + '</div></div>' +
+      '<button type="button" data-fp-close="1" style="border:none;background:none;color:#9aa3ae;font-size:15px;cursor:pointer;line-height:1;padding:2px 4px;">✕</button>' +
+    '</div>' +
+    '<div style="font-size:10.5px;color:#8a929e;line-height:1.7;margin:5px 0 8px;">点开一次把这 ' + st.opts.length +
+      ' 种写法的开头都写出来；选完写法只改<b>怎么写</b>，<b>出口跟着写法一起换</b>（' +
+      (TopicTable.isVideoPlatform(st.pid) ? '这个平台一律视频' : '清单→长文、对比/问答→图文、讲故事→视频') + '）。</div>';
+  const cards = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px;">' +
+    st.opts.map(o => npFormCardHtml(st, o)).join('') + '</div>';
+  const err = st.err
+    ? '<div style="font-size:10.5px;color:#b45309;background:#fff7e6;border:1px solid #f0dcb0;border-radius:8px;padding:5px 8px;margin-top:8px;line-height:1.6;">' + esc(st.err) + '</div>'
+    : '';
+  el.innerHTML = head + cards + err +
+    '<div style="font-size:10px;color:#9aa0ac;margin-top:7px;line-height:1.6;">开头是按这条题的「这件真事」写的：不编人名 / 店名 / 数字，也不带关注、私信这类引导。同一条题第二次点开秒开。</div>';
+}
+function npFormClick(e) {
+  const st = _npFormOpen;
+  if (!st || !e || !e.target || !e.target.closest) return;
+  const t = e.target;
+  if (t.closest('[data-fp-close]')) { npFormClose(); return; }
+  const pick = t.closest('[data-fp-pick]');
+  if (pick) { npFormPick(st, String(pick.getAttribute('data-fp-pick') || ''), String(pick.getAttribute('data-fp-var') || '')); return; }
+  const rg = t.closest('[data-fp-regen]');
+  if (rg) {
+    const k = String(rg.getAttribute('data-fp-regen') || ''), v = String(rg.getAttribute('data-fp-var') || '');
+    const o = st.opts.find(x => x.key === k && String(x.variant || '') === v) || st.opts.find(x => x.key === k);
+    if (o) npFormRegen(st, o);
+    return;
+  }
+}
+async function npFormPick(st, form, variant) {
+  if (!st || !form) return;
+  const T = TopicTable;
+  const out = st.out[form] || T.defaultCarrierFor(st.it.carriers, form, st.pid);
+  const inf = T.formInfo(form, variant);
+  if (st.src === 'writer') {
+    const w = st.wiz;
+    if (!w || w !== _npWiz) { npFormClose(); return; }
+    const has = !!String((w.draft && w.draft.content) || '').trim();
+    if (has && !window.confirm('换写法会把现在这版按「' + inf.name + '」重写一遍（旧稿作废）。继续？')) return;
+    w.planItem = Object.assign({}, w.planItem, { form: form, variant: variant, carrier: out, picked: true });
+    await npPlanPickSave(w.planItem, form, variant, out);
+    try { npArchiveSave(w); } catch (_) {}
+    npFormClose();
+    const nc = npActiveC() || _npActiveContainer;
+    /* 旧那一发（如果还在路上）按 seq 作废，这里放行新的一发；否则 _npDraftBusy 会把重写挡掉 */
+    _npDraftBusy = false;
+    if (nc) {
+      await npWizRender(nc);
+      await npBuildDraft(nc);
+    }
+    if (typeof toast === 'function') toast(has ? ('按「' + inf.name + '」重写这一篇…') : ('写法定了：' + inf.name + '，开始写…'));
+    return;
+  }
+  await npPlanPickSave(st.it, form, variant, out);
+  st.it.form = form; st.it.variant = variant; st.it.carrier = out; st.it.picked = true;
+  npFormClose();
+  npDirPaint();
+  if (typeof toast === 'function') toast('写法定了：' + inf.name + ' · ' + npDirOutLabel(out) + '——点「写这篇」出稿');
 }
 
 /** 点中一张卡：建篇（草稿，立刻进档案）→ 进这条路的工作流（demo pickEff 同口径）
  *  同一行里两张卡同一个形式时靠 id 区分（2026-10-23 起知识那行只剩一张「视频笔记」——混剪并进片台了）。 */
 async function npDirPick(dir, f) {
   const eff = NP_DIR_EFFECTS[dir] || [];
-  const card = eff.find(e => String(e.id || e.f) === String(f));
+  const card = eff.find(e => String(e.id || e.f) === String(f) || String(e.fk || '') === String(f));
   if (!card) return;
+  /* 🎬 案例卡：不建空稿、也不跳到素材库页——挑段就盖在「新建笔记」上面，取消回来还是这一屏 */
+  if (dir === 'c') {
+    try { await npLibOpenPicker({}); }
+    catch (_) { try { toast('素材库读不出来——去「📚 素材库」里挑', 'error'); } catch (__) {} }
+    return;
+  }
   npDirClose();
   /* 📝 长文那张卡（2026-10-21 回挂两条线）：知识＝kOut='text'、引流＝dOut='long'；腔由入口定死，不再落 dir='l' */
   const n = await npDirNewNote(dir, card.f, card.fk || '', { filmKind: card.kind || '' });
@@ -20953,371 +24430,6 @@ function npDirGo(n) {
   switchMainTab('notePublish', n);
 }
 
-/* ═══════════ 🎭 玩法池（2026-10-19 玩法合并·批2；同日收口：只管这本账）═══════════
-   这一弹层只管玩法池这一本账：在池／候补／停用、钉哪一招、让 AI 补招——
-   入口是档案顶上那条横幅（🔁 换个玩法 / ✨ 让 AI 补招），以及写稿屏那一栏「这一篇用哪一招」的「▾ 全部玩法池」。
-   出口（🖼 图文／📝 长文）不在这里定：新建笔记「🔥 引流」那一格两张形态卡，点谁建谁。
-   三条口径：一轮只钉一招 · 一次只摊 7 招（点「▾ 看全部」才铺满）· 卡上只摆数，行不行你判。 */
-const NP_PLAY_SRC = { tale: '自己的经历', echo: '说出大家心里那句', hot: '正在火的', howto: '能照抄答案的', meme: '别人在玩的梗', ask: '评论区在问的' };
-let _npPw = null;
-function npPw() {
-  if (!_npPw) _npPw = { mode: 'new', tab: 'in', rot: 0, full: false, play: null, aiBusy: false, aiErr: '', rows: [], cur: '', stats: null };
-  return _npPw;
-}
-/** 每招的账（只摆数）：发过几篇 / 平均几个评 / 最高那篇 / 最近一次——同一份 note_stats 快照 */
-async function npPwStats() {
-  try {
-    const pl = await npAuditPlayAlgo();
-    const by = {};
-    pl.rows.forEach(r => { if (r && r.name) by[r.name] = r; });
-    return { by: by, accC: pl.accC };
-  } catch (_) { return { by: {}, accC: null }; }
-}
-async function npPwOpen(mode, tab) {
-  const box = document.getElementById('dirBox');
-  const mask = document.getElementById('dirModal');
-  if (!box || !mask) return;
-  npDirBind();
-  const pw = npPw();
-  pw.mode = (mode === 'swap' || mode === 'inpage') ? mode : 'new';
-  pw.tab = tab || 'in';
-  pw.play = null; pw.full = false; pw.rot++; pw.aiErr = '';
-  pw.stats = await npPwStats();
-  box.innerHTML = '<div class="note-xs">玩法卡在算…</div>';
-  mask.classList.add('open');
-  await npPwPaint();
-}
-/** 重画当前这一屏（池态＋账都是异步读的，每次画前取一遍） */
-async function npPwPaint() {
-  const box = document.getElementById('dirBox');
-  const pw = npPw();
-  if (!box) return;
-  const st = await npPlayStateRead();
-  pw.rows = await npPlayRows(pw.tab);
-  pw.counts = { in: st.in.length, cand: st.cand.length, stop: st.stop.length };
-  pw.cur = (st.cur && st.cur.name) || '';
-  box.innerHTML = npPwHtml();
-}
-/** 在池那一签：一次只摊 7 招，每次打开换一批（本轮钉的那招一定在里头） */
-function npPwList() {
-  const pw = npPw();
-  const rows = Array.isArray(pw.rows) ? pw.rows : [];
-  if (pw.tab !== 'in' || pw.full) return rows;
-  const head = rows.filter(r => r.name === pw.cur);
-  const rest = rows.filter(r => r.name !== pw.cur);
-  const off = rest.length ? (pw.rot % rest.length) : 0;
-  return head.concat(rest.slice(off)).concat(rest.slice(0, off)).slice(0, 7);
-}
-/** 卡上那颗账：只摆数，不写「这招行／不行」 */
-function npPwDataChip(name) {
-  const st = (npPw().stats && npPw().stats.by[name]) || null;
-  const nSent = st ? (st.nSent || 0) : 0;
-  if (!nSent) return '<span class="np-pw-chip dim">还没发过</span>';
-  if (!st.n) return '<span class="np-pw-chip dim">已发 ' + nSent + ' 篇 · 数还没回填</span>';
-  return '<span class="np-pw-chip">已发 ' + nSent + ' 篇 · 平均 💬' + plFmt(st.avgC) + (st.topC ? ' · 最高 💬' + st.topC : '') + '</span>';
-}
-function npPwCardHtml(r) {
-  const pw = npPw();
-  const cand = r.state === 'cand';
-  const stop = r.state === 'stop';
-  const cls = 'np-pw-card' + (stop ? ' off' : '') + (cand ? ' cand' : '') + (r.name === pw.cur ? ' cur' : '');
-  return '<div class="' + cls + '" data-pwplay="' + npArAttr(r.name) + '">' +
-    '<div class="np-pw-nm">' + (cand ? '✨ ' : '🎭 ') + esc(r.name) + npPwDataChip(r.name) +
-      (cand ? '<span class="np-pw-chip ok">候补</span>' : '') +
-      (r.name === pw.cur ? '<span class="np-pw-chip ok">本轮在用</span>' : '') + '</div>' +
-    '<div class="np-pw-how">' + esc(r.how || '') + '</div>' +
-    '<div class="np-pw-meta">' +
-      '<span class="np-pw-chip src">取材：' + esc(NP_PLAY_SRC[r.src] || r.src || '') + '</span>' +
-      '<span class="np-pw-chip out">默认 ' + esc(NP_PLAY_OUT[r.out] || '') + '</span>' +
-      (r.grp ? '<span class="np-pw-chip dim">' + esc(r.grp) + '</span>' : '') +
-      (r.rh ? '<span class="np-pw-chip dim">' + esc(r.rh) + '</span>' : '') +
-    '</div>' +
-    (r.why ? '<div class="note-xs" style="margin-top:5px;">' + esc(r.why) + (stop ? ' · 点一下复活回池' : '') + '</div>' : '') +
-    (cand ? '<div class="note-xs" style="margin-top:5px;">点一下钉到本轮，候补自动提进池子</div>' : '') +
-  '</div>';
-}
-function npPwTabHtml() {
-  const pw = npPw();
-  const c = pw.counts || { in: 0, cand: 0, stop: 0 };
-  const t = (tab, lab, n) => '<span class="np-pw-tab' + (pw.tab === tab ? ' on' : '') + '" data-pwtab="' + tab + '">' + lab + ' <b>' + n + '</b></span>';
-  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;">' +
-    t('in', '在池', c.in) + t('cand', '候补', c.cand) + t('stop', '停用', c.stop) + '</div>';
-}
-function npPwPane1Html() {
-  const pw = npPw();
-  const rows = pw.rows || [];
-  const list = npPwList();
-  const hd = pw.mode === 'inpage'
-    ? '这一篇用哪一招 —— 从玩法池点一招钉上（不点也行，回那一屏照料池那几版挑）'
-    : (pw.mode === 'swap'
-        ? '换个玩法接上 —— 一轮只钉一招；这条线的老账留着对，新招从 0 起跑'
-        : '玩法池 · 在池／候补／停用，都在这本账上');
-  const grp = pw.tab === 'in'
-    ? (pw.full
-        ? '在池 ' + rows.length + ' 招，全摊开了 <button type="button" class="btn btn-sm np-pw-all" style="margin-left:6px;">▴ 只给 7 招</button>'
-        : '先给你 ' + list.length + ' 招（在池 ' + rows.length + ' 招，每次打开换一批） <button type="button" class="btn btn-sm np-pw-all" style="margin-left:6px;">▾ 看全部 ' + rows.length + ' 招</button>')
-    : (pw.tab === 'cand' ? 'AI 新补的候补：' + rows.length + ' 招（点一张就提进池子，本轮钉它）'
-                         : '停用 ' + rows.length + ' 招：都是你自己标的，点一下复活');
-  return '<h3>' + esc(hd) + '</h3>' +
-    '<div class="note-xs">这本账只管<b>引流笔记</b>用哪一招——出口（🖼 图文／📝 长文）在这儿定：' +
-      '<b>新建笔记「🔥 引流」那一格点哪张卡就是哪种出口</b>，招式进到写稿那一屏顶上那一栏挑。' +
-      '<b>门面那两篇（🪟 个人介绍 / 🪟 成交承接）已经做好了，不在这儿建</b>——缺哪一篇回档案顶上那条横幅点「✍️ 去建这一篇」，它走自己那条提纲的路，也不进玩法这本账；' +
-      '知识 / 案例那两条线照旧在上面各自的卡里建。</div>' +
-    npPwTabHtml() +
-    '<div class="note-xs" style="margin:9px 2px 0;">' + grp + '</div>' +
-    '<div class="np-pw-grid">' + (list.map(npPwCardHtml).join('') ||
-      '<div class="note-xs">这一档暂时空的——点底下「✨ 让 AI 照我这号补 3 招」就有。</div>') + '</div>' +
-    (pw.aiBusy ? '<div class="note-xs" style="margin-top:10px;color:var(--c-brand-text,#0a7067);">AI 正在照你号上哪招灵长新招…</div>' :
-      (pw.aiErr ? '<div class="note-xs" style="margin-top:10px;color:#c0392b;">这回没补出来：' + esc(pw.aiErr) + '</div>' : '')) +
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;">' +
-      '<button type="button" class="btn btn-sm np-pw-ai"' + (pw.aiBusy ? ' disabled' : '') + '>✨ 让 AI 照我这号补 3 招</button>' +
-      '<span class="note-xs">补的时候喂给它：哪招灵、人设是什么、卖什么——补进来的先进候补</span>' +
-      '<span style="flex:1;"></span>' +
-      '<button type="button" class="np-dir-close" style="flex:none;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#555;font-weight:700;cursor:pointer;">' + (pw.mode === 'inpage' ? '✕ 回去，这一篇不指定' : '✕ 先不建，回档案') + '</button>' +
-    '</div>';
-}
-function npPwRow(name) {
-  const pw = npPw();
-  const hit = (pw.rows || []).find(r => r && r.name === name) || null;
-  return hit || npPlaySkeleton(name) || null;
-}
-function npPwHtml() { return npPwPane1Html(); }
-/** 点一张玩法卡＝钉这一招（一轮只钉一招）：停用那招先复活；候补自动提进池。
- *  从写稿那一栏进来的（mode='inpage'）顺手钉到这一篇上；从档案横幅进来的只改本轮这本账。 */
-async function npPwPickPlay(name) {
-  const pw = npPw();
-  const r = npPwRow(name);
-  if (!r) return;
-  if (r.state === 'stop') { await npPlayReopen(name); pw.tab = 'in'; pw.rot++; await npPwPaint(); if (typeof toast === 'function') toast('「' + name + '」复活回池了，现在能挑'); return; }
-  if (r.state === 'cand') await npPlayPromote(name);
-  await npCurPlaySet(name);
-  pw.play = name;
-  _npArPlayView = null;
-  const inpage = pw.mode === 'inpage';
-  npDirClose();
-  if (inpage) { await npPkPick(name, _npPkNc); return; }
-  if (typeof toast === 'function') toast('本轮改钉「' + name + '」——它以前发过的账还在，连发从今天这篇算起；要按它起新篇，点横幅上「📤 照这招再发一篇」');
-}
-/** 档案横幅「📤 照这招再发一篇」：按这一招的默认出口建篇，进写稿那条路 */
-async function npPwCreate(name, out) {
-  const pw = npPw();
-  const r = npPwRow(name);
-  if (!r) { npDirClose(); return; }
-  _npArPlayView = null;   // 建完这一篇，档案顶上那条横幅回到「本轮钉的这一招」，不再停在翻出来看的旧账上
-  const finalOut = (out === 'long' || out === 'img') ? out : (r.out === 'long' ? 'long' : 'img');
-  const oldCur = pw.cur || '';
-  if (r.state === 'cand') await npPlayPromote(name);
-  await npCurPlaySet(name);
-  const form = finalOut === 'long' ? '长文' : '图文';
-  npDirClose();
-  const n = await npDirNewNote('d', form, '', { play: name, dOut: finalOut });
-  npDirGo(n);
-  if (typeof toast === 'function') {
-    toast('照「' + name + '」起了一篇 ' + NP_PLAY_OUT[finalOut] + '——进写稿那条路，第一屏顶上那栏就是这一招' +
-      (oldCur && oldCur !== name ? '；本轮也改钉它，它以前发过的账还在，连发从今天这篇算起' : ''));
-  }
-}
-/** ✨ 让 AI 照我这号补 3 招：喂哪招灵＋人设＋卖什么，补进来的先进候补（要重启后台才认这个新动作） */
-async function npPwAiAdd() {
-  const pw = npPw();
-  if (pw.aiBusy) return;
-  pw.aiBusy = true; pw.aiErr = '';
-  await npPwPaint();
-  const st = await npPlayStateRead();
-  const by = (pw.stats && pw.stats.by) || {};
-  const ledger = Object.keys(by).filter(nm => by[nm].nSent).map(nm => {
-    const r = by[nm];
-    return '「' + nm + '」已发 ' + r.nSent + ' 篇' + (r.n ? '，平均 💬' + plFmt(r.avgC) + ' 评（账号平均 💬' + plFmt(pw.stats.accC) + '，是它的 ' + (r.ratio ? r.ratio.toFixed(2) : '—') + ' 倍）' : '，数还没回填');
-  }).slice(0, 20);
-  let persona = '';
-  try { persona = String(_ntPersonaLine() || '').trim(); } catch (_) { persona = ''; }
-  try {
-    const r = await chrome.runtime.sendMessage({
-      action: 'genPlayCands',
-      data: {
-        persona: persona,
-        sellPoint: npSellPointStr(),
-        accC: (pw.stats && pw.stats.accC) || null,
-        ledger: ledger,
-        have: await npPlayLedgerNames(),
-        stopped: st.stop.map(x => x && x.name).filter(Boolean),
-      },
-    });
-    if (!r || r.ok === false) throw new Error((r && r.error) || 'AI 这次没补出来，再点一次试试');
-    const rows = (r.plays || []).map(x => x && {
-      name: String(x.name || '').trim(), grp: String(x.grp || '').trim(), src: String(x.src || 'howto').trim(),
-      kind: String(x.kind || '').trim(), out: x.out === 'long' ? 'long' : 'img', how: String(x.how || '').trim(),
-      rh: String(x.rh || '').trim(), why: String(x.why || '').trim(), state: 'cand',
-    }).filter(x => x.name && x.how);
-    const added = await npPlayAddCand(rows);
-    pw.tab = 'cand'; pw.rot++;
-    if (typeof toast === 'function') toast(added ? 'AI 照你号上哪招灵，补了 ' + added + ' 招进候补——不直接顶，你看上哪招点哪招' : 'AI 这几招跟池子里的重了，没补进新的');
-  } catch (e) {
-    pw.aiErr = String((e && e.message) || e);
-  }
-  pw.aiBusy = false;
-  pw.stats = await npPwStats();
-  await npPwPaint();
-}
-
-/* ═══ 🎭 这一栏「这一篇用哪一招」（2026-10-19 收口：玩法搬进写稿那一屏）═══
-   玩法不再挡在建篇前面：篇已建好、出口（🖼 图文／📝 长文）也定了，这一栏只管「这一篇照哪招写」。
-   不挑也行——直接照底下料池那几版挑；挑到讲故事那几招，这一篇才先让 AI 编 3 段你挑一段。 */
-let _npPkNc = null;   // 这一栏画在哪个容器里：玩法池弹窗钉完一招要重画这一屏
-let _npPkRot = 0;     // 一次只摊 7 招，每次进这一屏换一批
-function npPkChipHtml(name, on) {
-  return '<button type="button" data-pkplay="' + npArAttr(name) + '" style="font-size:11px;padding:3px 9px;border-radius:14px;cursor:pointer;' +
-    (on ? 'border:1px solid var(--c-brand,#c8102e);background:var(--c-brand-soft,#fdf2f2);color:var(--c-brand-text,#a00d24);font-weight:700;'
-        : 'border:1px solid var(--line,#e5e8ee);background:#fff;color:#555;') + '">' + esc(name) + '</button>';
-}
-function npPlayPickHtml(w) {
-  w = w || _npWiz || {};
-  const name = String(w.ipPlay || '').trim();
-  const hd = '<b style="font-size:12px;color:#333;">🎭 这一篇用哪一招</b>';
-  if (name) {
-    const p = npPlaySkeleton(name) || null;
-    return '<div style="border:1px dashed #e3cfa8;background:#fffaf0;border-radius:10px;padding:8px 10px;margin-bottom:8px;">' +
-      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + hd +
-        '<span style="font-size:11.5px;font-weight:700;color:#8a6d3b;background:#fff;border:1px solid #e3cfa8;border-radius:8px;padding:1px 8px;">🎭 ' + esc(name) + '</span>' +
-        (p && p.how ? '<span class="note-xs">' + esc(String(p.how)) + '</span>' : '') +
-        '<span style="flex:1;"></span>' +
-        '<button type="button" class="btn btn-sm np-pk-swap">🔁 换一招</button>' +
-        '<button type="button" class="btn btn-sm np-pk-clear">✕ 不指定</button>' +
-      '</div>' +
-      (npIsDStory(w)
-        ? '<div class="note-xs" style="margin-top:4px;">这一招要讲故事——底下先让 AI 编 3 段你挑一段，挑完直接出稿。</div>'
-        : '<div class="note-xs" style="margin-top:4px;">这一招是干货型——直接照底下那几版挑，挑中哪版走哪版进改稿。</div>') +
-      '</div>';
-  }
-  return '<div id="npPkBox" style="border:1px dashed var(--line,#e5e8ee);background:#fbfcfe;border-radius:10px;padding:8px 10px;margin-bottom:8px;">' +
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">' + hd +
-      '<span class="note-xs">不挑也行（照底下那几版挑）——挑到讲故事那几招，这一篇先让 AI 编 3 段你挑一段</span>' +
-      '<span style="flex:1;"></span>' +
-      '<button type="button" class="btn btn-sm np-pk-all">▾ 全部玩法池</button></div>' +
-    '<div id="npPkRow" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:7px;"><span class="note-xs">玩法池在读…</span></div>' +
-    '</div>';
-}
-/** 把玩法池那一摊 chips 填进这一栏（池态是异步的，跟料稿一样进这一屏再补） */
-async function npPlayPickLoad(container) {
-  const w = _npWiz;
-  _npPkNc = container || _npPkNc;
-  if (!w || !npIsD(w) || String(w.ipPlay || '').trim()) return;
-  const row = document.getElementById('npPkRow');
-  if (!row) return;
-  _npPkRot++;   // 每次进这一屏换一批
-  let rows = [];
-  try { rows = await npPlayRows('in'); } catch (_) { rows = []; }
-  if (!document.getElementById('npPkRow') || document.getElementById('npPkRow') !== row) return;
-  const names = (Array.isArray(rows) ? rows : []).map(r => r && r.name).filter(Boolean);
-  if (!names.length) { row.innerHTML = '<span class="note-xs">玩法池是空的——点「▾ 全部玩法池」让 AI 照你这号补几招</span>'; return; }
-  const off = names.length > 7 ? (_npPkRot % names.length) : 0;
-  const show = names.slice(off).concat(names.slice(0, off)).slice(0, 7);
-  row.innerHTML = show.map(n => npPkChipHtml(n, false)).join('') +
-    (names.length > 7 ? '<span class="note-xs">先给这 ' + show.length + ' 招（池里 ' + names.length + ' 招）</span>' : '');
-}
-/** 点一招钉到这一篇：干货型留在「出几版」那站；讲故事型跳去「AI 编故事」 */
-async function npPkPick(name, nc) {
-  const w = _npWiz;
-  if (!w || !npIsD(w) || !name || String(w.ipPlay || '') === name) return;
-  w.ipPlay = String(name).trim();
-  await npCurPlaySet(w.ipPlay);   // 一轮只钉一招：这一篇钉它，本轮这本账也归它
-  _npArPlayView = null;
-  const story = npIsDStory(w);
-  if (story) { w.ipStories = null; w.ipStoryErr = ''; w.step = 1; }
-  else if (w.step === 1) w.step = 3;
-  npWizRender(nc || npActiveC());
-  if (typeof toast === 'function') toast('这一篇钉上「' + w.ipPlay + '」' + (story ? '——AI 先编 3 段故事你挑一段' : '——照底下那几版挑，挑中哪版走哪版'));
-}
-/** ✕ 不指定：这一篇照料池那几版挑（本轮钉的招不动，账还在那本上） */
-async function npPkClear(nc) {
-  const w = _npWiz;
-  if (!w || !npIsD(w) || !String(w.ipPlay || '').trim()) return;
-  const wasStory = npIsDStory(w);
-  w.ipPlay = '';
-  if (wasStory && w.step === 1) w.step = 3;
-  npWizRender(nc || npActiveC());
-  if (typeof toast === 'function') toast('这一篇不指定招式了——照底下那几版挑');
-}
-
-/** 这一篇钉的是哪一招（建篇那一刻记的，不用手标）：老档没记就空 */
-function npNotePlayOf(n) {
-  const v = String(((n && n.wip && n.wip.ipPlay) || (n && n.ipPlay) || '') || '').trim();
-  return v === '客户故事连载' ? '顾客故事连载' : v;
-}
-/** 档案顶上那条玩法横幅当前在显示哪一招的账：空＝本轮钉的那一招；点行上的玩法标＝翻到那一招（只看不改钉） */
-let _npArPlayView = null;
-
-/** 🎭 本轮玩法条（复盘 → 🎭 玩法效果顶上）：只摆数，不替你下结论——
- *  发过几篇 / 最近一次 / 平均评赞 / 比账号平均几倍 / 最高哪篇（✅⚠那类话不写，对着账号平均自己看）。
- *  动作：📤 照这招再发一篇 · 🔁 换个玩法 · ⏸ 这招不用了（停用留底能复活）
- *  viewName＝从档案某行的玩法标点上来的（看那一招的账，本轮钉的不动）；空＝显示本轮钉的那一招 */
-function npArPlayBarHtml(st, sb, viewName) {
-  const cur = (st && st.cur) || null;
-  const view = String(viewName || (cur && cur.name) || '').trim();
-  const peek = !!view && (!cur || cur.name !== view);
-  const r = view ? npPlaySkeleton(view) : null;
-  const s = (sb && sb.by) ? sb.by[view] : null;
-  const k = (t) => '<span style="font-size:10.5px;color:var(--c-ink-3,#8b95a3);">' + t + '</span>';
-  const bd = (t) => '<b style="color:var(--c-ink,#1f2937);font-size:12px;">' + t + '</b>';
-  const chip = (txt, tone) => '<span style="font-size:10px;font-weight:700;border-radius:6px;padding:1px 6px;' + tone + '">' + txt + '</span>';
-  const chipGray = (t) => chip(t, 'background:#eef1f5;color:#616b78;');
-  const chipBrand = (t) => chip(t, 'background:#e7f0ff;color:#1f4e8c;');
-  /* 账那一块：只有数，没有「好用／该换」 */
-  let stat;
-  if (view && !r) stat = k('「' + esc(view) + '」是老档上的旧叫法，没进玩法这本账——只新起的篇会自动记玩法标。');
-  else if (!r) stat = k('这一条线还没钉玩法——上面「✍️ 新建笔记」点引流那一格起一篇，写稿那一屏顶上挑一招；或这儿点「🎭 去挑一招」。');
-  else if (!s || !s.nSent) stat = k('这一招还没发过') + ' —— ' + k('发一篇就能在这儿看见数：平均几个评、最高哪篇。');
-  else {
-    stat = k('已发 ') + bd(s.nSent + ' 篇') + ' · ' + k('最近一次 ' + (npArAgo(s.lastAt) || '—'));
-    if (!s.n) stat += '<br>' + k('评论数还没回填（发出去两天后自动补）');
-    else {
-      stat += '<br>' + k('平均 ') + bd('💬' + plFmt(s.avgC) + ' 评' + (s.avgL ? ' · 👍' + plFmt(s.avgL) + ' 赞' : ''));
-      if (sb.accC) stat += ' ' + k('· 你号上全部笔记平均 💬' + plFmt(sb.accC) + ' 评 —— 这一招是它的 ') + bd((s.ratio || (s.avgC / sb.accC)).toFixed(2) + ' 倍');
-      if (s.topC) stat += '<br>' + k('最高的一篇：💬' + s.topC + ' 评 · 《' + esc(s.topTitle || '') + '》') + ' ' + k('（点开在档案里能找着）');
-    }
-  }
-  const btn = (cls, lab, tip, attrs) => '<button type="button" class="npar-mini ' + cls + '" ' + (attrs || '') +
-    ' title="' + npArAttr(tip) + '" style="margin-top:7px;">' + lab + '</button>';
-  const inRows = (st && st.in) || [];
-  const imgN = inRows.filter(nm => { const x = npPlaySkeleton(nm); return x && x.out !== 'long'; }).length;
-  const left = '<div style="flex:1;min-width:300px;">' +
-    '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-      '<span style="font-size:11px;font-weight:800;color:var(--c-brand-text,#b23b3b);">🎭 本轮玩法</span>' +
-      '<span style="font-size:15px;font-weight:800;color:var(--c-ink,#1f2937);">' + (r ? esc(r.name) : (view ? esc(view) : '（还没钉）')) + '</span>' +
-      (r ? chipBrand('取材：' + esc(NP_PLAY_SRC[r.src] || r.src || '')) + ' ' + chipGray(NP_PLAY_OUT[r.out] || '') + ' ' + chipGray(esc(r.grp || '')) : '') +
-    '</div>' +
-    '<div style="font-size:11.5px;color:var(--c-ink-2,#4b5563);line-height:1.7;margin-top:4px;">' +
-      (r ? esc(r.how || '') + ' —— 建议 ' + esc(r.rh || '') : '一轮只钉一招：连着发同一招，两三招一起发哪招灵的测不出来。') + '</div>' +
-    (peek ? '<div style="font-size:10.5px;color:#8a5200;background:#fff7e6;border:1px solid #f0dcb0;border-radius:7px;padding:3px 8px;margin-top:5px;display:inline-block;">在看「' + esc(view) + '」这本账（这一篇上的玩法标）；本轮钉的是「' + esc((cur && cur.name) || '还没钉') + '」——换招点底下的「🔁 换成这一招」。</div>' : '') +
-    '<div style="margin-top:8px;border:1px solid var(--c-brand-line,#f0d9d9);background:#fff;border-radius:9px;padding:7px 11px;line-height:1.9;">' + stat + '</div>' +
-    '<div style="display:flex;gap:6px;flex-wrap:wrap;">' +
-      (peek
-        ? btn('npar-pw-become', '🔁 换成这一招', '本轮改钉「' + view + '」——它以前发过的账还在，连发从今天这篇算起；下一篇文章就用这一招写', 'data-pw-become="' + npArAttr(view) + '"') +
-          btn('npar-pw-back', '↩ 回到本轮', '不看了，回到本轮钉的那一招', '')
-        : (r
-          ? btn('npar-pw-again', '📤 照这招再发一篇', '直接按这一招起新的一篇（出口按这招默认：🖼 图文／📝 长文）——玩法标会自动记在这一篇上', 'data-pw-again="' + npArAttr(r.name) + '"') +
-            btn('npar-pw-swap', '🔁 换个玩法', '进玩法池换一招；这一招以前发过的账留着对，新招从 0 起跑', '') +
-            btn('npar-pw-stop', '⏸ 这招不用了', '进停用（留底，点一下能复活回池）——换招进玩法池那一页挑', 'data-pw-stop="' + npArAttr(r.name) + '"')
-          : btn('npar-pw-swap', '🎭 去挑一招', '进玩法池挑一招钉上（也可以去「✍️ 新建笔记」起一篇，在写稿那一屏挑）', ''))) +
-    '</div>' +
-  '</div>';
-  const right = '<div style="flex:none;width:230px;border-left:1px dashed var(--c-brand-line,#f0d9d9);padding-left:11px;">' +
-    '<b style="font-size:11.5px;color:var(--c-ink,#1f2937);">玩法池</b>' +
-    '<div style="font-size:10.5px;color:var(--c-ink-3,#8b95a3);line-height:1.7;margin-top:3px;">在池 <b>' + inRows.length + '</b> 招 · 停用 <b>' + ((st && st.stop) || []).length + '</b> 招 · 候补 <b>' + ((st && st.cand) || []).length + '</b> 招</div>' +
-    '<div style="font-size:10.5px;color:var(--c-ink-3,#8b95a3);line-height:1.7;margin-top:3px;">出口只有两种：🖼 图文 <b>' + imgN + '</b> 招 · 📝 长文 <b>' + (inRows.length - imgN) + '</b> 招<div style="color:var(--c-ink-4,#9aa0ac);">（视频这一档在引流里撤了）</div></div>' +
-    '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">' +
-      '<button type="button" class="npar-pw-swap" style="font-family:inherit;font-size:10.5px;font-weight:700;color:#1f4e8c;background:#eef4ff;border:none;border-radius:6px;padding:2px 7px;cursor:pointer;">＋ 从池里换一招</button>' +
-      '<button type="button" class="npar-pw-ai" style="font-family:inherit;font-size:10.5px;font-weight:700;color:#7c3aed;background:#f3ecff;border:none;border-radius:6px;padding:2px 7px;cursor:pointer;">✨ 让 AI 补新招</button>' +
-    '</div>' +
-    '<div style="font-size:10.5px;color:var(--c-ink-3,#8b95a3);line-height:1.6;margin-top:6px;">停用留底能复活；新补的先进候补，不直接顶。</div>' +
-  '</div>';
-  return '<div class="npar-playbar" style="display:flex;gap:11px;flex-wrap:wrap;align-items:stretch;background:var(--c-brand-soft,#fdf2f2);border:1px solid var(--c-brand-line,#f0d9d9);border-radius:10px;padding:8px 11px;margin:0 0 8px;">' +
-    left + right +
-  '</div>' +
-  '<div style="font-size:10.5px;color:#8a929e;line-height:1.7;margin:-2px 0 10px 4px;">📌 <b>玩法＝写稿那一屏顶上的一栏</b>（新建笔记「🔥 引流」先点出口：🖼 图文／📝 长文 → 进去挑哪一招、不挑也行）；玩法标是钉上那一刻自动记的，不用手标。' +
-    '<b>这一条只摆数，不替你下结论</b>——发过多少篇、有没有爆的、普遍点赞评论多少，你对着账号平均自己看。' +
-    '🎭 IP 玩法已经并进「🔥 引流」——玩法这本账现在收引流篇；知识／案例那两条线不进，门面那两篇也不进。</div>';
-}
 
 /* ═══════════ 🪟 门面笔记＝小红书主页顶上那两格（个人介绍 / 成交承接）═══════════
    2026-10-19 老板定稿。需求档案：资料/发笔记-门面笔记设计.md｜demo：tmp/门面笔记demo.html
@@ -25609,6 +28721,8 @@ function npClipGrabThumb(clipId, blob, at) {
 let _npLibView = { view: 'lib', colId: '', videoId: '', segId: '', batchId: '', folderId: '', surface: 'assets', q: '', tags: [], libFolder: '', noTag: false, picked: [] };
 let _npLibCtx = null;
 let _npLibCache = { cols: [], videos: [], clips: [], notes: [], batches: [] };
+/* 演示号库是只读的（写不进服务器）：写失败的归类改动先记这儿，屏幕上照新类显示，真号不会走这条路 */
+let _npLibCatLocal = {};
 let _npLibDelegated = false;
 let _npLibRenderSeq = 0;
 let _npLibStyleDone = false;
@@ -25670,9 +28784,10 @@ function npLibTabReset() {
 }
 
 function npLibS() {
-  if (!_npLibView) _npLibView = { view: 'lib', colId: '', videoId: '', segId: '', batchId: '', folderId: '', surface: 'assets', q: '', tags: [], libFolder: '', noTag: false, picked: [] };
+  if (!_npLibView) _npLibView = { view: 'lib', colId: '', videoId: '', segId: '', batchId: '', folderId: '', surface: 'assets', q: '', tags: [], libFolder: '', noTag: false, picked: [], catEdit: false };
   if (!Array.isArray(_npLibView.tags)) _npLibView.tags = [];
   if (!Array.isArray(_npLibView.picked)) _npLibView.picked = [];
+  if (!_npLibView.dayClosed || typeof _npLibView.dayClosed !== 'object') _npLibView.dayClosed = {};
   return _npLibView;
 }
 function npLibBatchOf(video) {
@@ -25711,6 +28826,195 @@ function npLibClipsOfBatch(batchId) {
 function npLibToday() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+/* 11-12 老板定：「材料包」＝锁死的固定料夹，装我本人 / 现场 / 场馆 / 到店指引四段，还能自己加格；
+   其余文件夹按导入时选的拍摄日期自动建（名字 MM-DD）。老的纯日期文件夹不动。 */
+const NP_PACK_NAME = '材料包';
+const NP_PACK_SLOTS_KEY = 'np_pack_slots';
+const NP_FIXED_SLOTS = [
+  { cat: 'me',    label: '我本人',   hint: '正脸 / 背影 / 手 / 侧面' },
+  { cat: 'scene', label: '现场',     hint: '干活的过程 / 操作 / 服务实拍' },
+  { cat: 'place', label: '场馆',     hint: '教室 / 门面 / 场地看一圈' },
+  { cat: 'door',  label: '到店指引', hint: '门头 / 怎么走 / 停车电梯' },
+];
+/* 格子 → 素材大类：现场这一格吃「现场」的段；自己加的格不限类 */
+const NP_SLOT_CAT = { me: 'me', scene: 'work', place: 'place', door: 'door' };
+let _npPackSlotsCache = null;
+let _npPackAddOpen = { bench: false, lib: false };
+async function npPackSlotsRead() {
+  if (_npPackSlotsCache) return _npPackSlotsCache;
+  let v = null;
+  try { const d = await chrome.storage.local.get(NP_PACK_SLOTS_KEY); v = d[NP_PACK_SLOTS_KEY]; } catch (_) {}
+  const o = (v && typeof v === 'object') ? v : {};
+  const extra = Array.isArray(o.extra) ? o.extra.filter(e => e && e.key && e.label)
+    .map(e => ({ key: String(e.key), label: String(e.label).slice(0, 12) })) : [];
+  _npPackSlotsCache = {
+    door: String(o.door || ''), me: String(o.me || ''), place: String(o.place || ''), scene: String(o.scene || ''),
+    extra: extra, migrated: !!o.migrated,
+  };
+  return _npPackSlotsCache;
+}
+async function npPackSlotsWrite(o) {
+  const extra = (Array.isArray(o && o.extra) ? o.extra : []).filter(e => e && e.key && e.label)
+    .map(e => ({ key: String(e.key), label: String(e.label).slice(0, 12) }));
+  const v = {
+    door: String((o && o.door) || ''), me: String((o && o.me) || ''),
+    place: String((o && o.place) || ''), scene: String((o && o.scene) || ''),
+    extra: extra, migrated: true,
+  };
+  _npPackSlotsCache = v;
+  try { await chrome.storage.local.set({ [NP_PACK_SLOTS_KEY]: v }); } catch (_) {}
+}
+/** 材料包要摆的格子：四格固定 ＋ 自己加的 */
+function npPackSlotDefs() {
+  const s = _npPackSlotsCache || {};
+  const out = NP_FIXED_SLOTS.map(d => ({ cat: d.cat, label: d.label, hint: d.hint, custom: false }));
+  (s.extra || []).forEach(e => out.push({ cat: e.key, label: e.label, hint: '自己加的，每篇都带', custom: true }));
+  return out;
+}
+function npPackSlotClipOf(cat) {
+  const s = _npPackSlotsCache || {};
+  const id = String(s[cat] || '');
+  if (!id) return null;
+  return (_npLibCache.clips || []).find(c => c && String(c.id) === id) || null;
+}
+function npPackSlotIds() {
+  const s = _npPackSlotsCache || {};
+  const set = new Set();
+  NP_FIXED_SLOTS.forEach(d => { if (s[d.cat]) set.add(String(s[d.cat])); });
+  (s.extra || []).forEach(e => { if (s[e.key]) set.add(String(s[e.key])); });
+  return set;
+}
+function npLibPackFolder() {
+  return (_npLibCache.cols || []).find(c => c && c.folder && c.locked) || null;
+}
+function npLibIsoOf(ms) {
+  const d = new Date(Number(ms) || Date.now());
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function npLibDateFolderName(iso) {
+  const p = String(iso || '').split('-');
+  return p.length === 3 ? (p[1] + '-' + p[2]) : String(iso || '');
+}
+/** 文件夹该算哪一天：先看 date 字段，老夹的名字（2026-11-10 / 11-10）也认。认不出返回 ''。 */
+function npLibFolderIsoOf(f) {
+  const d = String((f && f.date) || '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+  const nm = String((f && f.name) || '').trim();
+  let m = nm.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) return m[1] + '-' + String(Number(m[2])).padStart(2, '0') + '-' + String(Number(m[3])).padStart(2, '0');
+  m = nm.match(/^(\d{1,2})[-/.](\d{1,2})$/);
+  if (m) return new Date().getFullYear() + '-' + String(Number(m[1])).padStart(2, '0') + '-' + String(Number(m[2])).padStart(2, '0');
+  return '';
+}
+/** 材料包：没有就建一个；有就锁上、别归档。 */
+async function npLibMigratePackFolder(cols) {
+  const list = cols || [];
+  let pack = list.find(c => c && c.folder && String(c.name || '').trim() === NP_PACK_NAME) || null;
+  if (!pack) {
+    pack = { id: npCollectionId(), name: NP_PACK_NAME, brief: '', status: '在用', folder: true, locked: true, at: Date.now() };
+    list.unshift(pack);
+  } else if (pack.locked && pack.status !== '归档') {
+    return false;
+  } else {
+    pack.locked = true;
+    pack.status = '在用';
+  }
+  try { await npCollectionsWrite(list); } catch (_) { return false; }
+  return true;
+}
+/** 第一次升级：材料包里某一类只有一段时，直接认成固定料；不止一段就不猜，等人点「放一段」。 */
+async function npLibEnsurePackSlots() {
+  const slots = await npPackSlotsRead();
+  if (slots.migrated) return;
+  const pack = npLibPackFolder();
+  if (pack) {
+    const vids = new Set((_npLibCache.videos || []).map(v => v && String(v.id)));
+    NP_FIXED_SLOTS.forEach(d => {
+      const k = d.cat, wantCat = NP_SLOT_CAT[k] || k;
+      if (slots[k]) return;
+      const cands = (_npLibCache.clips || []).filter(c => {
+        if (!c || String(c.col) !== String(pack.id) || !c.videoId || !vids.has(String(c.videoId))) return false;
+        try { return npMatCatOfClip(c, npLibClipVideo(c)) === wantCat; } catch (_) { return false; }
+      });
+      if (cands.length === 1) slots[k] = String(cands[0].id);
+    });
+  }
+  slots.migrated = true;
+  await npPackSlotsWrite(slots);
+  const fixedIds = npPackSlotIds();
+  if (fixedIds.size) {
+    const clips = await npClipsRead();
+    let dirty = false;
+    clips.forEach(c => {
+      if (!c) return;
+      const want = fixedIds.has(String(c.id));
+      if (!!c.fixed !== want) { c.fixed = want; dirty = true; }
+    });
+    if (dirty) { await npClipsWrite(clips); _npLibCache.clips = clips; }
+  }
+}
+/** 日期夹：按拍摄 / 生成日期找一个，没有就建；名字就用 MM-DD。 */
+async function npDateFolderEnsure(iso) {
+  const day = String(iso || '').trim() || npLibToday();
+  const name = npLibDateFolderName(day);
+  const cols = await npCollectionsRead();
+  let f = cols.find(c => c && c.folder && !c.locked &&
+    (String(c.date || '') === day || String(c.name || '').trim() === name || npLibFolderIsoOf(c) === day));
+  if (!f) {
+    f = { id: npCollectionId(), name: name, brief: '', status: '在用', folder: true, noVision: false, at: Date.now(), date: day };
+    cols.unshift(f);
+    await npCollectionsWrite(cols);
+  } else if (!f.date) {
+    f.date = day;
+    await npCollectionsWrite(cols);
+  }
+  _npLibCache.cols = cols;
+  return f;
+}
+/** 把一段挪进材料包当固定料；原来那一段退回它自己的日期夹。 */
+async function npPackSetSlot(cat, clipId) {
+  const pack = npLibPackFolder();
+  const slots = await npPackSlotsRead();
+  const clips = await npClipsRead();
+  const now = clips.find(c => c && String(c.id) === String(clipId));
+  if (!pack || !now) return { ok: false, why: '这段找不到了' };
+  const prevId = String(slots[cat] || '');
+  if (prevId && prevId !== String(now.id)) {
+    const old = clips.find(c => c && String(c.id) === prevId);
+    if (old) {
+      old.fixed = false;
+      const back = old.fixedFrom && npLibFolderOf(old.fixedFrom) ? String(old.fixedFrom) : '';
+      old.col = back || String(pack.id);
+      old.fixedFrom = '';
+    }
+  }
+  if (String(now.col) !== String(pack.id) && !now.fixedFrom) now.fixedFrom = String(now.col || '');
+  now.col = String(pack.id);
+  now.fixed = true;
+  await npClipsWrite(clips);
+  _npLibCache.clips = clips;
+  slots[cat] = String(now.id);
+  await npPackSlotsWrite(slots);
+  return { ok: true };
+}
+async function npPackClearSlot(cat) {
+  const pack = npLibPackFolder();
+  const slots = await npPackSlotsRead();
+  const id = String(slots[cat] || '');
+  if (!id) return;
+  const clips = await npClipsRead();
+  const c = clips.find(x => x && String(x.id) === id);
+  if (c) {
+    c.fixed = false;
+    const back = c.fixedFrom && npLibFolderOf(c.fixedFrom) ? String(c.fixedFrom) : '';
+    c.col = back || String((pack && pack.id) || c.col);
+    c.fixedFrom = '';
+    await npClipsWrite(clips);
+    _npLibCache.clips = clips;
+  }
+  slots[cat] = '';
+  await npPackSlotsWrite(slots);
 }
 function npLibVisionOffBatch(batch, folder) {
   return !!(batch && batch.noVision) || !!(folder && folder.noVision);
@@ -25757,6 +29061,7 @@ function npLibEnsureStyle() {
 .npl-btn.ghost{border-color:transparent;background:transparent;color:#777;}
 .npl-btn.danger{border-color:var(--c-danger-line,#f4c9c9);color:var(--c-danger,#c0392b);}
 .npl-btn.sm{font-size:11px;padding:4px 9px;border-radius:7px;}
+.npl-btn.on{border-color:var(--c-brand,#d94a4a);background:var(--c-brand-soft,#fdf2f2);color:var(--c-brand-text,#b23b3b);}
 .npl-btn.dim{opacity:.45;cursor:not-allowed;}
 .npl-btn[disabled]{opacity:.45;cursor:not-allowed;}
 .npl-ctx{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:9px 11px;border:1px solid var(--c-brand-line,#f0d9d9);background:var(--c-brand-soft,#fdf2f2);border-radius:10px;font-size:12px;color:var(--c-brand-text,#b23b3b);}
@@ -25777,6 +29082,10 @@ function npLibEnsureStyle() {
 .npl-badge.on{background:var(--c-brand-soft,#fdf2f2);color:var(--c-brand-text,#b23b3b);border-color:var(--c-brand-line,#f0d9d9);}
 .npl-badge.lock{background:#eef2ff;color:#3730a3;border-color:#c7d2fe;}
 .npl-badge.key{background:var(--c-accent-soft,#f4f1fe);color:#5b21b6;border-color:var(--c-accent-line,#e0d8fb);}
+.npl-face{display:inline-flex;align-items:center;gap:3px;font-size:10px;line-height:1.4;padding:2px 8px;border-radius:999px;background:#fff;color:#8a929e;border:1px dashed #d7dde6;cursor:pointer;font-family:var(--font-ui);white-space:nowrap;}
+.npl-face:hover{border-color:#b9c2cf;color:#4b535f;}
+.npl-face.ok{background:#f2fbf4;color:#1f7a4d;border:1px solid #bfe3c6;border-style:solid;}
+.npl-face.no{background:#f6f7f9;color:#6b7280;border:1px solid #e0e4ea;border-style:solid;}
 .npl-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:9px;}
 .npl-empty{border:1px dashed #dfe4eb;border-radius:12px;background:#fcfcfd;padding:22px 16px;text-align:center;font-size:12.5px;color:#8a929e;line-height:1.8;}
 .npl-empty b{color:#555;}
@@ -25848,11 +29157,20 @@ function npLibEnsureStyle() {
 .npl-tag.own{background:var(--c-brand-soft,#fdf2f2);color:var(--c-brand-text,#b23b3b);border-color:var(--c-brand-line,#f0d9d9);}
 .npl-tag.inh{background:#f8fafc;color:#64748b;border-color:#e2e8f0;}
 .npl-tag.pick{cursor:pointer;}
+.npl-tag.tagbtn{font-family:inherit;cursor:pointer;}
+.npl-tag.wait{background:#fffaf0;color:#b45309;border-color:#f3ddb4;}
 .npl-tag.pick.on{background:var(--c-brand-soft,#fdf2f2);color:var(--c-brand-text,#b23b3b);border-color:var(--c-brand,#d94a4a);}
+.npl-catedit{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:7px;border-top:1px dashed #e6e9ef;}
+.npl-catedit-b{cursor:pointer;font-family:inherit;font-size:11px;line-height:1;padding:5px 8px;border-radius:999px;border:1px solid #dfe3ea;background:#fff;color:#555;}
+.npl-catedit-b:hover{border-color:var(--c-brand,#d94a4a);color:var(--c-brand-text,#b23b3b);}
+.npl-catedit-b.on{background:var(--c-brand,#d94a4a);border-color:var(--c-brand,#d94a4a);color:#fff;font-weight:600;}
+.npl-catbulk{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:8px 0 2px;padding:9px 11px;border:1px solid #f3ddb4;background:#fffaf0;border-radius:10px;font-size:12px;color:#7c5a14;}
+.npl-catbulk b{color:#5b4008;}
+.npl-catbulk .npl-catedit-b{background:#fff;}
 .npl-warn{display:inline-block;font-size:10px;line-height:1.5;padding:1px 6px;border-radius:5px;background:#fff7ed;color:#b45309;border:1px solid #fed7aa;}
 .npl-ok{display:inline-block;font-size:10px;line-height:1.5;padding:1px 6px;border-radius:5px;background:#ecfdf5;color:#166534;border:1px solid #bbf7d0;}
 .npl-pinbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;padding:9px 10px;border:1px solid var(--c-brand-line,#f0d9d9);border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 -6px 18px rgba(30,40,60,.07);font-size:12px;color:#555;backdrop-filter:blur(4px);}
-.npl-modal{position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.46);}
+.npl-modal{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.46);}
 .npl-sheet{width:min(760px,96vw);max-height:90vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:16px 18px;font-family:var(--font-ui);color:var(--ink);}
 .npl-sheet h3{font-size:15px;margin:0 0 4px;color:var(--ink);}
 .npl-note{font-size:11.5px;color:#8a929e;line-height:1.7;margin:2px 0 10px;}
@@ -25868,7 +29186,14 @@ function npLibEnsureStyle() {
 .npl-pickrow:hover{background:#f8fafc;}
 .npl-pickrow.off{opacity:.5;cursor:not-allowed;background:#f8f9fb;}
 .npl-pickrow input{margin-top:2px;}
+.npl-pickuses{display:inline-block;margin-left:6px;background:#eef4ff;color:#3b5ba9;border:1px solid #d6e2fb;border-radius:5px;font-size:10px;font-weight:700;padding:0 5px;vertical-align:1px;white-space:nowrap;}
+.npl-pickuses.zero{background:#f3f5f8;color:#8a929e;border-color:#e6eaf0;}
+.npl-pickfresh{display:inline-block;margin-left:6px;background:#fff3e0;color:#a16207;border:1px solid #f0dcb0;border-radius:5px;font-size:10px;font-weight:700;padding:0 5px;vertical-align:1px;white-space:nowrap;}
+.npl-badge.uses{background:#eef4ff;color:#3b5ba9;border-color:#d6e2fb;}
 .npl-pickbody{min-width:0;flex:1;}
+.npl-pickthumb{flex:none;width:96px;height:62px;border-radius:7px;background:linear-gradient(135deg,#eef1f5,#d7dde6);background-size:cover;background-position:center;border:1px solid #eef0f4;position:relative;overflow:hidden;}
+.npl-pickthumb .cat{position:absolute;left:4px;top:4px;font-size:9.5px;line-height:1.4;padding:1px 6px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;white-space:nowrap;}
+.npl-pickthumb .dur{position:absolute;right:4px;bottom:4px;font-size:10px;color:#fff;background:rgba(0,0,0,.6);padding:1px 5px;border-radius:4px;font-variant-numeric:tabular-nums;}
 .npl-pickname{font-size:12px;font-weight:700;color:var(--ink);line-height:1.5;}
 .npl-pickdesc{font-size:10.5px;color:#7b838e;line-height:1.55;margin-top:2px;}
 .npl-imphint{font-size:11px;color:#8a929e;line-height:1.6;margin-top:6px;}
@@ -25877,6 +29202,55 @@ function npLibEnsureStyle() {
 .npl-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .npl-tagpick{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;}
 .npl-fieldnote{font-size:10.5px;color:#9aa1ab;line-height:1.65;margin-top:5px;}
+.npl-packbox{border:1px solid #ecdfc3;background:linear-gradient(#fffdf8,#fff9ee);border-radius:12px;padding:10px 12px;margin:0 0 14px;}
+.npl-packhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#8a6d3b;margin-bottom:8px;}
+.npl-packhead b{font-size:13px;color:#7a5a1e;}
+.npl-packhead .lk{font-size:14px;}
+.npl-packhead>span:not(.lk){font-size:11px;color:#a08a5f;}
+.npl-packslots{display:flex;flex-direction:column;gap:6px;}
+.npl-packslot{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #efe6d3;border-radius:10px;padding:8px 11px;min-width:0;}
+.npl-packslot.empty{border-style:dashed;background:#fffdf8;}
+.npl-packslot .ic{flex:none;width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;color:#fff;}
+.npl-packslot .tx{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;line-height:1.5;}
+.npl-packslot .ty{flex:none;font-size:11.5px;color:#8a6d3b;font-weight:700;min-width:56px;}
+.npl-packslot .nm{font-size:12.5px;font-weight:700;color:#2f3540;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:46%;}
+.npl-packslot .miss{font-size:11px;color:#c0392b;}
+.npl-packslot .mt{font-size:10.5px;color:#9aa1ab;}
+.npl-packslot .acts{display:flex;gap:4px;flex:none;margin-left:auto;}
+.npl-packslot.add{border-style:dashed;justify-content:center;color:#8a6d3b;font-size:12px;font-weight:700;cursor:pointer;padding:7px 11px;}
+.npl-packslot.add:hover{background:#fffaf0;border-color:#dcc79a;}
+.npl-packadd{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.npl-packadd .npl-input{flex:1;min-width:160px;}
+.npl-packcnt{font-size:11px;color:#a08a5f;}
+.npl-daygroup{border:1px solid #e8eaf0;border-radius:10px;margin:8px 0;background:#fff;}
+.npl-dayhead{display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;user-select:none;border-radius:10px;font-size:12px;color:#4b535f;font-weight:700;}
+.npl-dayhead:hover{background:#fafbfd;}
+.npl-dayhead .car{font-size:9px;color:#9aa1ab;width:10px;}
+.npl-dayhead .d{font-size:12.5px;}
+.npl-dayhead .tag{font-size:10px;font-weight:700;color:#b45309;background:#fff3e0;border:1px solid #f5d7ae;border-radius:999px;padding:0 6px;}
+.npl-dayhead .n{font-size:11px;color:#9aa1ab;font-weight:400;margin-left:auto;}
+.npl-daybody{padding:0 11px 10px;}
+.npl-daybody .npl-libgrid{margin-top:0;}
+.npl-daygroup.closed .npl-dayhead{color:#8a929e;}
+.npl-dayhead.npl-photohead{cursor:default;}
+.npl-photorow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0 0;padding:8px 11px;border:1px solid #e8eaf0;border-radius:10px;background:#fafbfd;font-size:11.5px;color:#8a929e;}
+.npl-photorow b{color:#4b535f;font-size:12px;}
+.npl-pgswitch{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:#4b535f;cursor:pointer;}
+.npl-pgswitch.off{color:#b0b6be;}
+.npl-fixedchips{display:flex;flex-wrap:wrap;gap:6px;}
+.npl-fixedchip{display:inline-flex;align-items:center;gap:5px;border:1px solid #ecdfc3;background:#fffdf8;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:700;color:#8a6d3b;cursor:pointer;max-width:100%;}
+.npl-fixedchip.on{border-color:#d9b978;background:#fdf5e3;color:#7a5a1e;}
+.npl-fixedchip.miss{background:#fafafa;border-style:dashed;color:#a8a8a8;font-weight:400;}
+.npl-fixedchip .nm{font-weight:400;color:#9c8a6a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;}
+.npl-fixedchip input{accent-color:#c08a2e;}
+.npl-badge.fixed{background:#fdf5e3;color:#8a6516;border-color:#ecd9a8;}
+.npl-cand{display:flex;align-items:center;gap:9px;padding:8px 10px;margin:5px 0;border:1px solid #eef0f4;border-radius:9px;background:#fff;cursor:pointer;}
+.npl-cand:hover{border-color:#d8dde5;background:#fcfcfd;}
+.npl-cand .ic{flex:none;width:26px;height:26px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f6f7f9;font-size:13px;}
+.npl-cand .tx{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.45;}
+.npl-cand .nm{font-size:12px;font-weight:700;color:#2f3540;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.npl-cand .ds{font-size:10.5px;color:#8a929e;}
+.npl-cand .go{flex:none;font-size:11px;font-weight:700;color:var(--c-brand-text,#b23b3b);}
 .npl-previewvid{display:block;width:100%;max-height:52vh;border-radius:10px;background:#000;margin:0 auto;}
 .npl-chipblk{border:1px solid var(--line);border-radius:8px;padding:4px 6px 7px;background:#fbfcfd;}
 .npl-vision-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px;padding:8px 10px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:9px;font-size:11.5px;color:#1d4ed8;line-height:1.6;}
@@ -26042,6 +29416,67 @@ function npLibEnsureStyle() {
 .npl-folderrow.off{opacity:.5;cursor:not-allowed;background:#f8f9fb;}
 .npl-folderrow .nm{font-size:12px;font-weight:700;color:var(--ink);}
 .npl-folderrow .sub{font-size:10.5px;color:#8a929e;line-height:1.5;margin-top:2px;}
+.npl-pgbox{margin:10px 0 4px;border:1px solid #eef0f4;border-radius:12px;background:#fff;padding:11px 12px;}
+.npl-pgbox.ok{border-color:#d7ecdc;background:#fbfefc;}
+.npl-pgtop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.npl-pgtop .ttl{font-size:13px;font-weight:800;color:var(--ink);}
+.npl-pgtop .cnt{font-size:11.5px;color:#8a929e;}
+.npl-pgtop .cnt b{font-size:13px;color:#1f7a4d;}
+.npl-pgtop .cnt b.no{color:#b45309;}
+.npl-pgswitch{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:#4b5563;cursor:pointer;padding:4px 10px;border:1px solid #e4e8ee;border-radius:999px;background:#fff;}
+.npl-pgswitch input{width:13px;height:13px;margin:0;accent-color:var(--c-brand,#d94a4a);}
+.npl-pgswitch.off{opacity:.5;cursor:not-allowed;background:#f6f7f9;}
+.npl-pgnote{font-size:11px;color:#8a929e;line-height:1.6;margin:6px 0 0;}
+.npl-catrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px dashed #f0f2f6;}
+.npl-catrow.first{border-top:0;margin-top:4px;}
+.npl-pgmeta{flex:1 1 150px;min-width:0;}
+.npl-pgmeta .nm{font-size:12px;font-weight:700;color:var(--ink);}
+.npl-pgmeta .ds{font-size:10.5px;color:#8a929e;line-height:1.5;margin-top:1px;}
+.npl-catnum{flex:none;white-space:nowrap;font-size:11.5px;color:#8a929e;}
+.npl-catnum b{font-size:15px;color:#6b7280;margin-right:1px;}
+.npl-catnum.has b{color:#1f7a4d;}
+.npl-catnum .ph{font-size:10.5px;margin-left:4px;}
+.npl-catnum .zero{font-size:10.5px;color:#b45309;margin-left:5px;}
+.npl-catrow .npl-btn.sm{padding:4px 9px;font-size:11px;}
+.npl-catrow .npl-btn:disabled{opacity:.4;cursor:not-allowed;}
+.npl-pgadd{flex:none;}
+/* 📊 素材账：四个大类结账表 */
+.npl-lg-sum{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:9px 12px;margin:0 0 8px;border:1px solid var(--line,#eceef0);border-radius:9px;background:#fafbfc;font-size:12px;color:#5b6470;}
+.npl-lg-sum b{font-size:13.5px;color:#2f3742;}
+.npl-lg-sum .ok b{color:#1f7a4d;}
+.npl-lg-sum .warn b{color:#b45309;}
+.npl-lg-sub{font-size:10.5px;color:#98a1ad;}
+.npl-lg-hint{font-size:11.5px;color:#7a828e;line-height:1.6;margin:0 0 10px;padding:0 2px;}
+.npl-lg-case{font-size:12px;line-height:1.65;padding:9px 12px;margin:0 0 9px;border-radius:9px;border:1px solid #e3e7ec;background:#fafbfc;color:#4b535f;}
+.npl-lg-case.ok{border-color:#bfe3c6;background:#f2fbf4;color:#1f6b46;}
+.npl-lg-case.warn{border-color:#f3ddb4;background:#fffaf0;color:#8a5a12;}
+.npl-lg-case b{color:inherit;}
+.npl-lg-table{border:1px solid var(--line,#eceef0);border-radius:10px;overflow-x:auto;}
+.npl-lg-head,.npl-lg-row{display:grid;grid-template-columns:minmax(158px,1.15fr) 84px 66px minmax(168px,1fr) minmax(176px,1.25fr) 76px;gap:10px;align-items:center;padding:9px 12px;min-width:780px;}
+.npl-lg-head{background:#f5f7f9;font-size:11px;font-weight:700;color:#8a929e;}
+.npl-lg-row{border-top:1px solid #f0f2f6;font-size:12px;}
+.npl-lg-row:nth-child(odd){background:#fcfcfd;}
+.npl-lg-g b{display:block;font-size:13px;color:var(--ink);}
+.npl-lg-g i{font-style:normal;display:block;font-size:10.5px;color:#8a929e;line-height:1.5;margin-top:1px;}
+.npl-lg-g em{font-style:normal;display:block;font-size:9.5px;color:#aeb5bf;margin-top:2px;}
+.npl-lg-num{font-size:12.5px;color:#8a929e;white-space:nowrap;}
+.npl-lg-num b{font-size:16px;color:#4b535f;}
+.npl-lg-num i{font-style:normal;display:block;font-size:10.5px;margin-top:1px;}
+.npl-lg-num.done b{color:#1f7a4d;}
+.npl-lg-num.done i{color:#1f7a4d;}
+.npl-lg-num.seg b{font-size:13px;color:#5b6470;}
+.npl-lg-face{display:flex;gap:4px;flex-wrap:wrap;}
+.npl-lg-fch{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:20px;border:1px solid #e3e7ec;color:#6b7280;background:#fff;white-space:nowrap;}
+.npl-lg-fch.ok{color:#1f7a4d;border-color:#bfe3c6;background:#f2fbf4;}
+.npl-lg-fch.no{color:#7a828e;border-color:#e0e4ea;background:#f6f7f9;}
+.npl-lg-fch.ask{color:#b45309;border-color:#f3ddb4;background:#fffaf0;}
+.npl-lg-fch.zero{opacity:.42;}
+.npl-lg-used{min-width:0;display:flex;flex-wrap:wrap;gap:4px;align-items:center;}
+.npl-lg-note{font-size:11px;padding:2px 7px;border-radius:6px;background:#f3f5f8;color:#4b535f;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.npl-lg-more{font-size:10.5px;color:#8a929e;cursor:default;}
+.npl-lg-none{font-size:11px;color:#b3bac4;}
+.npl-lg-lock{flex:1 1 100%;font-size:10px;color:#b45309;}
+.npl-lg-go{text-align:right;}
 `;
   (document.head || document.documentElement).appendChild(st);
 }
@@ -26061,10 +29496,18 @@ function npLibFramesTimes(dur) {
 }
 function npLibVideosOf(colId) { return (_npLibCache.videos || []).filter(v => v && String(v.col) === String(colId)); }
 function npLibClipsOf(videoId) { return (_npLibCache.clips || []).filter(c => c && String(c.videoId) === String(videoId)); }
+/** 一条料归哪个大类：定过的听 mcat，没定过的按标签 + 原视频标签落四类；认不出返回 []
+ *  （界面显示「待分类」，不入挑段——npLibReady 要求这一类非空） */
 function npLibTagsAll(clip, video) {
-  const no = Array.isArray(clip && clip.noInherit) ? clip.noInherit : [];
-  const inh = ((video && video.tags) || []).filter(t => t && no.indexOf(t) < 0);
-  return npLibTags8([].concat((clip && clip.tags) || [], inh));
+  let k = '';
+  try { k = (typeof npMatCatOfClip === 'function') ? npMatCatOfClip(clip, video) : ''; } catch (_) { k = ''; }
+  const n = k ? npMatCatName(k) : '';
+  return n ? [n] : [];
+}
+/** 类名 → 类 id（写料时把大类一起落下，以后不靠标签再猜） */
+function npLibCatKey(name) {
+  const hit = (typeof npMatCatHit === 'function') ? npMatCatHit(name) : null;
+  return hit ? hit.k : '';
 }
 function npLibReady(clip, video) {
   return !!(clip && String(clip.name || '').trim() && String(clip.desc || '').trim() && npLibTagsAll(clip, video).length);
@@ -26072,28 +29515,21 @@ function npLibReady(clip, video) {
 function npLibGap(clip, video) {
   const miss = [];
   if (!String((clip && clip.name) || '').trim()) miss.push('名字');
-  if (!npLibTagsAll(clip, video).length) miss.push('标签');
+  if (!npLibTagsAll(clip, video).length) miss.push('大类');
   if (!String((clip && clip.desc) || '').trim()) miss.push('说明');
   return miss.join(' / ');
 }
+/** 没认过内容时的粗归：只看文件名 / 文件夹名里的字面，认不出就留空（待分类），不按行业猜、不硬塞 */
 function npLibInferTags(video, col) {
   const raw = [].concat((video && video.tags) || [], (video && video.name) || '', (col && col.name) || '', (col && col.brief) || '').join(' ');
-  const pool = npLibTagPool8();
   const rules = [
-    [/防水|闭水|刷墙|贴砖|水电|施工|制作|安装|木工|油工|批腻|铲墙/, '干活过程'],
-    [/前后|对比|改前|改后|翻新/, '前后对比'],
-    [/门店|工地|现场|空镜|进门|全屋|楼下|门口/, '现场/场景'],
-    [/证书|资质|奖|执照|备案|检测报告/, '资质/凭据'],
-    [/发货|物流|快递|送货|装车/, '现场/场景'],
-    [/客户|顾客|反馈|聊天|评价|好评|业主/, '客户反馈'],
-    [/师傅|工人|老板|本人|人物|人像|出镜/, '人物'],
-    [/瓷砖|板材|材料|产品|样品|型号/, '产品/材料'],
-    [/价格|优惠|报价|活动|避坑|注意|风险/, '其他'],
+    [/门头|招牌|到店|怎么走|路线|停车|电梯|进门|导航|导航到/, '到店指引'],
+    [/干活|施工|制作|安装|上课|教学|纠正|操作|打包|收拾|练习/, '现场'],
+    [/本人|自拍|出镜|人像|正面|背影|露脸/, '我本人'],
+    [/现场|场景|空镜|门店|教室|场地|环境|全景|门口|器材|墙角/, '场馆'],
   ];
-  const out = [];
-  rules.forEach(r => { if (r[0].test(raw) && pool.indexOf(r[1]) >= 0 && out.indexOf(r[1]) < 0) out.push(r[1]); });
-  if (!out.length) out.push(pool.indexOf('干活过程') >= 0 ? '干活过程' : pool[0]);
-  return out.slice(0, 2);
+  const hit = rules.find(r => r[0].test(raw));
+  return hit ? [hit[1]] : [];
 }
 function npLibTemplateMeta(video, col, index, seg) {
   const base = String((video && video.name) || '素材').replace(/\.[a-z0-9]+$/i, '').trim().slice(0, 20) || '素材';
@@ -26101,7 +29537,7 @@ function npLibTemplateMeta(video, col, index, seg) {
   return {
     name: base + '·' + n,
     tags: npLibInferTags(video, col),
-    desc: '第 ' + ((index || 0) + 1) + ' 段（' + npLibFmt(seg && seg.a) + '–' + npLibFmt(seg && seg.b) + '，' + Math.max(1, Math.round(((seg && seg.b) || 0) - ((seg && seg.a) || 0))) + ' 秒）。还没认内容——开通看图模型后能认出房间 / 动作 / 施工到哪一步。',
+    desc: '第 ' + ((index || 0) + 1) + ' 段（' + npLibFmt(seg && seg.a) + '–' + npLibFmt(seg && seg.b) + '，' + Math.max(1, Math.round(((seg && seg.b) || 0) - ((seg && seg.a) || 0))) + ' 秒）。还没认内容——开通看图模型后能认出画面里是谁 / 在哪 / 在做什么，并给一个大类。',
   };
 }
 function npLibOverlap(a1, b1, a2, b2) { return Number(a1) < Number(b2) - 0.05 && Number(b1) > Number(a2) + 0.05; }
@@ -26154,19 +29590,24 @@ function npLibLabelFor(video, col, seg, index, ed) {
   const key = Number(seg.a).toFixed(1) + '-' + Number(seg.b).toFixed(1);
   if (ed && ed.overrides && ed.overrides[key]) {
     const o = ed.overrides[key];
-    return { name: o.name, tags: (o.tags || []).slice(), desc: o.desc, ai: false, edited: true, kind: 'edited' };
+    const ot = (o.tags || []).slice();
+    return { name: o.name, tags: ot, mcat: String(o.mcat || npLibCatKey(ot[0]) || ''), desc: o.desc, ai: false, edited: true, kind: 'edited' };
   }
   const k = ed ? npLibKeyFor(ed, seg) : null;
   if (k) {
+    const kt = (k.tags || []).slice();
     return {
-      name: k.name, tags: (k.tags || []).slice(), desc: k.desc, ai: true, kind: 'key', keyT: Number(k.keyT) || 0,
+      name: k.name, tags: kt, mcat: String(k.mcat || npLibCatKey(kt[0]) || ''), desc: k.desc, ai: true, kind: 'key', keyT: Number(k.keyT) || 0,
       shifted: Math.abs((Number(k.a) || 0) - seg.a) >= 0.35 || Math.abs((Number(k.b) || 0) - seg.b) >= 0.35,
     };
   }
   const ai = npLibAiFor(video, seg);
-  if (ai) return { name: ai.name, tags: (ai.tags || []).slice(), desc: ai.desc, ai: true, kind: 'ai' };
+  if (ai) {
+    const at = (ai.tags || []).slice();
+    return { name: ai.name, tags: at, mcat: String(ai.mcat || npLibCatKey(at[0]) || ''), desc: ai.desc, ai: true, kind: 'ai' };
+  }
   const tpl = npLibTemplateMeta(video, col, index, seg);
-  return { name: tpl.name, tags: tpl.tags.slice(), desc: tpl.desc, ai: false, kind: 'tpl' };
+  return { name: tpl.name, tags: tpl.tags.slice(), mcat: npLibCatKey(tpl.tags[0]), desc: tpl.desc, ai: false, kind: 'tpl' };
 }
 function npLibTagPool() {
   return npLibTagPool8();
@@ -26300,13 +29741,18 @@ async function npLibRender(container) {
   const seq = ++_npLibRenderSeq;
   npLibEnsureStyle();
   npLibEnsureDelegation(container);
-  const [colsAll, videos, clips, notes, batches, grain] = await Promise.all([npCollectionsRead(), npVideosRead(), npClipsRead(), npNotesAll(), npBatchesRead(), npAIGrainRead()]);
+  const [colsAll, videos, clips, notes, batches, grain, photoOn] = await Promise.all([npCollectionsRead(), npVideosRead(), npClipsRead(), npNotesAll(), npBatchesRead(), npAIGrainRead(), npPhotoPostRead()]);
+  _npPhotoPost = !!photoOn;
   if (seq !== _npLibRenderSeq) return;
   _npAIGrain = npAIGrainDef(grain).k;
   const allCols = colsAll || [];
   const allVideos = videos || [];
+  await npLibMigratePackFolder(allCols);
   const oldCols = allCols.filter(c => c && !c.folder && (c.lib || allVideos.some(v => v && String(v.col) === String(c.id))));
-  _npLibCache = { cols: allCols, videos: allVideos, clips: clips || [], notes: notes || [], batches: batches || [] };
+  _npLibCache = { cols: allCols, videos: allVideos, clips: npLibCatLocalApply(clips), notes: notes || [], batches: batches || [],
+    useMap: npClipUseMap(notes || []) };
+  await npLibEnsurePackSlots();
+  _npLibCache.packSlots = await npPackSlotsRead();
   const st = npLibS();
   if (st.view === 'video') st.view = 'editor';
   if (st.view === 'editor') {
@@ -26319,7 +29765,7 @@ async function npLibRender(container) {
   }
   if (st.view === 'col' && !oldCols.some(c => String(c.id) === String(st.colId))) st.view = 'wall';
   if (st.view === 'batch' && !(batches || []).some(b => b && String(b.id) === String(st.batchId))) st.view = 'bench';
-  if (!['editor', 'col', 'wall', 'bench', 'batch', 'lib'].includes(st.view)) {
+  if (!['editor', 'col', 'wall', 'bench', 'batch', 'lib', 'ledger'].includes(st.view)) {
     st.view = st.surface === 'bench' ? 'bench' : 'lib';
   }
   // 只拆「这一签自己的」剪辑视图：切到另一签去看素材时，刀口和播放头要留着，回来原样接着切
@@ -26330,10 +29776,11 @@ async function npLibRender(container) {
   else if (st.view === 'bench') body = npBenchPage();
   else if (st.view === 'batch') body = npBenchBatchPage(st);
   else if (st.view === 'lib') body = npLibLibraryPage(st);
+  else if (st.view === 'ledger') body = npLibLedgerPage(st);
   else body = npLibWallPage(oldCols, allVideos, clips || []);
   const chrome = (st.view === 'wall' || st.view === 'col') ? npLibHeaderHtml() : '';
   const pin = _npLibCtx && st.surface !== 'bench'
-    ? '<div class="npl-pinbar"><span style="flex:1;min-width:160px;">挑好段回这篇继续做「大组装」——被这篇用着的段会先锁住，发完自动放开。</span>' +
+    ? '<div class="npl-pinbar"><span style="flex:1;min-width:160px;">挑好段回这篇写正文——AI 按画面说明写成引言／内容／到店三块，改完直接出片；用过的段也能再挑，只标「用过几次」；重切／删除才按占用拦。</span>' +
       '<button type="button" class="npl-btn sm" data-npl="ctx-pick">📥 挑段给这篇</button>' +
       '<button type="button" class="npl-btn sm primary" data-npl="ctx-back">✓ 备好了，回下一步</button></div>'
     : '';
@@ -26373,9 +29820,6 @@ function npLibCtxBarHtml(notes) {
 function npLibStatusBadge(col) {
   return '<span class="npl-badge ' + (col.status === '归档' ? '' : 'ok') + '">' + (col.status === '归档' ? '已归档' : '在用') + '</span>';
 }
-function npLibConsentBadge(col) {
-  return col.consent ? '<span class="npl-badge ok">✓ 业主同意宣传</span>' : '<span class="npl-badge warn">⚠️ 业主同意还没勾</span>';
-}
 function npLibThumbStyle(video) {
   return video && video.poster ? 'background-image:url(' + npArAttr(video.poster) + ');' : '';
 }
@@ -26401,7 +29845,7 @@ function npLibWallPage(cols, videos, clips) {
         '<div class="npl-col-name" title="' + npArAttr(c.name || '') + '">' + esc(c.name || '未命名集合') + '</div>' +
         '<div class="npl-meta">' + vs.length + ' 条原视频 · ' + ready + '/' + cs.length + ' 段备好</div>' +
       '</div>' +
-      '<div class="npl-badges">' + npLibStatusBadge(c) + npLibConsentBadge(c) + '</div>' +
+      '<div class="npl-badges">' + npLibStatusBadge(c) + '</div>' +
       '<div class="npl-actions">' +
         '<button type="button" class="npl-btn sm" data-npl="editcol" data-id="' + npArAttr(c.id) + '">✎ 改</button>' +
         '<button type="button" class="npl-btn sm" data-npl="togglecol" data-id="' + npArAttr(c.id) + '">' + (c.status === '归档' ? '恢复' : '归档') + '</button>' +
@@ -26458,17 +29902,17 @@ function npLibColPage(st) {
         '<div class="npl-title">' + esc(col.name || '未命名集合') + '</div>' +
         '<div class="npl-meta">' + esc(col.brief || '还没写这个工地/案例的背景——发案例时能补') + '</div>' +
       '</div>' +
-      npLibStatusBadge(col) + npLibConsentBadge(col) +
+      npLibStatusBadge(col) +
       (col.noVision ? '<span class="npl-badge warn" title="认内容时不把画面小图发出去">🚫 不传图片</span>' : '') +
       '<span style="flex:1;"></span>' +
       '<button type="button" class="npl-btn sm" data-npl="editcol" data-id="' + npArAttr(col.id) + '">✎ 改集合</button>' +
       '<button type="button" class="npl-btn sm ghost" data-npl="delcol" data-id="' + npArAttr(col.id) + '" title="删掉这个集合和里面的原视频 / 素材记录">✕ 删集合</button>' +
       '<button type="button" class="npl-btn primary sm" data-npl="import" data-col="' + npArAttr(col.id) + '">⬆ 导入原视频</button>' +
-      '<button type="button" class="npl-btn sm ' + (ready ? '' : 'dim') + '" data-npl="new-case" data-col="' + npArAttr(col.id) + '" title="' + npArAttr(ready ? '勾这个集合里备好的段，给一条新案例' : '这个集合还没有备好的段——先切段、把名字/标签/说明填好') + '">📤 发这条案例</button>' +
+      '<button type="button" class="npl-btn sm ' + (allClips.length ? '' : 'dim') + '" data-npl="new-case" data-col="' + npArAttr(col.id) + '" title="' + npArAttr(allClips.length ? '勾这个集合里的段，给一条新案例' : '这个集合还没有切好的段——先切几段') + '">📤 发这条案例</button>' +
     '</div>' +
     (vs.length ? '<div class="npl-vidgrid">' + cards + '</div>'
       : '<div class="npl-empty"><b>这个集合还没有原视频</b><br>点「⬆ 导入原视频」把手机拍的整条传进来（可一次选多条）。长视频进「✂ 切段」：本机先找建议切点，AI 认场景 / 动作给分段，你确认后一起入库。</div>') +
-    (allClips.length ? '<div class="npl-ed-head" style="margin-top:16px;"><div class="npl-ed-title" style="font-size:14px;">切好的段<span class="sub">' + allClips.length + ' 段 · ' + ready + ' 段备好——名字 / 标签 / 说明齐了才能发案例</span></div></div>' +
+    (allClips.length ? '<div class="npl-ed-head" style="margin-top:16px;"><div class="npl-ed-title" style="font-size:14px;">切好的段<span class="sub">' + allClips.length + ' 段 · ' + ready + ' 段备好——没填齐的也能挑，挑段时行上标「没备好」</span></div></div>' +
       '<div class="npl-cards">' + segCards + '</div>' : '') +
     '<div class="npl-foot-note">这个集合共 ' + vs.length + ' 条原视频、' + allClips.length + ' 段素材（' + ready + ' 段备好）。原视频只在本机；认内容时只发每段一张压缩小图，服务器不存。</div>';
 }
@@ -26488,10 +29932,14 @@ function npBenchPage() {
   const allVideosN = active.concat(done).reduce((n, b) => n + statMap[b.id].videos, 0) + legacy.length;
   const cutVideosN = active.concat(done).reduce((n, b) => n + statMap[b.id].cutVideos, 0);
   const leftVideosN = Math.max(0, allVideosN - cutVideosN);
+  const packDefs = npPackSlotDefs();
+  const fixedN = packDefs.filter(d => npPackSlotClipOf(d.cat)).length;
+  const dateFolders = folders.filter(f => !f.locked);
   const head = '<div class="npl-head">' +
       '<div class="npl-title">✂ 切片台</div>' +
-      '<span class="qhelp" tabindex="0" data-tip="拍完先放这里：一次导进一批原片（默认按今天起名，可改成顾客 / 工地），挑哪条要切、切完打名字 / 标签 / 说明；这批第一次入库时选一个素材文件夹，以后再切自动沿用。切好的散片就在这批底下摊开，跟「📚 素材库」是同一份，改哪儿两边都跟着变；原片留在这里能重切。">?</span>' +
+      '<span class="qhelp" tabindex="0" data-tip="拍完先放这里：一次导进一批原片，选这批是哪天拍的 / 生成的——当天的日期夹（11-12 这种）没有就自动建，切段直接进这一天，不再问放哪个文件夹。顶上「材料包」是锁死的固定料夹：我本人 / 现场 / 场馆 / 到店指引四段，还能自己加格；每篇案例都带，里面的段能换、包不能改名 / 删除。切好的散片在这批底下摊开，跟「📚 素材库」是同一份；原片留在这里能重切。">?</span>' +
       '<span style="flex:1;"></span>' +
+      '<button type="button" class="npl-btn sm" data-npl="bench-folders" title="日期夹按天自动建；这里只做改名 / 删除。材料包锁死，不能改名不能删">📁 文件夹</button>' +
       '<button type="button" class="npl-btn primary" data-npl="import-batch">⬆ 导入这一批</button>' +
     '</div>';
   const statline = '<div class="npl-statline" style="margin:0 0 10px;">' +
@@ -26499,13 +29947,14 @@ function npBenchPage() {
       (allVideosN ? (leftVideosN
         ? '<span>·</span><span>已切 <b>' + cutVideosN + '</b>/' + allVideosN + ' 条</span><span>·</span><span>待切 <b>' + leftVideosN + '</b> 条</span>'
         : '<span>·</span><span class="npl-cutok">✅ 全部切完</span>') : '') +
+      '<span>·</span><span>材料包 <b>' + fixedN + '</b>/' + packDefs.length + ' 格</span>' +
+      '<span>·</span><span>日期夹 <b>' + dateFolders.length + '</b> 个</span>' +
       '<span>·</span><span>进行中 <b>' + active.length + '</b> 批</span>' +
-      '<span>·</span><span>素材文件夹 <b>' + folders.length + '</b> 个</span>' +
       '<span>·</span><span>已备好 <b>' + readyN + '</b> 段</span>' +
-    '</div>';
+    '</div>' + npBenchPackHtml('bench');
   if (!batches.length && !legacy.length) {
     return head + statline +
-      '<div class="npl-empty"><b>还没有批次</b><br>点右上角「⬆ 导入这一批」：一次选多条，给这批起个名（默认今天，可改成顾客 / 工地）。<br>不选文件夹、不自动切——切第一段时再定整批放哪个文件夹。</div>' +
+      '<div class="npl-empty"><b>还没有批次</b><br>点右上角「⬆ 导入这一批」：一次选多条，选这批是哪天拍的——当天的日期夹自动建好，切段不用再选文件夹。<br>材料包那几格在顶上，点「放一段」从已有段里挑。</div>' +
       '<div class="npl-foot-note">老数据还在「📚 素材库」右上角的「🗄 旧数据」里，原样能看。</div>';
   }
   let body = '';
@@ -26521,6 +29970,98 @@ function npBenchPage() {
   return head + statline + body +
     '<div class="npl-foot-note">原视频只存在这台电脑的浏览器里，不上传。点开一批，底下就摊开这批已经切好的视频（和「📚 素材库」是同一份）；老数据还在「🗄 旧数据」里。</div>';
 }
+const NP_PACK_ICON = { me: '🙋', scene: '🎬', place: '🏠', door: '🚪' };
+const NP_PACK_COLOR = { me: '#E8413C', scene: '#2F7A45', place: '#3B62A8', door: '#B4611F' };
+function npBenchPackHtml(surface) {
+  const v = surface === 'lib' ? 'lib' : 'bench';
+  const defs = npPackSlotDefs();
+  const rows = defs.map(d => {
+    const c = npPackSlotClipOf(d.cat);
+    const icon = NP_PACK_ICON[d.cat] || '➕';
+    const color = NP_PACK_COLOR[d.cat] || '#8a6d3b';
+    if (!c) {
+      return '<div class="npl-packslot empty">' +
+        '<span class="ic" style="background:' + color + ';opacity:.42;">' + icon + '</span>' +
+        '<span class="tx"><span class="ty">' + esc(d.label) + '</span><span class="miss">' + (d.custom ? '还没放 · 放一段就每篇都带' : '还没放 · 成片会缺这段') + '</span><span class="mt">' + esc(d.hint) + '</span></span>' +
+        '<span class="acts"><button type="button" class="npl-btn sm" data-npl="pack-swap" data-cat="' + npArAttr(d.cat) + '">放一段</button></span>' +
+      '</div>';
+    }
+    const uses = (_npLibCache.useMap && _npLibCache.useMap[String(c.id)]) || 0;
+    return '<div class="npl-packslot">' +
+      '<span class="ic" style="background:' + color + ';">' + icon + '</span>' +
+      '<span class="tx"><span class="ty">' + esc(d.label) + '</span><span class="nm" title="' + npArAttr(c.name || '') + '">' + esc(c.name || '未命名') + '</span>' +
+        '<span class="mt">' + Math.max(1, Math.round(Number(c.dur) || 0)) + ' 秒 · 用过 ' + uses + ' 次</span></span>' +
+      '<span class="acts"><button type="button" class="npl-btn sm" data-npl="pack-swap" data-cat="' + npArAttr(d.cat) + '">换</button>' +
+        '<button type="button" class="npl-mini" data-npl="pack-clear" data-cat="' + npArAttr(d.cat) + '" title="移出（这段退回它那天）">×</button></span>' +
+    '</div>';
+  }).join('');
+  const filled = defs.filter(d => npPackSlotClipOf(d.cat)).length;
+  const form = _npPackAddOpen[v]
+    ? '<div class="npl-packadd"><input class="npl-input" maxlength="12" placeholder="这一格叫什么？比如「团队照 / 资质证明」">' +
+        '<button type="button" class="npl-btn primary sm" data-npl="pack-add-ok" data-surface="' + v + '">加进来</button>' +
+        '<button type="button" class="npl-btn sm" data-npl="pack-add-cancel" data-surface="' + v + '">取消</button></div>'
+    : '';
+  return '<div class="npl-packbox" data-packbox="' + v + '">' +
+    '<div class="npl-packhead"><span class="lk">🔒</span><b>材料包</b>' +
+      '<span>每篇案例都带这几格；能换、能移出，这个包改不了名也删不掉。</span><span style="flex:1;"></span>' +
+      '<span class="npl-packcnt">' + filled + '/' + defs.length + ' 格已放</span></div>' +
+    '<div class="npl-packslots">' + rows +
+      '<div class="npl-packslot add" data-npl="pack-add-open" data-surface="' + v + '">＋ 加一格</div>' +
+    '</div>' + form +
+  '</div>';
+}
+function npBenchSwapFixed(cat, rerender) {
+  const def = npPackSlotDefs().find(d => d.cat === cat) || { cat: cat, label: '这一格', hint: '' };
+  const pack = npLibPackFolder();
+  const vids = new Set((_npLibCache.videos || []).map(v => v && String(v.id)));
+  const wantCat = NP_SLOT_CAT[cat] || '';
+  const cands = (_npLibCache.clips || []).filter(c => {
+    if (!c || String(c.col) === String(pack && pack.id) || !c.videoId || !vids.has(String(c.videoId))) return false;
+    if (!wantCat) return true;
+    try { return npMatCatOfClip(c, npLibClipVideo(c)) === wantCat; } catch (_) { return false; }
+  }).sort((a, c) => {
+    const ua = (_npLibCache.useMap && _npLibCache.useMap[String(a.id)]) || 0;
+    const uc = (_npLibCache.useMap && _npLibCache.useMap[String(c.id)]) || 0;
+    return uc - ua;
+  });
+  const rows = cands.length
+    ? cands.map(c => {
+      const f = npLibFolderOf(c.col);
+      const uses = (_npLibCache.useMap && _npLibCache.useMap[String(c.id)]) || 0;
+      let catN = '';
+      try { catN = npMatCatName(npMatCatOfClip(c, npLibClipVideo(c)) || NP_MAT_WAIT); } catch (_) { catN = ''; }
+      return '<div class="npl-cand" data-pack-pick="' + npArAttr(c.id) + '">' +
+        '<span class="ic">' + (NP_PACK_ICON[cat] || '➕') + '</span>' +
+        '<span class="tx"><span class="nm">' + esc(c.name || '未命名') + '</span>' +
+          '<span class="ds">' + Math.max(1, Math.round(Number(c.dur) || 0)) + ' 秒 · 来自「' + esc(f ? f.name : '没归日期') + '」' + (catN ? ' · ' + esc(catN) : '') + ' · 用过 ' + uses + ' 次</span></span>' +
+        '<span class="go">选它</span></div>';
+    }).join('')
+    : '<div class="npl-fieldnote">案例库里还没有能放进来的段——先导入一批、切开再回来。</div>';
+  npLibModalOpen('<h3>为「' + esc(def.label) + '」放一段</h3>' +
+    '<div class="npl-note">从案例库里挑一段：放进来以后每篇都带，原来那天就少这一段；点 × 能退回去。</div>' +
+    '<div class="npl-label">从案例库里挑</div>' + rows +
+    '<div class="npl-label">或者传一段新的</div>' +
+    '<div class="npl-cand" id="nplPackNewVideo"><span class="ic">＋</span>' +
+      '<span class="tx"><span class="nm">传一段新视频并切好</span><span class="ds">切好会落在今天的日期夹，再回这里点「换」选它</span></span>' +
+      '<span class="go">去导入</span></div>' +
+    '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplPackSwapCancel">取消</button></div>', (sheet, m) => {
+    sheet.querySelector('#nplPackSwapCancel').addEventListener('click', () => m.close());
+    sheet.querySelector('#nplPackNewVideo').addEventListener('click', () => {
+      m.close();
+      npLibOpenBatchImport('');
+      try { toast('切好会进今天的日期夹——回材料包点「换」选它'); } catch (_) {}
+    });
+    sheet.querySelectorAll('[data-pack-pick]').forEach(row => {
+      row.addEventListener('click', async () => {
+        const id = String(row.getAttribute('data-pack-pick') || '');
+        const r = await npPackSetSlot(cat, id);
+        m.close();
+        try { toast(r.ok ? ('「' + def.label + '」放好了——以后每篇都带') : (r.why || '没换成'), r.ok ? '' : 'error'); } catch (_) {}
+        if (rerender) await rerender();
+      });
+    });
+  });
+}
 function npBenchBatchHeadHtml() {
   return '<div class="npl-brow head">' +
     '<div class="npl-cell"></div>' +
@@ -26532,6 +30073,14 @@ function npBenchBatchHeadHtml() {
     '<div class="npl-cell npl-bstatus">切完没</div>' +
     '<div class="npl-cell" style="text-align:right;">操作</div>' +
   '</div>';
+}
+function npBenchBatchDateLabel(b) {
+  const iso = String((b && b.date) || '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const p = iso.split('-');
+    return Number(p[1]) + '月' + Number(p[2]) + '日';
+  }
+  return npLibDateLabel((b && b.at) || 0);
 }
 function npBenchBatchRowHtml(b, stats) {
   const folder = b.folderId ? npLibFolderOf(b.folderId) : null;
@@ -26553,15 +30102,15 @@ function npBenchBatchRowHtml(b, stats) {
     '<div class="npl-cell"><div class="npl-bthumb" style="' + npLibThumbStyle(pv) + '"></div></div>' +
     '<div class="npl-cell"><div class="npl-bname"><span class="npl-bnm">' + esc(b.name || '未命名这一批') + '</span>' + narrowBadge +
       (b.noVision ? '<span class="npl-badge warn">🚫 不传图片</span>' : '') + '</div></div>' +
-    '<div class="npl-cell npl-bdate">' + esc(npLibDateLabel(at)) + '<span>' + esc(hm) + '</span></div>' +
+    '<div class="npl-cell npl-bdate">' + esc(npBenchBatchDateLabel(b)) + '<span>' + esc(hm) + '</span></div>' +
     '<div class="npl-cell npl-bmain"><b>' + stats.videos + '</b> 条 · 共 ' + npLibFmt(stats.dur) +
       '<span>' + (!stats.videos ? '还没原片' : (!stats.cutVideos ? '还没切' : (uncut ? ('已切 <b>' + stats.cutVideos + '</b>/' + stats.videos + ' 条') : ('已切完 <b>' + stats.videos + '</b>/' + stats.videos + ' 条')))) + '</span></div>' +
     '<div class="npl-cell npl-bmain npl-bcut' + (stats.ready ? ' npl-bready' : '') + '"><b>' + stats.clips + '</b> 段' +
       '<span>' + (stats.ready ? (stats.ready + ' 段备好') : '—') + '</span></div>' +
     '<div class="npl-cell npl-bfolder' + (folder ? '' : ' none') + '">' +
       (folder
-        ? esc(folder.name) + '<small>' + (folder.status === '归档' ? '已归档 · 先恢复' : '在用') + '</small>'
-        : '还没定<small>切第一段时选</small>') +
+        ? esc(folder.name) + '<small>' + (folder.status === '归档' ? '已归档 · 先恢复' : '自动归档') + '</small>'
+        : '还没定<small>切段时自动建</small>') +
     '</div>' +
     '<div class="npl-cell npl-bstatus">' + cutCell + '</div>' +
     '<div class="npl-cell npl-acts">' +
@@ -26669,7 +30218,7 @@ function npBenchBatchPage(st) {
   const flow = '<div class="npl-flowbar">' +
       '<span class="st' + (stats.videos ? ' on' : '') + '">① 导进来' + (stats.videos ? ' ✓' : '') + '</span><span class="arr">→</span>' +
       '<span class="st' + (stats.cutVideos ? ' on' : '') + '">② 挑片切段' + (stats.cutVideos ? ' ✓' : '') + '</span><span class="arr">→</span>' +
-      '<span class="st' + (folder ? ' on' : '') + '">③ 放文件夹' + (folder ? '：' + esc(folder.name) : '') + '</span><span class="arr">→</span>' +
+      '<span class="st' + (folder ? ' on' : '') + '">③ 自动归档' + (folder ? '：' + esc(folder.name) : '（切段时按日期建）') + '</span><span class="arr">→</span>' +
       '<span class="st' + (isDone ? ' on' : '') + '">④ 这批整理完' + (isDone ? ' ✓' : '') + '</span>' +
     '</div>';
   // 刚入完库：这一批顶上给一条出口，不硬跳；点「先不」就收起来
@@ -26688,7 +30237,7 @@ function npBenchBatchPage(st) {
           (isDone ? '<span class="npl-badge ok">已整理</span>' : '<span class="npl-badge on">进行中</span>') +
           (visionOff ? '<span class="npl-badge warn" title="认内容时不把画面小图发出去">🚫 不传图片</span>' : '') +
         '</div>' +
-        '<div class="npl-meta">' + esc(npLibDateLabel(b.at)) + ' · ' + stats.videos + ' 条原片 · 共 ' + npLibFmt(stats.dur) + ' · 已切 ' + stats.cutVideos + '/' + stats.videos + ' 条 · 切出 ' + stats.clips + ' 段（' + stats.ready + ' 段备好）</div>' +
+        '<div class="npl-meta">' + esc(npBenchBatchDateLabel(b)) + ' · ' + stats.videos + ' 条原片 · 共 ' + npLibFmt(stats.dur) + ' · 已切 ' + stats.cutVideos + '/' + stats.videos + ' 条 · 切出 ' + stats.clips + ' 段（' + stats.ready + ' 段备好）' + (folder ? (' → ' + esc(folder.name)) : '') + '</div>' +
       '</div>' +
       '<button type="button" class="npl-btn sm" data-npl="batch-more" data-id="' + npArAttr(b.id) + '">⬆ 导入更多</button>' +
       (folder ? '<button type="button" class="npl-btn sm" data-npl="edit-folder" data-id="' + npArAttr(folder.id) + '">📁 文件夹设置</button>' : '') +
@@ -26706,7 +30255,7 @@ function npBenchBatchPage(st) {
     (vs.length ? '<div class="npl-vidgrid">' + cards + '</div>'
       : '<div class="npl-empty"><b>这一批还没有原视频</b><br>点「⬆ 导入更多」把手机拍的整条传进来（一次可选多条）。</div>') +
     npLibBatchPileHtml(b.id, st, vs) +
-    '<div class="npl-foot-note">这批切出的段：' + stats.clips + ' 段 · ' + stats.ready + ' 段备好——上面这块和「📚 素材库」是同一份，改这儿那儿跟着变；素材库是历史所有，这儿只有本次导进来的。被笔记用着的段会锁住，发完自动放开。</div>';
+    '<div class="npl-foot-note">这批切出的段：' + stats.clips + ' 段 · ' + stats.ready + ' 段备好——上面这块和「📚 素材库」是同一份，改这儿那儿跟着变；素材库是历史所有，这儿只有本次导进来的。被笔记用过的段标「用过几次」，照样能再挑；重切／删除才按占用拦。</div>';
 }
 function npBenchLegacyRowHtml(v) {
   const col = (_npLibCache.cols || []).find(c => c && !c.folder && String(c.id) === String(v.col));
@@ -26769,7 +30318,12 @@ function npLibLibList(st, opts) {
   const q = String(st.q || '').trim().toLowerCase();
   const folder = String(st.libFolder || '');
   const tags = npLibTags8(st.tags);
+  const wantWait = tags.indexOf(NP_MAT_WAIT_NAME) >= 0;
+  const catTags = tags.filter(t => t !== NP_MAT_WAIT_NAME);
   return npLibAllClips().filter(c => {
+    const lockf = npLibFolderOf(c.col);
+    if (lockf && lockf.locked) return false;
+    if (st.faceAsk && (typeof npLedgerFaceOf === 'function' ? npLedgerFaceOf(c) : '')) return false;
     if (folder) {
       const f = npLibFolderOf(c.col);
       if (folder === '__none') { if (f) return false; }
@@ -26777,7 +30331,11 @@ function npLibLibList(st, opts) {
     }
     const all = npLibTagsAll(c, npLibClipVideo(c));
     if (st.noTag && all.length) return false;
-    if (o.ignoreTags !== true && tags.length && !tags.some(t => all.indexOf(t) >= 0)) return false;
+    if (o.ignoreTags !== true && tags.length) {
+      const hitCat = catTags.some(t => all.indexOf(t) >= 0);
+      const hitWait = wantWait && !all.length;
+      if (!hitCat && !hitWait) return false;
+    }
     if (q) {
       const hay = [String(c.name || ''), String(c.desc || ''), String(c.src || ''), all.join(' ')].join(' ').toLowerCase();
       if (hay.indexOf(q) < 0) return false;
@@ -26788,90 +30346,376 @@ function npLibLibList(st, opts) {
 function npLibTagChipsHtml(st) {
   const base = npLibLibList(st, { ignoreTags: true });
   const on = npLibTags8(st.tags);
-  return npLibTagPool8().map(t => {
-    const n = base.filter(c => npLibTagsAll(c, npLibClipVideo(c)).indexOf(t) >= 0).length;
+  return npLibTagPool8(true).map(t => {
+    const isWait = t === NP_MAT_WAIT_NAME;
+    const n = isWait
+      ? base.filter(c => !npLibTagsAll(c, npLibClipVideo(c)).length).length
+      : base.filter(c => npLibTagsAll(c, npLibClipVideo(c)).indexOf(t) >= 0).length;
     return '<button type="button" class="npl-tchip' + (on.indexOf(t) >= 0 ? ' on' : '') + (n ? '' : ' zero') + '" data-npl="lib-tag" data-tag="' + npArAttr(t) + '" title="按「' + npArAttr(t) + '」筛">' + esc(t) + '<b>' + n + '</b></button>';
   }).join('');
 }
-function npLibFolderSelHtml(st) {
-  const all = npLibAllClips();
-  const folders = npLibFolders().slice().sort((a, b) => {
-    const aa = a.status === '归档' ? 1 : 0, bb = b.status === '归档' ? 1 : 0;
-    if (aa !== bb) return aa - bb;
-    return (Number(b.at) || 0) - (Number(a.at) || 0);
-  });
-  const sel = String(st.libFolder || '');
-  const opt = (v, label) => '<option value="' + npArAttr(v) + '"' + (sel === String(v) ? ' selected' : '') + '>' + esc(label) + '</option>';
-  let html = '<select class="npl-input" id="nplLibFolder" style="max-width:240px;" title="按文件夹筛；文件夹只是筛子，不在这页摞卡片">' + opt('', '全部（' + all.length + '）');
-  folders.forEach(f => {
-    const n = all.filter(c => String(c.col) === String(f.id)).length;
-    html += opt(f.id, (f.name || '未命名文件夹') + '（' + n + '）' + (f.status === '归档' ? ' · 已归档' : ''));
-  });
-  const none = all.filter(c => !npLibFolderOf(c.col)).length;
-  if (none) html += opt('__none', '没归文件夹（' + none + '）');
-  return html + '</select>';
+/* ── 顶上「素材大类」：四个大类跟下面同一批料，按段数摆（2026-11-10 起不再按照片凑组数） ── */
+const NP_PHOTO_POST_KEY = 'np_photo_post';
+let _npPhotoPost = null;
+
+async function npPhotoPostRead() {
+  if (_npPhotoPost !== null) return _npPhotoPost;
+  try {
+    const d = await chrome.storage.local.get(NP_PHOTO_POST_KEY);
+    _npPhotoPost = !!d[NP_PHOTO_POST_KEY];
+  } catch (_) { _npPhotoPost = false; }
+  return _npPhotoPost;
 }
+async function npPhotoCtxRead() {
+  let clips = [];
+  try { clips = await npClipsRead(); } catch (_) { clips = []; }
+  if (typeof npPhotoCounts !== 'function' || typeof npPhotoGap !== 'function') return { clips: clips, counts: {}, gap: { rows: [], full: 0, total: 4, need: 1, pass: false }, on: false };
+  const counts = npPhotoCounts(clips, c => npLibTagsAll(c, null));
+  const gap = npPhotoGap(counts);
+  const on = (await npPhotoPostRead()) && gap.pass;   // 一张照片都没有＝这个功能先停着，传进来自己亮
+  return { clips: clips, counts: counts, gap: gap, on: on };
+}
+/** 补这组：多选照片 → 一张张小图入库，标签直接打这组那颗（按钮挂在「素材大类」每行） */
+async function npLibPhotoAdd(container, grpKey, files) {
+  const g = npPhotoGroup(grpKey);
+  if (!g) return;
+  const arr = Array.prototype.slice.call(files || []).filter(f => f && /^image\//.test(String(f.type || '')));
+  if (!arr.length) { if (typeof toast === 'function') toast('选的是图片文件吗？', 'error'); return; }
+  const clips = await npClipsRead();
+  /* 同一批＝同一次选文件传的：当作同一个场地、同一身衣服（挑图时按这批比；不额外花钱判断） */
+  const batch = 'pg' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  let ok = 0, bad = '';
+  for (const f of arr) {
+    try {
+      const t = await npAsThumb(f);
+      const id = npClipId();
+      clips.unshift({ id: id, imgOnly: true, col: '', src: String(f.name || '本机图'), stage: '', kb: null, vo: '', tags: [g.tags[0]], mcat: g.k, grp: batch, fo: [], thumb: t.thumb, w: t.w, h: t.h, ref: '', at: Date.now() });
+      await npAsPrevSave(id, t);
+      ok++;
+    } catch (e) { bad = String((e && e.message) || e); }
+  }
+  if (ok) await npClipsWrite(clips);
+  if (typeof toast === 'function') toast(ok ? ('「' + g.n + '」已存 ' + ok + ' 张' + (bad ? '，另 ' + bad : '') + '（原图你自己留好）') : ('这些没读进来：' + (bad || '不是图片')), ok ? '' : 'error');
+  await npLibRender(container);
+}
+async function npLibPhotoToggle(container, on) {
+  const ctx = await npPhotoCtxRead();
+  if (on && !ctx.gap.pass) {
+    if (typeof toast === 'function') toast('库里还没有照片，先传一张再开这个开关', 'error');
+    await npLibRender(container);
+    return;
+  }
+  _npPhotoPost = !!on;
+  try { await chrome.storage.local.set({ [NP_PHOTO_POST_KEY]: !!on }); } catch (_) {}
+  if (typeof toast === 'function') toast(on ? '已打开：讲故事的图文改贴你自己的照片' : '已关掉：图文还是出白底卡片图');
+  await npLibRender(container);
+}
+
 function npLibLibraryPage(st) {
   const all = npLibAllClips();
   st.picked = (Array.isArray(st.picked) ? st.picked : []).filter(id => all.some(c => String(c.id) === String(id)));
-  const filtering = !!(String(st.q || '').trim() || npLibTags8(st.tags).length || String(st.libFolder || '') || st.noTag);
+  const filtering = npLibFiltering(st);
+  const photos = all.filter(c => c && c.imgOnly).length;
+  const photoOn = !!_npPhotoPost && photos > 0;
   return '<div class="npl-head">' +
       '<div class="npl-title">📚 素材库</div>' +
-      '<span class="qhelp" tabindex="0" data-tip="所有切好的段和照片都平铺在这一页，不按文件夹摞。上面 8 颗标签用来筛：点一颗只看这一类，点几颗就是这几类都算；一条段可以同时挂好几颗。文件夹退到下拉里当筛子，不在这页摞卡片。老数据在右上角「🗄 旧数据」。">?</span>' +
+      '<span class="qhelp" tabindex="0" data-tip="上面「材料包」是每篇案例都带的那几段；下面「案例库」按天排，点开哪天摊开哪天的段。类名只做卡片上的标签和筛选：一条料只归一类，认错了点右上角「✏️ 改归类」，卡片上直接点类名改。照片单独一行。老数据在右上角「🗄 旧数据」。">?</span>' +
       '<span style="flex:1;"></span>' +
-      '<button type="button" class="npl-btn sm ghost" data-npl="lib-new-folder" title="建一个空文件夹；切一批时选它，这批以后自动往里放">＋ 文件夹</button>' +
+      '<button type="button" class="npl-btn sm' + (st.catEdit ? ' on' : '') + '" data-npl="cat-edit" title="打开后卡片上直接点类名就能改；筛出来或勾上的可以一键整批改">✏️ 改归类</button>' +
+      '<button type="button" class="npl-btn sm" data-npl="ledger" title="四个大类各有多少段、能不能露脸、被哪几篇用过">📊 素材账</button>' +
       '<button type="button" class="npl-btn ghost" data-npl="legacy" title="老集合 / 老素材原样能看">🗄 旧数据</button>' +
     '</div>' +
+    npBenchPackHtml('lib') +
+    '<div class="npl-sect"><div class="npl-sect-t">🗂 案例库<span>按天排：点开哪天摊开哪天的段</span></div></div>' +
     '<div class="npl-search">' +
       '<input class="npl-input" id="nplLibQ" maxlength="60" placeholder="搜名字 / 标签 / 说明" value="' + npArAttr(st.q || '') + '">' +
-      npLibFolderSelHtml(st) +
       '<button type="button" class="npl-btn sm' + (filtering ? '' : ' dim') + '" data-npl="lib-clear">清空筛选</button>' +
     '</div>' +
     '<div class="npl-tagpick npl-libtags" id="nplLibTags" style="margin:10px 0 4px;">' + npLibTagChipsHtml(st) + '</div>' +
     '<div id="nplLibBody">' + npLibLibraryBody(st) + '</div>' +
-    '<div class="npl-foot-note">原视频只在切片台；这里只有切好的段和照片（照片只存小图＋文件名）。被笔记用着的段会锁住，发完自动放开。</div>';
+    '<div class="npl-photorow"><span>🖼</span><b>照片' + (photos ? ' · ' + photos + ' 张' : '') + '</b>' +
+      '<span>手机里的图 / AI 补的画面，不归某一天，单独放这一行</span><span style="flex:1;"></span>' +
+      '<button type="button" class="npl-btn sm" data-npl="pg-add-any">＋ 照片</button>' +
+      '<label class="npl-pgswitch' + (photos ? '' : ' off') + '" title="' + (photos ? '讲故事的题会贴你自己的照片，不出白底卡片图' : '库里还没有照片——传一张，这个开关才会亮') + '">' +
+        '<input type="checkbox" id="nplPgSwitch"' + (photoOn ? ' checked' : '') + (photos ? '' : ' disabled') + '> 用素材发图文' +
+      '</label>' +
+    '</div>' +
+    '<div id="nplLibPhotos">' + npLibPhotoCardsHtml(st, all.filter(c => c && c.imgOnly)) + '</div>' +
+    '<div class="npl-foot-note">原视频只在切片台；这里只有切好的段和照片（照片只存小图＋文件名）。被笔记用过的段标「用过几次」，照样能再挑；重切／删除才按占用拦。</div>';
+}
+/* ── 📊 素材账（2026-11-09 四类改版）：四个大类各多少段——案例成片要「工作地点 + 引题 + 内容」三类各一段 ──
+   数法在 lib/asset-ledger.js 里（纯函数）；这一屏只管摆。 */
+function npLibLedgerPage(st) {
+  const head = '<div class="npl-head">' +
+      '<div class="npl-title">📊 素材账</div>' +
+      '<span class="qhelp" tabindex="0" data-tip="按四个大类结账：我本人 / 场馆 / 现场 / 到店指引。案例成片是视频，要「工作地点（场馆）＋引题（我本人）＋内容（现场）」三类各至少一段；到店指引是末段导流，缺了只提醒、不挡。照片只报数，不顶视频段的线。">?</span>' +
+      '<span style="flex:1;"></span>' +
+      '<button type="button" class="npl-btn sm ghost" data-npl="ledger-back">‹ 回素材库</button>' +
+    '</div>';
+  if (typeof npLedgerRows !== 'function') {
+    return head + '<div class="npl-empty">统计那块没加载上——把这个窗口重开一次。</div>';
+  }
+  const all = npLibAllClips();
+  const tagsOf = function (c) { return npLibTagsAll(c, npLibClipVideo(c)); };
+  const led = npLedgerRows({ clips: all, tagsOf: tagsOf, notes: _npLibCache.notes || [] });
+  const t = led.total;
+  const doorRow = led.rows.find(function (r) { return r.k === 'door'; }) || { segs: 0 };
+  const caseBar = '<div class="npl-lg-case ' + (led.caseOk ? 'ok' : 'warn') + '">' +
+      (led.caseOk
+        ? '✅ <b>案例能出片</b>：工作地点（场馆）、引题（我本人）、内容（现场）三类的视频段都齐了。'
+        : '🟡 <b>这类段暂时没有</b>：' + esc(led.caseMiss.join('、')) + ' —— 不挡出片，缺的那类会借你挑的别的画面顶上（想更贴题就去切片台补一段）。') +
+      (doorRow.segs ? '' : '<br>还没「到店指引」的段：到店那句先不接，片子直接收在正文（不挡发布）。') +
+    '</div>';
+  const summary = '<div class="npl-lg-sum">' +
+      '<span>视频段 <b>' + t.segs + '</b></span>' +
+      '<span>照片 <b>' + t.photos + '</b></span>' +
+      '<span>已归类 <b>' + t.items + '</b> 条' + (t.untagged ? '<span class="npl-lg-sub">（待分类 ' + t.untagged + '）</span>' : '') + '</span>' +
+      '<span class="ok">可露脸 <b>' + t.faceOk + '</b></span>' +
+      '<span class="warn">还没标 <b>' + t.faceAsk + '</b></span>' +
+      '<span>被 <b>' + t.usedNotes + '</b> 篇用过</span>' +
+    '</div>' +
+    '<div class="npl-lg-hint">露脸＝这条料能不能让人认出是你 / 你的客人。到卡片上点那颗「👤」，点一下换一档：还没标 → 可露脸 → 不露脸。' +
+      (t.faceAsk ? '<button type="button" class="npl-linkbtn" data-npl="ledger-unmarked">只看还没标的 ' + t.faceAsk + ' 条</button>' : '') +
+    '</div>';
+  if (!all.length) return head + caseBar + summary + '<div class="npl-empty"><b>素材库还是空的</b><br>去「✂ 切片台」导一条原视频切几段，或用「素材大类」里每行的「＋ 照片」传几张照片，这张账就有数了。</div>';
+  const rows = led.rows.map(function (r) {
+    const f = r.face;
+    const used = r.used.slice(0, 3).map(function (u) {
+      const tip = u.title + ' · ' + (u.status || '草稿') + (u.at ? (' · ' + new Date(u.at).toLocaleDateString()) : '');
+      return '<span class="npl-lg-note" title="' + npArAttr(tip) + '">' + esc(u.title) + '</span>';
+    }).join('');
+    const more = r.used.length > 3
+      ? '<span class="npl-lg-more" title="' + npArAttr(r.used.slice(3).map(function (u) { return u.title; }).join('\n')) + '">+' + (r.used.length - 3) + ' 篇</span>'
+      : '';
+    return '<div class="npl-lg-row">' +
+        '<div class="npl-lg-g"><b>' + esc(r.n) + '</b><i>' + esc(r.d || '') + '</i>' +
+          (r.beat ? '<em>拍进案例：' + esc(r.beat) + (r.gate ? '（必须有）' : '（末段，缺了只提醒）') + '</em>' : '') + '</div>' +
+        '<div class="npl-lg-num' + (r.full ? ' done' : '') + '"><b>' + r.segs + '</b><i>' + (r.full ? '有' : '缺') + '</i></div>' +
+        '<div class="npl-lg-num seg"><b>' + r.photos + '</b><i>张照片</i></div>' +
+        '<div class="npl-lg-face">' +
+          '<span class="npl-lg-fch ok' + (f.ok ? '' : ' zero') + '" title="标了可露脸">可 ' + f.ok + '</span>' +
+          '<span class="npl-lg-fch no' + (f.no ? '' : ' zero') + '" title="标了不露脸">不 ' + f.no + '</span>' +
+          '<span class="npl-lg-fch ask' + (f.ask ? '' : ' zero') + '" title="还没标——点了「👤」才算">没标 ' + f.ask + '</span>' +
+        '</div>' +
+        '<div class="npl-lg-used">' +
+          (used || '<span class="npl-lg-none">还没用过</span>') + more +
+          (r.locked.length ? '<div class="npl-lg-lock">🔒 现在占着 ' + r.locked.length + ' 条 · 《' + esc(r.locked[0].note) + '》' + (r.locked.length > 1 ? ' 等' : '') + '</div>' : '') +
+        '</div>' +
+        '<div class="npl-lg-go"><button type="button" class="npl-btn sm" data-npl="ledger-open" data-grp="' + npArAttr(r.k) + '">看这组</button></div>' +
+      '</div>';
+  }).join('');
+  return head + caseBar + summary +
+    '<div class="npl-lg-table">' +
+      '<div class="npl-lg-head"><span>大类</span><span>视频段</span><span>照片</span><span>能不能露脸</span><span>被哪几篇用过</span><span></span></div>' +
+      rows +
+    '</div>' +
+    (t.untagged ? '<div class="npl-foot-note">另有 ' + t.untagged + ' 条还没归类——到素材库点卡片上的类标签归一类（归不上就落「待分类」）。</div>' : '') +
+    '<div class="npl-foot-note">每一条料只归一个大类。案例只看视频段：三类各至少一段；照片只报数，不顶视频段的线。</div>';
+}
+
+/** 一段归到案例库哪一天：材料包里的不进案例库；有日期夹按日期；没日期按夹名；没夹单列 */
+function npLibDayGroupOf(c) {
+  const f = npLibFolderOf(c && c.col);
+  if (f && f.locked) return { key: '__pack', skip: true };
+  if (f) {
+    const iso = npLibFolderIsoOf(f);
+    if (iso) return { key: iso, iso: iso, label: npLibDateFolderName(iso), today: iso === npLibToday() };
+    return { key: 'f:' + f.id, label: String(f.name || '没起名') };
+  }
+  return { key: '__none', label: '没归日期', none: true };
+}
+function npLibDayGroups(st, segs) {
+  const map = new Map();
+  (segs || []).forEach(c => {
+    const g = npLibDayGroupOf(c);
+    if (g.skip) return;
+    let b = map.get(g.key);
+    if (!b) { b = { key: g.key, iso: g.iso || '', label: g.label, today: !!g.today, none: !!g.none, clips: [] }; map.set(g.key, b); }
+    b.clips.push(c);
+  });
+  const arr = [...map.values()];
+  arr.sort((a, b) => {
+    if (a.today !== b.today) return a.today ? -1 : 1;
+    if (a.iso && b.iso) return a.iso < b.iso ? 1 : -1;
+    if (a.iso !== b.iso) return a.iso ? -1 : 1;
+    if (a.none !== b.none) return a.none ? 1 : -1;
+    return String(a.label).localeCompare(String(b.label));
+  });
+  arr.forEach(g => {
+    g.closed = !!(st.dayClosed && st.dayClosed[g.key]);
+  });
+  return arr;
+}
+function npLibDayGroupsHtml(st, groups) {
+  return groups.map(g => {
+    const head = '<div class="npl-dayhead" data-npl="lib-day" data-key="' + npArAttr(g.key) + '" title="' + (g.closed ? '点开这一天的段' : '收起这一天的段') + '">' +
+      '<span class="car">' + (g.closed ? '▶' : '▼') + '</span><span class="d">' + esc(g.label) + '</span>' +
+      (g.today ? '<span class="tag">今天</span>' : '') +
+      '<span class="n">' + g.clips.length + ' 段</span></div>';
+    const body = g.closed ? '' :
+      '<div class="npl-daybody"><div class="npl-libgrid">' +
+        g.clips.map(c => npLibSegCardHtml(c, npLibClipVideo(c), { pick: true, catEdit: !!st.catEdit })).join('') +
+      '</div></div>';
+    return '<div class="npl-daygroup' + (g.closed ? ' closed' : '') + '">' + head + body + '</div>';
+  }).join('');
+}
+function npLibPhotoCardsHtml(st, photos) {
+  if (!photos || !photos.length) return '';
+  return '<div class="npl-daygroup"><div class="npl-dayhead npl-photohead"><span class="d">照片</span><span class="n">' + photos.length + ' 张</span></div>' +
+    '<div class="npl-daybody"><div class="npl-libgrid">' +
+      photos.map(c => npLibPhotoCardHtml(c, { catEdit: !!st.catEdit })).join('') +
+    '</div></div></div>';
 }
 function npLibLibraryBody(st) {
   const clips = npLibAllClips();
   const list = npLibLibList(st);
-  const filtering = !!(String(st.q || '').trim() || npLibTags8(st.tags).length || String(st.libFolder || '') || st.noTag);
-  const ready = list.filter(c => c.videoId && npLibReady(c, npLibClipVideo(c))).length;
-  const photos = list.filter(c => c.imgOnly).length;
-  const noTag = list.filter(c => !npLibTagsAll(c, npLibClipVideo(c)).length).length;
+  const filtering = npLibFiltering(st);
+  const segs = list.filter(c => !c.imgOnly);
+  const photos = clips.filter(c => c && c.imgOnly);
+  const ready = segs.filter(c => c.videoId && npLibReady(c, npLibClipVideo(c))).length;
+  const noTag = segs.filter(c => !npLibTagsAll(c, npLibClipVideo(c)).length).length;
   const stat = '<div class="npl-statline">' +
-      '<span>' + (filtering ? '筛出 ' : '共 ') + '<b>' + list.length + '</b> 段</span>' +
+      '<span>' + (filtering ? '筛出 ' : '共 ') + '<b>' + segs.length + '</b> 段</span>' +
       '<span>· <b>' + ready + '</b> 段备好</span>' +
-      (photos ? '<span>· <b>' + photos + '</b> 张照片</span>' : '') +
-      (noTag ? '<span>· <b>' + noTag + '</b> 段还没标签</span>' : '') +
-      (noTag ? '<button type="button" class="npl-linkbtn' + (st.noTag ? ' on' : '') + '" data-npl="lib-notag">' + (st.noTag ? '看全部' : '只看没标签的') + '</button>' : '') +
+      (photos.length ? '<span>· <b>' + photos.length + '</b> 张照片</span>' : '') +
+      (noTag ? '<span>· <b>' + noTag + '</b> 条待分类</span>' : '') +
+      (st.faceAsk ? '<span>· 只看<b>没标露脸的</b></span><button type="button" class="npl-linkbtn" data-npl="lib-clear">看全部</button>' : '') +
+      (noTag ? '<button type="button" class="npl-linkbtn' + (st.noTag ? ' on' : '') + '" data-npl="lib-notag">' + (st.noTag ? '看全部' : '只看待分类的') + '</button>' : '') +
       (filtering ? '<span style="flex:1;"></span><button type="button" class="npl-linkbtn" data-npl="lib-pick-all">全选筛出来的这 ' + list.length + ' 段</button>' : '') +
     '</div>';
   if (!clips.length) {
-    return stat + '<div class="npl-empty"><b>素材库还是空的</b><br>去「✂ 切片台」导一条原视频、切几段，段就会平铺到这里；手机相册里的图也能当照片用。</div>';
+    return stat + '<div class="npl-empty"><b>素材库还是空的</b><br>去「✂ 切片台」导一条原视频、切几段，段就会按天排到这里；手机相册里的图也能当照片用。</div>';
   }
-  const grid = list.length
-    ? '<div class="npl-libgrid">' + list.map(c => c.imgOnly
-        ? npLibPhotoCardHtml(c)
-        : npLibSegCardHtml(c, npLibClipVideo(c), { pick: true })).join('') + '</div>'
-    : '<div class="npl-empty"><b>没筛到</b><br>' + esc(st.noTag ? '已经没有没标签的了。' : '换个标签 / 换个词，或点「清空筛选」。') + '</div>';
-  return stat + grid + npLibLibSelBar(st);
+  const groups = npLibDayGroups(st, segs);
+  const dayHtml = groups.length
+    ? npLibDayGroupsHtml(st, groups)
+    : '<div class="npl-empty"><b>' + (filtering ? '没筛到' : '案例库今天还没有段') + '</b><br>' + (filtering
+        ? esc(st.noTag ? '已经没有没标签的了。' : (st.faceAsk ? '这一屏都已经标过露脸了。' : '换个标签 / 换个词，或点「清空筛选」。'))
+        : '去「✂ 切片台」导入一批、切开，段就按拍摄日期落进那一天。') + '</div>';
+  return stat + (st.catEdit ? npLibCatBulkHtml(st, list) : '') + dayHtml + npLibLibSelBar(st);
 }
 function npLibLibSelBar(st) {
   const picked = (Array.isArray(st.picked) ? st.picked : [])
     .map(id => npLibAllClips().find(c => String(c.id) === String(id))).filter(Boolean);
   if (!picked.length) return '';
-  const ready = picked.filter(c => c.videoId && npLibReady(c, npLibClipVideo(c)));
-  const bad = picked.length - ready.length;
+  /* 11-11：不要求名字/大类/说明齐——有原视频就能挑，没填齐的在挑段行上标「没备好」 */
+  const usable = picked.filter(c => c.videoId && npLibClipVideo(c));
+  const readyN = usable.filter(c => npLibReady(c, npLibClipVideo(c))).length;
+  const bad = picked.length - usable.length;
   return '<div class="npl-selbar">' +
-    '<span>已选 <b>' + picked.length + '</b> 段（' + ready.length + ' 段备好）</span>' +
-    (bad ? '<span class="npl-selnote">其中 ' + bad + ' 段还差名字 / 标签 / 说明，发案例时会跳过</span>' : '') +
+    '<span>已选 <b>' + picked.length + '</b> 段</span>' +
+    (bad ? '<span class="npl-selnote">其中 ' + bad + ' 段原视频不在了，挑段时会跳过</span>' : '') +
+    (usable.length > readyN ? '<span class="npl-selnote">' + (usable.length - readyN) + ' 段名字 / 说明没填齐——也能挑，挑段时标「没备好」</span>' : '') +
     '<span style="flex:1;"></span>' +
     '<button type="button" class="npl-btn sm ghost" data-npl="lib-sel-clear">清空选择</button>' +
-    '<button type="button" class="npl-btn primary" data-npl="lib-case"' + (ready.length ? '' : ' disabled') + '>📤 用选中的 ' + ready.length + ' 段发案例</button>' +
+    '<button type="button" class="npl-btn primary" data-npl="lib-case"' + (usable.length ? '' : ' disabled') + '>📤 用选中的 ' + usable.length + ' 段发案例</button>' +
   '</div>';
 }
-function npLibPhotoCardHtml(clip) {
-  const tags = npLibTagsAll(clip, null);
+/** 露脸那颗（素材账按它算）：照片和段都挂；点一下换一档，不弹窗 */
+function npLibFaceChipHtml(clip) {
+  const f = (typeof npLedgerFaceOf === 'function' ? npLedgerFaceOf(clip) : '');
+  const txt = f === 'ok' ? '👤 可露脸' : (f === 'no' ? '👤 不露脸' : '👤 待标');
+  const cls = f === 'ok' ? ' ok' : (f === 'no' ? ' no' : '');
+  const tip = f === 'ok' ? '点一下改成不露脸' : (f === 'no' ? '点一下清回待标' : '点一下标成可露脸（再点是不露脸）');
+  return '<button type="button" class="npl-face' + cls + '" data-npl="seg-face" data-id="' + npArAttr(clip && clip.id) + '" title="' + tip + '">' + txt + '</button>';
+}
+/** 卡片上的大类标签：点一下就能改归别类（AI 没认上的落「待分类」） */
+function npLibCatTagHtml(clip, video) {
+  const tags = npLibTagsAll(clip, video);
+  const own = npLibTags8(Array.isArray(clip && clip.tags) ? clip.tags : []);
+  if (!tags.length) {
+    return '<button type="button" class="npl-tag wait tagbtn" data-npl="seg-cat" data-id="' + npArAttr(clip && clip.id) + '" title="AI 没认上——点一下归一类">待分类 ✎</button>';
+  }
+  return tags.map(t => '<button type="button" class="npl-tag ' + (own.indexOf(t) >= 0 ? 'own' : 'inh') + ' tagbtn" data-npl="seg-cat" data-id="' + npArAttr(clip && clip.id) + '" title="点一下改归别类">' + (own.indexOf(t) >= 0 ? '' : '↳ ') + esc(t) + '</button>').join('');
+}
+function npLibCatPick(clipId) {
+  const clip = npLibAllClips().find(c => c && String(c.id) === String(clipId));
+  if (!clip) return;
+  const cur = npLibTagsAll(clip, npLibClipVideo(clip))[0] || '';
+  const chips = NP_MAT_CATS.map(x =>
+      '<button type="button" class="npl-tag pick' + (cur === x.n ? ' on' : '') + '" data-cat="' + npArAttr(x.k) + '">' + esc(x.n) +
+        '<b style="font-weight:400;opacity:.62;"> · ' + esc(x.beat) + '</b></button>').join('') +
+    '<button type="button" class="npl-tag pick' + (cur ? '' : ' on') + '" data-cat="wait">' + NP_MAT_WAIT_NAME + '</button>';
+  npLibModalOpen('<h3>归哪一类</h3>' +
+    '<div class="npl-note">一条料只归一类——这一类决定它进案例的哪一段：我本人＝引题，场馆＝工作地点，现场＝内容，到店指引＝末段导流。认不出就先放「待分类」，不进挑段。</div>' +
+    '<div class="npl-tagpick">' + chips + '</div>' +
+    '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplCatNo">先不改</button></div>', (sheet, m) => {
+    sheet.querySelector('#nplCatNo').addEventListener('click', () => m.close());
+    sheet.querySelectorAll('[data-cat]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const k = String(btn.getAttribute('data-cat') || '');
+        const r = await npLibCatSetMany([clipId], k);
+        m.close();
+        if (!r.ok) return;
+        const cc = npLibCurrentContainer();
+        if (cc) await npLibRender(cc);
+        try { toast('「' + String(clip.name || clip.src || '这条') + '」归到：' + r.name + (r.localOnly ? '（演示号只读，只在屏幕上）' : '')); } catch (_) {}
+      });
+    });
+  });
+}
+/** 一次把若干条料归到同一类；catKey 传 'wait' 就是清成待分类。写不进库（演示号只读）时只记在屏幕上 */
+async function npLibCatSetMany(ids, catKey) {
+  const want = String(catKey || '');
+  const name = want === NP_MAT_WAIT ? NP_MAT_WAIT_NAME : npMatCatName(want);
+  const set = new Set((Array.isArray(ids) ? ids : []).map(String));
+  if (!name || !set.size) return { ok: false, n: 0, name: name, localOnly: false };
+  const fresh = await npClipsRead();
+  let n = 0;
+  (fresh || []).forEach(t => {
+    if (!t || !set.has(String(t.id))) return;
+    if (want === NP_MAT_WAIT) { t.mcat = NP_MAT_WAIT; t.tags = []; }
+    else { t.mcat = want; t.tags = [name]; }
+    t.editedAt = Date.now();
+    n++;
+  });
+  if (!n) return { ok: false, n: 0, name: name, localOnly: false };
+  await npClipsWrite(fresh);
+  _npLibCache.clips = fresh;
+  const back = await npClipsRead();
+  const now = {};
+  (back || []).forEach(c => { if (c) now[String(c.id)] = String(c.mcat || ''); });
+  let lost = 0;
+  set.forEach(id => {
+    if (now[id] === want) delete _npLibCatLocal[id];
+    else { _npLibCatLocal[id] = want; lost++; }
+  });
+  return { ok: true, n: n, name: name, localOnly: lost > 0 };
+}
+/** 演示号只读的那批改动，重画时盖回去（真号库里已经写好了，这张表是空的） */
+function npLibCatLocalApply(list) {
+  const ids = Object.keys(_npLibCatLocal);
+  if (!ids.length || !Array.isArray(list)) return list || [];
+  return list.map(c => {
+    const m = c && _npLibCatLocal[String(c.id)];
+    if (!m) return c;
+    return m === NP_MAT_WAIT
+      ? Object.assign({}, c, { mcat: NP_MAT_WAIT, tags: [] })
+      : Object.assign({}, c, { mcat: m, tags: [npMatCatName(m)] });
+  });
+}
+function npLibFiltering(st) {
+  return !!(String(st.q || '').trim() || npLibTags8(st.tags).length || String(st.libFolder || '') || st.noTag || st.faceAsk);
+}
+/** 改归类模式下卡片底下那排：一条条点着改 */
+function npLibCatEditRowHtml(clip) {
+  const cur = npLibTagsAll(clip, npLibClipVideo(clip))[0] || NP_MAT_WAIT_NAME;
+  const b = (k, n) => '<button type="button" class="npl-catedit-b' + (cur === n ? ' on' : '') + '" data-npl="cat-one" data-id="' + npArAttr(clip && clip.id) + '" data-cat="' + npArAttr(k) + '">' + esc(n) + '</button>';
+  return '<div class="npl-catedit">' + NP_MAT_CATS.map(c => b(c.k, c.n)).join('') + b(NP_MAT_WAIT, NP_MAT_WAIT_NAME) + '</div>';
+}
+/** 改归类模式下顶上那条：勾上的优先，没勾就是筛出来的这一批 */
+function npLibCatBulkHtml(st, list) {
+  const picked = (Array.isArray(st.picked) ? st.picked : []).filter(id => npLibAllClips().some(c => String(c.id) === String(id)));
+  const n = picked.length || (npLibFiltering(st) ? list.length : 0);
+  const b = (k, nm) => '<button type="button" class="npl-catedit-b" data-npl="cat-bulk" data-cat="' + npArAttr(k) + '">' + esc(nm) + '</button>';
+  if (!n) {
+    return '<div class="npl-catbulk">改归类：一条就点卡片下面那排类名；要整批改，先在上面点一颗类标签筛一批（比如只看「我本人」），或勾选几段。</div>';
+  }
+  return '<div class="npl-catbulk"><span>' + (picked.length ? '勾选的' : '筛出来的') + ' <b>' + n + '</b> 段，一键全归到：</span>' +
+    NP_MAT_CATS.map(c => b(c.k, c.n)).join('') + b(NP_MAT_WAIT, NP_MAT_WAIT_NAME) +
+    '<span style="opacity:.75;">（照片也算在里面）</span></div>';
+}
+function npLibPhotoCardHtml(clip, opts) {
   const name = String(clip.name || clip.src || '照片');
   return '<div class="npl-segcard npl-photocard" data-id="' + npArAttr(clip.id) + '">' +
     '<div class="npl-card-thumb npl-photo-thumb" style="' + (clip.thumb ? 'background-image:url(' + npArAttr(clip.thumb) + ');background-size:cover;background-position:center;' : '') + '">' + (clip.thumb ? '' : '📷') + '</div>' +
@@ -26879,13 +30723,15 @@ function npLibPhotoCardHtml(clip) {
       '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">' +
         '<span class="npl-segname">' + esc(name) + '</span>' +
         '<span class="npl-badge on">📷 照片</span>' +
+        npLibFaceChipHtml(clip) +
       '</div>' +
       '<div class="npl-segmeta">只存小图 · 原图在本机</div>' +
-      '<div>' + (tags.length ? tags.map(t => '<span class="npl-tag own">' + esc(t) + '</span>').join('') : '<span class="npl-warn">还没标签</span>') + '</div>' +
+      '<div>' + npLibCatTagHtml(clip, null) + '</div>' +
       (clip.desc ? '<div class="npl-segdesc">' + esc(clip.desc) + '</div>' : '') +
       '<div class="npl-actions">' +
         '<button type="button" class="npl-btn sm" data-npl="seg-export" data-id="' + npArAttr(clip.id) + '" title="把这张小图存到电脑的「下载」里">💾 存下这张</button>' +
         '<button type="button" class="npl-btn sm danger" data-npl="seg-del" data-id="' + npArAttr(clip.id) + '">🗑 删</button></div>' +
+      ((opts && opts.catEdit) ? npLibCatEditRowHtml(clip) : '') +
     '</div>' +
   '</div>';
 }
@@ -27069,15 +30915,14 @@ function npLibEditorPage(st) {
 }
 function npLibSegCardHtml(clip, video, opts) {
   const o = opts || {};
-  const tags = npLibTagsAll(clip, video);
-  const own = npLibTags8(Array.isArray(clip.tags) ? clip.tags : []);
   const ready = npLibReady(clip, video);
   const gap = npLibGap(clip, video);
   const used = clip.usedBy ? String(clip.usedByName || '另一条笔记') : '';
+  const uses = (_npLibCache.useMap && _npLibCache.useMap[String(clip.id)]) || 0;
+  const isFixed = !!(clip.fixed || npPackSlotIds().has(String(clip.id)));
   const flat = !!o.pick;
   const picked = Array.isArray(npLibS().picked) ? npLibS().picked : [];
   const on = picked.indexOf(String(clip.id)) >= 0;
-  const tagHtml = tags.map(t => '<span class="npl-tag ' + (own.indexOf(t) >= 0 ? 'own' : 'inh') + '">' + (own.indexOf(t) >= 0 ? '' : '↳ ') + esc(t) + '</span>').join('');
   const keyT = Math.round((Number(clip.keyT) || 0) * 10) / 10;
   const mid = (keyT > 0 && keyT >= (Number(clip.a) || 0) && keyT < (Number(clip.b) || 0)) ? keyT : ((Number(clip.a) || 0) + (Number(clip.b) || 0)) / 2;
   return '<div class="npl-segcard' + (flat ? ' npl-libcard' : '') + (flat && on ? ' picked' : '') + (String(npLibS().segId) === String(clip.id) ? ' on' : '') + '" data-id="' + npArAttr(clip.id) + '">' +
@@ -27087,6 +30932,7 @@ function npLibSegCardHtml(clip, video, opts) {
       '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">' +
         '<span class="npl-segname">' + esc(clip.name || '还没起名') + '</span>' +
         (ready ? '<span class="npl-ok">✓ 备好</span>' : '<span class="npl-warn">还差 ' + esc(gap) + '</span>') +
+        npLibFaceChipHtml(clip) +
         (clip.editedAt
           ? '<span class="npl-badge on" title="名字 / 标签 / 说明是你自己改过的">✎ 改过</span>'
           : (clip.aiSrc === 'key'
@@ -27094,13 +30940,15 @@ function npLibSegCardHtml(clip, video, opts) {
             : ((clip.labelSrc === 'vision' || clip.aiSrc === 'vision' || clip.aiSrc === 'seg')
               ? '<span class="npl-badge on" title="AI 看过画面，按场景 / 动作认的名字/标签/说明（刀是谁切的跟这个无关）">✨ AI 认的</span>'
               : (clip.aiAt ? '<span class="npl-badge" title="还没开通看图模型时，按视频名和段位置填的；点「改一下」能改">按位置填的</span>' : '')))) +
-        (used ? '<span class="npl-badge lock" title="这条正被别的笔记用着——发完或撤下来才放开">🔒 被《' + esc(used) + '》占用</span>' : '') +
+        (isFixed ? '<span class="npl-badge fixed" title="材料包里的固定料——每篇案例自动带上；要换去切片台顶上「换」">🔒 固定料</span>' : '') +
+        '<span class="npl-badge uses" title="被多少篇笔记引用过（同一篇勾几遍只算 1 次）">用过 ' + uses + ' 次</span>' +
+        (used ? '<span class="npl-badge lock" title="重切 / 删除 / 重新分镜会被挡——挑段不受影响，同一段可以给多篇用">🔒 最近被《' + esc(used) + '》用着</span>' : '') +
       '</div>' +
       '<div class="npl-segmeta">' + npLibFmt(clip.a) + ' – ' + npLibFmt(clip.b) + ' · ' + Math.max(1, Math.round((Number(clip.b) || 0) - (Number(clip.a) || 0))) + ' 秒</div>' +
       (o.srcName
         ? '<div class="npl-segmeta">🎞 出自 <b style="color:#3c4452;">' + esc(o.srcName) + '</b>' + (o.srcOrdinal ? '<span style="color:#98a1ad;">（这条原片的第 ' + esc(o.srcOrdinal) + '）</span>' : '') + '</div>'
         : '') +
-      '<div>' + (tagHtml || '<span class="npl-warn">还没标签</span>') + '</div>' +
+      '<div>' + npLibCatTagHtml(clip, video) + '</div>' +
       '<div class="npl-segdesc">' + esc(clip.desc || '还没写说明——做案例时 AI 靠它写讲解') + '</div>' +
       '<div class="npl-actions">' +
         '<button type="button" class="npl-btn sm" data-npl="seg-play" data-id="' + npArAttr(clip.id) + '">▶ 试看</button>' +
@@ -27108,6 +30956,7 @@ function npLibSegCardHtml(clip, video, opts) {
         '<button type="button" class="npl-btn sm" data-npl="seg-export" data-id="' + npArAttr(clip.id) + '" title="把这条原视频（整条文件）存到电脑的「下载」里">💾 导出原片</button>' +
         '<button type="button" class="npl-btn sm danger" data-npl="seg-del" data-id="' + npArAttr(clip.id) + '">🗑 删这段</button>' +
       '</div>' +
+      (o.catEdit ? npLibCatEditRowHtml(clip) : '') +
     '</div>' +
   '</div>';
 }
@@ -27320,7 +31169,8 @@ function npLibBindTagPick(sheet) {
     box.addEventListener('click', (e) => {
       const b = e.target && e.target.closest ? e.target.closest('[data-tag]') : null;
       if (!b || !box.contains(b)) return;
-      b.classList.toggle('on');
+      /* 一条料只归一类：点哪颗就只亮哪颗 */
+      box.querySelectorAll('[data-tag]').forEach(el => el.classList.toggle('on', el === b));
     });
   });
 }
@@ -27330,7 +31180,10 @@ function npLibAddTagChip(sheet, tag, on) {
   const box = sheet.querySelector('.npl-tagpick');
   if (!box) return;
   const hit = Array.from(box.querySelectorAll('[data-tag]')).find(el => el.getAttribute('data-tag') === t);
-  if (hit) { if (on !== false) hit.classList.add('on'); return; }
+  if (hit) {
+    if (on !== false) { box.querySelectorAll('[data-tag]').forEach(el => el.classList.toggle('on', el === hit)); }
+    return;
+  }
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'npl-tag pick' + (on === false ? '' : ' on'); b.setAttribute('data-tag', t); b.textContent = t + ' ×';
   box.appendChild(b);
@@ -27369,6 +31222,7 @@ function npLibEnsureDelegation(container) {
       d: Number(el.getAttribute('data-d')),
       kind: String(el.getAttribute('data-kind') || ''),
       tag: String(el.getAttribute('data-tag') || ''),
+      cat: String(el.getAttribute('data-cat') || ''),
       g: String(el.getAttribute('data-g') || ''),
       tab: String(el.getAttribute('data-tab') || ''),
       ev: ev,
@@ -27395,9 +31249,19 @@ function npLibEnsureDelegation(container) {
   container.addEventListener('change', (ev) => {
     const el = ev.target;
     if (!el) return;
-    if (el.id === 'nplLibFolder') {
-      npLibS().libFolder = String(el.value || '');
-      npLibRender(container).catch(() => {});
+    if (el.id === 'nplPgSwitch') {
+      npLibPhotoToggle(container, !!el.checked).catch(e => {
+        try { toast('操作没成：' + ((e && e.message) || e), 'error'); } catch (_) {}
+      });
+      return;
+    }
+    if (el.hasAttribute && el.hasAttribute('data-npl-photo')) {
+      const grp = String(el.getAttribute('data-npl-photo') || '');
+      const fl = Array.prototype.slice.call(el.files || []);
+      try { el.value = ''; } catch (_) {}
+      if (grp && fl.length) npLibPhotoAdd(container, grp, fl).catch(e => {
+        try { toast('操作没成：' + ((e && e.message) || e), 'error'); } catch (_) {}
+      });
       return;
     }
     if (el.hasAttribute && el.hasAttribute('data-npl-pick')) {
@@ -27442,6 +31306,61 @@ async function npLibAction(container, act, info) {
     case 'import-batch':
       await npLibOpenBatchImport('');
       return;
+    case 'bench-folders':
+      npBenchFolderManager(rerender);
+      return;
+    case 'pack-swap':
+      npBenchSwapFixed(info.cat, rerender);
+      return;
+    case 'pack-add-open':
+      _npPackAddOpen[info.surface === 'lib' ? 'lib' : 'bench'] = true;
+      await rerender();
+      return;
+    case 'pack-add-cancel':
+      _npPackAddOpen[info.surface === 'lib' ? 'lib' : 'bench'] = false;
+      await rerender();
+      return;
+    case 'pack-add-ok': {
+      const surface = info.surface === 'lib' ? 'lib' : 'bench';
+      const box = container.querySelector('[data-packbox="' + surface + '"]');
+      const input = box && box.querySelector('.npl-packadd .npl-input');
+      const label = String((input && input.value) || '').trim().slice(0, 12);
+      if (!label) {
+        try { toast('先给这一格起个名，比如「团队照」', 'error'); } catch (_) {}
+        if (input) input.focus();
+        return;
+      }
+      if (npPackSlotDefs().some(d => d.label === label)) {
+        try { toast('已经有「' + label + '」这一格了', 'error'); } catch (_) {}
+        if (input) input.focus();
+        return;
+      }
+      const slots = await npPackSlotsRead();
+      const extra = Array.isArray(slots.extra) ? slots.extra.slice() : [];
+      extra.push({ key: 'x' + Date.now().toString(36), label: label });
+      slots.extra = extra;
+      await npPackSlotsWrite(slots);
+      _npPackAddOpen[surface] = false;
+      try { toast('加了一格「' + label + '」——点「放一段」给它选段', ''); } catch (_) {}
+      await rerender();
+      return;
+    }
+    case 'lib-day': {
+      const key = String((info.el && info.el.getAttribute('data-key')) || '');
+      if (!key) return;
+      if (!st.dayClosed || typeof st.dayClosed !== 'object') st.dayClosed = {};
+      st.dayClosed[key] = !st.dayClosed[key];
+      await rerender();
+      return;
+    }
+    case 'pack-clear': {
+      const cat = String(info.cat || '');
+      if (!cat) return;
+      await npPackClearSlot(cat);
+      try { toast('已移出固定料——「' + ((npPackSlotDefs().find(d => d.cat === cat) || {}).label || '') + '」空着，案例会缺这一段', 'error'); } catch (_) {}
+      await rerender();
+      return;
+    }
     case 'batch-more':
       await npLibOpenBatchImport(info.id);
       return;
@@ -27471,16 +31390,121 @@ async function npLibAction(container, act, info) {
       st.view = 'lib'; st.folderId = ''; st.videoId = ''; st.segId = '';
       await rerender();
       return;
-    case 'lib-new-folder':
-      npLibOpenFolderEditor('');
+    case 'ledger':
+      st.view = 'ledger';
+      await rerender();
       return;
+    case 'ledger-back':
+      st.view = 'lib';
+      await rerender();
+      return;
+    case 'ledger-open': {
+      // 点「看这组」＝回素材库、按这一类的标签筛；待分类单独按「还没归类」筛
+      const key = String((info.el && info.el.getAttribute('data-grp')) || '');
+      st.view = 'lib';
+      st.q = ''; st.libFolder = ''; st.noTag = false; st.faceAsk = false;
+      if (key === NP_MAT_WAIT) {
+        st.tags = [NP_MAT_WAIT_NAME];
+      } else {
+        const g = npPhotoGroup(key);
+        if (!g) return;
+        st.tags = (g.tags || []).slice(0, 1);
+      }
+      await rerender();
+      return;
+    }
+    case 'ledger-unmarked':
+      st.view = 'lib';
+      st.faceAsk = true;
+      st.tags = []; st.q = ''; st.libFolder = ''; st.noTag = false;
+      await rerender();
+      return;
+    case 'seg-cat': {
+      npLibCatPick(String(info.id || ''));
+      return;
+    }
+    case 'cat-edit':
+      st.catEdit = !st.catEdit;
+      await rerender();
+      return;
+    case 'cat-one': {
+      const id = String(info.id || '');
+      const k = String((info.el && info.el.getAttribute('data-cat')) || '');
+      const r = await npLibCatSetMany([id], k);
+      if (!r.ok) { try { toast('这条在库里找不到了', 'error'); } catch (_) {} return; }
+      try { toast('已归到：' + r.name + (r.localOnly ? '（演示号只读，只在屏幕上）' : '')); } catch (_) {}
+      await rerender();
+      return;
+    }
+    case 'cat-bulk': {
+      const k = String((info.el && info.el.getAttribute('data-cat')) || '');
+      const picked = (Array.isArray(st.picked) ? st.picked : []).filter(id => npLibAllClips().some(c => String(c.id) === String(id)));
+      const ids = picked.length ? picked : (npLibFiltering(st) ? npLibLibList(st).map(c => String(c.id)) : []);
+      if (!ids.length) { try { toast('先勾几段，或点一颗类标签筛一批', 'error'); } catch (_) {} return; }
+      const r = await npLibCatSetMany(ids, k);
+      if (!r.ok) { try { toast('这批没找着，刷新一下再试', 'error'); } catch (_) {} return; }
+      st.picked = [];
+      st.tags = [];
+      try { toast('这 ' + r.n + ' 段都归到：' + r.name + (r.localOnly ? '（演示号只读，只在屏幕上）' : '')); } catch (_) {}
+      await rerender();
+      return;
+    }
+    case 'seg-face': {
+      // 露脸标记：点一下换一档（还没标 → 可露脸 → 不露脸），照片和视频段都用这一颗
+      const id = String(info.id || '');
+      if (!id) return;
+      if (typeof npLedgerFaceNext !== 'function' || typeof NPL_FACE_TEXT === 'undefined') {
+        try { toast('露脸标记那块没加载上——把这个窗口重开一次', 'error'); } catch (_) {}
+        return;
+      }
+      const clips = await npClipsRead();
+      const c = clips.find(x => x && String(x.id) === id);
+      if (!c) { try { toast('这条在库里找不到了', 'error'); } catch (_) {} return; }
+      c.face = npLedgerFaceNext(c.face);
+      await npClipsWrite(clips);
+      const cached = (_npLibCache.clips || []).find(x => x && String(x.id) === id);
+      if (cached) cached.face = c.face;
+      try { toast('「' + String(c.name || c.src || '这条') + '」标成：' + (NPL_FACE_TEXT[c.face || 'ask'])); } catch (_) {}
+      await rerender();
+      return;
+    }
     case 'edit-folder':
       npLibOpenFolderEditor(info.id);
       return;
     case 'lib-clear':
-      st.q = ''; st.tags = []; st.libFolder = ''; st.noTag = false;
+      st.q = ''; st.tags = []; st.libFolder = ''; st.noTag = false; st.faceAsk = false;
       await rerender();
       return;
+    case 'pg-add-any': {
+      // 「＋ 照片」：先问归哪一类，再开多选（照片不归某一天，归到四类里的一类）
+      const chips = NP_MAT_CATS.map(x =>
+        '<button type="button" class="npl-tag pick" data-cat="' + npArAttr(x.k) + '">' + esc(x.n) +
+          '<b style="font-weight:400;opacity:.62;"> · ' + esc(x.beat) + '</b></button>').join('');
+      npLibModalOpen('<h3>照片归哪一类</h3>' +
+        '<div class="npl-note">手机里的图 / AI 补的画面，传到哪一类就标哪一类；归了类才能拿来发文。</div>' +
+        '<div class="npl-tagpick">' + chips + '</div>' +
+        '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplPgAddNo">先不传</button></div>', (sheet, m) => {
+        sheet.querySelector('#nplPgAddNo').addEventListener('click', () => m.close());
+        sheet.querySelectorAll('[data-cat]').forEach(btn => btn.addEventListener('click', () => {
+          const k = String(btn.getAttribute('data-cat') || '');
+          m.close();
+          if (!k) return;
+          const inp = document.createElement('input');
+          inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+          inp.style.display = 'none';
+          document.body.appendChild(inp);
+          inp.addEventListener('change', () => {
+            const fl = Array.prototype.slice.call(inp.files || []);
+            try { inp.parentNode && inp.parentNode.removeChild(inp); } catch (_) {}
+            if (fl.length) npLibPhotoAdd(container, k, fl).catch(e => {
+              try { toast('操作没成：' + ((e && e.message) || e), 'error'); } catch (_) {}
+            });
+          });
+          inp.click();
+        }));
+      });
+      return;
+    }
     case 'lib-notag':
       st.noTag = !st.noTag;
       await rerender();
@@ -27506,9 +31530,9 @@ async function npLibAction(container, act, info) {
     case 'lib-case': {
       const ids = (Array.isArray(st.picked) ? st.picked : []).filter(id => {
         const c = npLibAllClips().find(x => String(x.id) === String(id));
-        return !!(c && c.videoId && npLibReady(c, npLibClipVideo(c)));
+        return !!(c && c.videoId && npLibClipVideo(c));
       });
-      if (!ids.length) { try { toast('选中的段还没备好——先补名字 / 标签 / 说明', 'error'); } catch (_) {} return; }
+      if (!ids.length) { try { toast('选中的段原视频都不在了——刷新后再选', 'error'); } catch (_) {} return; }
       await npLibOpenPicker({ clipIds: ids });
       return;
     }
@@ -27704,7 +31728,6 @@ function npLibOpenCollectionEditor(colId) {
   const isNew = !col;
   const name = col ? String(col.name || '') : '';
   const brief = col ? String(col.brief || '') : '';
-  const consent = !!(col && col.consent);
   const noVision = !!(col && col.noVision);
   const status = col && col.status === '归档' ? '归档' : '在用';
   npLibModalOpen('<h3>' + (isNew ? '＋ 新建工地/案例' : '✎ 改集合') + '</h3>' +
@@ -27716,9 +31739,7 @@ function npLibOpenCollectionEditor(colId) {
       '<option value="在用"' + (status === '在用' ? ' selected' : '') + '>在用</option>' +
       '<option value="归档"' + (status === '归档' ? ' selected' : '') + '>归档</option>' +
     '</select>' +
-    '<label style="display:flex;gap:7px;align-items:center;font-size:12px;margin-top:12px;color:#555;"><input type="checkbox" id="nplColConsent"' + (consent ? ' checked' : '') + '> 业主同意用于宣传</label>' +
-    '<div class="npl-fieldnote">没勾的集合，发案例前会提醒一句，不拦着。</div>' +
-    '<label style="display:flex;gap:7px;align-items:center;font-size:12px;margin-top:10px;color:#555;"><input type="checkbox" id="nplColNoVision"' + (noVision ? ' checked' : '') + '> 这个集合不传图片给 AI</label>' +
+    '<label style="display:flex;gap:7px;align-items:center;font-size:12px;margin-top:12px;color:#555;"><input type="checkbox" id="nplColNoVision"' + (noVision ? ' checked' : '') + '> 这个集合不传图片给 AI</label>' +
     '<div class="npl-fieldnote">勾上后切段照常（本机找建议切点），但不把画面小图发出去认内容；段名和说明自己填，随时能改。</div>' +
     '<div class="npl-err" id="nplColErr"></div>' +
     '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplColCancel">取消</button>' +
@@ -27730,14 +31751,13 @@ function npLibOpenCollectionEditor(colId) {
       if (!nm) { err.textContent = '先给这个集合起个名字。'; return; }
       const br = String(sheet.querySelector('#nplColBrief').value || '').trim().slice(0, 120);
       const stt = sheet.querySelector('#nplColStatus').value === '归档' ? '归档' : '在用';
-      const cst = !!sheet.querySelector('#nplColConsent').checked;
       const nv = !!sheet.querySelector('#nplColNoVision').checked;
       const cols = await npCollectionsRead();
       const hit = cols.find(c => c && String(c.id) === id);
       if (hit) {
-        hit.name = nm; hit.brief = br; hit.consent = cst; hit.status = stt; hit.lib = true; hit.noVision = nv;
+        hit.name = nm; hit.brief = br; hit.status = stt; hit.lib = true; hit.noVision = nv;
       } else {
-        cols.unshift({ id: npCollectionId(), name: nm, brief: br, consent: cst, status: stt, lib: true, noVision: nv, at: Date.now() });
+        cols.unshift({ id: npCollectionId(), name: nm, brief: br, status: stt, lib: true, noVision: nv, at: Date.now() });
       }
       await npCollectionsWrite(cols);
       const newId = hit ? id : String(cols[0].id);
@@ -27803,13 +31823,18 @@ async function npLibOpenBatchImport(batchId) {
   const batch = bid ? (batches.find(b => b && String(b.id) === bid) || null) : null;
   if (bid && !batch) { try { toast('这一批找不到了', 'error'); } catch (_) {} return; }
   const isNew = !batch;
+  const todayIso = npLibToday();
+  const defBatchName = isNew ? (npLibDateFolderName(todayIso) + ' 这批') : '';
   npLibModalOpen('<h3>' + (isNew ? '⬆ 导入这一批' : '⬆ 导入更多原片') + '</h3>' +
     '<div class="npl-note">' + (isNew
-      ? '一次选多条，都归到这一批。这里不选文件夹——第一次切段时定一个，这批以后自动沿用；也不自动切，切几段由你定。'
-      : '继续往「' + esc(batch.name || '这一批') + '」里加原片；文件夹和已经切好的段都不动。') + '原视频只存在这台电脑的浏览器里，不上传。</div>' +
+      ? '一次选多条，都归到这一批。选这批是哪天拍的 / 生成的——当天日期夹（11-12 这种）没有就自动建，切段直接进这一天，不再问放哪个文件夹；也不自动切，切几段由你定。'
+      : '继续往「' + esc(batch.name || '这一批') + '」里加原片；日期夹和已经切好的段都不动。') + '原视频只存在这台电脑的浏览器里，不上传。</div>' +
     (isNew
-      ? '<div class="npl-label">这批叫什么（默认今天，可改成顾客 / 工地）</div>' +
-        '<input class="npl-input" id="nplBatName" maxlength="40" value="' + npArAttr(npLibToday()) + '" placeholder="例：阳光小区 3-2-601">'
+      ? '<div class="npl-label">这批是哪天拍的 / 生成的</div>' +
+        '<input class="npl-input" id="nplBatDate" type="date" value="' + npArAttr(todayIso) + '" style="width:180px;">' +
+        '<div class="npl-fieldnote" id="nplBatDateHint"></div>' +
+        '<div class="npl-label">这批叫什么（可空着，默认按日期起名）</div>' +
+        '<input class="npl-input" id="nplBatName" maxlength="40" value="' + npArAttr(defBatchName) + '" placeholder="例：王姐家 · 老房翻新">'
       : '') +
     '<div class="npl-label">原视频文件（可多选）</div>' +
     '<input type="file" id="nplBatFile" accept="video/*,.mp4,.mov,.m4v,.webm" multiple style="font-size:12px;width:100%;">' +
@@ -27828,6 +31853,16 @@ async function npLibOpenBatchImport(batchId) {
     const meta = sheet.querySelector('#nplBatMeta');
     const listEl = sheet.querySelector('#nplBatList');
     const nameInp = sheet.querySelector('#nplBatName');
+    const dateInp = sheet.querySelector('#nplBatDate');
+    const paintTarget = () => {
+      const hint = sheet.querySelector('#nplBatDateHint');
+      if (!hint) return;
+      const day = String((dateInp || {}).value || '') || npLibToday();
+      const nm = npLibDateFolderName(day);
+      const have = npLibFolders().find(f => !f.locked && (String(f.date || '') === day || String(f.name || '').trim() === nm || npLibFolderIsoOf(f) === day));
+      hint.textContent = have ? ('✓ 会放进日期夹「' + nm + '」（已有，直接放）') : ('＋ 会新建日期夹「' + nm + '」，再放进去');
+    };
+    if (dateInp) { dateInp.addEventListener('change', paintTarget); paintTarget(); }
     npLibBindTagPick(sheet);
     sheet.querySelector('#nplBatCancel').addEventListener('click', () => m.close());
     const paintList = () => {
@@ -27874,22 +31909,30 @@ async function npLibOpenBatchImport(batchId) {
       const btn = sheet.querySelector('#nplBatSave');
       const ok = picks.filter(p => p && p.file && p.dur > 0);
       if (!ok.length) { err.textContent = '先选至少一条读得出时长的视频。'; return; }
-      const nm = isNew ? (String((nameInp || {}).value || '').trim().slice(0, 40) || npLibToday()) : '';
-      if (isNew && !nm) { err.textContent = '给这一批起个名字。'; return; }
+      const day = isNew ? ((String((dateInp || {}).value || '') || npLibToday())) : String(batch.date || npLibIsoOf(batch.at));
+      const nm = isNew
+        ? (String((nameInp || {}).value || '').trim().slice(0, 40) || (npLibDateFolderName(day) + ' 这批'))
+        : '';
       const tags = npLibTagsChosen(sheet);
       const noVision = !!(sheet.querySelector('#nplBatNoVision') || {}).checked;
       btn.disabled = true;
       try {
+        const dayFolder = isNew ? await npDateFolderEnsure(day) : null;
         const allBatches = await npBatchesRead();
         let target = batch ? allBatches.find(b => b && String(b.id) === String(batch.id)) : null;
         if (target) {
           target.noVision = noVision;
           await npBatchesWrite(allBatches);
         } else {
-          target = { id: npBatchId(), name: nm, at: Date.now(), status: 'active', folderId: '', noVision: noVision };
+          target = {
+            id: npBatchId(), name: nm, at: Date.now(), date: day, status: 'active',
+            folderId: String((dayFolder && dayFolder.id) || ''), noVision: noVision,
+          };
           allBatches.unshift(target);
           await npBatchesWrite(allBatches);
         }
+        const colId = String((dayFolder && dayFolder.id) || target.folderId || '');
+        const colFolder = dayFolder || (colId ? npLibFolderOf(colId) : null);
         const videos = await npVideosRead();
         const added = [];
         const failed = [];
@@ -27899,7 +31942,7 @@ async function npLibOpenBatchImport(batchId) {
           catch (e) { failed.push(p.file.name || '一条视频'); continue; }
           const vname = String(p.file.name || '').replace(/\.[a-z0-9]+$/i, '').trim().slice(0, 40) || '原视频';
           videos.unshift({
-            id: id, col: '', batchId: String(target.id), name: vname, dur: Math.round(p.dur * 10) / 10, tags: tags,
+            id: id, col: colId, batchId: String(target.id), name: vname, dur: Math.round(p.dur * 10) / 10, tags: tags,
             at: Date.now(), shots: [], poster: '', marks: undefined, marksError: '', aiSegs: [],
           });
           added.push({ id: id });
@@ -27925,7 +31968,7 @@ async function npLibOpenBatchImport(batchId) {
         };
         setTimeout(startScan, added.length === 1 ? 300 : 60);
         try {
-          toast('进了 ' + added.length + ' 条原片' + (failed.length ? ('，' + failed.length + ' 条没存进来') : '') + '——挑一条切；第一次入库时选文件夹');
+          toast('进了 ' + added.length + ' 条原片' + (failed.length ? ('，' + failed.length + ' 条没存进来') : '') + (colFolder ? ('——放进「' + colFolder.name + '」') : '') + '，切段不用再选文件夹');
         } catch (_) {}
       } finally {
         btn.disabled = false;
@@ -27957,95 +32000,6 @@ async function npBenchBindFolder(batch, folder) {
   }
   _npLibCache.batches = await npBatchesRead();
   try { await chrome.storage.local.set({ np_lib_last_folder: String(folder.id) }); } catch (_) {}
-}
-async function npBenchAskFolder(batch, opts) {
-  if (batch && batch.folderId) {
-    const f = npLibFolderOf(batch.folderId);
-    if (f) {
-      if (f.status === '归档') { try { toast('这批的文件夹「' + (f.name || '') + '」已归档——先去素材库恢复，再切', 'error'); } catch (_) {} return null; }
-      return f;
-    }
-  }
-  const folders = npLibFolders();
-  const active = folders.filter(f => f.status !== '归档').sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
-  const archived = folders.filter(f => f.status === '归档');
-  let lastId = '';
-  try { const d = await chrome.storage.local.get('np_lib_last_folder'); lastId = String((d && d.np_lib_last_folder) || ''); } catch (_) {}
-  const lastF = lastId ? active.find(f => String(f.id) === lastId) : null;
-  const defName = String((batch && batch.name) || npLibToday()).slice(0, 40);
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (f) => { if (done) return; done = true; resolve(f); };
-    npLibModalOpen('<h3>📁 放哪个素材文件夹</h3>' +
-      '<div class="npl-note">这批第一次入库，定一个文件夹——以后这批再切都自动放这里。' + (batch ? '默认用这批的名字新建；已经有同名文件夹在用的，直接沿用那个。' : '老原片切出来的段也会放这里；原片和它原来的集合都不动。') + '</div>' +
-      '<div class="npl-label">文件夹名（新建时用）</div>' +
-      '<input class="npl-input" id="nplFoldAskName" maxlength="40" value="' + npArAttr(defName) + '" placeholder="例：阳光小区 3-2-601">' +
-      '<div class="npl-label">放进哪个文件夹</div>' +
-      '<select class="npl-input" id="nplFoldAskSel">' +
-        '<option value="__auto">＋ 按上面的名字新建（同名在用就沿用）</option>' +
-        active.map(f => '<option value="' + npArAttr(f.id) + '"' + (lastF && String(f.id) === String(lastF.id) ? ' selected' : '') + '>' + esc(f.name || '未命名文件夹') + (lastF && String(f.id) === String(lastF.id) ? '（上次用的）' : '') + '</option>').join('') +
-        archived.map(f => '<option value="' + npArAttr(f.id) + '" disabled>' + esc(f.name || '未命名文件夹') + '（已归档，不能选）</option>').join('') +
-      '</select>' +
-      '<div class="npl-fieldnote" id="nplFoldAskNotice"></div>' +
-      '<div class="npl-err" id="nplFoldAskErr"></div>' +
-      '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplFoldAskCancel">先不切</button>' +
-        '<button type="button" class="npl-btn primary" id="nplFoldAskSave">就放这里</button></div>', (sheet, m) => {
-      const nameInp = sheet.querySelector('#nplFoldAskName');
-      const sel = sheet.querySelector('#nplFoldAskSel');
-      const notice = sheet.querySelector('#nplFoldAskNotice');
-      const err = sheet.querySelector('#nplFoldAskErr');
-      const paint = () => {
-        err.textContent = '';
-        if (sel.value !== '__auto') {
-          const f = folders.find(x => String(x.id) === sel.value);
-          notice.textContent = f ? ('这批会直接放进「' + String(f.name || '') + '」；不再新建。') : '';
-          return;
-        }
-        const nm = String(nameInp.value || '').trim();
-        const same = folders.find(f => String(f.name || '').trim() === nm);
-        if (same && same.status === '归档') notice.textContent = '⚠️ 已经有同名文件夹「' + nm + '」，但它已归档——换个名，或先去素材库恢复它。';
-        else if (same) notice.textContent = '✓ 已经有同名文件夹「' + nm + '」在用——这批直接放进去，不再新建。';
-        else notice.textContent = nm ? ('会新建文件夹「' + nm + '」。') : '先给文件夹起个名字。';
-      };
-      nameInp.addEventListener('input', paint);
-      sel.addEventListener('change', paint);
-      paint();
-      sheet.querySelector('#nplFoldAskCancel').addEventListener('click', () => { m.close(); finish(null); });
-      sheet.querySelector('#nplFoldAskSave').addEventListener('click', async () => {
-        const btn = sheet.querySelector('#nplFoldAskSave');
-        btn.disabled = true;
-        try {
-          if (sel.value !== '__auto') {
-            const f = folders.find(x => String(x.id) === sel.value);
-            if (!f || f.status === '归档') { err.textContent = '这个文件夹不能用了——换一个。'; btn.disabled = false; return; }
-            m.close();
-            finish(f);
-            return;
-          }
-          const nm = String(nameInp.value || '').trim().slice(0, 40);
-          if (!nm) { err.textContent = '先给文件夹起个名字。'; btn.disabled = false; return; }
-          const same = folders.find(f => String(f.name || '').trim() === nm);
-          if (same && same.status === '归档') { err.textContent = '同名文件夹已归档——换个名，或先去素材库恢复它。'; btn.disabled = false; return; }
-          if (same) {
-            if (batch) await npBenchBindFolder(batch, same);
-            m.close();
-            finish(same);
-            return;
-          }
-          const cols = await npCollectionsRead();
-          const rec = { id: npCollectionId(), name: nm, brief: '', consent: false, status: '在用', folder: true, noVision: false, at: Date.now() };
-          cols.unshift(rec);
-          await npCollectionsWrite(cols);
-          _npLibCache.cols = cols;
-          if (batch) await npBenchBindFolder(batch, rec);
-          m.close();
-          finish(rec);
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    });
-  });
 }
 /* ── 批级 AI 切片：还没切的原片一条条看、自己定刀口、切完直接入库；页面不跳走 ── */
 function npBenchAIRunHtml(b) {
@@ -28131,13 +32085,20 @@ async function npBenchAISlice(batchId) {
   _npBenchAIPending = true;
   try {
     let folder = b.folderId ? npLibFolderOf(b.folderId) : null;
+    if (!folder) {
+      for (const v of npLibBatchVideos(id)) {
+        const f = npLibVideoFolder(v);
+        if (f) { folder = f; break; }
+      }
+    }
     if (folder && folder.status === '归档') {
       try { toast('这批的文件夹「' + (folder.name || '') + '」已归档——先去素材库恢复，再切', 'error'); } catch (_) {}
       return;
     }
     if (!folder) {
-      folder = await npBenchAskFolder(b, {});
-      if (!folder) { try { toast('先不切——一张图没发，钱没花'); } catch (_) {} return; }
+      folder = await npDateFolderEnsure((b && b.date) || npLibIsoOf(b && b.at) || npLibToday());
+    }
+    if (String(b.folderId || '') !== String(folder.id)) {
       await npBenchBindFolder(b, folder);
       b.folderId = String(folder.id);
     }
@@ -28259,6 +32220,7 @@ async function npBenchAIVision(video, run) {
     .map(s => ({
       a: Math.round((Number(s.a) || 0) * 10) / 10, b: Math.round((Number(s.b) || 0) * 10) / 10,
       name: String(s.name || '').slice(0, 24), tags: (Array.isArray(s.tags) ? s.tags : []).map(String).slice(0, 2),
+      mcat: String(s.mcat || ''),
       desc: String(s.desc || '').slice(0, 80),
     }))
     .filter(s => s.b - s.a >= 1);
@@ -28323,7 +32285,7 @@ async function npBenchAIInsert(video, segs, run) {
   const vv = videos.find(x => x && String(x.id) === String(video.id));
   if (!vv) return { ok: false, why: '原视频找不到了' };
   vv.col = String(folder.id);
-  vv.aiSegs = segs.map(s => ({ a: s.a, b: s.b, name: s.name, tags: s.tags.slice(), desc: s.desc }));
+  vv.aiSegs = segs.map(s => ({ a: s.a, b: s.b, name: s.name, tags: s.tags.slice(), mcat: String(s.mcat || ''), desc: s.desc }));
   vv.aiAt = Date.now();
   if (run && run.curStats) {
     vv.aiCandN = run.curStats.cand;
@@ -28340,7 +32302,7 @@ async function npBenchAIInsert(video, segs, run) {
     id: npClipId(), col: String(folder.id), videoId: video.id, shot: -1,
     a: s.a, b: s.b, dur: Math.round((s.b - s.a) * 10) / 10,
     name: s.name || ('第 ' + (i + 1) + ' 段'),
-    tags: s.tags.slice(0, 2), desc: s.desc, noInherit: [],
+    tags: s.tags.slice(0, 2), mcat: s.mcat || npLibCatKey(s.tags[0]) || NP_MAT_WAIT, desc: s.desc, noInherit: [],
     ref: 'src:' + video.id, at: now,
     aiAt: now, aiSrc: (s.name && !s.local) ? 'seg' : '', keyT: 0, editedAt: 0,
     usedBy: '', usedByName: '',
@@ -28407,6 +32369,10 @@ async function npBenchAIRecut(videoId) {
       '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplRecutNo">知道了</button></div>', (sheet, m) => {
       sheet.querySelector('#nplRecutNo').addEventListener('click', () => m.close());
     });
+    return;
+  }
+  if (mine.some(c => c && (c.fixed || npPackSlotIds().has(String(c.id))))) {
+    try { toast('这条里有材料包的固定料——先去切片台顶上「换」或「×」移出，再重切', 'error'); } catch (_) {}
     return;
   }
   const dur0 = Number(video.dur) || 0;
@@ -28476,6 +32442,7 @@ async function npBenchAIRecutRun(video, times, price, grainK) {
       .map(s => ({
         a: Math.round((Number(s.a) || 0) * 10) / 10, b: Math.round((Number(s.b) || 0) * 10) / 10,
         name: String(s.name || '').slice(0, 24), tags: (Array.isArray(s.tags) ? s.tags : []).map(String).slice(0, 2),
+        mcat: String(s.mcat || ''),
         desc: String(s.desc || '').slice(0, 80),
       }))
       .filter(s => s.b - s.a >= 1);
@@ -28507,7 +32474,7 @@ async function npBenchAIReplace(video, segs, res) {
   const oldAI = mine.filter(isAI);
   const manual = mine.filter(c => !isAI(c));
   if (!oldAI.length) return { ok: false, why: '这条没有 AI 自动切的段' };
-  const folderId = String((oldAI[0] && oldAI[0].col) || (npLibVideoFolder(video) || {}).id || video.col || '');
+  const folderId = String((npLibVideoFolder(video) || {}).id || (oldAI[0] && oldAI[0].col) || video.col || '');
   if (!folderId) return { ok: false, why: '这条的文件夹找不到了' };
   const overlapsManual = (a, b) => manual.some(c => Math.min(b, Number(c.b) || 0) - Math.max(a, Number(c.a) || 0) > 0.05);
   const usedOld = new Set();
@@ -28519,6 +32486,11 @@ async function npBenchAIReplace(video, segs, res) {
       usedOld.add(old);
       old.a = s.a; old.b = s.b; old.dur = Math.round((s.b - s.a) * 10) / 10; old.col = String(folderId);
       if (isAI(old) && !old.aiSrc) old.aiSrc = 'seg';
+      if (!old.keyT) {
+        const catKey = String(s.mcat || '') || ((s.tags || []).length ? npLibCatKey(s.tags[0]) : '');
+        if (catKey) old.mcat = catKey;
+        else if (!(Array.isArray(old.tags) && old.tags.length)) old.mcat = NP_MAT_WAIT;
+      }
       nextAI.push(old);
       keptN++;
       return;
@@ -28527,7 +32499,7 @@ async function npBenchAIReplace(video, segs, res) {
     nextAI.push({
       id: npClipId(), col: String(folderId), videoId: id, shot: -1,
       a: s.a, b: s.b, dur: Math.round((s.b - s.a) * 10) / 10,
-      name: s.name || ('第 ' + (i + 1) + ' 段'), tags: (s.tags || []).slice(0, 2), desc: s.desc || '', noInherit: [],
+      name: s.name || ('第 ' + (i + 1) + ' 段'), tags: (s.tags || []).slice(0, 2), mcat: s.mcat || npLibCatKey((s.tags || [])[0]) || NP_MAT_WAIT, desc: s.desc || '', noInherit: [],
       ref: 'src:' + id, at: Date.now(), aiAt: Date.now(), aiSrc: 'seg', keyT: 0, editedAt: 0,
       usedBy: '', usedByName: '',
     });
@@ -28540,7 +32512,7 @@ async function npBenchAIReplace(video, segs, res) {
   const videos = await npVideosRead();
   const vv = videos.find(x => x && String(x.id) === id);
   if (!vv) return { ok: false, why: '原视频找不到了' };
-  vv.aiSegs = nextAI.map(c => ({ a: c.a, b: c.b, name: c.name, tags: (c.tags || []).slice(), desc: c.desc }));
+  vv.aiSegs = nextAI.map(c => ({ a: c.a, b: c.b, name: c.name, tags: (c.tags || []).slice(), mcat: String(c.mcat || ''), desc: c.desc }));
   vv.aiAt = Date.now();
   vv.aiCandN = Number(res && res.candidates) || 0;
   vv.aiGroupN = Number(res && res.groups) || 0;
@@ -28569,17 +32541,19 @@ async function npLibFolderForCut(video) {
   if (!video) return null;
   const st = npLibS();
   const batch = npLibBatchOf(video);
-  if (st.surface === 'assets' && !batch) {
-    return (_npLibCache.cols || []).find(c => c && !c.folder && String(c.id) === String(video.col)) || null;
-  }
   const have = npLibVideoFolder(video);
   if (have) {
     if (have.status === '归档') { try { toast('文件夹「' + (have.name || '') + '」已归档——先去素材库恢复，再切', 'error'); } catch (_) {} return null; }
     return have;
   }
-  const f = await npBenchAskFolder(batch, { video: video });
-  if (!f) return null;
-  if (batch) await npBenchBindFolder(batch, f);
+  if (st.surface === 'assets' && !batch) {
+    const legacy = (_npLibCache.cols || []).find(c => c && !c.folder && String(c.id) === String(video.col));
+    if (legacy) return legacy;
+  }
+  /* 不在弹窗里问：按这批的拍摄日期找日期夹，没有就自动建 */
+  const iso = (batch && batch.date) || npLibIsoOf(video.at) || npLibToday();
+  const f = await npDateFolderEnsure(iso);
+  if (batch) { await npBenchBindFolder(batch, f); batch.folderId = String(f.id); }
   return f;
 }
 
@@ -28630,64 +32604,84 @@ function npBenchRename(batchId) {
   });
 }
 
-/* ── 素材库文件夹：新建 / 改 / 归档恢复 ── */
+/* ── 文件夹管理：日期夹按天自动建，这里只改名 / 归档 / 删除；材料包锁死 ── */
+function npBenchFolderManager(rerender) {
+  const all = npLibAllClips();
+  const folders = npLibFolders().slice().sort((a, b) => {
+    const da = String(a.date || ''), db = String(b.date || '');
+    if (da && db && da !== db) return db < da ? -1 : 1;
+    return (Number(b.at) || 0) - (Number(a.at) || 0);
+  });
+  const pack = folders.filter(f => f.locked || f.fixed);
+  const dates = folders.filter(f => !f.locked && !f.fixed);
+  const rowOf = f => {
+    const n = all.filter(c => String(c.col) === String(f.id)).length;
+    return '<div class="npl-cand" data-fold-edit="' + npArAttr(f.id) + '">' +
+      '<span class="ic">📁</span>' +
+      '<span class="tx"><span class="nm">' + esc(f.name || '未命名文件夹') + (f.status === '归档' ? ' · 已归档' : '') + '</span>' +
+        '<span class="ds">' + n + ' 段' + (f.date ? ' · ' + esc(String(f.date).replace(/-/g, '/')) : '') + '</span></span>' +
+      '<span class="go">改</span></div>';
+  };
+  npLibModalOpen('<h3>📁 文件夹</h3>' +
+    '<div class="npl-note">日期夹按「这批是哪天拍的」自动建、切段自动进；这里只做改名 / 归档 / 删除。材料包是锁死的固定料夹，不能改名、不能删。</div>' +
+    (pack.length ? '<div class="npl-label">固定料</div>' + pack.map(f =>
+      '<div class="npl-cand"><span class="ic">🔒</span>' +
+        '<span class="tx"><span class="nm">' + esc(f.name || '材料包') + '</span>' +
+        '<span class="ds">' + all.filter(c => String(c.col) === String(f.id)).length + ' 段 · 不能改名 / 删除</span></span></div>').join('') : '') +
+    '<div class="npl-label">按日期</div>' +
+    (dates.length ? dates.map(rowOf).join('') : '<div class="npl-fieldnote">还没有日期夹——导入第一批时按日期自动建。</div>') +
+    '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplFoldsClose">关掉</button></div>', (sheet, m) => {
+    sheet.querySelector('#nplFoldsClose').addEventListener('click', () => m.close());
+    sheet.querySelectorAll('[data-fold-edit]').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = String(row.getAttribute('data-fold-edit') || '');
+        m.close();
+        npLibOpenFolderEditor(id);
+      });
+    });
+  });
+}
 function npLibOpenFolderEditor(folderId) {
   const st = npLibS();
   const id = String(folderId || '');
   const f = id ? npLibFolderOf(id) : null;
-  const isNew = !f;
-  const name = f ? String(f.name || '') : '';
-  const brief = f ? String(f.brief || '') : '';
-  const consent = !!(f && f.consent);
-  const noVision = !!(f && f.noVision);
-  const status = f && f.status === '归档' ? '归档' : '在用';
-  npLibModalOpen('<h3>' + (isNew ? '＋ 新建素材文件夹' : '✎ 改文件夹') + '</h3>' +
-    '<div class="npl-note">一个文件夹＝一个工地 / 案例。可以空着；切一批时选了它，这批以后自动往里放。能改名、归档，也能整个删掉（里面的段一起删）。</div>' +
-    '<div class="npl-label">文件夹名</div><input class="npl-input" id="nplFoldName" maxlength="40" value="' + npArAttr(name) + '" placeholder="例：阳光小区 3-2-601">' +
-    '<div class="npl-label">一句背景（可空着，发案例时能补）</div><textarea class="npl-textarea" id="nplFoldBrief" maxlength="120" placeholder="例：老房翻新，业主最在意防水和收纳。">' + esc(brief) + '</textarea>' +
+  if (!f) { try { toast('这个文件夹找不到了', 'error'); } catch (_) {} return; }
+  if (f.locked || f.fixed) { try { toast('材料包是锁死的——不能改名、不能删除；里面的段可以换', 'error'); } catch (_) {} return; }
+  const name = String(f.name || '');
+  const status = f.status === '归档' ? '归档' : '在用';
+  npLibModalOpen('<h3>✎ 改文件夹</h3>' +
+    '<div class="npl-note">这是按日期自动建的夹' + (f.date ? '（' + esc(String(f.date).replace(/-/g, '/')) + '）' : '') + '，切段时会自动往里放。可以改名；整个删掉的话里面的段一起删。删了以后同一天再切，会按日期自动建回来。</div>' +
+    '<div class="npl-label">文件夹名</div><input class="npl-input" id="nplFoldName" maxlength="40" value="' + npArAttr(name) + '" placeholder="例：11-12">' +
     '<div class="npl-label">状态</div>' +
     '<select class="npl-input" id="nplFoldStatus" style="width:130px;">' +
       '<option value="在用"' + (status === '在用' ? ' selected' : '') + '>在用</option>' +
       '<option value="归档"' + (status === '归档' ? ' selected' : '') + '>归档</option>' +
     '</select>' +
-    '<label style="display:flex;gap:7px;align-items:center;font-size:12px;margin-top:12px;color:#555;"><input type="checkbox" id="nplFoldConsent"' + (consent ? ' checked' : '') + '> 业主同意用于宣传</label>' +
-    '<div class="npl-fieldnote">没勾的文件夹，发案例前会提醒一句，不拦着。</div>' +
-    '<label style="display:flex;gap:7px;align-items:center;font-size:12px;margin-top:10px;color:#555;"><input type="checkbox" id="nplFoldNoVision"' + (noVision ? ' checked' : '') + '> 这个文件夹不传图片给 AI</label>' +
-    '<div class="npl-fieldnote">勾上后切段照常（本机找建议切点），但不把画面小图发出去认内容；段名和说明自己填，随时能改。</div>' +
+    '<div class="npl-fieldnote">归档只挡挑选时的默认项，里面的段还在、还能筛出来用。</div>' +
     '<div class="npl-err" id="nplFoldErr"></div>' +
     '<div class="npl-actions-end">' +
-      (isNew ? '' : '<button type="button" class="npl-btn danger" id="nplFoldDel" style="margin-right:auto;">🗑 删文件夹</button>') +
+      '<button type="button" class="npl-btn danger" id="nplFoldDel" style="margin-right:auto;">🗑 删文件夹</button>' +
       '<button type="button" class="npl-btn" id="nplFoldCancel">取消</button>' +
-      '<button type="button" class="npl-btn primary" id="nplFoldSave">' + (isNew ? '建好' : '存下') + '</button></div>', (sheet, m) => {
+      '<button type="button" class="npl-btn primary" id="nplFoldSave">存下</button></div>', (sheet, m) => {
     const err = sheet.querySelector('#nplFoldErr');
     sheet.querySelector('#nplFoldCancel').addEventListener('click', () => m.close());
-    const delBtn = sheet.querySelector('#nplFoldDel');
-    if (delBtn) delBtn.addEventListener('click', async () => { m.close(); await npLibDeleteFolder(id); });
+    sheet.querySelector('#nplFoldDel').addEventListener('click', async () => { m.close(); await npLibDeleteFolder(id); });
     sheet.querySelector('#nplFoldSave').addEventListener('click', async () => {
       const nm = String(sheet.querySelector('#nplFoldName').value || '').trim().slice(0, 40);
       if (!nm) { err.textContent = '先给这个文件夹起个名字。'; return; }
-      const br = String(sheet.querySelector('#nplFoldBrief').value || '').trim().slice(0, 120);
       const stt = sheet.querySelector('#nplFoldStatus').value === '归档' ? '归档' : '在用';
-      const cst = !!sheet.querySelector('#nplFoldConsent').checked;
-      const nv = !!sheet.querySelector('#nplFoldNoVision').checked;
       const cols = await npCollectionsRead();
       const dup = cols.find(c => c && c.folder && String(c.id) !== id && String(c.name || '').trim() === nm);
-      if (dup) { err.textContent = '已经有同名文件夹「' + nm + '」——换个名，或者直接用它。'; return; }
+      if (dup) { err.textContent = '已经有同名文件夹「' + nm + '」——换个名。'; return; }
       const hit = cols.find(c => c && String(c.id) === id);
-      let newId = id;
-      if (hit) {
-        hit.name = nm; hit.brief = br; hit.consent = cst; hit.status = stt; hit.noVision = nv; hit.folder = true;
-      } else {
-        newId = npCollectionId();
-        cols.unshift({ id: newId, name: nm, brief: br, consent: cst, status: stt, folder: true, noVision: nv, at: Date.now() });
-      }
+      if (!hit) { err.textContent = '这个文件夹找不到了。'; return; }
+      hit.name = nm; hit.status = stt; hit.folder = true;
       await npCollectionsWrite(cols);
       _npLibCache.cols = cols;
       m.close();
-      if (isNew) { st.surface = 'assets'; st.view = 'lib'; st.libFolder = newId; st.videoId = ''; st.segId = ''; }
       const c = npLibCurrentContainer();
-      if (c) await npLibRender(c); else switchMainTab('noteAssets');
-      try { toast(isNew ? '文件夹建好了——可以空着，切一批时选它' : '文件夹改好了'); } catch (_) {}
+      if (c) await npLibRender(c);
+      try { toast('文件夹改好了'); } catch (_) {}
     });
   });
 }
@@ -28696,6 +32690,7 @@ async function npLibDeleteFolder(folderId) {
   const cols = await npCollectionsRead();
   const f = cols.find(c => c && c.folder && String(c.id) === id);
   if (!f) return;
+  if (f.locked || f.fixed) { try { toast('材料包是锁死的——不能改名、不能删除；里面的段可以换', 'error'); } catch (_) {} return; }
   const clips = await npClipsRead();
   const mine = clips.filter(c => c && String(c.col) === id);
   const used = mine.filter(c => c && c.usedBy)[0];
@@ -28707,7 +32702,7 @@ async function npLibDeleteFolder(folderId) {
   const bound = batches.filter(b => b && String(b.folderId) === id).length;
   if (!window.confirm('删掉文件夹「' + (f.name || '未命名文件夹') + '」？' +
     (mine.length ? '里面 ' + mine.length + ' 段会一起删。' : '这个文件夹现在是空的。') +
-    (bound ? '有 ' + bound + ' 批原片原本切进这里，下次切段会再让你选文件夹。' : '') +
+    (bound ? '有 ' + bound + ' 批原片原本切进这里，下次切段会按日期自动建回来。' : '') +
     '切片台里的原片都还在，能重切；手机 / 电脑上的原视频文件不动。删了就找不回来。')) return;
   if (mine.length) await npClipsWrite(clips.filter(c => !(c && String(c.col) === id)));
   if (bound) {
@@ -28718,7 +32713,7 @@ async function npLibDeleteFolder(folderId) {
   _npLibCache.cols = cols.filter(c => !(c && String(c.id) === id));
   const st = npLibS();
   if (String(st.libFolder) === id) st.libFolder = '';
-  st.view = 'lib'; st.folderId = ''; st.videoId = ''; st.segId = '';
+  st.folderId = ''; st.videoId = ''; st.segId = '';
   const cc = npLibCurrentContainer();
   if (cc) await npLibRender(cc);
   try { toast('文件夹删掉了' + (mine.length ? '，里面的 ' + mine.length + ' 段也删了' : '')); } catch (_) {}
@@ -28820,7 +32815,7 @@ async function npLibOpenImport(colId) {
         const cols = await npCollectionsRead();
         let col = null;
         if (isNewCol) {
-          col = { id: npCollectionId(), name: newName, brief: '', consent: false, status: '在用', lib: true, noVision: false, at: Date.now() };
+          col = { id: npCollectionId(), name: newName, brief: '', status: '在用', lib: true, noVision: false, at: Date.now() };
           cols.unshift(col);
           await npCollectionsWrite(cols);
         } else {
@@ -28974,7 +32969,11 @@ async function npLibLabelClips(video, targets, col) {
           const c = fresh.find(x => x && String(x.id) === String(it.id));
           if (!c || !it.ok || c.editedAt) return;
           if (it.name) c.name = String(it.name).slice(0, 30);
-          if (Array.isArray(it.tags) && it.tags.length) c.tags = it.tags.slice(0, 2);
+          const catName = (Array.isArray(it.tags) && it.tags.length) ? String(it.tags[0] || '').trim() : '';
+          const catKey = String(it.mcat || '') || (catName ? npLibCatKey(catName) : '');
+          if (catKey) { c.tags = [npMatCatName(catKey)]; c.mcat = catKey; }
+          else if (catName) { c.tags = [catName]; c.mcat = NP_MAT_WAIT; }
+          else if (!(Array.isArray(c.tags) && c.tags.length)) c.mcat = NP_MAT_WAIT;
           if (it.desc) c.desc = String(it.desc).slice(0, 100);
           c.aiAt = Date.now();
           c.labelSrc = 'vision';
@@ -29179,6 +33178,7 @@ async function npLibEditorRecognizeInner(t) {
   const res = {
     name: String(it.name).trim().slice(0, 30),
     tags: (Array.isArray(it.tags) ? it.tags.map(String) : []).slice(0, 2),
+    mcat: String(it.mcat || '') || ((Array.isArray(it.tags) && it.tags.length) ? npLibCatKey(it.tags[0]) : '') || NP_MAT_WAIT,
     desc: String(it.desc || '').trim().slice(0, 100),
     scene: npLibSceneWord(it.scene || it.name),
   };
@@ -29206,9 +33206,9 @@ function npLibEditorApplyPoint(t, bd, res) {
   const hit = npLibKeyFor(ed, { a: bd.a, b: bd.b });
   if (hit) {
     hit.keyT = t; hit.a = bd.a; hit.b = bd.b; hit.name = res.name;
-    hit.tags = res.tags.slice(); hit.desc = res.desc; hit.scene = res.scene; hit.at = Date.now();
+    hit.tags = res.tags.slice(); hit.mcat = res.mcat; hit.desc = res.desc; hit.scene = res.scene; hit.at = Date.now();
   } else {
-    ed.keys = (ed.keys || []).concat([{ keyT: t, a: bd.a, b: bd.b, name: res.name, tags: res.tags.slice(), desc: res.desc, scene: res.scene, at: Date.now() }]);
+    ed.keys = (ed.keys || []).concat([{ keyT: t, a: bd.a, b: bd.b, name: res.name, tags: res.tags.slice(), mcat: res.mcat, desc: res.desc, scene: res.scene, at: Date.now() }]);
   }
   ed.selected = null; ed.ask = null;
   npLibEditorRedraw();
@@ -29233,7 +33233,7 @@ function npLibEditorAsk(act) {
     const bd = a.bd, t = a.t, old = a.old, res = a.res;
     ed.ask = null;
     if (!npLibEditorAddCutAt(t, true)) { npLibEditorApplyPoint(t, bd, res); return; }
-    const half = { keyT: t, name: res.name, tags: res.tags.slice(), desc: res.desc, scene: res.scene, at: Date.now() };
+    const half = { keyT: t, name: res.name, tags: res.tags.slice(), mcat: res.mcat, desc: res.desc, scene: res.scene, at: Date.now() };
     if ((Number(old.keyT) || 0) < t) {
       old.b = t;
       ed.keys.push(Object.assign(half, { a: t, b: bd.b }));
@@ -29310,6 +33310,7 @@ async function npLibEditorAIRun(video, times, n, grain) {
       .map(s => ({
         a: Math.round((Number(s.a) || 0) * 10) / 10, b: Math.round((Number(s.b) || 0) * 10) / 10,
         name: String(s.name || '').slice(0, 24), tags: (Array.isArray(s.tags) ? s.tags : []).map(String).slice(0, 2),
+        mcat: String(s.mcat || ''),
         desc: String(s.desc || '').slice(0, 80),
       }))
       .filter(s => s.b - s.a >= 1);
@@ -29396,6 +33397,7 @@ async function npLibEditorConfirm() {
         if (ov) {
           old.name = ov.name;
           old.tags = (ov.tags || []).slice();
+          old.mcat = String(ov.mcat || npLibCatKey(old.tags[0]) || '');
           old.desc = ov.desc;
           old.editedAt = Date.now();
           old.aiAt = 0; old.aiSrc = '';
@@ -29408,7 +33410,7 @@ async function npLibEditorConfirm() {
       next.push({
         id: npClipId(), col: String(target.id), videoId: video.id, shot: -1,
         a: s.a, b: s.b, dur: s.len,
-        name: meta.name, tags: meta.tags, desc: meta.desc, noInherit: [],
+        name: meta.name, tags: meta.tags, mcat: meta.mcat || npLibCatKey((meta.tags || [])[0]) || NP_MAT_WAIT, desc: meta.desc, noInherit: [],
         ref: 'src:' + video.id, at: Date.now(),
         aiAt: Date.now(), aiSrc: meta.kind === 'key' ? 'key' : (meta.kind === 'ai' ? 'seg' : ''),
         keyT: meta.kind === 'key' ? meta.keyT : 0,
@@ -29476,7 +33478,7 @@ async function npLibWholeImport(videoId) {
   const clip = {
     id: npClipId(), col: String(target.id), videoId: id, shot: -1,
     a: seg.a, b: seg.b, dur: seg.len,
-    name: meta.name, tags: meta.tags, desc: meta.desc, noInherit: [],
+    name: meta.name, tags: meta.tags, mcat: meta.mcat || npLibCatKey((meta.tags || [])[0]) || NP_MAT_WAIT, desc: meta.desc, noInherit: [],
     ref: 'src:' + id, at: Date.now(), aiAt: Date.now(), aiSrc: meta.kind === 'ai' ? 'seg' : '', keyT: 0,
     usedBy: '', usedByName: '',
   };
@@ -29495,7 +33497,7 @@ async function npLibWholeImport(videoId) {
   if (st.surface === 'bench' && batch) _npBenchLibHint = { batchId: String(batch.id), n: 1, folderId: target.id ? String(target.id) : '' };
   const c = npLibCurrentContainer();
   if (c) await npLibRender(c);
-  try { toast('整条当 1 段入库了' + (target.name ? ('，放进「' + target.name + '」') : '') + '——名字 / 标签 / 说明先填好，能自己改'); } catch (_) {}
+  try { toast('整条当 1 段入库了' + (target.name ? ('，放进「' + target.name + '」') : '') + '——名字 / 大类 / 说明先填好，能自己改'); } catch (_) {}
   if (!npLibVisionOffBatch(batch, target)) npLibLabelClips(video, [clip], target);
 }
 function npLibOpenSegDraftEditor(a, b) {
@@ -29509,9 +33511,9 @@ function npLibOpenSegDraftEditor(a, b) {
   const cur = (ed.overrides && ed.overrides[key]) || npLibLabelFor(video, col, seg, 0, ed);
   const tags = Array.isArray(cur.tags) ? cur.tags : [];
   npLibModalOpen('<h3>✎ 改这一段（入库前）</h3>' +
-    '<div class="npl-note">这一段 ' + npLibFmt(seg.a) + ' – ' + npLibFmt(seg.b) + '。名字 / 标签 / 说明会跟着入库；AI 认错的地方在这儿改。</div>' +
-    '<div class="npl-label">这一段叫什么</div><input class="npl-input" id="nplEdSegName" maxlength="30" value="' + npArAttr(cur.name || '') + '" placeholder="例：卫生间·刷防水">' +
-    '<div class="npl-label">打标签（可多选；8 个标签里挑）</div>' +
+    '<div class="npl-note">这一段 ' + npLibFmt(seg.a) + ' – ' + npLibFmt(seg.b) + '。名字 / 大类 / 说明会跟着入库；AI 认错的地方在这儿改。</div>' +
+    '<div class="npl-label">这一段叫什么</div><input class="npl-input" id="nplEdSegName" maxlength="30" value="' + npArAttr(cur.name || '') + '" placeholder="例：教室全景">' +
+    '<div class="npl-label">归哪一类（四类里挑一个；认不出就先放着，点颗类标再改）</div>' +
     '<div class="npl-tagpick">' + npLibTagsPickHtml(tags) + '</div>' +
     '<div class="npl-label">一句说明（发案例时就用这句）</div>' +
     '<textarea class="npl-textarea" id="nplEdSegDesc" maxlength="100" placeholder="例：卫生间墙面第一遍防水，横竖各刷一遍。">' + esc(cur.desc || '') + '</textarea>' +
@@ -29526,10 +33528,10 @@ function npLibOpenSegDraftEditor(a, b) {
       const desc = String(sheet.querySelector('#nplEdSegDesc').value || '').trim().slice(0, 100);
       const tagsNow = npLibTagsChosen(sheet);
       if (!name) { err.textContent = '先给这一段起个名字。'; return; }
-      if (!tagsNow.length) { err.textContent = '至少打一个标签。'; return; }
+      if (!tagsNow.length) { err.textContent = '归一类——四类里挑一个。'; return; }
       if (!desc) { err.textContent = '写一句说明——发案例时就用这句。'; return; }
       if (!ed.overrides) ed.overrides = {};
-      ed.overrides[key] = { name: name, tags: tagsNow, desc: desc, ai: false, edited: true };
+      ed.overrides[key] = { name: name, tags: tagsNow, mcat: npLibCatKey(tagsNow[0]), desc: desc, ai: false, edited: true };
       m.close();
       const c = npLibCurrentContainer();
       if (c) npLibRender(c).catch(() => {});
@@ -29559,12 +33561,12 @@ async function npLibOpenSegEditor(clipId) {
       ? '🔒 这段正被《' + esc(usedName) + '》用着——边界先锁住；名字/标签/说明还能改，那条笔记下次进大组装会用新的。'
       : '名字/标签/说明先按视频名和镜头位置填好了；边界只在分镜不准时才动。') + '</div>' +
     '<div class="npl-label">这一段叫什么</div><input class="npl-input" id="nplSegName" maxlength="30" value="' + npArAttr(c.name || '') + '" placeholder="例：防水-02-刷第一遍">' +
-    '<div class="npl-label">打标签（可多选；8 个标签里挑）</div>' +
+    '<div class="npl-label">归哪一类（四类里挑一个）</div>' +
     '<div class="npl-tagpick">' + npLibTagsPickHtml(own) + '</div>' +
     (inhAll.length
-      ? '<div class="npl-chipblk" style="margin-top:9px;"><b style="font-size:11px;color:#555;">继承这条视频的标签</b>' +
+      ? '<div class="npl-chipblk" style="margin-top:9px;"><b style="font-size:11px;color:#555;">继承这条原视频的大类</b>' +
         '<div class="npl-row" style="margin-top:5px;">' + inhAll.map(t => '<label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#555;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:2px 8px;"><input type="checkbox" data-inh="' + npArAttr(t) + '"' + (inhOn.indexOf(t) >= 0 ? ' checked' : '') + '>' + esc(t) + '</label>').join('') + '</div>' +
-        '<div class="npl-fieldnote">点掉＝这一段不要这条；段自己的标签优先。</div></div>'
+        '<div class="npl-fieldnote">点掉＝这一段不继承这一类；段自己归的类优先。</div></div>'
       : '') +
     '<div class="npl-label">一句说明（发案例时就用这句）</div>' +
     '<textarea class="npl-textarea" id="nplSegDesc" maxlength="100" placeholder="例：第一遍防水横竖各刷一遍，墙角上翻 30 公分。">' + esc(c.desc || '') + '</textarea>' +
@@ -29608,7 +33610,7 @@ async function npLibOpenSegEditor(clipId) {
         b = Math.round((Number(sheet.querySelector('#nplSegB').value) || 0) * 10) / 10;
       }
       if (!name) { err.textContent = '先给这一段起个名字。'; return; }
-      if (!npLibTagsAll({ tags: tags, noInherit: noInherit }, v).length) { err.textContent = '至少打一个标签——8 个里挑一个，或保留继承来的。'; return; }
+      if (!npLibTagsAll({ tags: tags, noInherit: noInherit }, v).length) { err.textContent = '归一类——四类里挑一个，或保留从原视频继承来的。'; return; }
       if (!desc) { err.textContent = '写一句说明——发案例时就用这句。'; return; }
       if (!used) {
         if (!isFinite(a) || !isFinite(b) || a < 0 || b > dur + 0.05 || b - a < 1.2) {
@@ -29624,6 +33626,7 @@ async function npLibOpenSegEditor(clipId) {
       }
       target.name = name;
       target.tags = tags;
+      target.mcat = tags.length ? npLibCatKey(tags[0]) : '';
       target.desc = desc;
       target.noInherit = noInherit;
       if (!used) {
@@ -29648,6 +33651,10 @@ async function npLibDeleteClip(clipId) {
   if (!c) return;
   if (c.usedBy) {
     try { toast('这一段正被《' + (c.usedByName || '一条笔记') + '》用着——先从那条笔记里撤下来', 'error'); } catch (_) {}
+    return;
+  }
+  if (c.fixed || npPackSlotIds().has(id)) {
+    try { toast('这段是材料包里的固定料——去切片台顶上「换」或「×」移出，别直接删', 'error'); } catch (_) {}
     return;
   }
   if (c.imgOnly) {
@@ -29698,6 +33705,10 @@ async function npLibDeleteVideo(videoId) {
     try { toast('这条里有段正被《' + (used.usedByName || '一条笔记') + '》用着——先把那条发掉或撤下来', 'error'); } catch (_) {}
     return;
   }
+  if (mine.some(c => c && (c.fixed || npPackSlotIds().has(String(c.id))))) {
+    try { toast('这条里有材料包的固定料——先去切片台顶上「换」或「×」移出，再删原片', 'error'); } catch (_) {}
+    return;
+  }
   if (!window.confirm('把这条原视频和它的 ' + mine.length + ' 段从素材库拿掉？本机的原视频文件也会删；笔记里已经挑走的段下次会缺料。')) return;
   await npClipsWrite(clips.filter(c => !(c && String(c.videoId) === id)));
   await npVideosWrite(videos.filter(x => x && String(x.id) !== id));
@@ -29728,7 +33739,12 @@ function npLibPickGroupIdOfClip(c) {
 }
 function npLibPickGroups(ready) {
   const groups = [];
-  npLibFolders().slice().sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0)).forEach(f => {
+  npLibFolders().slice().sort((a, b) => {
+    const da = String(a.date || ''), db = String(b.date || '');
+    if (da && db && da !== db) return db < da ? -1 : 1;
+    return (Number(b.at) || 0) - (Number(a.at) || 0);
+  }).forEach(f => {
+    if (f.locked || f.fixed) return;   // 材料包里的固定料单独一条，不混进日期夹
     const list = (ready || []).filter(c => c && String(c.col) === String(f.id));
     if (list.length) groups.push({ id: String(f.id), name: String(f.name || '未命名文件夹'), folder: f, clips: list });
   });
@@ -29736,19 +33752,55 @@ function npLibPickGroups(ready) {
   if (noFolder.length) groups.push({ id: '__none', name: '未分文件夹', folder: null, clips: noFolder });
   return groups;
 }
+/* 一段素材被几篇笔记用着（同一篇里勾几遍只算 1 次）：挑段/素材库都读这一处，不新增字段 */
+function npClipUseMap(notes) {
+  const map = {};
+  (notes || []).forEach(n => {
+    const refs = (n && n.asm && Array.isArray(n.asm.libClips)) ? n.asm.libClips : [];
+    const seen = {};
+    refs.forEach(r => {
+      const cid = String((r && r.clipId) || '');
+      if (!cid || seen[cid]) return;
+      seen[cid] = 1;
+      map[cid] = (map[cid] || 0) + 1;
+    });
+  });
+  return map;
+}
+/* 这一段还有哪几篇别的笔记在用（取最近更新的那篇）——释放/改勾时决定「清掉还是转给别人」 */
+function npClipOtherOwner(notes, clipId, excludeId) {
+  const cid = String(clipId || '');
+  const ex = String(excludeId || '');
+  let best = null;
+  (notes || []).forEach(n => {
+    if (!n || String(n.id) === ex) return;
+    const refs = (n.asm && Array.isArray(n.asm.libClips)) ? n.asm.libClips : [];
+    if (!refs.some(r => String((r && r.clipId) || '') === cid)) return;
+    if (!best || (Number(n.updatedAt) || 0) > (Number(best.updatedAt) || 0)) best = n;
+  });
+  return best;
+}
 async function npLibOpenPicker(opts) {
   const o = opts || {};
-  const [colsAll, videos, clips, notes] = await Promise.all([npCollectionsRead(), npVideosRead(), npClipsRead(), npNotesAll()]);
+  npLibEnsureStyle();   // 不在素材库页里也能开（新建笔记那张案例卡直接弹这一屏）
+  const [colsAll, videos, clips, notes, packSlots] = await Promise.all([npCollectionsRead(), npVideosRead(), npClipsRead(), npNotesAll(), npPackSlotsRead()]);
   _npLibCache.cols = colsAll || [];
   _npLibCache.videos = videos || [];
   _npLibCache.clips = clips || [];
+  _npLibCache.packSlots = packSlots || await npPackSlotsRead();
   const vOf = (id) => (videos || []).find(v => v && String(v.id) === String(id)) || null;
-  const ready = (clips || []).filter(c => c && c.videoId && vOf(c.videoId) && npLibReady(c, vOf(c.videoId)));
+  /* 11-11 老板定：挑段不再要求「名字/大类/说明填齐」——切好的段都列出来，没填齐的标黄，挑不挑由人 */
+  const ready = (clips || []).filter(c => c && c.videoId && vOf(c.videoId));
+  const slotDefs = NP_FIXED_SLOTS.map(d => ({ cat: d.cat, label: d.label }))
+    .concat((Array.isArray((packSlots || {}).extra) ? packSlots.extra : []).map(e => ({ cat: String(e.key), label: String(e.label) })));
+  const fixedIds = new Set(slotDefs.map(d => String((packSlots || {})[d.cat] || '')).filter(Boolean));
+  const fixedClips = ready.filter(c => fixedIds.has(String(c.id)));
   const groups = npLibPickGroups(ready);
-  if (!groups.length) {
-    try { toast('素材库里还没有备好的段——先去切片台切一批，把名字/标签/说明填齐', 'error'); } catch (_) {}
+  if (!groups.length && !fixedClips.length) {
+    try { toast('素材库里还没有切好的段——先去切片台切一批再回来挑', 'error'); } catch (_) {}
     return;
   }
+  if (!groups.length) groups.push({ id: '__fixed', name: '只有固定料', folder: null, clips: [] });
   const seedIds = Array.isArray(o.clipIds) ? o.clipIds.map(String).filter(Boolean) : [];
   const seedClips = seedIds.map(id => ready.find(c => String(c.id) === id)).filter(Boolean);
   if (seedClips.length) groups.unshift({ id: '__picked', name: '勾中的 ' + seedClips.length + ' 段', folder: null, clips: seedClips, seed: true });
@@ -29768,6 +33820,16 @@ async function npLibOpenPicker(opts) {
     picked.add(cid);
     if (order.indexOf(cid) < 0) order.push(cid);
   });
+  /* 12 号改：材料包里的固定料（到店 / 本人 / 查看）自动勾上，跟日期夹分开一条；
+     现场段不自动勾——中间那段正文由人自己挑 */
+  const freshPick = !seedClips.length && !prevRefs.length;
+  if (freshPick) {
+    fixedClips.forEach(c => {
+      const cid = String(c.id);
+      picked.add(cid);
+      if (order.indexOf(cid) < 0) order.push(cid);
+    });
+  }
   let colId = '';
   if (seedClips.length) colId = '__picked';
   if (o.folderId && groups.some(g => String(g.id) === String(o.folderId))) colId = String(o.folderId);
@@ -29775,7 +33837,12 @@ async function npLibOpenPicker(opts) {
     const pc = ready.find(c => String(c.id) === String(prevRefs[0].clipId));
     if (pc) colId = npLibPickGroupIdOfClip(pc);
   }
-  if (!colId) colId = String(groups[0].id);
+  if (!colId || !groups.some(g => String(g.id) === String(colId))) {
+    /* 默认落在今天的日期夹；今天没料就落最新的那一天 */
+    const today = npLibToday(), todayName = npLibDateFolderName(today);
+    const tf = groups.find(g => g.folder && (String(g.folder.date || '') === today || String(g.folder.name || '').trim() === todayName || npLibFolderIsoOf(g.folder) === today));
+    colId = String((tf || groups.find(g => g.folder) || groups[0]).id);
+  }
   const group0 = groups.find(g => String(g.id) === colId) || null;
   const old0 = (!group0 || !group0.folder)
     ? (_npLibCache.cols || []).find(c => c && !c.folder && ready.some(x => String(x.col) === String(c.id))) || null
@@ -29786,9 +33853,44 @@ async function npLibOpenPicker(opts) {
     title: note ? (noteNeedTitle ? '' : noteTitle) : '',
     brief: note ? String((note.asm && note.asm.libBrief) || '') : String((group0 && group0.folder && group0.folder.brief) || (old0 && old0.brief) || ''),
     groups: groups, videos: videos || [], notes: notes || [], ready: ready,
-    err: '', m: null,
+    fixedIds: fixedIds, slots: packSlots || {}, slotDefs: slotDefs,
+    useMap: npClipUseMap(notes), err: '', m: null,
   };
   npLibPickerPaint();
+}
+/* 勾的段按四大类数一遍：挑段时标「这个文件夹有什么」，生成前拦「没有干活就别点」 */
+function npLibPickCats(clips, vOf) {
+  const n = { me: 0, place: 0, work: 0, door: 0, wait: 0 };
+  (clips || []).forEach(c => {
+    if (!c) return;
+    let k = '';
+    try { k = npMatCatOfClip(c, vOf(c.videoId)) || ''; } catch (_) { k = ''; }
+    if (!k || k === NP_MAT_WAIT) n.wait++;
+    else n[k] = (n[k] || 0) + 1;
+  });
+  return n;
+}
+function npLibPickCatsText(n) {
+  const parts = [];
+  if (n.place) parts.push('现场' + n.place);
+  if (n.me) parts.push('本人' + n.me);
+  if (n.work) parts.push('干活' + n.work);
+  if (n.door) parts.push('到店' + n.door);
+  if (n.wait) parts.push('待分类' + n.wait);
+  return parts.join(' · ');
+}
+function npLibPickCountHtml(P) {
+  const vOf = (id) => P.videos.find(v => v && String(v.id) === String(id)) || null;
+  const chosen = P.order.map(id => P.ready.find(c => c && String(c.id) === String(id))).filter(Boolean);
+  const n = npLibPickCats(chosen, vOf);
+  const cats = npLibPickCatsText(n);
+  const head = '已勾 ' + chosen.length + ' 段';
+  if (!chosen.length) return '<span style="color:#8a929e;">' + head + '——至少勾 1 段。</span>';
+  if (!n.work) {
+    return '<span style="color:#8a929e;">' + head + (cats ? '：' + cats : '') + '——这次没有「现场」的段，正文照样写，画面会用你勾的这些顶上' +
+      (n.wait ? '（有几段还是待分类，回素材库点一下类名能更贴题）；' : '；') + '够了就点右下角。</span>';
+  }
+  return '<span style="color:#8a929e;">' + head + (cats ? '：' + cats : '') + '——够了就点右下角。</span>';
 }
 function npLibPickerBodyHtml(P) {
   const note = P.noteId ? P.notes.find(n => n && String(n.id) === P.noteId) || null : null;
@@ -29798,43 +33900,58 @@ function npLibPickerBodyHtml(P) {
     .slice().sort((a, b) => (Number(a.a) || 0) - (Number(b.a) || 0));
   const vOf = (id) => P.videos.find(v => v && String(v.id) === String(id)) || null;
   const rows = list.map(s => {
-    const other = s.usedBy && String(s.usedBy) !== String(P.noteId || '');
     const v = vOf(s.videoId);
     const tags = npLibTagsAll(s, v);
     const checked = P.picked.has(String(s.id));
-    return '<label class="npl-pickrow' + (other ? ' off' : '') + '">' +
-      '<input type="checkbox" data-clip="' + npArAttr(s.id) + '"' + (checked ? ' checked' : '') + (other ? ' disabled' : '') + '>' +
-      '<span class="npl-pickbody"><span class="npl-pickname">' + esc(s.name || '未命名') + '</span>' +
-        '<div class="npl-pickdesc">' + npLibFmt(s.a) + ' – ' + npLibFmt(s.b) + ' · ' + tags.map(esc).join(' / ') + '</div>' +
-        '<div class="npl-pickdesc">' + esc(s.desc || '') + '</div>' +
-        (other ? '<div class="npl-pickdesc" style="color:#b45309;">🔒 已用在《' + esc(s.usedByName || '另一条笔记') + '》——这条笔记不能同时用</div>' : '') +
+    let catK = '';
+    try { catK = npMatCatOfClip(s, v) || ''; } catch (_) { catK = ''; }
+    const catN = npMatCatName(catK || NP_MAT_WAIT);
+    const secs = Math.max(1, Math.round((Number(s.b) || 0) - (Number(s.a) || 0)));
+    const uses = (P.useMap && P.useMap[String(s.id)]) || 0;
+    const gap = npLibReady(s, v) ? '' : npLibGap(s, v);
+    return '<label class="npl-pickrow">' +
+      '<input type="checkbox" data-clip="' + npArAttr(s.id) + '"' + (checked ? ' checked' : '') + '>' +
+      '<span class="npl-pickthumb" data-thumb="' + npArAttr(s.id) + '"><span class="cat">' + esc(catN) + '</span><span class="dur">' + secs + 's</span></span>' +
+      '<span class="npl-pickbody"><span class="npl-pickname">' + esc(s.name || '未命名') +
+        '<span class="npl-pickuses' + (uses ? '' : ' zero') + '" title="被多少篇笔记引用过（同一篇勾几遍只算 1 次）">用过 ' + uses + ' 次</span>' +
+        (gap ? '<span class="npl-pickfresh" title="没填齐也能挑；但这类段写正文会薄">没备好：缺' + esc(gap) + '</span>' : '') +
+      '</span>' +
+        '<div class="npl-pickdesc">' + npLibFmt(s.a) + ' – ' + npLibFmt(s.b) + (tags.length ? ' · ' + tags.map(esc).join(' / ') : '') + '</div>' +
+        (String(s.desc || '').trim() ? '<div class="npl-pickdesc">' + esc(s.desc) + '</div>' : '') +
         ((v && v.name) ? '<div class="npl-pickdesc" style="color:#9aa1ab;">来自：' + esc(v.name) + '</div>' : '') +
       '</span></label>';
   }).join('');
-  const consentCols = (activeGroup && activeGroup.seed)
-    ? Array.from(new Set((activeGroup.clips || []).map(c => npLibFolderOf(c && c.col)).filter(f => f && !f.consent)))
-    : (activeCol && !activeCol.consent ? [activeCol] : []);
-  const consent = consentCols.length
-    ? '<div class="npl-scan" style="border-color:#fed7aa;background:#fff7ed;color:#b45309;margin:8px 0 10px;">⚠️ ' + (consentCols.length === 1 ? '「' + esc(consentCols[0].name || '这个文件夹') + '」' : '有 ' + consentCols.length + ' 个文件夹') + '还没勾「业主同意用于宣传」——发布前先跟业主确认，勾上再发。</div>'
-    : '';
+  const fixedChips = (P.slotDefs || []).map(d => {
+    const cid = String((P.slots || {})[d.cat] || '');
+    const c = cid ? P.ready.find(x => String(x.id) === cid) : null;
+    const icon = (typeof NP_PACK_ICON !== 'undefined' && NP_PACK_ICON[d.cat]) || '🎬';
+    if (!c) return '<span class="npl-fixedchip miss" title="去切片台顶上「放一段」">' + icon + ' ' + esc(d.label) + ' · 空着</span>';
+    const on = P.picked.has(String(c.id));
+    return '<label class="npl-fixedchip' + (on ? ' on' : '') + '" title="' + npArAttr(c.name || '') + '">' +
+      '<input type="checkbox" data-fixed="' + npArAttr(c.id) + '"' + (on ? ' checked' : '') + '> ' + icon + ' ' + esc(d.label) +
+      '<span class="nm">' + esc(c.name || '') + '</span></label>';
+  }).join('');
   return '<h3>' + (P.noteId ? '📥 从素材库挑段' : '📤 发这条案例') + '</h3>' +
     '<div class="npl-note">' + ((activeGroup && activeGroup.seed)
-      ? '这 ' + (activeGroup.clips || []).length + ' 段已经勾上了；还想加别的，点下面的文件夹。只列名字/标签/说明齐了的段；被别的笔记用着的段是灰的。'
-      : '按文件夹挑段：选一个文件夹，勾这段案例要用的段；没有文件夹的老段在「未分文件夹」里。只列名字/标签/说明齐了的段；被别的笔记用着的段是灰的。勾了就先锁给这条笔记，标记「已发」后自动放开。') + '</div>' +
+      ? '这 ' + (activeGroup.clips || []).length + ' 段已经勾上了；还想加别的，点下面的日期夹。用过的段不再锁，行上只标「用过几次」。'
+      : '默认落在今天的日期夹；材料包那几格固定料已经替你勾上（不想要就点掉），现场段自己挑。用过的段不再锁，行上只标「用过几次」——同一段可以给很多篇用；没填齐的段也列出来，标「没备好」。') + '</div>' +
+    '<div class="npl-label">材料包 · 固定料（每篇自动带）</div>' +
+    '<div class="npl-fixedchips" id="nplPickFixed">' + fixedChips + '</div>' +
     '<div class="npl-label">挑文件夹</div>' +
-    '<div class="npl-row">' + (P.groups.length ? P.groups.map(g => '<button type="button" class="npl-btn sm' + (String(g.id) === String(P.colId) ? ' primary' : '') + '" data-pick-col="' + npArAttr(g.id) + '">' + (g.folder ? '📁 ' : '') + esc(g.name || '未命名文件夹') + ' <span style="opacity:.7;">(' + g.clips.length + ' 段)</span></button>').join('') : '<span class="npl-fieldnote">没有可挑的文件夹</span>') + '</div>' +
-    '<div id="nplPickConsent">' + consent + '</div>' +
+    '<div class="npl-row">' + (P.groups.length ? P.groups.map(gr => {
+      const gn = npLibPickCats(gr.clips, vOf);
+      const gt = npLibPickCatsText(gn);
+      return '<button type="button" class="npl-btn sm' + (String(gr.id) === String(P.colId) ? ' primary' : '') + '" data-pick-col="' + npArAttr(gr.id) + '">' + (gr.folder ? '📁 ' : '') + esc(gr.name || '未命名文件夹') + ' <span style="opacity:.7;">(' + gr.clips.length + ' 段' + (gt ? ' · ' + gt : '') + ')</span></button>';
+    }).join('') : '<span class="npl-fieldnote">没有可挑的文件夹</span>') + '</div>' +
     '<div class="npl-label">勾段</div>' +
-    '<div class="npl-picklist" id="nplPickList">' + (rows || '<div class="npl-empty">这个文件夹还没有备好的段。</div>') + '</div>' +
-    '<div class="npl-fieldnote" id="nplPickCount">已勾 ' + P.picked.size + ' 段' + (P.picked.size ? '——够了就点右下角。' : '——至少勾 1 段。') + '</div>' +
-    ((!P.noteId || P.needTitle)
-      ? '<div class="npl-label">案例标题</div><input class="npl-input" id="nplPickTitle" maxlength="40" value="' + npArAttr(P.title) + '" placeholder="例：阳光小区老房翻新：防水怎么做">'
-      : '<div class="npl-label">这条案例</div><div class="npl-chipblk"><b style="font-size:12px;">《' + esc(note ? note.title : P.title) + '》</b></div>') +
-    '<div class="npl-label">这个案例是干嘛的（一句话背景）</div>' +
-    '<textarea class="npl-textarea" id="nplPickBrief" maxlength="120" placeholder="例：老房翻新，业主最在意防水和收纳。">' + esc(P.brief) + '</textarea>' +
+    '<div class="npl-picklist" id="nplPickList">' + (rows || '<div class="npl-empty">这个文件夹还没有切好的段。</div>') + '</div>' +
+    '<div class="npl-fieldnote" id="nplPickCount">' + npLibPickCountHtml(P) + '</div>' +
+    '<div class="npl-label">这条案例</div>' +
+    '<div class="npl-chipblk"><b style="font-size:12px;">' + (((!P.noteId || P.needTitle) && !P.title) ? '标题 AI 来取（出稿后能改）' : '《' + esc(note ? note.title : P.title) + '》') + '</b></div>' +
+    '<div class="npl-fieldnote">不用先起名、也不用写背景——勾完段，AI 按画面说明讲一遍今天干了什么，标题、口播、正文一起给。</div>' +
     '<div class="npl-err" id="nplPickErr">' + esc(P.err || '') + '</div>' +
     '<div class="npl-actions-end"><button type="button" class="npl-btn" id="nplPickCancel">取消</button>' +
-      '<button type="button" class="npl-btn primary" id="nplPickSave">' + (P.noteId ? '用勾中的段，回大组装' : '建好案例，去大组装') + '</button></div>';
+      '<button type="button" class="npl-btn primary" id="nplPickSave">' + (P.noteId ? '用勾中的段，写正文' : '建好案例，写正文') + '</button></div>';
 }
 function npLibPickerPaint() {
   const P = _npLibPick;
@@ -29862,6 +33979,26 @@ function npLibPickerBind(P, sheet) {
     });
   });
   const list = sheet.querySelector('#nplPickList');
+  const fx = sheet.querySelector('#nplPickFixed');
+  if (fx) fx.addEventListener('change', (e) => {
+    const inp = e.target && e.target.closest ? e.target.closest('[data-fixed]') : null;
+    if (!inp) return;
+    const id = String(inp.getAttribute('data-fixed') || '');
+    if (!id) return;
+    if (inp.checked) {
+      P.picked.add(id);
+      if (P.order.indexOf(id) < 0) P.order.push(id);
+    } else {
+      P.picked.delete(id);
+      const i = P.order.indexOf(id);
+      if (i >= 0) P.order.splice(i, 1);
+    }
+    const lb = inp.closest('label');
+    if (lb) lb.classList.toggle('on', !!inp.checked);
+    const cnt = sheet.querySelector('#nplPickCount');
+    if (cnt) cnt.innerHTML = npLibPickCountHtml(P);
+    if (P.err) { P.err = ''; const er = sheet.querySelector('#nplPickErr'); if (er) er.textContent = ''; }
+  });
   if (list) list.addEventListener('change', (e) => {
     const inp = e.target && e.target.closest ? e.target.closest('[data-clip]') : null;
     if (!inp) return;
@@ -29876,9 +34013,10 @@ function npLibPickerBind(P, sheet) {
       if (i >= 0) P.order.splice(i, 1);
     }
     const cnt = sheet.querySelector('#nplPickCount');
-    if (cnt) cnt.textContent = '已勾 ' + P.picked.size + ' 段' + (P.picked.size ? '——够了就点右下角。' : '——至少勾 1 段。');
+    if (cnt) cnt.innerHTML = npLibPickCountHtml(P);
     if (P.err) { P.err = ''; const er = sheet.querySelector('#nplPickErr'); if (er) er.textContent = ''; }
   });
+  npLibPickThumbs(P, sheet);
   sheet.querySelector('#nplPickCancel').addEventListener('click', () => { _npLibPick = null; if (P.m) P.m.close(); });
   const saveBtn = sheet.querySelector('#nplPickSave');
   saveBtn.addEventListener('click', async () => {
@@ -29887,30 +34025,49 @@ function npLibPickerBind(P, sheet) {
     await npLibPickerSave(P, saveBtn, sheet);
   });
 }
+/* 勾选行上的画面缩略图：取这一段中间帧（懒抽、按段缓存；原视频不在本机就留灰底，不挡勾选） */
+function npLibPickThumbs(P, sheet) {
+  if (!P || !sheet) return;
+  const vOf = (id) => P.videos.find(v => v && String(v.id) === String(id)) || null;
+  const els = sheet.querySelectorAll('#nplPickList [data-thumb]');
+  Array.prototype.forEach.call(els, (el, k) => {
+    if (el.getAttribute('data-thumb-done')) return;
+    el.setAttribute('data-thumb-done', '1');
+    const cid = String(el.getAttribute('data-thumb') || '');
+    const c = P.ready.find(x => x && String(x.id) === cid);
+    const v = c && vOf(c.videoId);
+    if (!c || !v) return;
+    const mid = ((Number(c.a) || 0) + (Number(c.b) || 0)) / 2;
+    setTimeout(() => {
+      if (!el.isConnected) return;
+      npLibFrames(v, [mid], 180).then(imgs => {
+        const u = (imgs || [])[0] || '';
+        if (u && el.isConnected) el.style.backgroundImage = 'url("' + u + '")';
+      }).catch(() => {});
+    }, Math.min(700, k * 60));
+  });
+}
 async function npLibPickerSave(P, btn, sheet) {
   const errEl = sheet.querySelector('#nplPickErr');
   const fail = (msg) => { P.err = msg; if (errEl) errEl.textContent = msg; try { btn.disabled = false; } catch (_) {} };
   const nt = P.notes.find(n => n && String(n.id) === P.noteId) || null;
   const needTitle = !P.noteId || !nt || !String(nt.title || '').trim() || String(nt.title).indexOf('还没定名') >= 0;
   const title = needTitle ? String(P.title || '').trim().slice(0, 40) : String(nt.title || '');
-  const brief = String(P.brief || '').trim().slice(0, 120);
-  if (needTitle && !title) return fail('给这条案例起个标题。');
-  if (!brief) return fail('写一句这个案例是干嘛的——AI 靠它组织正文。');
   if (!P.picked.size) return fail('至少勾 1 段——这条案例要用的素材。');
   btn.disabled = true;
   const freshClips = await npClipsRead();
   const freshVideos = await npVideosRead();
   const vOf = (id) => freshVideos.find(v => v && String(v.id) === String(id)) || null;
   const chosen = P.order.map(id => freshClips.find(c => c && String(c.id) === String(id))).filter(Boolean);
+  /* 11-11：用过的段不再拦；也不要求名字/标签/说明齐——只保证原视频还在（拼片要靠它取帧） */
   for (const c of chosen) {
-    if (!c.videoId || !vOf(c.videoId) || !npLibReady(c, vOf(c.videoId))) return fail('有一段还没备好（名字/标签/说明缺了）——刷新后再挑一次。');
-    if (c.usedBy && String(c.usedBy) !== String(P.noteId || '')) return fail('「' + (c.name || '未命名') + '」正被《' + (c.usedByName || '另一条笔记') + '》用着——那条发掉或撤下来再挑。');
+    if (!c.videoId || !vOf(c.videoId)) return fail('有一段的原视频不在了——刷新后再挑一次。');
   }
   let noteId = P.noteId;
   if (!noteId) {
     const created = await npDirNewNote('c', '案例成片');
     noteId = String(created.id);
-    await npNotesSync(async () => {
+    if (title) await npNotesSync(async () => {
       const list = await npNotesAll();
       const t = list.find(x => x && String(x.id) === noteId);
       if (!t) return;
@@ -29924,17 +34081,25 @@ async function npLibPickerSave(P, btn, sheet) {
   const chosenSet = new Set(chosen.map(c => String(c.id)));
   freshClips.forEach(c => {
     if (!c) return;
-    if (String(c.usedBy || '') === String(noteId) && !chosenSet.has(String(c.id))) { c.usedBy = ''; c.usedByName = ''; }
+    if (String(c.usedBy || '') === String(noteId) && !chosenSet.has(String(c.id))) {
+      /* 11-11：同一段可以给很多篇用——这篇不勾了，只要别的笔记还在用，占用就转给最近那篇，不直接清掉 */
+      const o = npClipOtherOwner(prev, c.id, noteId);
+      c.usedBy = o ? String(o.id) : '';
+      c.usedByName = o ? String(o.title || '') : '';
+    }
   });
-  chosen.forEach(c => { c.usedBy = String(noteId); c.usedByName = title; });
+  chosen.forEach(c => { c.usedBy = String(noteId); c.usedByName = title || '（还没定名）'; });
   await npClipsWrite(freshClips);
   const refs = chosen.map(c => {
     const v = vOf(c.videoId);
+    let cat = '';
+    try { cat = npMatCatOfClip(c, v) || ''; } catch (_) { cat = ''; }
     return {
       clipId: String(c.id), videoId: String(c.videoId), videoName: String((v && v.name) || ''),
       a: Number(c.a) || 0, b: Number(c.b) || 0, dur: Number(c.dur) || 0,
       name: String(c.name || ''), desc: String(c.desc || ''),
       tags: npLibTagsAll(c, v).slice(0, 12), shot: Number(c.shot) || 0,
+      cat: cat, secs: Math.max(1, (Number(c.b) || 0) - (Number(c.a) || 0)),
     };
   });
   await npNotesSync(async () => {
@@ -29943,86 +34108,301 @@ async function npLibPickerSave(P, btn, sheet) {
     if (!t) return;
     const asm = (t.asm && typeof t.asm === 'object') ? Object.assign({}, t.asm) : {};
     asm.libClips = refs;
-    asm.libBrief = brief;
     t.asm = asm;
-    if (needTitle) t.title = title;
+    if (needTitle && title) t.title = title;
     t.updatedAt = Date.now();
     try { await chrome.storage.local.set({ [NP_NOTES_KEY]: list }); } catch (_) {}
   });
   const fresh = (await npNotesAll()).find(n => n && String(n.id) === String(noteId)) || null;
-  const usedPrev = prevRefs.filter(r => r && !chosenSet.has(String(r.clipId))).length;
   _npLibPick = null;
   if (P.m) P.m.close();
   _npLibCtx = null;
   if (!fresh) { try { toast('笔记建好了，但回读不到——去档案里点开它', 'error'); } catch (_) {} return; }
-  switchMainTab('noteCase', fresh);
-  try { toast('《' + String(fresh.title || title) + '》挑好 ' + refs.length + ' 段——进大组装' + (usedPrev ? '（撤下来的段已放开）' : '')); } catch (_) {}
   const grpForArt = P.groups.find(g => g && String(g.id) === String(P.colId)) || null;
   let colForArt = (grpForArt && grpForArt.folder) || null;
   if (!colForArt && chosen[0]) {
     colForArt = (_npLibCache.cols || []).find(c => c && !c.folder && String(c.id) === String(chosen[0].col)) || null;
   }
-  if (!String(fresh.draft || '').trim()) {
-    try { toast('正在让 AI 按每段说明写案例正文…'); } catch (_) {}
-    npLibCaseArticle(fresh, refs, brief, String((colForArt && colForArt.name) || '')).catch(() => {});
-  }
-}
-/* 案例正文：只用集合背景 + 每段说明写，不编数字/人名/品牌；写完给可改的弹窗，存进草稿 */
-async function npLibCaseArticle(fresh, refs, brief, colName) {
-  if (!fresh || !fresh.id || !(refs || []).length) return;
-  let r = null;
   try {
-    r = await chrome.runtime.sendMessage({
-      action: 'genCaseArticle',
-      data: {
-        colName: String(colName || '').slice(0, 40),
-        brief: String(brief || '').slice(0, 120),
-        segments: refs.map(x => ({ name: x.name, desc: x.desc, tags: x.tags })),
-      },
-    });
-  } catch (e) { r = { ok: false, error: npcErrText(e) }; }
-  if (!r || !r.ok) {
-    try { toast('案例正文没写出来：' + ((r && r.error) || '接口没回话') + '（挑段已经好了，先用大组装）', 'error'); } catch (_) {}
-    return;
-  }
-  const text = String(r.text || '').trim();
-  if (!text) return;
-  npLibModalOpen('<h3>📝 案例正文写好了</h3>' +
-    '<div class="npl-note">按集合背景和每段的说明写的，发之前能改。存进草稿后，去「发笔记」这篇就有正文了。</div>' +
-    '<textarea class="npl-textarea" id="nplArtText" rows="10" style="min-height:220px;">' + esc(text) + '</textarea>' +
-    '<div class="npl-fieldnote" id="nplArtChars">' + text.length + ' 字</div>' +
-    '<div class="npl-err" id="nplArtErr"></div>' +
-    '<div class="npl-actions-end">' +
-      '<button type="button" class="npl-btn" id="nplArtCopy">复制正文</button>' +
-      '<button type="button" class="npl-btn" id="nplArtClose">先不用</button>' +
-      '<button type="button" class="npl-btn primary" id="nplArtSave">存进草稿</button>' +
-    '</div>', (sheet, m) => {
-    const ta = sheet.querySelector('#nplArtText');
-    const errEl = sheet.querySelector('#nplArtErr');
-    ta.addEventListener('input', () => { const el = sheet.querySelector('#nplArtChars'); if (el) el.textContent = String(ta.value || '').length + ' 字'; });
-    sheet.querySelector('#nplArtClose').addEventListener('click', () => m.close());
-    sheet.querySelector('#nplArtCopy').addEventListener('click', async () => {
-      const txt = String(ta.value || '');
-      try { await navigator.clipboard.writeText(txt); try { toast('正文复制了'); } catch (_) {} }
-      catch (_) { try { ta.select(); document.execCommand('copy'); toast('正文复制了'); } catch (__) {} }
-    });
-    sheet.querySelector('#nplArtSave').addEventListener('click', async () => {
-      const txt = String(ta.value || '').trim();
-      if (!txt) { errEl.textContent = '正文不能空。'; return; }
-      await npNotesSync(async () => {
-        const list = await npNotesAll();
-        const t = list.find(x => x && String(x.id) === String(fresh.id));
-        if (!t) return;
-        t.draft = txt;
-        t.updatedAt = Date.now();
-        try { await chrome.storage.local.set({ [NP_NOTES_KEY]: list }); } catch (_) {}
-      });
-      m.close();
-      try { toast('存进草稿了——去「发笔记」这篇就有正文'); } catch (_) {}
-    });
+    const dm = document.getElementById('dirModal');
+    if (dm && dm.classList.contains('open')) npDirClose();   // 从「新建笔记」进来的：盖着的那层收掉，下面是大组装
+  } catch (_) {}
+  /* 出稿前先让他挑讲法（2026-11-12 老板定）：点了「先不写」就留在案例页，段已经记在这篇里 */
+  const styleWant = await npcStyleAsk();
+  if (styleWant === null) { switchMainTab('noteCase', fresh); return; }
+  try { toast('《' + String(fresh.title || '还没定名') + '》挑好 ' + refs.length + ' 段——AI 正在写正文…'); } catch (_) {}
+  npLibCaseScript(fresh, refs, String((colForArt && colForArt.name) || ''), styleWant).catch(() => { switchMainTab('noteCase', fresh); });
+}
+/* 案例一条龙（2026-11-10 老板定）：勾完段，AI 一次给标题＋按段分的口播＋正文。
+   讲法固定：场馆 → 本人（顺口说哪个场）→ 今天干了什么/谁表现怎么样 → 到店一句招呼。 */
+const NPC_CAT_HINT = { place: '🏬 场地', me: '🙋 本人', work: '🧰 干活', door: '🏪 到店' };
+/* 写法（与后端 CASE_STYLE、设置页「✍ 写稿禁忌」里那份下拉对齐）：同一批画面标签，换骨架＝换一条稿 */
+const NPC_CASE_STYLES = [
+  { k: 'report', n: '课后汇报', d: '今天练了什么 → 孩子状态 → 一个孩子的变化 → 卖点' },
+  { k: 'single', n: '单动作拆解', d: '只讲一个动作：卡在哪 → 怎么带 → 今天做到什么' },
+  { k: 'qa', n: '家长问答', d: '先抛一个家长常问的，用今天画面回答' },
+  { k: 'diary', n: '现场日记', d: '按时间顺序记，现场感最足' },
+  { k: 'contrast', n: '前后对比', d: '只讲同一段画面里的前后变化' },
+  { k: 'quote', n: '家长口吻转述', d: '引一句家长的原话 → 我接住 → 落到今天的孩子' },
+  { k: 'checklist', n: '报班前三条提醒', d: '不讲今天，讲选课先看三件事，每件配一个画面' },
+  { k: 'reverse', n: '结果倒叙', d: '先甩今天谁做到了什么，再回头讲怎么带上来的' },
+  { k: 'roll', n: '挨个孩子一句', d: '一人一句小细节，穿插我的旁白' },
+  { k: 'myth', n: '常见误区纠错', d: '很多家长以为……其实……，用画面证明' },
+  { k: 'detail', n: '两三个画面两个细节', d: '不铺全班，只挑两三段说细节' },
+];
+function npcCaseStyleName(k) {
+  const s = NPC_CASE_STYLES.find(x => x.k === String(k || ''));
+  return s ? s.n : '课后汇报';
+}
+/* 这个号的默认写法：设置页固定了就用它；没固定＝自动轮换（2026-11-12 老板定） */
+async function npcCaseStyleDefault() {
+  try {
+    const cfg = await readConfigPlain();
+    const p = (cfg && cfg.product && typeof cfg.product === 'object') ? cfg.product : {};
+    const k = String(p.caseStyle || '');
+    if (p.caseRotate === false && NPC_CASE_STYLES.some(s => s.k === k)) return k;
+    return '';
+  } catch (_) { return ''; }
+}
+/* 自动轮换：避开最近 3 篇用过的（新建稿、点「换一版」都走这里）；设置里固定了一种就听固定 */
+async function npcCaseStylePick(exceptKey, notesList) {
+  const fixed = await npcCaseStyleDefault();
+  if (fixed) return fixed;
+  let recent = [];
+  try {
+    const list = Array.isArray(notesList) ? notesList : await npNotesAll();
+    recent = list.filter(n => n && n.asm && n.asm.libStyle)
+      .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+      .slice(0, 3).map(n => String(n.asm.libStyle));
+  } catch (_) {}
+  const avoid = new Set(recent.concat(exceptKey ? [String(exceptKey)] : []));
+  const rest = NPC_CASE_STYLES.filter(s => !avoid.has(s.k));
+  const pool = rest.length ? rest : NPC_CASE_STYLES;
+  return pool[Math.floor(Math.random() * pool.length)].k;
+}
+/* 最近 3 篇的标题＋正文：带给 AI 当黑名单，小名、开头句式、口号别反复用 */
+async function npcRecentTexts(noteId, n) {
+  try {
+    const list = await npNotesAll();
+    return list.filter(x => x && String(x.id) !== String(noteId || ''))
+      .filter(x => x && x.asm && x.asm.libBlocks && String((x.asm.libBlocks || {}).content || '').trim())
+      .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))
+      .slice(0, n || 3)
+      .map(x => {
+        const b = (x.asm && x.asm.libBlocks) || {};
+        return '标题：' + String(x.title || '').trim() + '｜正文：' + String(b.content || '').trim();
+      })
+      .map(x => x.slice(0, 240));
+  } catch (_) { return []; }
+}
+/* 跟大组装同一套顺序：场地 → 本人 → 干活 → 到店；认不出的类排最后，同类保持勾选顺序 */
+function npCaseScriptOrder(refs) {
+  const order = ['place', 'me', 'work', 'door'];
+  return (refs || []).slice().sort((x, y) => {
+    const ix = order.indexOf(String((x && x.cat) || '')), iy = order.indexOf(String((y && y.cat) || ''));
+    return (ix < 0 ? 9 : ix) - (iy < 0 ? 9 : iy);
   });
 }
-
+/* 出稿前先问一句讲法（2026-11-12 老板定）：自动轮换＋11 种摆成格子，默认停在这个号的默认。
+   回：'' ＝自动轮换；讲法 key＝就按它写；null＝先不写（留在案例页，还能「🎞 换素材」重来） */
+async function npcStyleAsk() {
+  const fixed = await npcCaseStyleDefault();
+  return await new Promise((resolve) => {
+    let cur = fixed || '';
+    let done = false;
+    const cells = [{ k: '', n: '自动轮换', d: '每篇避开最近 3 篇用过的讲法，自己换着写（推荐）' }].concat(NPC_CASE_STYLES);
+    const mask = document.createElement('div');
+    mask.id = 'npcStyleAsk';
+    mask.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.46);';
+    mask.innerHTML =
+      '<div role="dialog" aria-modal="true" style="width:min(760px,96vw);max-height:88vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:16px 18px;font-family:var(--font-ui);color:var(--c-ink,#1f2328);">' +
+        '<style>' +
+          '.npcsq-grid{display:flex;flex-wrap:wrap;gap:8px;}' +
+          '.npcsq-c{flex:1 1 205px;min-width:175px;text-align:left;border:1px solid var(--c-line,#e5e7eb);border-radius:10px;background:#fff;padding:9px 11px;cursor:pointer;font-family:var(--font-ui);display:flex;flex-direction:column;gap:3px;}' +
+          '.npcsq-c:hover{border-color:var(--c-brand-line,#f0d9d9);}' +
+          '.npcsq-c.on{border-color:var(--c-brand,#e0554f);background:var(--c-brand-soft,#fdf2f2);box-shadow:0 0 0 1px var(--c-brand,#e0554f);}' +
+          '.npcsq-n{font-size:13px;font-weight:700;color:var(--c-ink,#1f2328);}' +
+          '.npcsq-c.on .npcsq-n{color:var(--c-brand-text,#b23b3b);}' +
+          '.npcsq-d{font-size:11px;line-height:1.6;color:var(--c-ink-3,#8a929e);}' +
+        '</style>' +
+        '<h3>这一篇用哪种讲法？</h3>' +
+        '<div style="font-size:11.5px;color:var(--c-ink-3,#8a929e);line-height:1.7;margin:2px 0 12px;">同一批画面，换个讲法就是另一条稿。选定就按它写；写出来不合适，改稿屏还能「↻ 换一版」。</div>' +
+        '<div class="npcsq-grid">' + cells.map(c =>
+          '<button type="button" class="npcsq-c' + (c.k === cur ? ' on' : '') + '" data-k="' + esc(c.k) + '">' +
+            '<span class="npcsq-n">' + esc(c.n) + '</span>' +
+            '<span class="npcsq-d">' + esc(c.d) + '</span>' +
+          '</button>').join('') + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:14px;">' +
+          '<span style="font-size:10.5px;color:var(--c-ink-3,#8a929e);">默认在这里改：设置 → ✍ 写稿禁忌 → 默认写法</span>' +
+          '<span style="flex:1;"></span>' +
+          '<button type="button" class="npcsq-x" style="padding:7px 13px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid var(--c-line,#e5e7eb);background:#fff;color:#555;">先不写</button>' +
+          '<button type="button" class="npcsq-go" style="padding:7px 15px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;border:none;background:var(--grad-brand,#e0554f);color:var(--c-brand-on,#fff);">就按这个写</button>' +
+        '</div>' +
+      '</div>';
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      try { document.removeEventListener('keydown', onKey, true); } catch (_) {}
+      try { mask.remove(); } catch (_) {}
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish(null); } };
+    mask.addEventListener('click', (e) => {
+      const cell = e.target && e.target.closest ? e.target.closest('[data-k]') : null;
+      if (cell) {
+        cur = String(cell.getAttribute('data-k') || '');
+        mask.querySelectorAll('[data-k]').forEach(x => x.classList.toggle('on', x === cell));
+        return;
+      }
+      if (e.target && e.target.closest && e.target.closest('.npcsq-go')) { finish(cur); return; }
+      if ((e.target && e.target.closest && e.target.closest('.npcsq-x')) || e.target === mask) { finish(null); }
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(mask);
+  });
+}
+async function npLibCaseScript(fresh, refs, colName, styleWant) {
+  if (!fresh || !fresh.id || !(refs || []).length) return;
+  const list = npCaseScriptOrder(refs);
+  const style = NPC_CASE_STYLES.some(s => s.k === String(styleWant || '')) ? String(styleWant) : await npcCaseStylePick();
+  const recent = await npcRecentTexts(fresh.id);
+  const r = await npCaseScriptRequest(list, colName, '', null, style, recent);
+  if (!r || !r.ok) {
+    try { toast('AI 没写出来：' + ((r && r.error) || '接口没回话') + '——点开这篇再点「🎞 换素材」重挑一次', 'error'); } catch (_) {}
+    switchMainTab('noteCase', fresh);
+    return;
+  }
+  const b = npCaseBlocksOf(r, list);
+  const asm0 = (fresh.asm && typeof fresh.asm === 'object') ? fresh.asm : {};
+  const st = {
+    title: String((r && r.title) || fresh.title || '').slice(0, 24),
+    intro: b.intro, content: b.content, door: b.door,
+    voice: String(asm0.voice || ''), bgm: Number(asm0.bgm) || 0, cover: Number(asm0.cover) || 0,
+    scriptCol: String(colName || ''), style: style, kidName: String((r && r.kidName) || ''), kidNone: false,
+  };
+  try { await npCaseBlocksPersist(fresh.id, st, list); }
+  catch (e) { try { toast('正文写好了但没存住：' + npcErrText(e), 'error'); } catch (_) {} }
+  _npCaseEditBoot = String(fresh.id);
+  const back = (await npNotesAll()).find(n => n && String(n.id) === String(fresh.id)) || fresh;
+  switchMainTab('noteCase', back);
+}
+/** 写稿用的段：缺「现场」时把能用的段改标成现场（只改这一份副本，不动素材库）——
+ *  店里料少也要写得满：开头、结尾各留一段配画面，其余都当内容讲。 */
+function npCaseScriptSegs(list) {
+  const rows = (list || []).map(x => ({
+    cat: String(x.cat || ''), name: String(x.name || ''), desc: String(x.desc || ''),
+    tags: (x.tags || []).slice(0, 4), secs: Number(x.secs || x.dur || 0),
+  }));
+  const hasWork = rows.some(s => s.cat !== 'place' && s.cat !== 'me' && s.cat !== 'door');
+  if (hasWork) return rows;
+  /* 留一段场馆配开场、留一段到店配收尾，其余都当内容讲；一段都不剩就把第一段当内容 */
+  const first = k => rows.findIndex(s => s.cat === k);
+  const keepPlace = first('place'), keepDoor = first('door');
+  const spare = rows.map((s, i) => i).filter(i => i !== keepPlace && i !== keepDoor);
+  if (!spare.length) { if (rows.length) rows[0].cat = 'work'; return rows; }
+  spare.forEach(i => { rows[i].cat = 'work'; });
+  return rows;
+}
+async function npCaseScriptRequest(list, colName, instruct, current, style, recentTexts, kidName) {
+  const data = {
+    style: NPC_CASE_STYLES.some(s => s.k === String(style || '')) ? String(style) : '',
+    kidName: String(kidName || '').slice(0, 6),
+    colName: String(colName || '').slice(0, 40),
+    segments: npCaseScriptSegs(list).map(x => Object.assign({}, x, {
+      catName: (typeof npMatCatName === 'function') ? npMatCatName(x.cat || NP_MAT_WAIT) : '',
+    })),
+  };
+  if (Array.isArray(recentTexts) && recentTexts.length) data.recentTexts = recentTexts.filter(Boolean).slice(0, 3);
+  if (instruct) data.instruct = String(instruct).slice(0, 200);
+  if (current) {
+    data.current = current;
+    if (current.mode === 'again') data.mode = 'again';
+  }
+  try { return await chrome.runtime.sendMessage({ action: 'genCaseScript', data: data }); }
+  catch (e) { return { ok: false, error: npcErrText(e) }; }
+}
+/* 新接口按组回（引言＝场馆＋本人一句）；老接口只有一段一行，按大类拼回来兜底 */
+function npCaseGroupsOf(r, refs) {
+  const lines = (Array.isArray(r && r.lines) ? r.lines : []).map(x => String(x || ''));
+  const maxs = Array.isArray(r && r.max) ? r.max : [];
+  const out = [];
+  const raw = Array.isArray(r && r.groups) ? r.groups : [];
+  raw.forEach(g => {
+    const idx = (Array.isArray(g && g.segIdx) ? g.segIdx : [])
+      .map(n => parseInt(n, 10)).filter(n => isFinite(n) && n >= 0 && n < refs.length);
+    if (!idx.length) return;
+    out.push({
+      role: String((g && g.role) || ''), segIdx: idx, text: String((g && g.text) || ''),
+      max: Number(g && g.max) || Number(maxs[idx[0]]) || 0,
+    });
+  });
+  if (out.length) return out;
+  const pick = (fn) => refs.map((x, i) => (fn(x || {}) ? i : -1)).filter(i => i >= 0);
+  const intro = pick(x => x.cat === 'place' || x.cat === 'me');
+  if (intro.length) out.push({ role: 'intro', segIdx: intro, text: lines[intro[0]] || '', max: maxs[intro[0]] || 0 });
+  refs.forEach((x, i) => {
+    if (!x || x.cat === 'place' || x.cat === 'me' || x.cat === 'door') return;
+    out.push({ role: 'work', segIdx: [i], text: lines[i] || '', max: maxs[i] || 0 });
+  });
+  const door = pick(x => x.cat === 'door');
+  if (door.length) out.push({ role: 'door', segIdx: door, text: lines[door[0]] || '', max: maxs[door[0]] || 0 });
+  return out;
+}
+/* 三块正文：新接口直接给；老笔记只有按组的口播，按组归并成三块，不丢字 */
+function npCaseBlocksOf(r, refs) {
+  if (r && (r.blocks || r.intro || r.content || r.door)) {
+    return {
+      intro: String(r.intro || '').trim(),
+      content: String(r.content || '').trim(),
+      door: String(r.door || '').trim(),
+    };
+  }
+  const groups = npCaseGroupsOf(r, refs);
+  const pick = (role) => groups.filter(g => String((g && g.role) || '') === role)
+    .map(g => String((g && g.text) || '').trim()).filter(Boolean);
+  const intro = pick('intro').join(' ');
+  let content = pick('work').join('。');
+  const door = pick('door').join(' ');
+  if (!content) content = String((r && r.body) || '').trim();
+  return { intro: intro, content: content.replace(/。$/, ''), door: door };
+}
+function npCaseMergeOf(b) {
+  return [String((b && b.intro) || '').trim(), String((b && b.content) || '').trim(), String((b && b.door) || '').trim()]
+    .filter(Boolean).join('\n\n');
+}
+async function npCaseBlocksPersist(noteId, st, refs) {
+  const body = npCaseMergeOf(st);
+  await npNotesSync(async () => {
+    const list = await npNotesAll();
+    const t = list.find(x => x && String(x.id) === String(noteId));
+    if (!t) return;
+    const asm = (t.asm && typeof t.asm === 'object') ? Object.assign({}, t.asm) : {};
+    asm.libBlocks = { intro: String(st.intro || ''), content: String(st.content || ''), door: String(st.door || '') };
+    asm.voice = String(st.voice || '');
+    asm.bgm = Number(st.bgm) || 0;
+    asm.cover = Number(st.cover) || 0;
+    asm.scriptAt = Date.now();
+    if (st.scriptCol !== undefined) asm.scriptCol = String(st.scriptCol || '');
+    if (st.style !== undefined) asm.libStyle = String(st.style || '');
+    if (st.kidName !== undefined) asm.kidName = String(st.kidName || '');
+    if (st.kidNone !== undefined) asm.kidNone = !!st.kidNone;
+    if (!Array.isArray(asm.libClips) || !asm.libClips.length) {
+      asm.libClips = (refs || []).filter(x => x && x.clipId).map(x => ({
+        clipId: String(x.clipId), videoId: String(x.videoId || ''), videoName: String(x.videoName || ''),
+        a: Number(x.a) || 0, b: Number(x.b) || 0, dur: Number(x.dur) || 0,
+        name: String(x.name || ''), desc: String(x.desc || ''),
+        tags: (x.tags || []).map(String).slice(0, 12), shot: Number(x.shot) || 0,
+        cat: String(x.cat || ''), vo: '', gid: '',
+      }));
+    }
+    t.asm = asm;
+    if (String(st.title || '').trim()) t.title = String(st.title).trim().slice(0, 40);
+    t.draft = body;
+    t.updatedAt = Date.now();
+    try { await chrome.storage.local.set({ [NP_NOTES_KEY]: list }); } catch (_) {}
+  });
+  return body;
+}
 async function npLibCtxBack() {
   if (!_npLibCtx) return;
   const notes = await npNotesAll();
@@ -30043,12 +34423,13 @@ async function npLibEnterCtx(n) {
   switchMainTab('noteAssets');
   const [clips, videos] = await Promise.all([npClipsRead(), npVideosRead()]);
   const vOf = (id) => videos.find(v => v && String(v.id) === String(id)) || null;
-  const ready = clips.filter(c => c && c.videoId && vOf(c.videoId) && npLibReady(c, vOf(c.videoId))).length;
+  /* 11-11：挑段不再要求名字/标签/说明齐——有切好的段就能打开挑 */
+  const ready = clips.filter(c => c && c.videoId && vOf(c.videoId)).length;
   setTimeout(() => {
     if (!_npLibCtx || String(_npLibCtx.noteId) !== String(note.id)) return;
     if (!npLibCurrentContainer()) return;
     if (ready) npLibOpenPicker({ noteId: note.id });
-    else { try { toast('素材库里还没有备好的段——先导入原视频、点镜头，把名字/标签/说明填齐再回来挑'); } catch (_) {} }
+    else { try { toast('素材库里还没有切好的段——先去切片台切一批再回来挑'); } catch (_) {} }
   }, 60);
 }
 async function npLibReopenPicker(noteId) {
@@ -30064,13 +34445,21 @@ async function npLibReopenPicker(noteId) {
   }, 60);
 }
 
-/* ── 占用：挑段时锁、发完/归档/删篇放开；状态改回来再锁 ── */
+/* ── 占用：只挡重切/删除/重新分镜，挑段不再锁；发完/归档/删篇按「还有没有别篇在用」放开 ── */
 async function npLibReleaseNote(noteId) {
   const id = String(noteId || '');
   if (!id) return;
+  const notes = await npNotesAll();
   const clips = await npClipsRead();
   let dirty = false;
-  clips.forEach(c => { if (c && String(c.usedBy || '') === id) { c.usedBy = ''; c.usedByName = ''; dirty = true; } });
+  clips.forEach(c => {
+    if (!c || String(c.usedBy || '') !== id) return;
+    /* 11-11：同一段可以给很多篇用——这篇发完/删了，还有别篇在用就转给最近那篇 */
+    const o = npClipOtherOwner(notes, c.id, id);
+    c.usedBy = o ? String(o.id) : '';
+    c.usedByName = o ? String(o.title || '') : '';
+    dirty = true;
+  });
   if (dirty) await npClipsWrite(clips);
   if (_npLibCtx && String(_npLibCtx.noteId) === id) _npLibCtx = null;
   const cc = npLibCurrentContainer();
@@ -30089,10 +34478,9 @@ async function npLibRelockNote(noteId) {
   let dirty = false;
   clips.forEach(c => {
     if (!c || !want.has(String(c.id))) return;
-    if (!c.usedBy || String(c.usedBy) === id) {
-      if (String(c.usedBy || '') !== id || String(c.usedByName || '') !== String(n.title || '')) {
-        c.usedBy = id; c.usedByName = String(n.title || ''); dirty = true;
-      }
+    /* 11-11：占用只记最近一篇——撤回重做就把名字改回这篇，不因为别篇用过就放着不管 */
+    if (String(c.usedBy || '') !== id || String(c.usedByName || '') !== String(n.title || '')) {
+      c.usedBy = id; c.usedByName = String(n.title || ''); dirty = true;
     }
   });
   if (dirty) await npClipsWrite(clips);
@@ -30102,21 +34490,14 @@ async function npLibLockForNote(noteId, title, refs) {
   if (!want.size) return;
   const clips = await npClipsRead();
   let dirty = false;
-  const conflict = [];
+  /* 11-11：挑段不锁——同一段可以给很多篇用，占用只记「最近一篇」，不拦也不提醒 */
   clips.forEach(c => {
     if (!c || !want.has(String(c.id))) return;
-    if (!c.usedBy || String(c.usedBy) === String(noteId)) {
-      if (String(c.usedBy || '') !== String(noteId) || String(c.usedByName || '') !== String(title || '')) {
-        c.usedBy = String(noteId); c.usedByName = String(title || ''); dirty = true;
-      }
-    } else {
-      conflict.push(String(c.usedByName || '另一条笔记'));
+    if (String(c.usedBy || '') !== String(noteId) || String(c.usedByName || '') !== String(title || '')) {
+      c.usedBy = String(noteId); c.usedByName = String(title || ''); dirty = true;
     }
   });
   if (dirty) await npClipsWrite(clips);
-  if (conflict.length) {
-    try { toast('有 ' + conflict.length + ' 段正被《' + conflict[0] + '》用着——那条发掉或撤下来后，这篇再挑一次更稳', 'error'); } catch (_) {}
-  }
 }
 
 /* ── 旧数据页顶条 ── */
@@ -30141,7 +34522,8 @@ function toast(msg, kind) {
     if (!box) {
       box = document.createElement('div');
       box.id = 'popToastBox';
-      box.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:6px;z-index:99999;pointer-events:none;';
+      // z-index 要压在 .modal-mask（2147483646）上面——弹窗开着时提示才看得见
+      box.style.cssText = 'position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:6px;z-index:2147483647;pointer-events:none;';
       document.body.appendChild(box);
     }
     // 有钉右下的主按钮（三十六改）时往上让一让——别把「下一步」盖住。
@@ -30153,7 +34535,8 @@ function toast(msg, kind) {
       (kind === 'error' ? '#d32f2f' : '#333') + ';box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:0;transition:opacity .15s;';
     box.appendChild(el);
     requestAnimationFrame(() => { el.style.opacity = '1'; });
-    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); }, 2200);
+    // 错话一般更长，停 4.5 秒让人读得完；普通提示照旧 2.2 秒
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 200); }, kind === 'error' ? 4500 : 2200);
   } catch (_) {}
 }
 
@@ -30183,41 +34566,6 @@ function _setPanelLeftVisible(visible) {
 let _followBatchBtn = null, _followRefreshBtn = null;
 let _plRefreshBtn = null, _plSettingsBtn = null;
 
-/* ── 找商机：这批商机评论按什么目的写（打法优先级见 background PURPOSE_META） ──
-   数据仍落 product.commentPurpose，扫描时由 background 解析成打法倾向。 */
-var PURPOSE_OPTS = [
-  ['sell', '🛍️ 卖产品（获客转化）'],
-  ['brand', '🏷️ 品牌种草（信任/口碑）'],
-  ['profile', '👤 主页涨粉（引流主页）'],
-  ['likes', '👍 互动涨赞（提升活跃）'],
-  ['trend', '🔥 蹭热点（借话题/大V）'],
-  ['auto', '🧩 综合自动（每条看菜下饭）'],
-];
-async function initPurposeBar() {
-  const sel = document.getElementById('purposeSel');
-  if (!sel) return;
-  if (!sel.options.length) {
-    sel.innerHTML = PURPOSE_OPTS.map(p => '<option value="' + p[0] + '">' + esc(p[1]) + '</option>').join('');
-  }
-  try {
-    const cfg = await readConfigPlain();
-    const p = cfg.product || {};
-    const cur = p.commentPurpose || (cfg.scriptStyle && cfg.scriptStyle.scriptPurpose) || 'sell';
-    sel.value = PURPOSE_OPTS.some(x => x[0] === cur) ? cur : 'sell';
-  } catch (_) {}
-  sel.onchange = async () => {
-    const msg = document.getElementById('purposeMsg');
-    try {
-      const cfg = await readConfigPlain();
-      cfg.product = cfg.product || {};
-      cfg.product.commentPurpose = sel.value || 'sell';
-      if (cfg.scriptStyle) delete cfg.scriptStyle.scriptPurpose;   // 写过新字段就清掉旧字段，避免两处取值打架
-      await _diagSaveCfg(cfg);
-      if (msg) { msg.textContent = '✅ 已保存，下次扫描生效'; setTimeout(() => { if (msg.textContent.indexOf('已保存') >= 0) msg.textContent = ''; }, 2000); }
-    } catch (e) { if (msg) msg.textContent = '保存失败：' + (e.message || e); }
-  };
-}
-
 function _setToolbarMode(mode) {
   const group = document.getElementById('commentBtnGroup');
   const refresh = document.getElementById('refreshBtn');
@@ -30225,10 +34573,6 @@ function _setToolbarMode(mode) {
   const isComment = (mode === 'comment');
   group.style.display = isComment ? '' : 'none';
   if (refresh) refresh.style.display = isComment ? '' : 'none';
-  // 评论目的（找商机用）：只在获客助手出现，切回来自动同步最新配置
-  const bar = document.getElementById('purposeBar');
-  if (bar) bar.style.display = isComment ? '' : 'none';
-  if (isComment) initPurposeBar();
   if (mode === 'prospectList') {
     if (!_plRefreshBtn) {
       _plRefreshBtn = document.createElement('button');
@@ -30483,6 +34827,10 @@ const StepFlow = {
       const textarea = document.getElementById('step3Text');
       const replyText = (textarea ? textarea.value : '').trim();
       if (!replyText) { this._flash('⚠️ 请输入回复内容', 'err'); return; }
+      if (typeof drainLooksMetaText === 'function' && drainLooksMetaText(replyText)) {
+        this._flash('⚠️ 这句读起来像解释，不是回复，已拦下', 'err');
+        return;
+      }
       const sendBtn = document.getElementById('step3Send');
       sendBtn.disabled = true;
       sendBtn.textContent = '发送中...';
@@ -31222,7 +35570,7 @@ function editionFeatureOn(name) {
 }
 
 
-/** 🛡 账号安全小标（顶栏，只读）：只显示当前挡位；悬停看今日总账 / 单休 / 静默期 */
+/** 🛡 账号安全小标（顶栏，只读）：只显示当前挡位；悬停看今日总账 / 静默期 */
 async function renderGuardBadge() {
   const el = document.getElementById('guardBadge');
   if (!el) return;
@@ -31232,11 +35580,10 @@ async function renderGuardBadge() {
     el.style.display = '';
     el.textContent = '🛡 ' + st.level;
     const lines = (st.rows || []).filter(r => r.cap > 0).map(r => '· ' + r.name + ' ' + r.used + '/' + r.cap);
-    if (st.rest && st.rest.day >= 0) lines.push('· 每周单休：' + st.rest.name + (st.rest.today ? '（今天全停）' : ''));
     const quietNow = st.quiet && (st.quiet.inQuiet || st.quiet.beforeWake);
     lines.push('· 静默期 21:00–09:00' + (quietNow ? '（现在不跑，顺延）' : ''));
     if (st.blocked) lines.push('⛔ ' + st.blocked.text);
-    el.title = '账号安全 · 一天自动化总账（' + st.level + ' 挡）\n' + lines.join('\n') + '\n点「设置 → 🛡 账号安全」调挡位 / 换休息日 / 记体检卡';
+    el.title = '账号安全 · 一天自动化总账（' + st.level + ' 挡）\n' + lines.join('\n') + '\n点「设置 → 🛡 账号安全」调挡位 / 记体检卡';
   } catch (_) {}
 }
 /* 账本 / 挡位 / 发布缓冲 / 切租户一变就随手刷（跟灌水实时进度同一个 storage 通路） */
@@ -31813,7 +36160,7 @@ async function batchSendAll() {
       continue;
     }
 
-    // 🛡 账号安全：每条 = 总账「评论 + 回复」一笔；静默期 / 单休 / 额度用完 → 整批停下
+    // 🛡 账号安全：每条 = 总账「评论 + 回复」一笔；额度用完 → 整批停下
     //    （已发出去的照常走账；剩下的按钮保持「待发」，额度到了 / 出了静默期再发）
     if (typeof AccountGuard !== 'undefined') {
       let g = null;
@@ -32995,20 +37342,25 @@ async function loadProspecting(container, skipScreen) {
     try {
       const _shown = filteredComments.slice(0, 30);
       addLog(`🔍 本次共拓到 ${(pageData.comments || []).length} 条评论（过滤已回复后待分析 ${filteredComments.length} 条），下面逐条列出让你核对：`, 'info');
-      // ★ 同城挡位状态：把「关没关 / 城市记没记」明确报出来，避免以为同城没生效
+      // ★ 同城：这个玩法选「不筛 / 优先 / 全收」，只把城市事实报出来
       try {
         const _cfg = await readConfigPlain();
         const _mc = (_cfg && _cfg.myCity && typeof _cfg.myCity === 'object') ? _cfg.myCity : {};
         const _myCity = String(_mc.city || '').trim();
         const _myZone = String(_mc.ipLocation || '').trim();
-        const _mode = ['force', 'priority', 'off'].includes(_cfg && _cfg.sameCityMode) ? _cfg.sameCityMode : 'priority';
-        const _modeName = { force: '同城就回', priority: '同城优先', off: '已关闭' }[_mode];
-        if (_mode === 'off') {
-          addLog('🏙 同城挡位已关闭：属地不参与判断（可在「账号规划 → 基础配置」开启）', 'info');
+        let _opt = 'priority';
+        try {
+          if (typeof drainPbPlan === 'function' && typeof drainGetScanCfg === 'function' && _scNow) {
+            _opt = drainPbPlan(await drainGetScanCfg(), _scNow).city || 'priority';
+          }
+        } catch (_) {}
+        const _optName = { force: '全收', priority: '优先', off: '不筛' }[_opt] || '优先';
+        if (_opt === 'off') {
+          addLog('🏙 这个玩法的同城选「不筛」：属地不参与判断（要改去「获客 → 配置 → 玩法配置」那一列）', 'info');
         } else if (_myCity || _myZone) {
-          addLog(`🏙 同城挡位${_modeName}：我的城市 = ${_myCity || _myZone}${(_myZone && _myCity && _myZone !== _myCity) ? '（主页 IP 属地：' + _myZone + '）' : ''} · 同省即算同城`, 'info');
+          addLog(`🏙 同城「${_optName}」：我的城市 = ${_myCity || _myZone}${(_myZone && _myCity && _myZone !== _myCity) ? '（主页 IP 属地：' + _myZone + '）' : ''} · 同省即算同城`, 'info');
         } else {
-          addLog(`🏙 同城挡位${_modeName}，但还没记录你的城市 → 去「账号规划 → 基础配置」抓主页读取或手填，否则同城不会生效`, 'warn');
+          addLog(`🏙 同城「${_optName}」，但还没记录你的城市 → 去「账号规划 → 基础配置」抓主页读取或手填，否则同城不会生效`, 'warn');
         }
       } catch (_) {}
       let _numLike = 0;
@@ -33171,7 +37523,10 @@ async function loadProspecting(container, skipScreen) {
     
     // 日志：显示给AI的完整提示词（用于调试）
     const prompts = result.prompts || {};
-    if (prompts.system || prompts.user) {
+    // 给AI的完整提示词只在调试时打（网址带 ?debug=1，或本机开过 xhs_show_prompts）
+    let dbgPrompts = false;
+    try { dbgPrompts = /[?&]debug=1/.test(location.search) || localStorage.getItem('xhs_show_prompts') === '1'; } catch (_) {}
+    if (dbgPrompts && (prompts.system || prompts.user)) {
       addLog('━━━━━━━━━━ 📝 AI提示词（调试用）━━━━━━━━━━', 'info');
       addLog('【System Prompt】', 'info');
       addLog(prompts.system || '(空)', 'info');
@@ -33574,6 +37929,13 @@ async function loadProspecting(container, skipScreen) {
           showSendResult(prospectIdx, '请输入回复内容', 'fail');
           return;
         }
+        if (typeof drainLooksMetaText === 'function' && drainLooksMetaText(replyText)) {
+          btn.dataset.sendDone = '1';   // 告诉自动批量：这条已处理，别干等 150 秒
+          showSendResult(prospectIdx, '这句读起来像解释，不是回复，已拦下', 'fail');
+          return;
+        }
+        /* 把这句回复挂在按钮上：机器人发成功后要把它写进本篇记录（老板要回看「回了啥」） */
+        btn.dataset.replyText = replyText.slice(0, 160);
 
         btn.disabled = true;
         btn.textContent = '发送中...';
@@ -35037,7 +39399,7 @@ function todayRender(snap) {
         const menu = document.getElementById('hdrTodayMenu');
         if (menu) menu.style.display = 'none';
         if (el.getAttribute('data-qact') === 'cfg') {
-          try { if (typeof switchMainTab === 'function') switchMainTab('queue'); } catch (_) {}
+          try { if (typeof switchMainTab === 'function') switchMainTab('plan'); } catch (_) {}
           return;
         }
         todayStartQueue();
@@ -35133,6 +39495,10 @@ window.renderTodayBtn = todayRefresh;
   document.getElementById('todayGoCard')?.addEventListener('click', () => {
     if (menu) menu.style.display = 'none';
     try { chrome.tabs.create({ url: chrome.runtime.getURL('guide.html') }); } catch (_) {}
+  });
+  /* 运行日志收进这一排了：面板由 exec-bridge 按 id 打开，这边只负责把菜单合上，别压在罩子底下 */
+  document.getElementById('hdrRunLogBtn')?.addEventListener('click', () => {
+    if (menu) menu.style.display = 'none';
   });
   try {
     chrome.storage.onChanged.addListener((ch) => {
