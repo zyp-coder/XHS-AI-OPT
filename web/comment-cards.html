@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>评论场景表 · 客满来</title>
+<script src="chrome-shim.js"></script>
+<script src="theme.js"></script>
+<link rel="stylesheet" href="ui.css">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--c-bg); color: var(--c-ink); font: 14px/1.6 var(--font-ui); }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 20px 60px; }
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 18px; background:
+    linear-gradient(120deg, var(--c-brand-soft) 0%, var(--c-surface) 62%);
+    border: 1px solid var(--c-brand-line); border-radius: var(--r-lg); margin-bottom: 14px; }
+  .top h1 { font-size: var(--fs-xl); margin: 0; letter-spacing: .2px; }
+  .top .sub { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--fs-sm); }
+  .sp { flex: 1; }
+  .pill { display: inline-block; padding: 3px 11px; border-radius: var(--r-full); font-size: var(--fs-sm);
+    font-weight: 700; background: var(--c-brand-soft); color: var(--c-brand-text); border: 1px solid var(--c-brand-line); }
+  .btn { border: 1px solid var(--c-line-2); background: var(--c-surface); color: var(--c-ink); border-radius: var(--r-md);
+    padding: 7px 13px; font: inherit; font-size: var(--fs-md); cursor: pointer; transition: .15s; }
+  .btn:hover { border-color: var(--c-brand); color: var(--c-brand-text); }
+  .btn.pri { background: var(--c-brand); border-color: var(--c-brand); color: var(--c-brand-on); font-weight: 600; }
+  .btn.pri:hover { background: var(--c-brand-ink); border-color: var(--c-brand-ink); color: #fff; }
+  .btn.sm { padding: 4px 10px; font-size: var(--fs-sm); }
+  .btn.xs { padding: 2px 8px; font-size: var(--fs-xs); border-radius: var(--r-sm); }
+  .btn.ghost { border-color: transparent; background: transparent; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--c-line); margin-bottom: 14px; }
+  .tab { border: none; background: transparent; padding: 9px 16px; font: inherit; font-size: var(--fs-md);
+    color: var(--c-ink-2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
+  .tab:hover { color: var(--c-brand-text); }
+  .tab.on { color: var(--c-brand-text); border-bottom-color: var(--c-brand); }
+  .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .inp { border: 1px solid var(--c-line-2); background: var(--c-surface); border-radius: var(--r-md);
+    padding: 7px 11px; font: inherit; font-size: var(--fs-md); color: var(--c-ink); outline: none; }
+  .inp:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-a15); }
+  #q { width: 340px; max-width: 100%; }
+  .muted { color: var(--c-ink-3); font-size: var(--fs-sm); }
+  /* ── 场景表：一张卡一块，内容直接摊在列表里 ── */
+  .slist { border: 1px solid var(--c-line); border-radius: var(--r-lg); overflow: hidden; background: var(--c-surface); }
+  .scard { border-bottom: 1px solid var(--c-line); }
+  .scard:last-child { border-bottom: 0; }
+  .scard-h { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
+  .scard-h:hover { background: var(--c-surface-2); }
+  .scard-b { padding: 4px 14px 14px 46px; background: var(--c-surface-2); border-top: 1px dashed var(--c-line-2); }
+  .sno { width: 24px; flex: none; font-size: var(--fs-xs); color: var(--c-ink-3); font-variant-numeric: tabular-nums; }
+  .srow-main { flex: 1; min-width: 0; }
+  .srow-t { font-size: var(--fs-md); font-weight: 700; color: var(--c-ink); }
+  .srow-w { font-size: var(--fs-sm); color: var(--c-ink-2); margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .srow-n { flex: none; font-size: var(--fs-xs); color: var(--c-ink-2); background: var(--c-bg-2);
+    border-radius: var(--r-full); padding: 1px 9px; }
+  .scard .btn { flex: none; }
+  .sline { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: var(--fs-xs);
+    color: var(--c-ink-3); margin-top: 10px; line-height: 1.9; }
+  .sline b { flex: none; color: var(--c-ink-2); font-size: var(--fs-xs); }
+  .sbr { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-md);
+    padding: 9px 12px; margin-top: 8px; }
+  .sbr-h { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: var(--fs-md); color: var(--c-ink); }
+  .sbr-h .cond { color: var(--c-ink); }
+  .sbr-h .goal { font-size: var(--fs-sm); color: var(--c-brand-text); }
+  .ssay { margin-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+  .sone { display: flex; align-items: flex-start; gap: 8px; font-size: var(--fs-md); color: var(--c-ink);
+    background: var(--c-surface-2); border: 1px solid var(--c-line); border-radius: var(--r-sm);
+    padding: 6px 9px; line-height: 1.7; }
+  .sone > span:nth-child(2) { flex: 1; }
+  .sn { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--c-brand-soft);
+    color: var(--c-brand-text); font-size: var(--fs-xs); display: inline-flex; align-items: center;
+    justify-content: center; margin-top: 2px; }
+  .whorow { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 10px; }
+  .whorow .fld { width: 160px; flex: none; margin-bottom: 0; }
+  .whorow .tip { padding-bottom: 8px; }
+  @media (max-width: 700px) {
+    .scard-h { flex-wrap: wrap; }
+    .scard-b { padding-left: 14px; }
+    .whorow { flex-direction: column; align-items: stretch; }
+    .whorow .tip { padding-bottom: 0; }
+  }
+  .chip { display: inline-block; border-radius: var(--r-full); padding: 1px 8px; font-size: var(--fs-xs);
+    background: var(--c-bg-2); border: 1px solid var(--c-line); color: var(--c-ink-2); }
+  .chip.angle { background: var(--c-brand-soft); border-color: var(--c-brand-line); color: var(--c-brand-text); font-weight: 600; }
+  .angle-共情接住 { background: #fff4e5 !important; border-color: #f2d3a4 !important; color: #9a5b00 !important; }
+  .angle-案例带人 { background: #e8f1fd !important; border-color: #c3d8f5 !important; color: #1d4f91 !important; }
+  .angle-方法拆解 { background: #e6f5f3 !important; border-color: #b5ddd7 !important; color: #0a7067 !important; }
+  .angle-数据实证 { background: #ecebfd !important; border-color: #cfcdf0 !important; color: #4b3fa3 !important; }
+  .angle-专业判断 { background: #eef1f5 !important; border-color: #d5dbe4 !important; color: #3f4a5c !important; }
+  .angle-避坑提醒 { background: #fdeeee !important; border-color: #f2c7c7 !important; color: #a52a2a !important; }
+  .angle-对比取舍 { background: #f6ebfb !important; border-color: #e3c8f0 !important; color: #74358f !important; }
+  .angle-随口搭话 { background: #f1f3f6 !important; border-color: #dfe4ea !important; color: #5b6472 !important; }
+  .chip.who { background: #eef7fb; border-color: #d5e6f2; color: #0a6b8a; font-weight: 700; }
+  .brblock { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 8px; background: var(--c-surface-2); }
+  .brblock .cond { font-weight: 700; font-size: var(--fs-md); }
+  .brblock .goal { color: var(--c-ink-2); font-size: var(--fs-sm); margin: 2px 0 7px; }
+  .sayline { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; border-top: 1px dashed var(--c-line); }
+  .sayline:first-of-type { border-top: none; }
+  .sayline .txt { flex: 1; font-size: var(--fs-md); }
+  .warnbox { background: #fdf3e2; border: 1px solid #f0d8a8; color: #8a5a00; border-radius: var(--r-md); padding: 8px 11px; font-size: var(--fs-sm); }
+  .empty { padding: 40px 20px; text-align: center; color: var(--c-ink-3); background: var(--c-surface);
+    border: 1px dashed var(--c-line-2); border-radius: var(--r-lg); }
+  .pane { display: none; }
+  .pane.on { display: block; }
+  .panel { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-lg); padding: 16px 18px; margin-bottom: 12px; }
+  .panel h3 { font-size: var(--fs-lg); margin: 0 0 4px; }
+  .panel .cap { color: var(--c-ink-2); font-size: var(--fs-sm); margin: 0 0 12px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 800px) { .row2 { grid-template-columns: 1fr; } }
+  .fld { display: block; margin-bottom: 10px; }
+  .fld > span { display: block; font-size: var(--fs-sm); font-weight: 700; color: var(--c-ink-2); margin-bottom: 4px; }
+  .fld input, .fld textarea, .fld select { width: 100%; border: 1px solid var(--c-line-2); border-radius: var(--r-md);
+    padding: 7px 10px; font: inherit; font-size: var(--fs-md); background: var(--c-surface); outline: none; }
+  .fld input:focus, .fld textarea:focus { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-a15); }
+  .fld textarea { resize: vertical; min-height: 62px; }
+  .rtable { width: 100%; border-collapse: collapse; }
+  .rtable th, .rtable td { border-bottom: 1px solid var(--c-line); padding: 9px 8px; text-align: left; vertical-align: top; font-size: var(--fs-sm); }
+  .rtable th { color: var(--c-ink-3); font-size: var(--fs-xs); font-weight: 700; background: var(--c-surface-2); }
+  .rtable td .sent { font-size: var(--fs-md); }
+  .st { display: inline-block; border-radius: var(--r-full); padding: 1px 9px; font-size: var(--fs-xs); font-weight: 700; }
+  .st.ok { background: var(--c-ok-soft); color: var(--c-ok); }
+  .st.blocked, .st.skip, .st.unmatched, .st.missing { background: #fdeeee; color: #a52a2a; }
+  .st.none { background: #fdf3e2; color: #8a5a00; }
+  .candlist { display: flex; flex-direction: column; gap: 4px; }
+  .cand { padding: 4px 7px; border-radius: var(--r-sm); background: var(--c-surface-2); border: 1px solid var(--c-line); }
+  .cand.pick { background: var(--c-ok-soft); border-color: var(--c-ok-line); }
+  .cand .why { color: #a52a2a; font-size: var(--fs-xs); margin-left: 5px; }
+  .cand .strike { text-decoration: line-through; opacity: .7; }
+  .loading { color: var(--c-ink-3); font-size: var(--fs-sm); padding: 10px 0; }
+  .logitem { border-bottom: 1px solid var(--c-line); padding: 10px 0; }
+  .logitem:last-child { border-bottom: none; }
+  .logitem .l1 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: var(--fs-sm); color: var(--c-ink-3); }
+  .logitem .l2 { margin-top: 3px; font-size: var(--fs-md); }
+  .mask { position: fixed; inset: 0; background: rgba(20, 24, 31, .42); display: flex; align-items: center;
+    justify-content: center; padding: 20px; z-index: 1000; }
+  .mask[hidden] { display: none; }
+  .modal { background: var(--c-surface); width: min(820px, 100%); max-height: 90vh; border-radius: var(--r-lg);
+    box-shadow: 0 18px 50px rgba(16, 24, 40, .22); display: flex; flex-direction: column; overflow: hidden; }
+  .mh { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--c-line); }
+  .mh b { font-size: var(--fs-lg); }
+  .mh .x { border: none; background: transparent; font-size: 18px; cursor: pointer; color: var(--c-ink-3); }
+  .mb { padding: 16px 18px; overflow: auto; }
+  .mf { display: flex; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--c-line); background: var(--c-surface-2); }
+  .br { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: 10px 12px; margin-bottom: 9px; background: var(--c-surface-2); }
+  .brh { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .sayrow { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 5px; }
+  .sayrow select { width: 108px; flex: none; }
+  .sayrow input { flex: 1; }
+  .sayrow .btn { flex: none; }
+  .draftcard { border: 1px solid var(--c-brand-line); border-radius: var(--r-md); padding: 12px; background: var(--c-brand-soft); }
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); background: rgba(20, 24, 31, .92);
+    color: #fff; padding: 9px 16px; border-radius: var(--r-full); font-size: var(--fs-md); opacity: 0;
+    pointer-events: none; transition: .2s; z-index: 1100; max-width: 80vw; }
+  #toast.show { opacity: 1; }
+  .tip { color: var(--c-ink-3); font-size: var(--fs-xs); margin-left: 4px; cursor: help; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <button class="btn ghost" id="btnBack">← 返回</button>
+    <div>
+      <h1>评论场景表</h1>
+      <p class="sub">一张卡一个场景；卡里分情况，每种情况先写好 2～3 句。AI 参考改写，程序随机挑一句发。</p>
+    </div>
+    <div class="sp"></div>
+    <span class="pill" id="statPill">正在读表…</span>
+    <button class="btn" id="btnDraft">✨ AI 起草一张卡</button>
+    <button class="btn pri" id="btnNew">＋ 新建场景卡</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab on" data-tab="cards">配置表</button>
+    <button class="tab" data-tab="replay">真评论重放</button>
+    <button class="tab" data-tab="log">决策日志</button>
+  </nav>
+
+  <section class="pane on" id="pane-cards">
+    <div class="toolbar">
+      <input class="inp" id="q" placeholder="搜场景 / 评论例子 / 情况 / 现成说法 / 不许说">
+      <span class="muted" id="cnt"></span>
+      <div class="sp"></div>
+      <button class="btn sm" id="btnReset">恢复默认 14 张</button>
+    </div>
+    <div class="slist" id="cardList"></div>
+  </section>
+
+  <section class="pane" id="pane-replay">
+    <div class="panel">
+      <h3>拿真评论试一遍</h3>
+      <p class="cap">只试跑，不发评论、不写正式账本。跑完看它归到哪张卡、哪种情况、出了哪几句、程序抽中哪句、为什么被拦。</p>
+      <div class="row2">
+        <label class="fld"><span>博主正文（可留空）</span><textarea id="rpPost" placeholder="把这篇笔记的正文贴进来，首评和场景判断会更准"></textarea></label>
+        <label class="fld"><span>评论（一行一条，最多 20 条）</span><textarea id="rpComments" style="min-height:120px" placeholder="我家也是，一节课坐不住，愁死了&#10;4岁半，老师说他坐不住，是不是不适合？&#10;孩子几岁开始学画画比较好？"></textarea></label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="btn pri" id="btnReplay">跑一遍</button>
+        <span class="muted" id="rpState">最近 7 天账本会自动带上，撞了会换一句或跳过。</span>
+      </div>
+    </div>
+    <div class="panel" id="rpResult" hidden></div>
+  </section>
+
+  <section class="pane" id="pane-log">
+    <div class="panel">
+      <h3>最近发过什么、为什么没发</h3>
+      <p class="cap">只记系统筛出来准备回的评论；画面上划过、没进候选的不记。最多留 300 条。</p>
+      <div id="logList"></div>
+    </div>
+  </section>
+</div>
+
+<div class="mask" id="editMask" hidden>
+  <div class="modal">
+    <div class="mh"><b id="editTitle">编辑场景卡</b><div class="sp"></div><button class="x" data-close="#editMask">✕</button></div>
+    <div class="mb">
+      <label class="fld"><span>场景名</span><input id="edName" placeholder="例：孩子上课坐不住，十分钟就要起来走"></label>
+      <div class="fld">
+        <span>适用笔记类型（可多选；一个都不勾＝通用）</span>
+        <div id="edTypes" class="ntpick"></div>
+      </div>
+      <label class="fld"><span>什么时候用</span><textarea id="edWhen" placeholder="看到什么样的话就套这张卡；写到一眼能懂"></textarea></label>
+      <label class="fld"><span>真实评论例子（一行一条，3～5 条）</span><textarea id="edEx" placeholder="我家也是，一节课坐不住，愁死了&#10;4岁半，老师说他坐不住，是不是不适合？"></textarea></label>
+      <div class="fld">
+        <span>回复分几种情况</span>
+        <div id="edBranches"></div>
+        <button class="btn sm" id="edAddBranch" type="button">＋ 加一种情况</button>
+      </div>
+      <div class="row2">
+        <label class="fld"><span>必须用的素材</span><input id="edMat" placeholder="真案例 / 资料 / 数字；没有就留空"></label>
+        <label class="fld"><span>不许说的话</span><input id="edForbid" placeholder="例：不说多动症、不承诺一定能坐住"></label>
+      </div>
+      <label class="fld"><span>来源（逗号分隔）</span><input id="edSrc" placeholder="知识库, 你的例子, 人设, 规划, 红线, 玩法硬闸"></label>
+    </div>
+    <div class="mf">
+      <button class="btn" data-close="#editMask" type="button">取消</button>
+      <div class="sp"></div>
+      <button class="btn pri" id="edSave" type="button">存进表</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="draftMask" hidden>
+  <div class="modal">
+    <div class="mh"><b>AI 起草一张卡</b><div class="sp"></div><button class="x" data-close="#draftMask">✕</button></div>
+    <div class="mb">
+      <label class="fld"><span>想补什么场景</span><input id="drIdea" placeholder="例：孩子被同学笑，不想再去上课"></label>
+      <label class="fld"><span>真实评论（可留空，一行一条）</span><textarea id="drComments" placeholder="贴几条真评论，起草会更贴着你们号的说法"></textarea></label>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">
+        <button class="btn" id="drGo" type="button">让 AI 起草</button>
+        <span class="muted" id="drState"></span>
+      </div>
+      <div id="drPreview"></div>
+    </div>
+    <div class="mf">
+      <button class="btn" data-close="#draftMask" type="button">取消</button>
+      <div class="sp"></div>
+      <button class="btn pri" id="drAccept" type="button" disabled>收下</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="lib/comment-cards.js"></script>
+<script src="comment-cards.js"></script>
+</body>
+</html>

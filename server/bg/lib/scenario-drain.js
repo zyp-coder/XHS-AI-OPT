@@ -12,10 +12,10 @@
  *   1. 最新笔记(latest)：筛选「最新」。定时看点赞涨没涨，涨了就赶去评论（抢前排）。
  *   2. 搜索TOP笔记(top)：筛选「点赞最多/评论最多/收藏最多」。走活水机制——
  *      看自己的评论还在不在前排、有多少赞，定期维护。
- *   3. 同城本业(local)：城市＋本行关键词，筛选「最新」。家长笔记下留判断型短评；同行/机构的
- *      招生帖只收人、不留言（原「竞对」2026-11-02 并进这一路）。
+ *   3. 同城本业(local)：城市＋本行关键词，筛选「最新」。同城人的笔记下留判断型短评；同行/卖课的
+ *      帖子只收人、不留言（原「竞对」2026-11-02 并进这一路）。
  *   4. 求助笔记(pain)：特殊关键词（求推荐/听劝…）。走活水机制。
- *   5. 同城异业(cross)：城市＋别家行业关键词，从别家评论区找本地家长。
+ *   5. 同城异业(cross)：城市＋别家行业关键词，从别家评论区找本地人。
  *   （高V狙击 highv 不走词：它盯着**人**——在「👤 盯的账号」里挂头部博主主页，跑的是他自己的笔记）
  *
  * 笔记进本地监控列表(drain_notes 存在 chrome.storage.local)，
@@ -28,48 +28,36 @@ const SCENARIO_DRAIN = [
     scenario: 'latest',
     label: '本地泛搜索',
     icon: '🧭',
-    tag: '最新 · 找还没想过报班的本地家长',
-    desc: '城市＋场景宽词，按「最新」搜。找的是还在带娃过日子、还没想过报班的本地家长。',
-    dmOpen: '刷到你带娃那条，我也是本地带娃的，说个实在的……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，本地人，就在{city}做这一行。刷到同城一篇还在带娃过日子的笔记，想留一句只有本地人才说得出的提醒。
-【这个账号是谁】
-{persona_block}
-这次不推销、不发广告、不留任何引导：只写一句让人看完觉得「这人真懂本地」的短评。
+    tag: '最新 · 找还没想过去比较的本地人',
+    desc: '城市＋场景宽词，按「最新」搜。找的是本地日常笔记下、还没想过去比较的本地人。',
+    dmOpen: '刷到你那条，我也在{city}，说个实在的……',
+    system: `刷到同城一篇日常笔记，想留一句只有本地人才说得出的提醒。
 要求：
 1. 20-60 字，一到两句，口语，像本人随手敲的；最多带 1 个表情
-2. 先用「我」说一句本地人普遍知道的实情（哪个时段人多、哪个场地适合几岁、下雨该去哪），再补一句带娃/本地生活的小提醒
-3. 只讲真懂的：不许编「我常去某地」这类亲历；人设里没写的「我家娃／我孩子／我学员／我客户」一律不许出现；不玩梗、不讲段子
-4. 不提产品名、品牌、机构、课程、价格、链接、主页、私信，不导流
-5. 不要 AI 味：不用「首先/总之/建议收藏」，不堆四字词
-6. 丧事、疾病、纠纷、投诉这类内容，或博主明显不想被搭话 → 只回复两个字：跳过
-{store_rule}`,
+2. 先用「我」说一句本地人普遍知道的实情（哪个时段人多、哪条路好走、下雨天该去哪），再补一句本地生活的小提醒
+3. 不玩梗、不讲段子
+4. 丧事、疾病、纠纷、投诉这类内容，或博主明显不想被搭话 → 只回复两个字：跳过`,
     user: `【城市】{city}
 【笔记标题】{title}
 【笔记正文】{content}
 【博主】{author}
 
-这是同城一篇家长带娃的笔记，我要以本地人的身份留一句短评。请写一句 20-60 字的短评（最多 1 个表情）；如果这篇不适合评论，只回复：跳过。直接返回评论文本。`,
+这是同城一篇日常笔记，我要以本地人的身份留一句短评。请写一句 20-60 字的短评（最多 1 个表情）；如果这篇不适合评论，只回复：跳过。直接返回评论文本。`,
   },
   {
     scenario: 'top',
     label: 'TOP搜索',
     icon: '🔥',
     tag: '点赞/评论/收藏最多 · 长期占位',
-    desc: '不带城市的全国流量词，按点赞/评论/收藏最多搜。写一句专业热评长期占位。',
+    desc: '按点赞/评论/收藏最多搜；玩法「同城」列选优先/全收时先按「词＋城市」搜，本地没料再补搜全国。写一句专业热评长期占位。',
     dmOpen: '看到你在那篇讲 XX 的帖子下留言，说到点上了……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，正好是做这一行的。刷到一篇搜索排名靠前的笔记，想留一句同行看了点头、普通读者也看得懂的热评，长期挂在前排。
-【这个账号是谁】
-{persona_block}
-不推销、不写长文：一句懂行的话，或一个别人没提到的具体点就够。
+    system: `刷到一篇搜索排名靠前的笔记，想留一句同行看了点头、普通读者也看得懂的热评，长期挂在前排。
 要求：
 1. 20-70 字，一到两句；最多带 1 个表情
 2. 以「我」说话，先接住笔记讲的那件事，再补一个别人没提到的具体点：先做哪一步、哪种情况别做、最容易忽略什么
 3. 不复读评论区已有的话，不写「赞同楼上」
-4. 只讲真懂的：不许编造亲历（人设里没写的「我家娃／我孩子／我学员／我客户」不许出现），不许整活玩梗
-5. 不提店名、机构名、课程名、价格、链接、主页、私信
-6. 不要 AI 味：不用「首先/总之/建议收藏」，不堆四字词
-7. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过
-{store_rule}`,
+4. 不许整活玩梗
+5. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过`,
     user: `【搜索关键词】{keyword}
 【笔记标题】{title}
 【笔记正文】{content}
@@ -81,27 +69,22 @@ const SCENARIO_DRAIN = [
     scenario: 'local',
     label: '同城本业',
     icon: '📍',
-    tag: '城市＋本行 · 已经在挑机构',
-    desc: '城市＋核心品类，按「最新」搜。找的是已经在挑机构、准备报班的本地家长；同行/机构的招生帖只收人不留言。',
-    dmOpen: '同在{city}，看到你在纠结给孩子找班……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，本地人，就在{city}做这一行。刷到同城家长在聊本行相关的事，想留一句短、准、能帮他做判断的评论。
-【这个账号是谁】
-{persona_block}
-不推销、不拉客。先判帖：如果这是同行/机构在招生、卖课、推体验课（出现「招生、名额、报名、优惠、扫码、试听」这类词，或口吻明显在卖课）→ 只回复两个字：跳过；评论区的本地家长仍会被收进清单。
+    tag: '城市＋本行 · 已经在挑、在比',
+    desc: '城市＋核心品类，按「最新」搜。找的是已经在挑、在比较的本地人；同行/揽客的帖子只收人不留言。',
+    dmOpen: '同在{city}，看到你在纠结选哪家……',
+    system: `刷到同城人在聊本行相关的事，想留一句短、准、能帮他做判断的评论。
+先判帖：同行在招揽生意、打广告（出现「报名、名额、优惠、扫码、加微信、私信咨询」这类词，或口吻明显在推销自己的服务）→ 只回复两个字：跳过；评论区的本地人仍会被收进清单。
 要求：
 1. 20-50 字，只写一句话；最多带 1 个表情
-2. 用「我」说话，给一条判断：先试什么、该看什么、哪种情况先别报
-3. 不提店名、不提机构、不报价、不留联系方式、不说「来找我」
-4. 不贬低同行；不许编造亲历（人设里没写的「我家娃／我学员／我客户」不许出现），不玩梗
-5. 不用「首先/总之/建议收藏」，不空夸
-6. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过
-{store_rule}`,
+2. 用「我」说话，给一条判断：先试什么、该看什么、哪种情况先别急着定
+3. 不玩梗、不空夸
+4. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过`,
     user: `【城市】{city}
 【笔记标题】{title}
 【笔记正文】{content}
 【博主】{author}
 
-这是同城家长在聊本行相关的事，我要以本地做这行的人的身份留一句判断。请写一句 20-50 字的短评（最多 1 个表情）；如果这篇不适合评论，只回复：跳过。直接返回评论文本。`,
+这是同城人在聊本行相关的事，我要以本地做这行的人的身份留一句判断。请写一句 20-50 字的短评（最多 1 个表情）；如果这篇不适合评论，只回复：跳过。直接返回评论文本。`,
   },
   {
     scenario: 'pain',
@@ -110,29 +93,23 @@ const SCENARIO_DRAIN = [
     tag: '求助/避雷 · 楼主和回复区都收',
     desc: '城市＋求助词/避雷词，按「关键词」搜。楼主和回复区里同问的人都要收。',
     dmOpen: '看到你在问 XX 那件事，我正好做这行……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，本地人，正好是做这一行的。刷到一条家长在求助或避雷的笔记，想留一句真帮到他、又让人记住你的评论。
-【这个账号是谁】
-{persona_block}
+    system: `刷到一条在求助或避雷的笔记，想留一句真帮到他、又让人记住你的评论。
 先判帖，再写：
 · 求助帖（哪家好／求推荐／值不值／怎么办）→ 按 A 写
 · 避雷帖（后悔／避雷／踩坑／没用）→ 按 B 写
 
 A 求助帖
 1. 20-70 字，一到两句；最多带 1 个表情
-2. 先正面回答他问的那件事，给一条马上能用的判断或做法：先做什么、该看什么、哪种情况先别急着报
-3. 不推销、不报店、不承诺效果
+2. 先正面回答他问的那件事，给一条马上能用的判断或做法：先做什么、该看什么、哪种情况先别急着定
+3. 不推销
 
 B 避雷帖
 1. 20-70 字，一到两句；最多带 1 个表情
 2. 先接住他的情绪（一句就够），再给一条下次怎么避开的判断；不替同行辩解、不说「是你没找对」
-3. 不趁机推销、不报店
+3. 不趁机推销
 
 两版都遵守：
-4. 只讲真懂的：不许编造亲历（人设里没写的「我家娃／我学员／我客户」不许出现），不玩梗
-5. 不提产品名、品牌、链接、主页、私信
-6. 不用「首先/总之/建议收藏」，不堆四字词
-7. 丧事、重病、纠纷、投诉这类内容 → 只回复两个字：跳过
-{store_rule}`,
+4. 不玩梗`,
     user: `【楼主求助/避雷原话】{pain}
 【笔记标题】{title}
 【笔记正文】{content}
@@ -145,31 +122,26 @@ B 避雷帖
     scenario: 'cross',
     label: '同城异业',
     icon: '🧩',
-    tag: '城市＋异业 · 评论区里的本地家长',
-    desc: '城市＋异业品类（也可 #话题），按「最新」搜。从别家行业的笔记评论区里找本地家长。',
-    dmOpen: '刷到你在 XX 那条下面留言，说到孩子……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，本地人，就在{city}做这一行。刷到同城异业（不是本行）的笔记，想借评论区里本地家长的讨论，留一句自然、不露痕迹的评论。
-【这个账号是谁】
-{persona_block}
+    tag: '城市＋异业 · 评论区里的本地人',
+    desc: '城市＋异业品类（也可 #话题），按「最新」搜。从别家行业的笔记评论区里找本地人。',
+    dmOpen: '刷到你在 XX 那条下面留言，说到那个难处……',
+    system: `刷到同城异业（不是本行）的笔记，想借评论区里本地人的讨论，留一句自然、不露痕迹的评论。
 先判帖：
-· 这是不是招生/卖课/报名帖？看到「招生、名额、报名、体验课、优惠、元、扫码、私信」这类词，或口吻明显在卖课 → 只回复两个字：跳过
+· 同行在招揽生意、打广告？看到「报名、名额、优惠、扫码、加微信、私信咨询」这类词，或口吻明显在推销 → 只回复两个字：跳过
 · 普通分享帖 → 按下面写
 
 普通分享帖：
 1. 40-100 字，一到三句；最多带 1 个表情
-2. 用跨行业关联切入：从对方笔记里的具体困扰（坐不住、动作软、坐姿塌、专注差）接到本行的判断，别硬拐
-3. 用「我」说话，像本地家长/本地人闲聊，不自我介绍、不暴露职业
-4. 不贬低对方行业；不许编造亲历（人设里没写的「我家娃／我学员／我客户」不许出现），不玩梗
-5. 不提店名、机构、课程、价格、联系方式
-6. 不用「首先/总之/建议收藏」
-7. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过
-{store_rule}`,
+2. 用跨行业关联切入：从对方笔记里提到的具体困扰接到本行的判断，别硬拐
+3. 用「我」说话，像本地人闲聊；不说自己卖什么，可以从自己开店的经历、做过的案例切入
+4. 不贬低对方行业，不玩梗
+5. 丧事、疾病、纠纷、投诉这类内容 → 只回复两个字：跳过`,
     user: `【城市】{city}
 【笔记标题】{title}
 【笔记正文】{content}
 【博主】{author}
 
-这是同城异业的笔记，我要从跨行业角度留一句自然评论。请写一句 40-100 字的短评（最多 1 个表情）；如果是招生/卖课帖或内容不适合，只回复：跳过。直接返回评论文本。`,
+这是同城异业的笔记，我要从跨行业角度留一句自然评论。请写一句 40-100 字的短评（最多 1 个表情）；如果是同行打广告或内容不适合，只回复：跳过。直接返回评论文本。`,
   },
   {
     scenario: 'rival',
@@ -205,18 +177,13 @@ B 避雷帖
     manual: true,
     desc: '头部博主的最新笔记，在评论区留一句「赞同＋本行视角补充」，借头部 IP 溢出流量。',
     dmOpen: '在你关注的 XX 那位博主下面看到你……',
-    system: `你是小红书上一个账号的主人——这个号就是你在打理，做的是这一行。刷到一位头部博主（大V）的笔记，想在他评论区留一句能被更多人看到的专业补充。
-【这个账号是谁】
-{persona_block}
-方式是「先真心赞同 + 再补一句本行才看得出的角度」。不推销、不提产品、不写长文。
+    system: `刷到一位头部博主（大V）的笔记，想在他评论区留一句能被更多人看到的专业补充。
+方式是「先真心赞同 + 再补一句本行才看得出的角度」。不推销、不写长文。
 要求：
 1. 20-70 字，一到两句；最多带 1 个表情
 2. 先接住博主最亮的那句观点表示赞同，再用本行的视角补一句别人没注意到的角度或一个具体做法
-3. 不能像拍马屁；不许编造亲历（人设里没写的「我家娃／我学员／我客户」不许出现），不许整活玩梗
-4. 不提产品名、品牌、链接、主页、私信
-5. 不用「首先/总之/建议收藏」
-6. 丧事、疾病、纠纷这类内容，或博主口吻明显不适合搭话 → 只回复两个字：跳过
-{store_rule}`,
+3. 不能像拍马屁；不许整活玩梗
+4. 丧事、疾病、纠纷这类内容，或博主口吻明显不适合搭话 → 只回复两个字：跳过`,
     user: `【高V笔记标题】{title}
 【高V笔记正文】{content}
 【高V作者】{author}
@@ -239,7 +206,7 @@ const DRAIN_TYPE_META = [
   { scenario: 'pain', tip: '关键词 + 求助词/避雷词（咨询帖）', painWords: true },
   { scenario: 'latest', tip: '关键词 + 最新（本地泛搜索）' },
   { scenario: 'local', tip: '关键词（词里自带城市）+ 最新（同城本业）', needCity: true },
-  { scenario: 'cross', tip: '关键词（词里自带城市）+ 最新（同城异业：从别家行业评论区找本地家长）', needCity: true },
+  { scenario: 'cross', tip: '关键词（词里自带城市）+ 最新（同城异业：从别家行业评论区找本地人）', needCity: true },
 ];
 /* ── 各类型的「跑法」总表（商机发现 + 评论生成 的唯一真源，机器人/列表/生成按钮都读它）──
  * send: 'note'  = 只对笔记本身发一条一级评论
@@ -252,17 +219,17 @@ const DRAIN_PLAYBOOK = {
   latest: { name: '本地泛搜索', icon: '🧭', send: 'both', find: 'commenters', keep: '抢前排',
     tip: '本地泛搜索：城市＋场景宽词搜最新，对笔记发一条本地人短评，同时回评论区里搭话的人，顺手把有商机的收进获客清单' },
   top: { name: 'TOP搜索', icon: '🔥', send: 'both', find: 'commenters', keep: '活水维护',
-    tip: 'TOP搜索：全国流量词搜点赞/评论/收藏最多，发一条专业热评长期占位，同时回评论区里问方法的人' },
+    tip: 'TOP搜索：按点赞/评论/收藏最多搜；玩法同城列选优先/全收时先按「词＋城市」搜，本地没料再补搜全国，发一条专业热评长期占位，同时回评论区里问方法的人' },
   local: { name: '同城本业', icon: '📍', send: 'both', find: 'commenters', keep: '地域信任',
-    tip: '同城本业：城市＋本行词搜最新，在家长笔记下留一条判断型短评，同时回评论区里比较机构的人；同行/机构的招生帖只收人、不留言' },
+    tip: '同城本业：城市＋本行词搜最新，在同城人的笔记下留一条判断型短评，同时回评论区里在比较的人；同行/揽客的帖子只收人、不留言' },
   pain: { name: '咨询帖', icon: '🎯', send: 'both', find: 'commenters', keep: '活水维护',
     tip: '咨询帖：求助帖/避雷帖里，对笔记发一条评论，同时回复评论区里同问的人' },
   cross: { name: '同城异业', icon: '🧩', send: 'both', find: 'commenters', keep: '跨行业关联',
-    tip: '同城异业：城市＋异业词搜最新，普通分享帖可以评论（招生帖跳过），同时回评论区里说孩子情况的人' },
+    tip: '同城异业：城市＋异业词搜最新，普通分享帖可以评论（同行揽客帖跳过），同时回评论区里说同一件难事的人' },
   rival: { name: '同行／竞对', icon: '🕵️', send: 'none', find: 'commenters', keep: '私信跟进',
     tip: '同行／竞对：只在评论区找人拉进获客清单去私信，绝不评论、不惊动对方' },
   highv: { name: '大V', icon: '👑', send: 'both', find: 'commenters', keep: '借头部流量',
-    tip: '大V：在头部博主笔记下发一条「赞同＋本行补充」，同时回评论区里接话的本地家长' },
+    tip: '大V：在头部博主笔记下发一条「赞同＋本行补充」，同时回评论区里接话的人' },
 };
 function drainPlaybookOf(id) {
   return DRAIN_PLAYBOOK[drainScenarioId(id)] || DRAIN_PLAYBOOK.latest;
@@ -418,28 +385,134 @@ const DRAIN_PB_ICON_STYLE = {
   rival: 'background:#eef2f6;color:#475569;',
   highv: 'background:#e6f6fa;color:#0e7490;',
 };
+/* 一个玩法一行 = 这一趟评论策略的唯一定义（2026-11-09）：周几 / 每天几个词 / 评论动作 / 引导 / 提店 / 开口 /
+   同城。别处（账号资料、推广目标、全局同城、行业包）一律不再给这几件事说话。
+   store 四档（2026-11-09 老板定）：不提 / 只提身份 / 讲案例 / 可报店名。
+   报价、联系方式、站外链接四档都不许写；「可报店名」只给咨询帖这种放心写的玩法。 */
 const DRAIN_PB_DEFAULT = {
-  latest: { days: [1, 3, 5], perDay: 3, store: 'none' },
-  top: { days: [1, 2, 3, 4, 5, 6, 0], perDay: 3, store: 'identity' },
-  local: { days: [1, 3, 5], perDay: 3, store: 'identity' },
-  pain: { days: [2, 4, 6], perDay: 3, store: 'identity' },
-  cross: { days: [2, 5], perDay: 2, store: 'identity' },
-  rival: { days: [6], perDay: 2, store: 'none' },
-  highv: { days: [2, 4], perDay: 1, store: 'none' },
+  latest: { days: [1, 3, 5], perDay: 3, store: 'identity', city: 'priority' },
+  top: { days: [1, 2, 3, 4, 5, 6, 0], perDay: 3, store: 'case', city: 'priority' },
+  local: { days: [1, 3, 5], perDay: 3, store: 'identity', city: 'priority' },
+  pain: { days: [2, 4, 6], perDay: 3, store: 'store', city: 'priority' },
+  cross: { days: [2, 5], perDay: 2, store: 'case', city: 'priority' },
+  rival: { days: [6], perDay: 2, store: 'none', city: 'priority' },
+  highv: { days: [2, 4], perDay: 1, store: 'case', city: 'priority' },
 };
-const DRAIN_PB_STORE = { none: '不提', identity: '只提身份', store: '可报店名' };
-/* ── 评论策略八项（2026-11-04）：每个玩法一套，「笔记下面评一句」和「回评论区那句」共用同一套 ──
-   mode=这篇笔记做几件事 / guide=想让对方下一步做什么（auto＝沿用账号资料那句承接）/ entry=怎么开口 /
-   len=说几句 / cap=一篇最多回几个人 / collect=找到的人进不进清单；store 沿用上面三档。 */
+const DRAIN_PB_STORE = { none: '不提', identity: '只提身份', case: '讲案例', store: '可报店名' };
+/* ── 笔记类型表（2026-11-12）──────────────────────────────────────
+   打开帖子先判类型（可多个，标一个主类型），再按类型决定「评不评 / 评论动作 / 提店到哪一步 / 收不收人」。
+   一项配置只留一个家：这四件事只在类型表里说，渠道（玩法）那边不再各存一份。
+   mode 三档：rate＝评（动作按 act 走）；silent＝不评·只收人；block＝完全不碰（不评也不收）。 */
+const DRAIN_NOTE_TYPE_ORDER = ['bigv', 'help', 'localbiz', 'localcross', 'normal', 'ad', 'sad'];
+const DRAIN_NOTE_TYPE_DEF = {
+  bigv:       { icon: '👑', name: '大V帖',       mode: 'rate',   act: 'both', store: 'case',     collect: true,
+                judge: '盯的账号名单里的头部博主；笔记本身有热度和评论量', why: '可说自己干这行、讲做过的案例；不报店名、不提产品' },
+  help:       { icon: '🎯', name: '求助咨询帖',   mode: 'rate',   act: 'both', store: 'store',    collect: true,
+                judge: '楼主在求助、避雷、问哪家靠谱；回复区里同问的也算', why: '可以先正面回答，再留下自己是谁；价格不提' },
+  localbiz:   { icon: '📍', name: '同城本业',     mode: 'rate',   act: 'both', store: 'identity', collect: true,
+                judge: '同城、本行的笔记，人在挑在比、问哪家好', why: '最多说自己是做这行的；不报店名、不提产品' },
+  localcross: { icon: '🧩', name: '同城异业',     mode: 'rate',   act: 'both', store: 'case',     collect: true,
+                judge: '同城、别家行业（舞蹈 / 游泳 / 轮滑 / 画画…）的笔记', why: '讲开店的经历和真案例；不报店名、不提自己卖什么' },
+  normal:     { icon: '🔥', name: '普通帖',       mode: 'rate',   act: 'note', store: 'identity', collect: true,
+                judge: '热帖 / 日常 / 闲聊，没有明确求助，也没在挑', why: '只给一句内行判断；不报店名、不提产品' },
+  ad:         { icon: '🚫', name: '广告招生帖',   mode: 'silent', act: 'people', store: 'none',   collect: true, veto: true,
+                judge: '同行招生、卖课、招生简章、优惠团购；纯广告带货也算', why: '一条评论都不发；评论区里露出真实需求的人还是收进清单' },
+  sad:        { icon: '🕯', name: '悲伤纠纷帖',   mode: 'block',  act: '',       store: 'none',   collect: false, veto: true,
+                judge: '生病、事故、纠纷、投诉、维权、招聘求助', why: '一条都不碰' },
+};
+const DRAIN_NOTE_MODE = { rate: '评', silent: '不评·只收人', block: '完全不碰' };
+/* 评论动作四档＝运行时真正会做的四件事（跟老 DRAIN_PB_MODE 同一套，别另造词） */
+const DRAIN_NOTE_ACT = { note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' };
+const DRAIN_NOTE_STORE = DRAIN_PB_STORE;                 // 不提 / 只提身份 / 讲案例 / 可报店名
+const DRAIN_NOTE_STORE_CAP = { none: 0, identity: 1, case: 2, store: 3 };
+/* 老判帖字段（ask / solicit / opinion / daily / ad / sad）→ 新类型：老号里存着的口径还能认，不用重跑 */
+const DRAIN_NOTE_TYPE_ALIAS = { ask: 'help', solicit: 'ad', opinion: 'bigv', daily: 'normal' };
+function drainNoteTypeId(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  if (DRAIN_NOTE_TYPE_DEF[s]) return s;
+  return DRAIN_NOTE_TYPE_ALIAS[s] || '';
+}
+/* 规整：默认值打底＋只认表里那几档；广告 / 悲伤是安全兜底，锁死不给改 */
+function drainNoteTypesNorm(raw) {
+  const o = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
+  const out = {};
+  DRAIN_NOTE_TYPE_ORDER.forEach(id => {
+    const d = DRAIN_NOTE_TYPE_DEF[id];
+    const r = (o[id] && typeof o[id] === 'object') ? o[id] : {};
+    if (d.veto) {
+      out[id] = { mode: d.mode, act: d.act, store: d.store, collect: d.collect };
+      return;
+    }
+    const mode = DRAIN_NOTE_MODE[r.mode] ? r.mode : d.mode;
+    const act = mode !== 'rate' ? (mode === 'silent' ? 'people' : '')
+      : (DRAIN_NOTE_ACT[r.act] && r.act !== 'people' ? r.act : d.act);
+    out[id] = {
+      mode,
+      act,
+      store: (mode === 'rate' && DRAIN_NOTE_STORE[r.store]) ? r.store : d.store,
+      collect: mode === 'block' ? false : (r.collect !== false),
+    };
+  });
+  return out;
+}
+function drainNoteTypesFor(cfg) { return drainNoteTypesNorm((cfg || {}).noteTypes); }
+/* 一张帖判出来的类型 → 这篇实际怎么跑：多类型取最严提店，动作 / 收人跟主类型；
+   广告（静默）只收人，悲伤（完全不碰）不评也不收。类型为空＝按渠道老口径跑（返回 null）。 */
+function drainNoteTypePlan(cfg, ids) {
+  const types = drainNoteTypesFor(cfg);
+  const list = (Array.isArray(ids) ? ids : [ids]).map(drainNoteTypeId)
+    .filter((id, i, a) => id && a.indexOf(id) === i);
+  if (!list.length) return null;
+  const evals = list.map(id => Object.assign({ id: id }, types[id] || {}));
+  const rateTypes = evals.filter(t => t.mode === 'rate');
+  const blocked = evals.some(t => t.mode === 'block');
+  const silent = !blocked && evals.some(t => t.mode === 'silent');
+  const primary = rateTypes[0] || evals[0] || null;
+  const store = rateTypes.length ? rateTypes.reduce((best, t) =>
+    DRAIN_NOTE_STORE_CAP[t.store] < DRAIN_NOTE_STORE_CAP[best] ? t.store : best, 'store') : 'none';
+  if (blocked) {
+    const bt = evals.find(t => t.mode === 'block');
+    return { ids: list, mode: 'block', act: '', store: 'none', collect: false, mainType: bt ? bt.id : '' };
+  }
+  if (silent) {
+    const st = evals.find(t => t.mode === 'silent');
+    return { ids: list, mode: 'silent', act: 'people', store: 'none', collect: st ? st.collect !== false : true, mainType: st ? st.id : '' };
+  }
+  return { ids: list, mode: 'rate', act: (primary && primary.act) || 'note', store: store, collect: primary ? primary.collect !== false : true, mainType: primary ? primary.id : '' };
+}
+/* 判帖提示词里的类型菜单：怎么认＋这张表怎么跑（动作 / 提店 / 收人）都摊给 AI，
+   它判完类型就按同一张表写，不用再回来问一次 */
+function drainNoteTypeMenuText(cfg) {
+  const types = drainNoteTypesFor(cfg);
+  return DRAIN_NOTE_TYPE_ORDER.map(id => {
+    const d = DRAIN_NOTE_TYPE_DEF[id];
+    const t = types[id];
+    const run = t.mode === 'rate'
+      ? ('评 · ' + DRAIN_NOTE_ACT[t.act] + ' · 提店到「' + DRAIN_PB_STORE[t.store] + '」 · ' + (t.collect ? '收人' : '不收人'))
+      : (t.mode === 'silent' ? ('不评·只收人 · 不留言 · ' + (t.collect ? '收人' : '不收人')) : '完全不碰（不评也不收）');
+    return '- ' + id + '（' + d.name + '）：' + d.judge + '｜' + run;
+  }).join('\n');
+}
+/* 上一版（v9）的默认值：迁移到 v10 时只动「还是这几个默认值」的号，自己调过的不动 */
+const DRAIN_PB_STORE_V9 = { latest: 'identity', top: 'none', local: 'store', pain: 'store', cross: 'identity', highv: 'identity' };
+/* 同城一列三档：不筛 / 优先 / 全收（只在这一列说，账号页只记城市事实） */
+const DRAIN_PB_CITY = { off: '不筛', priority: '优先', force: '全收' };
+/* 评论策略：mode=这篇笔记做几件事 / guide=想让对方下一步做什么 / entry=怎么开口 / collect=收不收人。
+   条数限制已全部撤掉（2026-11-09 老板定：找到就回）。 */
 const DRAIN_PB_MODE = { note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' };
-const DRAIN_PB_GUIDE = { auto: '跟账号资料', none: '不引导', dm: '私信我', home: '看主页', visit: '到店' };
+const DRAIN_PB_GUIDE = { none: '不引导', dm: '私信我', home: '看主页', visit: '到店' };
 const DRAIN_PB_ENTRY = { follow: '顺着他说', judge: '给一条判断', ask: '反问一句', story: '补一条经验', light: '轻接一句' };
-const DRAIN_PB_LEN = { one: '一句', two: '两句', three: '三句以内' };
 /* 六个玩法＋老 rival 的默认值：没配过的号读出来跟现在一样（rival 本来就是只收人） */
 const DRAIN_PB_MODE_DEFAULT = { rival: 'people' };
+/* TOP 只给两种评论动作：老板定 TOP 无论如何都要先在主笔记下评一条（丧事/纠纷仍由 AI 跳过）。
+   旧配置里的「只回评论区 / 只收人」在归一化时按「评笔记＋回评论区」跑。 */
+function drainPbModeOptions(scenario) {
+  return drainScenarioId(scenario) === 'top'
+    ? { note: DRAIN_PB_MODE.note, both: DRAIN_PB_MODE.both }
+    : DRAIN_PB_MODE;
+}
 const DRAIN_PB_ENTRY_DEFAULT = { top: 'light', pain: 'judge', local: 'judge' };
-const DRAIN_PB_LEN_DEFAULT = { top: 'one' };
-const DRAIN_PB_CAP_DEFAULT = 3;
 const DRAIN_WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];   // 周一到周日（显示顺序）
 /* 出词策略最长 160 字：这段要整句塞进 AI 找词的提示词，太长的提示词会被 AI 自己砍掉 */
 function drainPbWordRuleNorm(raw) {
@@ -452,18 +525,19 @@ function drainPbPlanNorm(raw, scenario) {
     ? Array.from(new Set(o.days.map(Number).filter(x => Number.isFinite(x) && x >= 0 && x <= 6))).sort((a, b) => a - b)
     : d.days.slice();
   const per = parseInt(o.perDay, 10);
-  const capN = parseInt(o.cap, 10);
-  const mode = DRAIN_PB_MODE[o.mode] ? o.mode : (DRAIN_PB_MODE_DEFAULT[scenario] || 'both');
+  const modeOpts = drainPbModeOptions(scenario);
+  const mode = modeOpts[o.mode] ? o.mode : (DRAIN_PB_MODE_DEFAULT[scenario] || 'both');
   return {
     days,
     perDay: (Number.isFinite(per) && per >= 1) ? Math.min(20, per) : d.perDay,
     store: DRAIN_PB_STORE[o.store] ? o.store : d.store,
+    city: DRAIN_PB_CITY[o.city] ? o.city : d.city,
+    who: String(o.who || '').replace(/\s+/g, ' ').trim().slice(0, 400),
     wordRule: drainPbWordRuleNorm(o.wordRule),
     mode,
-    guide: DRAIN_PB_GUIDE[o.guide] ? o.guide : 'auto',
+    /* 老配置里的「跟账号资料」一律落到「不引导」：账号页那句承接不再参与评论策略 */
+    guide: DRAIN_PB_GUIDE[o.guide] ? o.guide : 'none',
     entry: DRAIN_PB_ENTRY[o.entry] ? o.entry : (DRAIN_PB_ENTRY_DEFAULT[scenario] || 'follow'),
-    len: DRAIN_PB_LEN[o.len] ? o.len : (DRAIN_PB_LEN_DEFAULT[scenario] || 'two'),
-    cap: (Number.isFinite(capN) && capN >= 1) ? Math.min(5, capN) : DRAIN_PB_CAP_DEFAULT,
     /* 只收人＝清单是唯一产出，强制开 */
     collect: mode === 'people' ? true : (o.collect === false ? false : true),
   };
@@ -478,8 +552,34 @@ function drainPbOnDay(cfg, scenario, now) {
   return p.days.indexOf(new Date(now || Date.now()).getDay()) >= 0;
 }
 function drainPbPerDay(cfg, scenario) { return drainPbPlan(cfg, scenario).perDay; }
-/* 今天这个玩法该挑哪几个词：按词池顺序轮着来，一天换一批，几天转完一圈。
-   occ＝今天是本周第几次跑这个玩法（周一到周日数），start=occ*perDay —— 跟 demo 同一套。 */
+/* 今天这个玩法该挑哪几个词：按词池顺序轮着来，一天换一批，几天转完一圈；词比一周的槽多，
+   下一周接着上周停下的地方往下（2026-11-11 老板定：跨周接着轮，不再每周从头）。
+   一周槽位 slots＝排几天 × 每天几个；start＝本周之前跑过的槽 + 本周第几次 × 每天几个。
+   weekIdx 从 2026-01-05（周一）起数，按本地日期算，跨年也不跳回开头。 */
+const DRAIN_ROT_ANCHOR = [2026, 0, 5];
+function drainWeekIdx(t) {
+  const d = new Date(t || Date.now());
+  const noon = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+  const dow = (noon.getDay() + 6) % 7;   // 0=周一
+  const mon = new Date(noon.getFullYear(), noon.getMonth(), noon.getDate() - dow, 12);
+  const an = new Date(DRAIN_ROT_ANCHOR[0], DRAIN_ROT_ANCHOR[1], DRAIN_ROT_ANCHOR[2], 12);
+  return Math.round((mon - an) / 604800000);
+}
+/* 这个玩法这一圈轮不轮得完：一周几个槽、几个词、多出来几个排不上 */
+function drainPbRotStat(cfg, scenario) {
+  const p = drainPbPlan(cfg, scenario);
+  if (DRAIN_PB_WORD.indexOf(scenario) < 0) return null;
+  const N = ((cfg || {}).keywords || [])
+    .filter(e => e && e.on !== false && drainWordTypeOn(e, scenario)).length;
+  const slots = p.days.length * p.perDay;
+  return {
+    N: N,
+    slots: slots,
+    weeks: slots ? Math.ceil(N / slots) : 0,
+    overflow: slots ? Math.max(0, N - slots) : 0,
+    off: !p.days.length,
+  };
+}
 function drainPbWordsFor(cfg, scenario, now) {
   const p = drainPbPlan(cfg, scenario);
   const t = now || Date.now();
@@ -492,7 +592,9 @@ function drainPbWordsFor(cfg, scenario, now) {
   const idx = DRAIN_WEEK_ORDER.indexOf(new Date(t).getDay());
   let occ = 0;
   for (let i = 0; i <= idx; i++) if (p.days.indexOf(DRAIN_WEEK_ORDER[i]) >= 0) occ++;
-  const start = (Math.max(0, occ - 1) * p.perDay) % words.length;
+  const slots = p.days.length * p.perDay;
+  const base = drainWeekIdx(t) * slots + Math.max(0, occ - 1) * p.perDay;
+  const start = ((base % words.length) + words.length) % words.length;
   const n = Math.min(p.perDay, words.length);
   const out = [];
   for (let i = 0; i < n; i++) out.push(words[(start + i) % words.length]);
@@ -524,49 +626,113 @@ function drainPbWeek(cfg, baseNow) {
    text 就三行：① 评论区怎么搭话 ② 什么话算线索 ③ 他来找你后私信怎么接。
    persona 是生成时的人设快照：后来改了只在弹窗里轻提一句，不自动覆盖、不在行末标红。 */
 const DRAIN_TALK_V = 11;
-/* 6 个玩法的默认短话（2026-11-03）：2~3 句讲清「什么算商机 / 怎么评论 / 提不提店名」。
-   只在第一次读到配置时铺一遍；之后老板手改的那份不再被默认盖回去。 */
+/* 6 个玩法的默认短话（2026-11-09 中性骨架）：只讲「什么算商机 / 怎么评 / 提不提自己」，
+   不写任何行业词。行业口径只在铺底子时从行业模板抄进这个号的话术，铺过的不再被默认盖回去。 */
 const DRAIN_TALK_DEFAULT = {
-  latest: '本地家长问周末带娃去哪、孩子精力没处使，就是商机。笔记下面留一句本地经验抢前排；评论区里回你的、跟着问的，顺着他的原话各回一句，不推销。不提店名，最多说自己是做这行的。',
-  top: '评论区里家长问方法、问有没有用，就是商机。笔记下面只给一句内行判断，不长篇、不导流；谁在你那条底下追问，就回一句他马上能试的。不提店名，也不说自己是谁。',
-  local: '家长在问哪家好、在比较机构，就是商机。家长帖笔记下面接一句判断型短评，回复区里同问的人逐个回；同行或机构的招生帖只收人、不留言。可以说自己干这行，店名等对方问起再报。',
-  pain: '楼主在求助、避雷、问哪家靠谱，就是商机；回复区里同问的人也算。笔记下面先正面回答他问的那件事，再给一条能马上试的；评论区里谁追问就回谁。可以报店名，价格等私信里再说。',
-  cross: '别家评论区里有人说孩子坐不住、画画跳舞坐不下来、注意力差，就当放电不够、可以聊体智能，这就是商机。笔记下面从跨行业的角度搭一句，回复区里说孩子情况的逐个接一句本地经验。不提店名，最多说自己是做这行的。',
-  highv: '大V评论区里接话、问方法的本地家长，就是商机。在大V笔记下面留一句「赞同＋本行视角补充」借势露脸；谁在那条底下回你、接着问，就回一句，只说自己是干这行的。不主动报店名，往下走私信。',
+  latest: '本地说「哪家好、怎么选、有没有靠谱的」，就是商机。笔记下面留一句本地经验抢前排；评论区里回你的、跟着问的，顺着他的原话各回一句，不推销。不提店名，最多说自己是做这行的。',
+  top: '评论区里认真问方法、问有没有用的人，就是商机。笔记下面只给一句内行判断，不长篇、不导流；谁在那条底下追问，就回一句他马上能试的。不报店名、不提产品；自己开店的情形、带过的人、做过的案例可以讲，只说真事。',
+  local: '对方在挑、在比较、在问哪家靠谱，就是商机。笔记下面接一句判断型短评，回复区里同问的人逐个回；同行揽客的帖子只收人、不留言。只说自己是干这行的；不报店名、不提产品、不报价。',
+  pain: '楼主在求助、避雷、问哪家靠谱，就是商机；回复区里同问的人也算。笔记下面先正面回答他问的那件事，再给一条能马上试的；评论区里谁追问就回谁。可以报自己是谁、开的哪家；价格不提。',
+  cross: '别家评论区里有人在吐槽同一件难事（没人教、找不着门路、试了没用），这就是商机。笔记下面从别的角度搭一句，回复区里说同一困扰的逐个接一句本地经验。不报店名、不提自己卖什么；自己开店的经历和做过的案例可以讲，只说真事。',
+  highv: '大V评论区里接话、问方法的人，就是商机。在大V笔记下面留一句「赞同＋本行视角补充」借势露脸；谁在那条底下回你、接着问，就回一句。可以说自己干这行，也能讲自己开店的情形或做过的案例；不报店名、不提产品。',
 };
-/* 默认话术对应的提店硬控档位（跟那段话说的保持一致） */
-const DRAIN_TALK_DEFAULT_STORE = {
-  latest: 'identity', top: 'none', local: 'store', pain: 'store', cross: 'identity', highv: 'identity',
+/* 上一版（v9）的默认话术：迁移时只换「那段话一字没改过」的号，老板手改过的、行业包带来的都不动 */
+const DRAIN_TALK_V9 = {
+  top: '评论区里认真问方法、问有没有用的人，就是商机。笔记下面只给一句内行判断，不长篇、不导流；谁在那条底下追问，就回一句他马上能试的。不提店名，也不说自己是谁。',
+  local: '对方在挑、在比较、在问哪家靠谱，就是商机。笔记下面接一句判断型短评，回复区里同问的人逐个回；同行揽客的帖子只收人、不留言。可以说自己干这行，店名等对方明确问起再报。',
+  pain: '楼主在求助、避雷、问哪家靠谱，就是商机；回复区里同问的人也算。笔记下面先正面回答他问的那件事，再给一条能马上试的；评论区里谁追问就回谁。可以说自己干这行，店名等对方明确问起再报。',
+  cross: '别家评论区里有人在吐槽同一件难事（没人教、找不着门路、试了没用），这就是商机。笔记下面从别的角度搭一句，回复区里说同一困扰的逐个接一句本地经验。不提店名，最多说自己是做这行的。',
+  highv: '大V评论区里接话、问方法的人，就是商机。在大V笔记下面留一句「赞同＋本行视角补充」借势露脸；谁在那条底下回你、接着问，就回一句，只说自己是干这行的。不主动报店名，往下走私信。',
 };
-/* ── 📦 行业口径包（2026-11-04）：这六套玩法文案原本写死在本文件（全是亲子口吻），铺哪个行业读到的都是同一句。
-   现在改成：行业底子里带一份包 → 铺底子时写进这个号的获客配置 cfg.pbPack → 生成时先读包。
-   包是可选的：读不到就回落本文那套现文案，所以别的行业号、老客户机一字不变。
-   包形状 { label, solicit:[词…], storeRules:{none,identity,store}, pb:{ 玩法:{ tag, desc, pbTip, hint, talk, dm, wordRule, system, user } } } */
+/* 「捞谁·为了什么」的内置口径（2026-11-09）：原「评论目的 6 选 1」并进玩法配置的这一格。
+   只写「找什么样的人、为了什么」，不写行业词；这个号自己写了就用自己那段。 */
+const DRAIN_PB_WHO_DEFAULT = {
+  latest: '在本地泛搜的笔记底下，找随口问「哪家好 / 怎么选」、还没想过去比较的本地人；先占个前排混个脸熟，别急着成交。',
+  top: '在全国热帖的笔记和评论区里，找认真问方法、问有没有用的人；借热帖露一次脸，让同话题的人记住有你这么个懂行的。',
+  local: '在同城本行的笔记和评论区里，找正在挑、正在比、问哪家靠谱的本地人；先给一条判断，把同城的机会接住。',
+  pain: '在求助 / 避雷 / 问哪家靠谱的帖子里，找楼主和评论区里同问的人；先帮他解决问题，再留个印象。',
+  cross: '在别家行业的笔记评论区里，找吐槽同一件难事（没人教、找不着门路、试了没用）的本地人；从那个困扰切进来，不暴露自己在卖什么。',
+  rival: '在竞对的评论区里，找露出真实需求的精准顾客；一个字都不留言，只收进清单去私信。',
+  highv: '在头部博主的笔记和评论区里，找接话、追问方法的人；用「赞同＋本行视角」露脸，接住往下问的人。',
+};
+/* 这一玩法「捞谁·为了什么」：自己写过优先，没写用内置那句 */
+function drainPbWho(cfg, scenario) {
+  const id = drainScenarioId(scenario);
+  const own = String((drainPbPlan(cfg, id).who) || '').trim();
+  return own || DRAIN_PB_WHO_DEFAULT[id] || '';
+}
+function drainWhoBlock(cfg, scenario) {
+  const who = drainPbWho(cfg, scenario);
+  return who ? '【这个玩法捞谁·为了什么】\n' + who : '';
+}
+/* ── 📦 行业口径包（2026-11-04 建，2026-11-09 收口）：只是一个模板。
+   铺底子 / 第一次读配置时把里面的文案、提店说法、不留言词表抄进这个号自己的配置（pbSeed / pbPrompt /
+   pbDm / pbHint / pbTip / pbStoreRules / pbSolicit / pbLabel），之后跑的时候只读配置，再也不读包。 */
 function drainPackOf(cfg) {
   const p = (cfg || {}).pbPack;
   return (p && typeof p === 'object' && !Array.isArray(p)) ? p : null;
 }
-/* 包里某玩法的一句文案；没有就返回空串，由调用处回落到内置那句 */
+/* 铺底子时从包抄进配置的那几句（talk / tag / desc / wordRule）；跑时和界面都只读这里 */
 function drainPbCopy(cfg, id, field) {
-  const one = (((drainPackOf(cfg) || {}).pb || {})[drainScenarioId(id)] || {});
+  const one = (((cfg || {}).pbSeed || {})[drainScenarioId(id)] || {});
   return String(one[field] || '').trim();
 }
-/* 这份包是卖什么的（排班卡标题那行）；没包返回空串，调用处自己藏掉 */
+/* 把包抄成配置字段（只抄一次；之后改包不影响这个号）。返回是否抄了 */
+function drainSeedFromPack(cfg) {
+  const pack = drainPackOf(cfg);
+  if (!pack) return false;
+  const needSeed = !cfg.pbSeed;
+  if (cfg.pbSeedFromPack && !needSeed) return false;
+  const pb = (pack.pb && typeof pack.pb === 'object') ? pack.pb : {};
+  if (needSeed) {
+    const seed = {};
+    Object.keys(pb).forEach(id => {
+      const one = pb[id] || {};
+      const keep = {};
+      ['talk', 'tag', 'desc', 'wordRule'].forEach(k => { if (one[k]) keep[k] = String(one[k]); });
+      if (Object.keys(keep).length) seed[id] = keep;
+    });
+    if (Object.keys(seed).length) cfg.pbSeed = seed;
+  }
+  if (cfg.pbSeedFromPack) return true;
+  const prompt = {}, dm = {}, hint = {}, tip = {};
+  Object.keys(pb).forEach(id => {
+    const one = pb[id] || {};
+    if (one.system || one.user) prompt[id] = { system: String(one.system || ''), user: String(one.user || '') };
+    if (one.dm) dm[id] = String(one.dm);
+    if (one.hint) hint[id] = String(one.hint);
+    if (one.pbTip) tip[id] = String(one.pbTip);
+  });
+  if (Object.keys(prompt).length) cfg.pbPrompt = Object.assign({}, cfg.pbPrompt, prompt);
+  if (Object.keys(dm).length) cfg.pbDm = Object.assign({}, cfg.pbDm, dm);
+  if (Object.keys(hint).length) cfg.pbHint = Object.assign({}, cfg.pbHint, hint);
+  if (Object.keys(tip).length) cfg.pbTip = Object.assign({}, cfg.pbTip, tip);
+  const sr = pack.storeRules;
+  if (sr && typeof sr === 'object') cfg.pbStoreRules = Object.assign({}, sr);
+  if (Array.isArray(pack.solicit)) cfg.pbSolicit = pack.solicit.slice();
+  if (pack.label) cfg.pbLabel = String(pack.label);
+  cfg.pbSeedFromPack = true;
+  return true;
+}
+/* 这份包是卖什么的（排班卡标题那行）；铺过就存在 pbLabel */
 function drainPackLabel(cfg) {
-  return String(((drainPackOf(cfg) || {}).label) || '').trim();
+  return String((cfg || {}).pbLabel || '').trim();
 }
-/* 某一玩法的「跑法」一句话（列表 hover、六类怎么评）：包里的 pbTip 优先 */
+/* 某一玩法的「跑法」一句话（列表 hover、六类怎么评） */
 function drainPbTip(id, cfg) {
-  return drainPbCopy(cfg, id, 'pbTip') || (DRAIN_PLAYBOOK[drainScenarioId(id)] || {}).tip || '';
+  return String(((cfg || {}).pbTip || {})[drainScenarioId(id)] || '').trim()
+    || (DRAIN_PLAYBOOK[drainScenarioId(id)] || {}).tip || '';
 }
-/* 「这种帖子不留言」的词表：内置那套 ＋ 包里补的（同行揽客在各行业叫法不一样） */
+/* 「这种帖子不留言」的词表：内置那套 ＋ 铺底子时抄进来的补充词 */
 function drainSolicitWords(cfg) {
-  const extra = (drainPackOf(cfg) || {}).solicit;
+  const extra = (cfg || {}).pbSolicit;
   if (!Array.isArray(extra)) return DRAIN_SOLICIT_WORDS;
   return DRAIN_SOLICIT_WORDS.concat(extra.map(x => String(x || '').trim()).filter(Boolean));
 }
 /* 哪一行的话术编辑块是展开的（整页重绘后还留着，比如点了周几） */
 let _drainTalkOpen = null;
+/* 周日历看的是本周还是下周（0＝本周，1＝下周）：只影响预览，不影响真跑 */
+let _drainWeekOff = 0;
 /* 老 v8 的四步＋示范 → 拼成三行；只在读老数据时用 */
 function _drainTalkFromSteps(raw) {
   const st = (raw && raw.steps && typeof raw.steps === 'object') ? raw.steps : null;
@@ -600,19 +766,214 @@ function drainPbTalkOf(cfg, scenario) {
 /* 给评论 / 私信提示词当参考的一段；没有话术就返回空串 */
 function drainTalkBlock(t) {
   if (!t || !t.text) return '';
-  return '【这个玩法的话术（当参考，按对方的原话自然说，别逐字照抄）】\n' + String(t.text).trim().slice(0, 1200);
+  return '【这个玩法的口吻参考（只学怎么说；提不提自己、能不能报店名，一律按这一段之外的「能提自己到哪一步」，这段里相反的话不算；找谁按「捞谁·为了什么」那格，别重复说）】\n' + String(t.text).trim().slice(0, 1200);
+}
+/* 📈 复盘采纳后补进提示词的那几句（2026-11-08）：存在这个号自己的获客配置里（cfg.pbExtra），
+   不动内置提示词、也不动行业包。_all＝整条获客线都加；玩法 id＝只加那一个玩法。 */
+function drainPbExtraBlock(cfg, scenario) {
+  const ex = cfg && cfg.pbExtra;
+  if (!ex || typeof ex !== 'object' || Array.isArray(ex)) return '';
+  const all = String(ex._all || '').trim();
+  const one = String(ex[drainScenarioId(scenario)] || '').trim();
+  return [all, one].filter(Boolean).join('\n');
 }
 
-/* 这一玩法的评论策略正文（2026-11-04）：①②两条评论逐字共用；提店那句由两边各按原路给，这里不重复。
-   guide=auto 时不写引导行（沿用账号资料里那句，跟以前一样）。 */
-function drainStrategyRule(cfg, scenario) {
+/* ── 👁 看提示词（2026-11-08）──
+   每个玩法 × 每个动作只留最近一次：拼给 AI 的 system / user 原文、AI 原话、实际发出去的字、
+   跳过原因、耗时 / 字数 / token。放这一层＝网页那台和客户机那只手同一份口径。
+   试拼只拼不调模型、不计费，也不覆盖「最近一次」。 */
+const DRAIN_PROMPT_KEY = 'drain_prompt_last';
+const DRAIN_PROMPT_ACTS = [
+  { id: 'note', label: '笔记下评一句' },
+  { id: 'finder', label: '回评论区那句' },
+  { id: 'dm', label: '私信开头' },
+];
+function drainPromptAct(id) {
+  return DRAIN_PROMPT_ACTS.some(function (a) { return a.id === id; }) ? id : 'note';
+}
+function drainPromptSlot(scenario, act) {
+  return drainScenarioId(scenario) + '.' + drainPromptAct(act);
+}
+function drainPromptCut(v, n) {
+  const s = String(v == null ? '' : v);
+  const max = Math.max(1, Math.floor(Number(n) || 0));
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+/* 记「这一趟真的发出去的那份」；只有跳过、没有 prompt 的也记一笔（跳过原因要看得见） */
+async function drainPromptSave(rec) {
+  if (!rec || (!rec.sys && !rec.skip)) return false;
+  try {
+    const key = DRAIN_PROMPT_KEY;
+    const d = await chrome.storage.local.get(key);
+    const old = d && d[key];
+    const all = (old && typeof old === 'object' && !Array.isArray(old)) ? old : {};
+    const used = String(rec.used || '');
+    all[drainPromptSlot(rec.scenario, rec.act)] = {
+      at: Date.now(),
+      scenario: drainScenarioId(rec.scenario),
+      act: drainPromptAct(rec.act),
+      sys: String(rec.sys || ''),
+      user: String(rec.user || ''),
+      raw: drainPromptCut(rec.raw, 4000),
+      used: drainPromptCut(used, 2000),
+      skip: drainPromptCut(rec.skip, 300),
+      ms: Math.max(0, Math.floor(Number(rec.ms) || 0)),
+      chars: used.length,
+      tokensIn: Math.max(0, Math.floor(Number(rec.tokensIn) || 0)),
+      tokensOut: Math.max(0, Math.floor(Number(rec.tokensOut) || 0)),
+      model: String(rec.model || ''),
+      material: (rec.material && typeof rec.material === 'object') ? rec.material : null,
+      /* 🧩 这一条用了哪个场景/情况、哪几句候选、为什么选它（复盘页/看提示词直接读） */
+      sceneCard: String(rec.sceneCard || ''),
+      branch: Math.max(0, Math.floor(Number(rec.branch) || 0)),
+      angle: String(rec.angle || ''),
+      candidates: (Array.isArray(rec.candidates) ? rec.candidates : []).slice(0, 6),
+      blocked: (Array.isArray(rec.blocked) ? rec.blocked : []).slice(0, 6),
+      pickReason: String(rec.pickReason || ''),
+    };
+    await chrome.storage.local.set({ [key]: all });
+    return true;
+  } catch (_) { return false; }
+}
+/* 料先收小：一篇笔记 + 前 8 条评论、每条 200 字，够复现、不撑爆存储 */
+function drainPromptMaterial(act, data) {
+  const d = data || {};
+  if (act === 'dm') {
+    const p = d.person || d || {};
+    const src = p.source || {};
+    const pf = p.profile || {};
+    return {
+      person: {
+        nickname: drainPromptCut(p.nickname, 40),
+        source: {
+          comment: drainPromptCut(src.comment, 300),
+          noteTitle: drainPromptCut(src.noteTitle, 120),
+          scenario: drainPromptCut(src.scenario, 20),
+        },
+        profile: {
+          tags: (Array.isArray(pf.tags) ? pf.tags : []).slice(0, 8).map(function (x) { return drainPromptCut(x, 20); }),
+          needs: drainPromptCut(pf.needs, 200),
+          painPoints: drainPromptCut(pf.painPoints, 200),
+          dmAngle: drainPromptCut(pf.dmAngle, 200),
+        },
+      },
+    };
+  }
+  return {
+    title: drainPromptCut(d.title || d.noteTitle, 120),
+    author: drainPromptCut(d.author || d.noteAuthor, 40),
+    description: drainPromptCut(d.description || d.noteContent, 800),
+    comments: (Array.isArray(d.comments) ? d.comments : []).slice(0, 8).map(function (c) {
+      return {
+        author: drainPromptCut(c && c.author, 30),
+        content: drainPromptCut(c && c.content, 200),
+        location: drainPromptCut(c && c.location, 20),
+      };
+    }),
+  };
+}
+/* 试拼的料：没跑过的号拿这份走一遍，只看拼装对不对 */
+function drainPromptSample(act) {
+  if (act === 'dm') {
+    return drainPromptMaterial('dm', {
+      person: {
+        nickname: '小城店主',
+        source: {
+          comment: '店里想在网上露个脸，不知道从哪下手，怕花了钱没效果。',
+          noteTitle: '实体店想做线上，先做哪一步',
+          scenario: 'pain',
+        },
+        profile: {
+          tags: ['本地店主', '没做过线上'],
+          needs: '想知道先从哪里开始、预算不高能做什么',
+          painPoints: '怕被外包忽悠，花冤枉钱',
+          dmAngle: '先给一条能马上试的，不急着卖方案',
+        },
+      },
+    });
+  }
+  return drainPromptMaterial(act, {
+    title: '实体店想做线上，先做哪一步',
+    author: '小城店主',
+    description: '店里客流一般，想在网上多露个脸。有人说先做内容，有人说先投流，不知道先做哪一步，预算也不多，怕花了钱没效果。',
+    comments: [
+      { author: '街角咖啡', content: '我也试过，后来还是先把店里的账号做起来了。', location: '广东' },
+      { author: '小城店主', content: '那你们一开始都发了些什么？花了多少钱？', location: '广东' },
+      { author: '阿良', content: '同问，本地有没有靠谱的能帮忙看看的？', location: '广东深圳' },
+    ],
+  });
+}
+/* 把 system 拆成来源段：只按已知的块开头切；切不出来就整段显示——不猜、不乱标 */
+const DRAIN_PROMPT_MARKS = [
+  { key: '【你是谁】', label: '你是谁', tone: 'tpl' },
+  { key: '【这个账号是谁】', label: '你是谁', tone: 'tpl' },
+  { key: '【这一趟要干什么', label: '这一趟要干什么', tone: 'play' },
+  { key: '【这一趟怎么做', label: '这一趟怎么做', tone: 'play' },
+  { key: '【能提自己到哪一步', label: '能提自己到哪一步', tone: 'rule' },
+  { key: '【话术库', label: '话术库', tone: 'rule' },
+  { key: '【红线', label: '红线', tone: 'rule' },
+  { key: '【这个玩法的口吻参考', label: '口吻参考', tone: 'play' },
+  { key: '【这个号复盘后补的规矩', label: '复盘补的规矩', tone: 'extra' },
+];
+function drainPromptSegments(text) {
+  const s = String(text || '');
+  if (!s.trim()) return [];
+  const hits = [];
+  DRAIN_PROMPT_MARKS.forEach(function (m) {
+    let i = s.indexOf(m.key);
+    while (i >= 0) { hits.push({ i: i, label: m.label, tone: m.tone }); i = s.indexOf(m.key, i + 1); }
+  });
+  hits.sort(function (a, b) { return a.i - b.i; });
+  const out = [];
+  let pos = 0, label = '提示词模板', tone = 'tpl';
+  hits.forEach(function (h) {
+    if (h.i < pos) return;
+    if (h.i > pos) {
+      const body = s.slice(pos, h.i).replace(/^\n+/, '').trim();
+      if (body) out.push({ label: label, tone: tone, text: body });
+    }
+    pos = h.i; label = h.label; tone = h.tone;
+  });
+  const tail = s.slice(pos).replace(/^\n+/, '').trim();
+  if (tail) out.push({ label: label, tone: tone, text: tail });
+  return out;
+}
+
+/* ═══ 讲法八式 · 开始（离线自测按这两行标记截取，别改这两行） ═══
+   2026-11-07：重复的病根是“只讲专业判断 + 抄同一个检查点”。
+   这里只描述“怎么讲”，不写任何行业词：对象称呼、行业词、真案例、真数字，
+   一律从人设 / 知识库 / 行业包里取；库里没有就不许编。 */
+const TALK_STYLES = [
+  { id: 'empathy',  name: '共情接住', w: 25, need: '情绪', fallback: '', inst: '先接住对方的情绪，再轻轻给一句做法。' },
+  { id: 'case',     name: '案例带人', w: 25, need: '一个真实的人或事', fallback: '退成泛例', inst: '用一个具体的人或事带出做法，优先人设里写过的真事。' },
+  { id: 'method',   name: '方法拆解', w: 15, need: '一条能拆的流程', fallback: '退成判断、只给一个起点', inst: '把怎么做拆成一两步马上能照做的动作，用「先…再…」。' },
+  { id: 'data',     name: '数据实证', w: 15, need: '真数字或标准', fallback: '跳过这种讲法', inst: '只用知识库 / 人设里原样写着的数字、标准、政策。' },
+  { id: 'judge',    name: '专业判断', w: 10, need: '一条能核对的标准', fallback: '', inst: '给一条内行才说得出的判断或能核对的标准。' },
+  { id: 'pitfall',  name: '避坑提醒', w: 5,  need: '一个真坑', fallback: '退成判断', inst: '说一个人设或知识库里真有的坑，讲清怎么绕。' },
+  { id: 'contrast', name: '对比取舍', w: 5,  need: '两个方案各适合谁', fallback: '退成判断', inst: '两个做法客观摆开，讲清各自适合谁、代价是什么。' },
+  { id: 'chat',     name: '随口搭话', w: 0,  need: '闲聊', fallback: '', inst: '像本地人随口接一句，短、松，只用于闲聊夸奖。' },
+];
+
+function talkStyleCatalog() {
+  return TALK_STYLES.map(s => '· ' + s.name + '：' + s.inst).join('\n')
+    + '\n没有对应真料就退成专业判断。\n同一批里同一种说法最多 2 条。';
+}
+
+/* ═══ 讲法八式 · 结束 ═══ */
+
+/* 这一玩法的评论策略正文（2026-11-09）：①②两条评论逐字共用；提店那句由 drainStoreRule 给，这里不重复。
+   引导只认玩法配置，老配置里的「跟账号资料」按「不引导」走。 */
+function drainStrategyRule(cfg, scenario, act) {
   const p = drainPbPlan(cfg, scenario);
+  /* 判出笔记类型后，这篇的动作以类型表为准（2026-11-12）：传了 act 就按它写，
+     没传（手动扫描 / 老入口）仍按渠道那行。 */
+  const mode = (act === 'note' || act === 'both' || act === 'reply' || act === 'people') ? act : p.mode;
   const L = [];
-  if (p.mode === 'note') L.push('这篇笔记只做一件事：在笔记下面评一句，评论区里谁接话都不回。');
-  else if (p.mode === 'reply') L.push('这篇笔记不在下面露面：一条一级评论都不发，只回评论区里已经接话的人。');
-  else if (p.mode === 'people') L.push('这一趟只收人：公开评论区一个字都不发，只把有商机的人收进清单，等对方来私信。');
+  if (mode === 'note') L.push('这篇笔记只做一件事：在笔记下面评一句，评论区里谁接话都不回。');
+  else if (mode === 'reply') L.push('这篇笔记不在下面露面：一条一级评论都不发，只回评论区里已经接话的人。');
+  else if (mode === 'people') L.push('这一趟只收人：公开评论区一个字都不发，只把有商机的人收进清单，等对方来私信。');
   else L.push('这篇笔记要做两件事：笔记下面评一句，评论区里谁接话就回谁。');
-  if (p.mode !== 'people') {
+  if (mode !== 'people') {
     L.push('怎么开口：' + ({
       follow: '先接住对方那句话，表示有同感，再往下说。',
       judge: '直接给一个内行判断，别绕弯。',
@@ -620,57 +981,57 @@ function drainStrategyRule(cfg, scenario) {
       story: '用自己碰到过的一个具体例子开口。',
       light: '只回一两个词、一句话，不展开。',
     })[p.entry]);
-    L.push('说多长：' + ({
-      one: '一句就够了（大约 15~25 字）。',
-      two: '两句（大约 25~45 字）。',
-      three: '三句以内（大约 45~80 字）。',
-    })[p.len]);
   }
-  if (p.guide !== 'auto') L.push('引导：' + ({
+  L.push('引导：' + ({
     none: '一句引导都不许有，讲完就收：别让人私信、别让人看主页、也别说到店。',
     dm: '最多一句「拿不准就私信我」这种站内话。',
     home: '最多一句「细节在我主页 / 置顶那篇」这种站内话。',
     visit: '评论里一律不写门店名和地址；只有对方私信追问时，才说可以来店里。',
-  })[p.guide]);
-  if (p.mode === 'both' || p.mode === 'reply') L.push('这一篇最多回 ' + p.cap + ' 个人，到数就停，剩下的只收进清单。');
-  L.push('禁区：不贬低同行、不点名别家；不承诺效果（涨多少粉、来多少人、几天见效）；评论里不写价格、不留微信电话、不发链接。');
+  })[p.guide] || '一句引导都不许有，讲完就收。');
   return L.join('\n');
 }
-/* 引导那句：配了明确档位就用它替换账号资料里那句；auto 返回空串＝不动 */
+/* 引导那句：只由玩法这一列生成，账号资料里那句承接不再参与评论 */
 function drainGuideByPlan(cfg, scenario) {
   const p = drainPbPlan(cfg, scenario);
-  if (p.guide === 'auto') return '';
   return ({
     none: '这次不引导：讲完就收，别让人私信、别让人看主页、也别说到店。',
     dm: '拿不准就私信我（站内私信，不出现站外联系方式）。',
     home: '细节在我主页 / 置顶那篇。',
     visit: '评论里不提门店和地址；只有对方私信追问时，才说可以来店里。',
-  })[p.guide] || '';
+  })[p.guide] || '这次不引导：讲完就收，别让人私信、别让人看主页、也别说到店。';
 }
 /* 同一篇笔记两步共用一段评论策略（2026-11-04）：「在笔记下面评一句」走 drainComment、本来就带这个玩法的
    提店口径和话术；「回评论区那句」走商机挖掘那条提示词，它不知道自己是哪个玩法捞出来的，
    这里按这一趟的玩法把同一段补进去。手动扫描（没有玩法）返回空串＝维持原样。 */
-async function drainReplyStrategyBlock(scenario) {
+async function drainReplyStrategyBlock(scenario, opt) {
   const id = String(scenario || '');
   if (!id || id === 'daily' || typeof drainGetScanCfg !== 'function') return '';
   let cfg = null;
   try { cfg = await drainGetScanCfg(); } catch (_) { return ''; }
+  const o = opt || {};
+  const _pl = drainPbPlan(cfg, id);
+  /* 没设城市＝判断不了同城，只能不提自己（这是事实前提，不是另一个策略来源） */
+  const store = o.noCity ? 'none' : _pl.store;
   const talk = drainTalkBlock(drainPbTalkOf(cfg, id));
-  return '\n\n【这一趟的评论策略（跟「在笔记下面评一句」用的是同一段）】\n'
-    + drainStoreRule(drainPbPlan(cfg, id).store, cfg) + '\n'
+  let block = '\n\n【这一趟怎么做（跟「在笔记下面评一句」共用）】\n'
     + drainStrategyRule(cfg, id) + '\n'
-    + (talk || '（这个玩法还没写话术：按人设自然接话，公开评论不主动报店名、不报价、不留联系方式）');
+    + (talk || '（这个玩法还没写话术：按人设自然接话）');
+  block += '\n\n' + drainStoreRule(store, cfg, { guide: _pl.guide });
+  /* 📈 复盘里采纳过的规矩：只当话术参考，追加在最后 */
+  const pbExtra = drainPbExtraBlock(cfg, id);
+  if (pbExtra) block += '\n\n【这个号复盘后补的话术参考（策略请去玩法配置改）】\n' + pbExtra;
+  return block;
 }
 
-/* 给 AI 写这份话术的一句话玩法说明（2026-11-02）：按玩法换角度，六套共用。
-   2026-11-04：先读这个号自己的行业口径包（cfg.pbPack.pb[id].hint），没包才用下面这套亲子口径。 */
+/* 给 AI 写这份话术的一句话玩法说明（2026-11-02）：按玩法换角度，六套共用、不写行业词。
+   2026-11-09：行业口径只来自铺底子时抄进来的 cfg.pbHint，不再读包。 */
 function drainPbTalkHint(id, cfg) {
-  const own = drainPbCopy(cfg, id, 'hint');
+  const own = String(((cfg || {}).pbHint || {})[drainScenarioId(id)] || '').trim();
   if (own) return own;
   return {
-    latest: '本地泛搜索：找还没想过报班的本地家长。第一句说本地带娃的实情，不提课程和价格。',
+    latest: '本地泛搜索：找还没想过这件事的本地人。第一句说本地的实情，不提产品、不提价格。',
     top: 'TOP搜索：写全国热评长期占位。只给内行判断，不导流。',
-    local: '同城本业：对方已经在挑机构。给一条判断，不贬低同行、不报价；同行/机构的招生帖不留言，只收人去私信。',
+    local: '同城本业：对方已经在挑、在比较。给一条判断，不贬低同行、不报价；同行揽客的帖子不留言，只收人去私信。',
     pain: '咨询帖：对方在求助 / 避雷。先正面回答他问的那件事，再给一条能马上试的。',
     cross: '同城异业：从别家行业的评论区切进来。别暴露职业，只给一条本地经验。',
     rival: '同行／竞对：不在评论区留言，第 4 步直接当私信开场；绝不提在哪看到他。',
@@ -683,8 +1044,8 @@ function drainWordOnDay(entry, cfg, now) {
   const sel = drainPbSelMap(cfg, now);
   return DRAIN_PB_WORD.some(s => sel[s] && sel[s].has(entry && entry.k));
 }
-/* 配置指纹（2026-10-29）：锁定今天这份清单时一起记下，之后配置一改就能提示
-   「今天这趟照原样跑，明天按新的排」。只进指纹的东西＝会影响跑哪些格：平台、城市、词/勾/周几、盯的账号、整列节奏 */
+/* 配置指纹（2026-10-29；2026-11-04 改成「对不上就重排今天」）：锁定今天这份清单时一起记下，
+   之后配置一改，今天这份当场按新配置重排（跑完的不重跑）。只进指纹的东西＝会影响跑哪些格：平台、城市、词/勾/周几、盯的账号、整列节奏 */
 function drainCfgSig(cfgIn) {
   const cfg = _drainNormalizeScanCfg(cfgIn || {});
   const kw = (cfg.keywords || []).map(e => [
@@ -737,6 +1098,107 @@ function drainAccountLabel(ac) {
 function _drainProfileId(u) {
   const m = String(u || '').match(/\/user\/profile\/([^/?#]+)/);
   return m ? m[1] : '';
+}
+/* 「刚起来」的三条线（2026-11-08）：默认 发布≤6小时 / 赞<200 / 评论<20，可在「🎯 玩法配置」顶部改 */
+function drainFreshCfg(cfg) {
+  const raw = (cfg && cfg.freshCfg && typeof cfg.freshCfg === 'object') ? cfg.freshCfg : {};
+  const num = (v, d) => (v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
+  return {
+    hours: Math.min(168, Math.max(1, num(raw.hours, 6))),
+    likes: Math.max(0, num(raw.likes, 200)),
+    comments: Math.max(0, num(raw.comments, 20)),
+  };
+}
+/* 判断一篇笔记是不是「刚起来」：发布时间、赞、评论三条同时成立才算；
+   任何一项读不到就 known=false / fresh=false，绝不猜。 */
+function drainJudgeFresh(meta, cfg) {
+  const t = drainFreshCfg(cfg);
+  const at = Number(meta && meta.publishAt) || 0;
+  const likesRaw = meta && meta.likes;
+  const commentsRaw = meta && (meta.commentsCount != null ? meta.commentsCount : meta.comments);
+  const likesKnown = likesRaw != null && Number.isFinite(Number(likesRaw));
+  const commentsKnown = commentsRaw != null && Number.isFinite(Number(commentsRaw));
+  const likes = likesKnown ? Number(likesRaw) : null;
+  const comments = commentsKnown ? Number(commentsRaw) : null;
+  const base = { known: at > 0, fresh: false, hours: null, likes, comments, thresholds: t, why: '' };
+  if (!(at > 0)) return Object.assign(base, { why: '发布时间没读到，不判断' });
+  const hours = (Date.now() - at) / 3600000;
+  base.hours = hours;
+  if (hours < 0) return Object.assign(base, { why: '发布时间比现在还晚，不判断' });
+  if (!likesKnown || !commentsKnown) return Object.assign(base, { why: '赞/评论数没读全，不判断' });
+  if (hours > t.hours) return Object.assign(base, { why: '发布已 ' + hours.toFixed(1) + ' 小时，超过 ' + t.hours + ' 小时' });
+  if (likes >= t.likes) return Object.assign(base, { why: '赞 ' + likes + ' 已到 ' + t.likes });
+  if (comments >= t.comments) return Object.assign(base, { why: '评论 ' + comments + ' 已到 ' + t.comments });
+  return Object.assign(base, { fresh: true, why: '刚起来：' + hours.toFixed(1) + ' 小时 / 赞 ' + likes + ' / 评论 ' + comments });
+}
+/* 作者是不是「👤 盯的账号」里的号：只认名单；先按主页 ID 对，读不到 ID 才按昵称精确对。
+   认不出来就返回 null——不拿「看起来像」的线索自动绑定。 */
+function drainMatchWatchAccount(cfg, authorUid, authorName) {
+  const uid = String(authorUid || '').trim();
+  const norm = (s) => String(s || '').replace(/[\s@·.。，,]/g, '').toLowerCase();
+  const name = norm(authorName);
+  const list = ((cfg && cfg.accounts) || []).filter(a => a && a.k && a.on !== false);
+  if (uid) {
+    for (const a of list) {
+      const id = _drainProfileId(a.k);
+      if (id && id === uid) return { scenario: a.scenario === 'rival' ? 'rival' : 'highv', label: drainAccountLabel(a), account: a, by: 'id' };
+    }
+    return null;
+  }
+  if (!name) return null;
+  for (const a of list) {
+    if (a.name && norm(a.name) === name) return { scenario: a.scenario === 'rival' ? 'rival' : 'highv', label: drainAccountLabel(a), account: a, by: 'name' };
+  }
+  return null;
+}
+/* 这一篇最终做什么：评笔记 / 回评论 / 只收人 / 跳过。
+   玩法配置的评论动作是上限；笔记结论（AI 判断＋刚起来）只能在上限内收窄，不能越权。
+   返回 { action, text, reason }，action ∈ grab|comment|reply|collect|skip */
+function drainDecideNote(o) {
+  o = o || {};
+  if (o.forceAction) return { action: o.forceAction, text: o.forceText || o.forceAction, reason: o.forceReason || '' };
+  const matched = o.matched || '';
+  const v = o.verdict || '';
+  const mode = o.mode || '';
+  const hasProsp = !!o.hasProspects;
+  const collect = o.collect !== false;
+  const allowNote = !mode || mode === 'note' || mode === 'both';
+  const allowReply = !mode || mode === 'both' || mode === 'reply';
+  // ① 竞对：整篇只蹲人，不评论
+  if (matched === 'rival') {
+    if (hasProsp && collect) return { action: 'collect', text: '只蹲人：不评论，把评论区的人收进清单', reason: '竞对笔记' };
+    return { action: 'skip', text: '只蹲人：这篇没有可收的人', reason: '竞对笔记' };
+  }
+  // ② AI 硬拦：招聘/纯广告/纠纷/悲伤/纯带货 → 整篇跳过，不露面也不收人
+  if (v === 'blocked' || o.typeMode === 'block') return { action: 'skip', text: '跳过：这类帖完全不碰', reason: o.blockReason || '悲伤 / 纠纷：不评也不收' };
+  // ②' 笔记类型表判成「不评·只收人」（广告招生）：一条不留言，评论区里的人照收
+  if (o.typeMode === 'silent') {
+    if (collect && hasProsp) return { action: 'collect', text: '只收人：不留言，把评论区的人收进清单', reason: '广告招生帖 · 只收人' };
+    return { action: 'skip', text: '跳过：广告招生帖不留言', reason: '广告招生帖 · 这一篇没有可收的人' };
+  }
+  // ③ AI 没回来：按玩法原来的跑法（评笔记那条照发，不抢首评）
+  if (o.fallback) {
+    if (allowNote) return { action: 'comment', text: '按原玩法评一句', reason: 'AI 笔记判断没回来，按玩法原样处理' };
+    if (allowReply && hasProsp) return { action: 'reply', text: '只回评论区', reason: 'AI 笔记判断没回来，按玩法原样处理' };
+    if (collect && hasProsp) return { action: 'collect', text: '只收人', reason: 'AI 笔记判断没回来，按玩法原样处理' };
+    return { action: 'skip', text: '跳过', reason: 'AI 笔记判断没回来，玩法也没安排动作' };
+  }
+  // ④ 大V：整篇按大V跑法；只回在你那条评论下接话的人（由上层筛人）
+  if (matched === 'highv') {
+    // 评不评笔记，跟接我话的人回不回是两件事：不评笔记时，有人接着聊照样回
+    if (allowNote) {
+      if (v === 'grab' && o.fresh) return { action: 'grab', text: '抢首评（大V写法）', reason: '刚起来＋值得首评' };
+      if (v === 'grab' || v === 'worth') return { action: 'comment', text: '评一句（大V写法）', reason: '值得补一句' };
+    }
+    if (allowReply && hasProsp) return { action: 'reply', text: '不评笔记，只回接我话的人', reason: allowNote ? '这篇不值得评，但有人接着聊' : '玩法配的是「不评笔记」' };
+    return { action: 'skip', text: '跳过：大V这篇不值得露面', reason: 'AI 判定没讨论空间' };
+  }
+  // ⑤ 普通笔记：先看笔记结论，再按玩法上限落到动作
+  if (v === 'grab' && o.fresh && allowNote) return { action: 'grab', text: '抢首评', reason: '刚起来＋值得首评' };
+  if ((v === 'grab' || v === 'worth') && allowNote) return { action: 'comment', text: '在笔记下评一句', reason: '值得补一句' };
+  if (allowReply && hasProsp) return { action: 'reply', text: '只回评论区', reason: '笔记不评，评论区有人' };
+  if (collect && hasProsp) return { action: 'collect', text: '只收人', reason: '不评论，收进清单' };
+  return { action: 'skip', text: '跳过', reason: '这篇没有可做的事' };
 }
 /* 盯的账号到没到点：只看行级开关 + 这一列自己的节奏（不受词池那套「格」约束，
    也不共用词池的 typeRun——「拿竞品名去搜」和「进他主页扒」是两件事） */
@@ -817,6 +1279,8 @@ function drainKeywordPasses(kw, cfg, now, opts) {
   const keyword = entry.k;
   // 属地真源＝基础配置里的「同城城市」（drainGetScanCfg 读的时候镜像进 cfg.city，这里照旧直接读）
   const city = String(c.city || '').trim();
+  // 同城只看「TOP」这一列自己那一档（2026-11-09：账号页不再有同城挡位）
+  const sameCity = drainPbPlan(c, 'top').city;
   const topSorts = DRAIN_DEFAULT_TOP_SORTS;
   const sel = drainPbSelMap(c, now);
   const out = [];
@@ -847,7 +1311,15 @@ function drainKeywordPasses(kw, cfg, now, opts) {
       continue;
     }
     if (meta.scenario === 'top') {
-      for (const s of topSorts) add({ k: keyword, scenario: 'top', term: keyword, sort: s });
+      /* 🏙 同城优先/同城就回：TOP 不再一律按全国热度搜——有城市就先按「词＋城市」搜（与「本地」同一写法）。
+         「同城优先」下本地一篇没捞到，由 _doSearchNotes 拿 cityFallbackTo 补搜原词；「同城就回」不补，就按本地说话。 */
+      const cityOn = !!city && sameCity !== 'off' && keyword.indexOf(city) < 0;
+      const term = cityOn ? (keyword + ' ' + city) : keyword;
+      for (const s of topSorts) {
+        const p = { k: keyword, scenario: 'top', term, sort: s };
+        if (cityOn && sameCity === 'priority') p.cityFallbackTo = keyword;
+        add(p);
+      }
       continue;
     }
     add({ k: keyword, scenario: meta.scenario, term: keyword, sort: 'latest' });
@@ -884,7 +1356,7 @@ async function drainGetScanCfg() {
   const raw = (d && d[DRAIN_SCAN_KEY]) || {};
   const cfg = _drainNormalizeScanCfg(raw);
   /* 默认短话第一回铺底要落盘：不然每次读都当「没铺过」，老板改的那句会被默认盖回去 */
-  if (Number(raw.talkSeed || 0) < DRAIN_TALK_V) {
+  if (Number(raw.talkSeed || 0) < DRAIN_TALK_V || (raw.pbPack && !raw.pbSeed)) {
     try { await chrome.storage.local.set({ [DRAIN_SCAN_KEY]: cfg }); } catch (_) {}
   }
   // 属地只做镜像：唯一真源＝基础配置里的「同城城市」（config.myCity），用户手填过的以手填为准。
@@ -895,6 +1367,8 @@ async function drainGetScanCfg() {
       : (typeof readConfigPlain === 'function' ? await readConfigPlain() : null);
     const mc = (c && c.myCity) || {};
     cfg.city = String(mc.city || mc.ipLocation || '').trim();
+    const scm = String((c && c.sameCityMode) || '').trim();
+    cfg.sameCityMode = ['force', 'priority', 'off'].includes(scm) ? scm : 'priority';
   } catch (_) {}
   return cfg;
 }
@@ -936,6 +1410,28 @@ function _drainMergeRivalIntoLocal(cfg) {
   delete prevTalk.rival;
   cfg.pbTalk = prevTalk;
   cfg.v = 9;
+}
+
+/* 提店口径加「讲案例」一档（v9 → v10，2026-11-09 老板定）：
+   TOP / 同城异业 / 大V 可以讲自己开店的情形、带过的人、经手的案例；
+   同城本业只说到身份（同行多，不报价、不说产品、不报店名）；咨询帖保持可报店名。
+   只动「还是上一版默认值」的玩法——老板自己调过的那格不动。 */
+function _drainStoreTierV10(cfg, nextPb) {
+  if (Number(cfg.v || 1) >= 10) return;
+  Object.keys(DRAIN_PB_STORE_V9).forEach(s => {
+    const p = nextPb && nextPb[s];
+    if (!p) return;
+    const want = (DRAIN_PB_DEFAULT[s] || {}).store;
+    if (want && p.store === DRAIN_PB_STORE_V9[s] && want !== p.store) p.store = want;
+  });
+}
+
+/* 开口话术跟着提店档一起迁（v9 → v10）：老默认那段一字没改过才换，手改过的、行业包带来的都不动 */
+function _drainTalkTierV10(nextTalk) {
+  Object.keys(DRAIN_TALK_V9).forEach(s => {
+    const t = nextTalk && nextTalk[s];
+    if (t && String(t.text || '').trim() === DRAIN_TALK_V9[s]) t.text = DRAIN_TALK_DEFAULT[s];
+  });
 }
 
 /* 扫描配置归一化：旧版「手填来源」一次性拆成 关键词池 / 属地 / 求助词（v1 → v2）；
@@ -1050,6 +1546,8 @@ function _drainNormalizeScanCfg(raw) {
     });
   }
   _drainMergeRivalIntoLocal(cfg);
+  /* 行业包只在这里抄一次进配置；跑的时候不读包（2026-11-09） */
+  drainSeedFromPack(cfg);
   const prevPb = (cfg.pbPlan && typeof cfg.pbPlan === 'object' && !Array.isArray(cfg.pbPlan)) ? cfg.pbPlan : null;
   const nextPb = {};
   DRAIN_PB_ORDER.forEach(s => {
@@ -1066,7 +1564,14 @@ function _drainNormalizeScanCfg(raw) {
     }
     nextPb[s] = base;
   });
+  /* 老账号页的「同城挡位」一次性落到每个玩法那一列上（之后只认玩法列） */
+  if (!cfg.pbCitySeed && ['force', 'priority', 'off'].includes(String(cfg.sameCityMode || ''))) {
+    DRAIN_PB_ORDER.forEach(s => { if (nextPb[s]) nextPb[s].city = String(cfg.sameCityMode); });
+    cfg.pbCitySeed = true;
+  }
   cfg.pbPlan = nextPb;
+  /* 提店口径 v9 → v10：只把还是旧默认值的玩法换成新默认（老板调过的格不动） */
+  _drainStoreTierV10(cfg, nextPb);
   /* 每个玩法一份话术（v7 → v8）；2026-11-03 起 6 个玩法各预置一段默认短话：
      第一次读到（talkSeed 还没记到当前版本）就铺满，提店硬控跟着对齐；
      铺过之后只归一化读写，老板手改的话一直保留。 */
@@ -1075,10 +1580,10 @@ function _drainNormalizeScanCfg(raw) {
   if (Number(cfg.talkSeed || 0) < DRAIN_TALK_V) {
     const at = Date.now();
     DRAIN_PB_ORDER.forEach(s => {
-      /* 2026-11-04：这个号带行业口径包时，第一次铺的话术用包里那句，不用下面那套亲子默认 */
+      /* 2026-11-04：这个号带行业口径包时，第一次铺的话术用包里那句，不用下面那套中性默认 */
       const text = drainPbCopy(cfg, s, 'talk') || DRAIN_TALK_DEFAULT[s];
       if (!text) return;
-      nextPb[s].store = DRAIN_TALK_DEFAULT_STORE[s] || nextPb[s].store;
+      nextPb[s].store = DRAIN_PB_DEFAULT[s].store || nextPb[s].store;
       nextTalk[s] = { text: text, persona: '', at, v: DRAIN_TALK_V };
     });
     cfg.talkSeed = DRAIN_TALK_V;
@@ -1086,7 +1591,18 @@ function _drainNormalizeScanCfg(raw) {
     DRAIN_PB_ORDER.forEach(s => { const t = drainPbTalkNorm(prevTalk[s]); if (t) nextTalk[s] = t; });
   }
   cfg.pbTalk = nextTalk;
-  cfg.v = 9;
+  _drainTalkTierV10(nextTalk);
+  /* 「刚起来」的三条线（2026-11-08）：默认 6 小时 / 赞 200 / 评论 20；在玩法配置顶部可改 */
+  const _fc = (cfg.freshCfg && typeof cfg.freshCfg === 'object' && !Array.isArray(cfg.freshCfg)) ? cfg.freshCfg : {};
+  const _fcNum = (v, d) => (v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
+  cfg.freshCfg = {
+    hours: Math.min(168, Math.max(1, _fcNum(_fc.hours, 6))),
+    likes: Math.max(0, _fcNum(_fc.likes, 200)),
+    comments: Math.max(0, _fcNum(_fc.comments, 20)),
+  };
+  /* 笔记类型表（2026-11-12）：评不评 / 动作 / 提店 / 收人只在类型表里存一份；没配过的号落默认值 */
+  cfg.noteTypes = drainNoteTypesNorm(cfg.noteTypes);
+  cfg.v = 10;
   return cfg;
 }
 
@@ -1215,6 +1731,9 @@ function _drainQName(x) { return (x && (x.label || x.k)) || ''; }function _drain
     passId: String(x.passId || ''),
     passLabel: String(x.passLabel || ''),
     plat: (x.plat === 'dy') ? 'dy' : 'xhs',   // 没写＝小红书（老队列记录照旧）
+    /* 这笔账「哪天欠下的」（2026-11-06）：欠账跨天就不再抢今天的队头，
+       只进「之前没跑完的」；老记录没写＝按 at 那天算 */
+    day: String(x.day || ''),
     at: Number(x.at) || 0,
     foundN: Number(x.foundN) || 0,
     commentN: Number(x.commentN) || 0,
@@ -1327,20 +1846,46 @@ function _drainDayKey(now) {
   const d = new Date(now || Date.now());
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+/* 这一笔账是哪天欠下的 / 哪天标的红：写了 day 就认它，老记录按 at 那天算 */
+function drainQRecDay(x) {
+  return String((x && x.day) || '') || _drainDayKey((x && x.at) || Date.now());
+}
 /* ✕ 今天撤掉的项：只认今天的名单，跨天一律当空（配置不动，明天照常排） */
 function drainQDropSet(q, now) {
   const dr = (q && q.drop) || {};
   if (String(dr.day || '') !== _drainDayKey(now)) return new Set();
   return new Set((dr.keys || []).map(String));
 }
+/* 这一条现在还配着吗（2026-11-04）：词还启用、这一列还开着，或盯的账号还在盯；日常浏览一直在。
+   配置改了以后，旧词留下的标红 / 停因 / 回执 / 欠账都不再显示——否则页面上还在喊早就删掉的词。 */
+function drainQRowLive(rec, cfgIn) {
+  if (!rec) return false;
+  const c = _drainNormalizeScanCfg(cfgIn || {});
+  const sc = drainScenarioId(rec.scenario);
+  if (sc === 'daily') return true;
+  const plat = String(rec.plat || 'xhs');
+  if (DRAIN_PLATS.indexOf(plat) < 0) return false;
+  if (sc === 'highv' || sc === 'rival') {
+    const a = (c.accounts || []).find(x => x.k === rec.k && drainScenarioId(x.scenario) === sc);
+    return !!a && a.on !== false;
+  }
+  const e = (c.keywords || []).find(x => x.k === rec.k);
+  if (!e) return false;
+  return e.on !== false && drainTypeMode(e, sc, c).mode !== 'off';
+}
 /* 队列页看到的全部：待跑（到点了）/ 还没到点 / 欠账 / 正在跑。
-   排序＝手插最前 → 欠账（越早欠越前）→ 自动插的日常流程 → 最久没跑的先跑
+   排序＝手插最前 → 当天的欠账（越早欠越前）→ 自动插的日常流程 → 最久没跑的先跑
+   之前那些天没跑完的（欠账 / 标红）不进今天的队，单独放 pending，点「接着补」才排回来（2026-11-06）
    dbIn = { cfg, daily }（见 drainDailyCtx），缺省＝没有日常浏览这一层 */
 function drainQueuePlan(cfgIn, qIn, now, dbIn) {
   now = now || Date.now();
   const q = _drainQNorm(qIn);
-  /* 今天这份清单锁定时连配置一起锁住（2026-10-29 确认单 9）：配置中途改了，今天照旧跑，明天按新的排 */
-  const lockedCfg = (q.todayPlan && q.todayPlan.day === _drainDayKey(now) && q.todayPlan.cfg) ? q.todayPlan.cfg : null;
+  /* 今天这份清单锁定时连配置一起锁住（2026-10-29 确认单 9）：配置没动就照锁的那份跑；
+     配置改过（指纹对不上）＝当场按新配置重排（2026-11-04 老板定：页面和机器始终一致），
+     已经跑完的靠「这类刚跑过」跳过，不重跑。老数据没有指纹的按现在这份配置算，下次取活时补指纹。 */
+  const cfgNow = _drainNormalizeScanCfg(cfgIn || {});
+  const tpLock = (q.todayPlan && q.todayPlan.day === _drainDayKey(now)) ? q.todayPlan : null;
+  const lockedCfg = (tpLock && tpLock.cfg && tpLock.sig && tpLock.sig === drainCfgSig(cfgNow)) ? tpLock.cfg : null;
   const cfg = _drainNormalizeScanCfg(lockedCfg || cfgIn || {});
   const db = dbIn || null;
   const dbOn = !!(db && db.cfg && db.cfg.enabled);
@@ -1352,6 +1897,18 @@ function drainQueuePlan(cfgIn, qIn, now, dbIn) {
   const carryAt = {}, manualAt = {}, carryRec = {}, manualRec = {};
   q.carry.forEach(c => { const k = _drainQKey(c.k, c.scenario, c.plat, c.passId); carryAt[k] = c.at || 1; carryRec[k] = c; });
   q.manual.forEach(c => { const k = _drainQKey(c.k, c.scenario, c.plat, c.passId); manualAt[k] = c.at || 1; manualRec[k] = c; });
+  /* 🔵 「之前没跑完的」（2026-11-06 老板定）：昨天、前天…没跑完的那些，今天不再自己插到队头——
+     今天的词照今天的排班跑；它们只进队列页那块名单，点了「接着补」才排回最前。
+     老记录没写 day 的按 at（欠下的那天）算。 */
+  const dayKey = _drainDayKey(now);
+  const recDay = drainQRecDay;
+  const pending = [], pendKeys = new Set();
+  const addPend = (x) => {
+    const pk = _drainQKey(x.k, x.scenario, x.plat, x.passId);
+    if (pendKeys.has(pk)) return;
+    pendKeys.add(pk);
+    pending.push(x);
+  };
   const city = String(cfg.city || '').trim();
   /* 这一份配置派给哪几个平台：勾两个平台，同样的词就在两边各跑一趟（一趟跑完接下一趟）。
      抖音这一轮只跑「综合」（latest），其余几类仍只在小红书跑。 */
@@ -1383,8 +1940,18 @@ function drainQueuePlan(cfgIn, qIn, now, dbIn) {
           const st = drainPassState(e, meta.scenario, cfg, now, plat, pass.passId);
           const cRec = carryRec[key] || carryRec[lkey];
           const mRec = manualRec[key] || manualRec[lkey];
-          const isCarry = !!cRec, isManual = !!mRec;
-          /* 玩法今天没排 / 今天没轮到这个词 → 不跑；只有欠账和手插能插进来 */
+          let isCarry = !!cRec;
+          const isManual = !!mRec;
+          /* 跨天的欠账不再抢队头：进「之前没跑完的」，今天照样按排班跑（同一次搜索今天轮到就正常跑） */
+          const carryOld = isCarry && !isManual && recDay(cRec) !== dayKey;
+          if (carryOld) {
+            isCarry = false;
+            addPend({
+              k: e.k, label: '', scenario: meta.scenario, plat, passId: pass.passId, passLabel: pass.passLabel,
+              kind: 'carry', at: cRec.at || 0, day: recDay(cRec), note: cRec.note || '', why: cRec.note || '',
+            });
+          }
+          /* 玩法今天没排 / 今天没轮到这个词 → 不跑；只有当天欠账和手插能插进来 */
           if (!picked && !isCarry && !isManual) continue;
           const item = {
             k: e.k, scenario: meta.scenario, plat, passId: pass.passId, passLabel: pass.passLabel,
@@ -1411,15 +1978,26 @@ function drainQueuePlan(cfgIn, qIn, now, dbIn) {
     const key = _drainQKey(ac.k, ac.scenario, 'xhs');
     if (dropSet.has(key)) continue;
     if (blockSet.has(key)) continue;
-    const isCarry = carryAt[key] != null, isManual = manualAt[key] != null;
-    // 盯的号也按玩法排班：大V 看 highv 那一行，蹲人（原同行）跟同城本业那一行；欠账/手插照样能插
+    const cRec = carryRec[key], mRec = manualRec[key];
+    let isCarry = !!cRec;
+    const isManual = !!mRec;
+    const carryOld = isCarry && !isManual && recDay(cRec) !== dayKey;
+    if (carryOld) {
+      isCarry = false;
+      addPend({
+        k: ac.k, label: drainAccountLabel(ac), acct: true, scenario: ac.scenario, plat: 'xhs',
+        passId: '', passLabel: '', kind: 'carry', at: cRec.at || 0, day: recDay(cRec),
+        note: cRec.note || '', why: cRec.note || '',
+      });
+    }
+    // 盯的号也按玩法排班：大V 看 highv 那一行，蹲人（原同行）跟同城本业那一行；当天欠账/手插照样能插
     const apb = (ac.scenario === 'rival') ? 'local' : 'highv';
     const picked = drainPbOnDay(cfg, apb, now);
     if (!picked && !isCarry && !isManual) continue;
     const item = {
       k: ac.k, label: drainAccountLabel(ac), acct: true, scenario: ac.scenario, plat: 'xhs',
       lastAt: st.lastAt, hours: st.hours || 0, nextAt: st.nextAt || 0, carry: isCarry, manual: isManual,
-      carryNote: isCarry ? (q.carry.find(x => _drainQKey(x.k, x.scenario, x.plat) === key) || {}).note || '' : '',
+      carryNote: isCarry ? (cRec.note || '') : '',
       why: isManual ? '手插最前' : (isCarry ? '欠账没跑完' : (picked ? '玩法排到今天' : '排班外补跑')),
     };
     if (!isCarry && !isManual && !st.due) { waiting.push(item); continue; }
@@ -1441,6 +2019,14 @@ function drainQueuePlan(cfgIn, qIn, now, dbIn) {
   for (const x of q.carry) {
     if (x.scenario !== 'daily') continue;
     if (hasManualDaily) continue;
+    /* 跨天的日常浏览欠账不自动补刷（刷一轮就是刷一轮），进「之前没跑完的」等点才补（2026-11-06） */
+    if (recDay(x) !== dayKey) {
+      addPend({
+        k: x.k, label: dayDir.name, scenario: 'daily', plat: 'xhs', passId: '', passLabel: '',
+        kind: 'carry', at: x.at || 0, day: recDay(x), note: x.note || '', why: x.note || '',
+      });
+      continue;
+    }
     dailyItems.push({
       k: x.k, label: dayDir.name, scenario: 'daily', daily: true, carry: true, carryNote: x.note || '',
       lastAt: (q.dailyMark || {}).lastAt || 0, nextAt: 0, sort: (x.at || 1) - 1e15, why: '欠账没跑完',
@@ -1461,16 +2047,28 @@ function drainQueuePlan(cfgIn, qIn, now, dbIn) {
   todo.push(...dailyItems);
   todo.sort((a, b) => a.sort - b.sort);
   waiting.sort((a, b) => (a.nextAt || 0) - (b.nextAt || 0));
-  const inPool = new Set((cfg.keywords || []).filter(e => e.on !== false).map(e => e.k));
-  const acctKeys = new Set((cfg.accounts || []).filter(a => a.on !== false).map(a => a.k));
-  // 词被停用/删掉、账号被取消盯 → 它的欠账和手插自动作废；日常浏览只有一档，条目始终有效
-  const live = (x) => (x.scenario === 'daily') ? true : (inPool.has(x.k) || acctKeys.has(x.k));
-  const bkToday = (q.blocked && q.blocked.day === _drainDayKey(now)) ? (q.blocked.rows || []) : [];
-  const lastStop = (q.lastStop && _drainDayKey(q.lastStop.at) === _drainDayKey(now)) ? q.lastStop : null;
+  /* 词被停用/删掉、这一列关了、账号被取消盯 → 欠账和手插自动作废；日常浏览只有一档，条目始终有效 */
+  const live = (x) => drainQRowLive(x, cfg);
+  const bkAll = ((q.blocked && Array.isArray(q.blocked.rows)) ? q.blocked.rows : []).filter(live);
+  /* 今天的标红照旧（红块 / 黄块）；之前那些天的标红也进「之前没跑完的」——隔天不能悄悄消失（2026-11-06） */
+  const bkToday = bkAll.filter(x => _drainDayKey(x.at) === dayKey);
+  bkAll.filter(x => _drainDayKey(x.at) !== dayKey).forEach(x => addPend({
+    k: x.k, label: x.label || '', scenario: x.scenario, plat: x.plat || 'xhs',
+    passId: x.passId || '', passLabel: x.passLabel || '',
+    kind: 'red', at: x.at || 0, day: _drainDayKey(x.at), why: x.why || '', n: Number(x.n) || 0,
+  }));
+  /* 今天这一份里已经排着的（待跑 / 计划）就别在那块再挂一遍：它今天本来就会跑 */
+  const liveKeys = new Set(todo.concat(waiting).map(it => _drainQKey(it.k, it.scenario, it.plat, it.passId)));
+  const pendingOut = pending
+    .filter(x => !liveKeys.has(_drainQKey(x.k, x.scenario, x.plat, x.passId)))
+    .sort((a, b) => (b.at || 0) - (a.at || 0));
+  const lsToday = (q.lastStop && _drainDayKey(q.lastStop.at) === _drainDayKey(now)) ? q.lastStop : null;
+  /* 「为什么停」也分情况：整轮停（掉登录这类）全天有效；只停某一项时，那一项已经不在配置里就不提了 */
+  const lastStop = (lsToday && (lsToday.global || drainQRowLive(lsToday, cfg))) ? lsToday : null;
   return {
     cfg, q, todo, waiting, noCity, db, dbOn,
     carry: q.carry.filter(live), manual: q.manual.filter(live), running: q.running,
-    blocked: bkToday, lastStop,
+    blocked: bkToday, pending: pendingOut, lastStop,
   };
 }
 
@@ -1522,13 +2120,15 @@ async function drainQueueTake(skip) {
   const q = await drainGetQueue();
   const p = drainQueuePlan(cfg, q, Date.now(), await drainDailyCtx());
   const sk = skip || {};
-  /* 今天这份清单：当天第一趟开跑时把顺序整份记下；之后照它跑（配置中途改了，新项排到后面，明天才按新配置算） */
+  /* 今天这份清单：配置没动就照锁的顺序跑；配置改过（指纹对不上）＝当场按新配置重排、重新锁上
+     （2026-11-04 老板定：页面和机器始终一致；已经跑完的靠「这类刚跑过」跳过，不重跑） */
   const d0 = new Date();
   const dayKey = d0.getFullYear() + '-' + String(d0.getMonth() + 1).padStart(2, '0') + '-' + String(d0.getDate()).padStart(2, '0');
-  let tp = (q.todayPlan && q.todayPlan.day === dayKey && q.todayPlan.keys.length) ? q.todayPlan : null;
-  if (!tp) tp = { day: dayKey, at: Date.now(), keys: p.todo.map(it => _drainQKey(it.k, it.scenario, it.plat, it.passId)), sig: drainCfgSig(p.cfg), cfg: p.cfg };
-  // 老数据锁定时还没记指纹/快照：补一次，别让「配置改过了」误报
-  else if (!tp.sig || !tp.cfg) tp = Object.assign({}, tp, { sig: tp.sig || drainCfgSig(p.cfg), cfg: tp.cfg || p.cfg });
+  const liveSig = drainCfgSig(p.cfg);
+  const tpOld = (q.todayPlan && q.todayPlan.day === dayKey && q.todayPlan.keys.length) ? q.todayPlan : null;
+  let tp = (tpOld && tpOld.sig && tpOld.sig === liveSig) ? tpOld : null;
+  if (!tp) tp = { day: dayKey, at: Date.now(), keys: p.todo.map(it => _drainQKey(it.k, it.scenario, it.plat, it.passId)), sig: liveSig, cfg: p.cfg };
+  else if (!tp.cfg) tp = Object.assign({}, tp, { cfg: p.cfg });
   const rank = (it) => { const i = tp.keys.indexOf(_drainQKey(it.k, it.scenario, it.plat, it.passId)); return i < 0 ? 1e9 : i; };
   const ordered = p.todo.slice().sort((a, b) => (rank(a) - rank(b)) || ((a.sort || 0) - (b.sort || 0)));
   const item = ordered.find(it => !sk[_drainQKey(it.k, it.scenario, it.plat, it.passId)]);
@@ -1537,6 +2137,11 @@ async function drainQueueTake(skip) {
     carry: p.carry, manual: p.manual,
     dailyPlan: (q.dailyPlan || []).filter(x => !(item && item.planId && x.id === item.planId)),
     todayPlan: tp,
+    /* 词 / 这一列已经不在配置里的标红记录，重排时自动清掉（2026-11-04）；
+       之前那些天的也留着（进「之前没跑完的」），别换天就丢（2026-11-06） */
+    blocked: (q.blocked && Array.isArray(q.blocked.rows))
+      ? { day: String(q.blocked.day || ''), rows: (q.blocked.rows || []).filter(x => drainQRowLive(x, p.cfg)).slice(0, 60) }
+      : q.blocked,
   };
   if (!item) { await drainSaveQueue(Object.assign({}, q, keep, { running: null })); return null; }
   await drainSaveQueue(Object.assign({}, q, keep, { running: {
@@ -1566,14 +2171,22 @@ async function drainQueueFinish(item, summary) {
     running: null, done, dailyMark: nextMark,
     carry: q.carry.filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId)),
     manual: q.manual.filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId)),
+    /* 今天跑成了：之前那笔「跑不了」的账（不管哪天的）一起销掉，别在「之前没跑完的」里还挂着 */
+    blocked: (q.blocked && Array.isArray(q.blocked.rows))
+      ? { day: String(q.blocked.day || ''), rows: q.blocked.rows.filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId)) }
+      : q.blocked,
   }));
 }
 /* 这一项没跑完（撞上限/出错/被停）→ 进欠账，下次第一个跑 */
 async function drainQueueHold(item, note) {
   const q = await drainGetQueue();
+  const prev = (q.carry || []).find(x => _drainQHit(x, item.k, item.scenario, item.plat, item.passId));
   const carry = [{
     k: item.k, label: item.label || '', scenario: item.scenario, plat: item.plat || 'xhs',
-    passId: item.passId || '', passLabel: item.passLabel || '', at: Date.now(), note: String(note || ''),
+    passId: item.passId || '', passLabel: item.passLabel || '',
+    /* 哪天欠下的：同一笔账在同一天反复没跑完仍算那天；跨天了才进「之前没跑完的」（2026-11-06） */
+    day: (prev && drainQRecDay(prev)) || _drainDayKey(),
+    at: Date.now(), note: String(note || ''),
   }].concat(q.carry.filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId)));
   await drainSaveQueue(Object.assign({}, q, { running: null, carry }));
 }
@@ -1599,6 +2212,11 @@ async function drainQueuePushFront(k, scenario, label, plat, passId, passLabel) 
   }].concat(q.manual.filter(x => !_drainQHit(x, k, sc, plat, passId)));
   await drainSaveQueue(Object.assign({}, q, {
     manual,
+    /* 「接着补」/ 拎到最前＝这一项又要跑了：之前那笔没跑完的欠账、标红一起销掉，别在两处各挂一行 */
+    carry: (q.carry || []).filter(x => !_drainQHit(x, k, sc, plat, passId)),
+    blocked: (q.blocked && Array.isArray(q.blocked.rows))
+      ? { day: String(q.blocked.day || ''), rows: q.blocked.rows.filter(x => !_drainQHit(x, k, sc, plat, passId)) }
+      : q.blocked,
     // 拎回最前＝今天这一份又要跑它了：把之前 ✕ 的那一笔撤掉
     drop: (q.drop && q.drop.day === dayKey)
       ? { day: dayKey, keys: q.drop.keys.filter(x => x !== _drainQKey(k, sc, plat, passId) && !(passId && x === _drainQKey(k, sc, plat))) }
@@ -1632,15 +2250,16 @@ async function drainQueueDrop(k, scenario, plat, passId) {
 async function drainQueueBlock(item, why) {
   const q = await drainGetQueue();
   const dayKey = _drainDayKey();
-  const bk = (q.blocked && q.blocked.day === dayKey) ? q.blocked : { day: dayKey, rows: [] };
-  const prev = (bk.rows || []).find(x => _drainQHit(x, item.k, item.scenario, item.plat, item.passId));
+  /* 之前那些天的记录留着（换天不丢）：今天这一项从头数 3 次，之前那笔同项的旧记录并进来 */
+  const prevRows = (q.blocked && Array.isArray(q.blocked.rows)) ? q.blocked.rows : [];
+  const prev = prevRows.find(x => drainQRecDay(x) === dayKey && _drainQHit(x, item.k, item.scenario, item.plat, item.passId));
   const n = (prev ? Number(prev.n) || 0 : 0) + 1;
   const row = {
     k: item.k, label: item.label || '', scenario: item.scenario, plat: item.plat || 'xhs',
     passId: item.passId || '', passLabel: item.passLabel || '',
-    why: String(why || '跑不起来'), at: Date.now(), n,
+    why: String(why || '跑不起来'), at: Date.now(), day: dayKey, n,
   };
-  const rows = [row].concat((bk.rows || []).filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId)));
+  const rows = [row].concat(prevRows.filter(x => !_drainQHit(x, item.k, item.scenario, item.plat, item.passId))).slice(0, 60);
   await drainSaveQueue(Object.assign({}, q, {
     running: null, blocked: { day: dayKey, rows },
     /* 标红这一项在配置表里还在：欠账和手插都撤掉，别让它又排回队头 */
@@ -1657,11 +2276,14 @@ async function drainQueueUnblock(k, scenario, plat, passId) {
     blocked: { day: bk.day, rows: (bk.rows || []).filter(x => !_drainQHit(x, k, scenario, plat, passId)) },
   }));
 }
-/* 今天标红的那些（派生队列时跳过，别反复撞同一堵墙） */
+/* 今天标红的那些（派生队列时跳过，别反复撞同一堵墙）
+   一天最多试 3 次：前两次失败只是「这一趟先跳过」，下次开跑照常再排上；
+   到第 3 次才从队列里摘掉、等人处理（2026-11-05） */
 function drainQBlockSet(q, now) {
-  const bk = (q && q.blocked) || {};
-  if (String(bk.day || '') !== _drainDayKey(now)) return new Set();
-  return new Set((bk.rows || []).map(x => _drainQKey(x.k, x.scenario, x.plat, x.passId)));
+  const day = _drainDayKey(now);
+  const rows = ((q && q.blocked) || {}).rows || [];
+  return new Set(rows.filter(x => (Number(x.n) || 0) >= 3 && drainQRecDay(x) === day)
+    .map(x => _drainQKey(x.k, x.scenario, x.plat, x.passId)));
 }
 /* 「为什么停」：执行器停下时记一笔，队列页顶部据此说明（当天有效，第二天自动过期） */
 async function drainQueueLastStop(item, why, extra) {
@@ -1746,7 +2368,7 @@ function drainJudge(scenario, signals, opts) {
       // 竞对笔记：一个字都不评论，只进去蹲人（有商机的收进获客清单待私信）
       return { verdict: '埋伏·只蹲人不评论', tone: 'purple' };
     case 'cross':
-      // 同城异业：在别家行业评论区找本地家长；招生的帖子在评论前就跳过了，这里只看自己评论还在不在
+      // 同城异业：在别家行业评论区找本地人；招生的帖子在评论前就跳过了，这里只看自己评论还在不在
       if (mc && mc.found) return { verdict: '已评论·异业', tone: 'green' };
       return mc && mc.checked
         ? { verdict: '未占位 · 去评论', tone: 'blue' }
@@ -1764,47 +2386,14 @@ let _cand = null;    // 配置页候选区：{ kind:'ai'|'topic', playbook, labe
 let _kwSel = new Set();    // 关键词表：勾了「批量移出」的词，键是「玩法|词」
 let _poolSel = new Set();  // 全部词表：勾了「批量删除」的词，键是词本身
 let _cfgWant = null; // 跳过来时要展开的候选区：'ai' | 'topic'（页面还没渲染完也认）
-let _cfgSec = 'run';  // 配置页三张卡哪张展开：run 跑什么（词池＋盯的账号）/ daily 日常浏览 / goal 推广目标
+let _cfgSec = 'run';  // 配置页横签：现在只剩「run 跑什么」一张卡（推广目标 2026-11-09 已撤）
 const _dbDetOpen = { round: false, social: false };  // 🌿 日常浏览里两个折叠块（一轮怎么刷 / 顺手互动）的展开状态，切 tab 重渲染后照旧
 let _lastScanInfo = null;   // 本轮扫描结果 { text, warn }：配置页顶栏下方那行 / 笔记池的提示行
 /* 表格里类型下拉的短标签（列窄，完整名放进 title） */
 const DRAIN_TYPE_SHORT = { latest: '本地泛搜', top: 'TOP', local: '同城本业', pain: '咨询帖', cross: '同城异业', rival: '同行', highv: '大V' };
 
-/* ── 🎯 推广目标（配置页最下面那张卡，2026-09-25 从「账号规划 → 基础配置」搬来）──
-   guide=null 表示要用户自己填去向；存 product.promoGoal / product.guideText，
-   后台的引导规则与截流评论承接读的就是这两个字段，这里只换了个改的地方 */
-const SX_GOAL_DEFS = [
-  { k: 'tool', name: '🛠️ 工具/应用引流（引导对方去用你的产品，如小程序 / App / 网站）', guide: null },
-  { k: 'brand', name: '🏷️ 品牌推广（只卖品牌价值，不引流）', guide: '' },
-  { k: 'profile', name: '👤 个人主页引流（涨粉 / 把人沉淀到自己主页）', guide: '个人主页（点头像进入）' },
-];
-/* 推广目标简化后（2026-10-01）的两个输入框：label + 输入框，读 product 对应字段 */
-const SX_GOAL_FIELD = (prod, label, id, field, placeholder, maxlen) =>
-  '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">' +
-  '<label for="' + id + '" style="font-size:12px;color:#374151;flex:none;width:88px;">' + label + '</label>' +
-  '<input class="sx-in" id="' + id + '" maxlength="' + maxlen + '" placeholder="' + escAttr(placeholder) + '" ' +
-  'value="' + escAttr((prod && prod[field]) || '') + '" style="flex:1;min-width:0;margin:0;box-sizing:border-box;">' +
-  '</div>';
-/* 读写 product：本文件也被 background.js importScripts（SW 里没有 window），一律走 typeof 守卫 */
-async function _sxReadProduct() {
-  try {
-    const cfg = (typeof readConfigPlain === 'function')
-      ? await readConfigPlain()
-      : (((await chrome.storage.local.get('config')).config) || {});
-    return cfg.product || {};
-  } catch (_) { return {}; }
-}
-async function _sxSaveProduct(patch) {
-  const cfg = (typeof readConfigPlain === 'function')
-    ? await readConfigPlain()
-    : (((await chrome.storage.local.get('config')).config) || {});
-  cfg.product = Object.assign({}, cfg.product || {}, patch);
-  const locked = (typeof DataPrivacy !== 'undefined' && DataPrivacy.lockConfig) ? await DataPrivacy.lockConfig(cfg) : cfg;
-  await chrome.storage.local.set({ config: locked });
-}
-
-/* ⚙️ 配置：队列页的一个横签（三张卡：跑什么 / 日常浏览 / 推广目标·承接）。
-   统一走 renderScenarioDrain(container,'cfg')，任务配置那个独立二级页 2026-10-24 已并进队列页 */
+/* ⚙️ 配置：队列页的一个横签（跑什么）。统一走 renderScenarioDrain(container,'cfg')，
+   任务配置那个独立二级页 2026-10-24 已并进队列页 */
 
 /* 「去配置」统一入口：切到队列页的 ⚙️ 配置 横签（配置文件也被 background.js importScripts，SW 里没有 window） */
 function _goCfg() {
@@ -1881,7 +2470,7 @@ function _stratActTxt(s, pb, growth, cfg) {
   const head = (s === 'highv') ? '在头部博主的笔记下' : '对笔记';
   let t;
   if (s === 'latest') t = '点赞一轮涨够 ' + growth + ' 就' + head + '发一条露脸评论抢前排';
-  else if (s === 'local') t = '以本地人身份' + head + '评一条；' + (drainPackOf(cfg) ? '同行揽客的帖子不留言、只收人' : '同行/机构的招生帖不留言、只收人');
+  else if (s === 'local') t = '以本地人身份' + head + '评一条；' + '同行揽客的帖子不留言、只收人';
   else if (s === 'cross') t = '以跨行业关联的角度' + head + '评一条';
   else t = head + '发一条露脸评论';
   if (pb.send === 'both') t += '，同时回评论区里搭话 / 追问的人';
@@ -1967,7 +2556,7 @@ async function drainPaintStrategy(el) {
     }
     // 每日上限这份老配置已经没有入口了（默认 0=不限）：有值才说，没值就报每轮篇数——那才是真正在卡人的旋钮
     const capTxt = dailyMax > 0 ? '每天最多 <b class="strat-n">' + dailyMax + '</b> 条'
-      : (perRound > 0 ? '每次搜索最多 <b class="strat-n">' + perRound + '</b> 篇' : '每次搜索默认最多 <b class="strat-n">3</b> 篇');
+      : (perRound > 0 ? '每次搜索最多 <b class="strat-n">' + perRound + '</b> 篇' : '每次搜索不限篇数');
     sum.innerHTML = '📖 评论节奏：AI 造梗露脸短句 · 现在开着 <b class="strat-n">' + live + '</b> 类 · ' + capTxt + ' · 不该评的自动跳过';
     body.innerHTML =
       '<div class="strat-sec"><span class="strat-sec-h">① 队列怎么跑</span><br>' +
@@ -1981,7 +2570,7 @@ async function drainPaintStrategy(el) {
       '<div class="strat-sec"><span class="strat-sec-h">③ 评论长什么样</span><br>' +
       'AI 按这一类的口吻写 15~30 字短句（接梗 / 抖机灵 / 捧场），像真人随手留的；不提产品、品牌、链接、主页、私信。严肃、悲伤、纠纷这类内容自动「跳过」不评；刚发出去的那条也不会被当成商机回头再回一遍。</div>' +
       '<div class="strat-sec"><span class="strat-sec-h">④ 评多少</span><br>' +
-      presetTxt + '每次搜索最多打开 <b>' + (perRound > 0 ? perRound + ' 篇' : '3 篇（默认）') + '</b>' +
+      presetTxt + '每次搜索最多打开 <b>' + (perRound > 0 ? perRound + ' 篇' : '不限篇数') + '</b>' +
       ' · 同一篇 <b>' + (Number(trend.cooldownHours) || 24) + ' 小时</b>内不重评（每篇总次数 ≤ ' + (Number(trend.maxPerNote) || 2) + '）' +
       ' · 今天已发 <b>' + sentToday + ' 条</b>' + (dailyMax > 0 ? '（每天最多 ' + dailyMax + ' 条）' : '（没设每日上限）') +
       '。跑满这个数就换下一行（下一次搜索），不在一行上耗到底。</div>';
@@ -2024,12 +2613,15 @@ async function renderBenchQueueBar() {
   const p = drainQueuePlan(cfg, q, now, await drainDailyCtx());
   const d0 = new Date(now);
   const dayKey = d0.getFullYear() + '-' + String(d0.getMonth() + 1).padStart(2, '0') + '-' + String(d0.getDate()).padStart(2, '0');
-  const tpKeys = (q.todayPlan && q.todayPlan.day === dayKey && q.todayPlan.keys.length) ? q.todayPlan.keys : [];
+  /* 今天这份顺序只在配置没动时认；配置改过＝按新配置重排，旧的顺序作废（2026-11-04） */
+  const tpKeys = (q.todayPlan && q.todayPlan.day === dayKey && q.todayPlan.keys.length
+    && (!q.todayPlan.sig || q.todayPlan.sig === drainCfgSig(cfg))) ? q.todayPlan.keys : [];
   const rank = (it) => { const i = tpKeys.indexOf(_drainQKey(it.k, it.scenario, it.plat, it.passId)); return i < 0 ? 1e9 : i; };
   const keyOf = (it) => _drainQKey(it.k, it.scenario, it.plat, it.passId);
   const runKey = p.running ? keyOf(p.running) : '';
   const today0 = d0.toDateString();
-  const doneToday = (q.done || []).filter(x => new Date(x.at).toDateString() === today0);
+  /* 今天的回执只留还配着的那几条：词删了 / 这一列关了的不再占一行（2026-11-04） */
+  const doneToday = (q.done || []).filter(x => new Date(x.at).toDateString() === today0 && drainQRowLive(x, cfg));
   /* 今天跑过的回执：一次搜索可能隔几小时再跑一遍，按「这一次搜索」留最新那笔 */
   const doneByKey = new Map();
   doneToday.forEach(it => { const kk = _drainQKey(it.k, it.scenario, it.plat, it.passId); if (!doneByKey.has(kk)) doneByKey.set(kk, it); });
@@ -2072,7 +2664,7 @@ async function renderBenchQueueBar() {
   /* 已跑：今天排过的搜索里跑过的次数（拆行前那种整词老账不算） */
   let doneN = 0;
   doneByKey.forEach((rec) => { if (!drainIsLegacyDone(rec, cfg)) doneN++; });
-  const badN = (p.blocked || []).length + (p.noCity || []).length;
+  const badN = (p.blocked || []).filter(x => (Number(x.n) || 0) >= 3).length + (p.noCity || []).length;
   const runItem = (function () {
     for (const g of rows) { const hit = g.items.find(x => x._st === 'run'); if (hit) return hit; }
     return null;
@@ -2095,11 +2687,13 @@ async function renderBenchQueueBar() {
     sum = '今天 <b>' + kwRows.length + '</b> 个词 · <b>' + total + '</b> 次搜索 · 已跑 <b>' + doneN + '</b> 次' + runTxt;
     if (oldN) sum += ' · <span class="bq-sub">另旧账 ' + oldN + ' 条（不计入）</span>';
     if (badN) sum += ' · <b style="color:#dc2626;">' + badN + '</b> 次等你处理';
+    /* 之前那些天没跑完的：今天不跟着排，展开清单能看到，点「接着补」才补（2026-11-06） */
+    if ((p.pending || []).length) sum += ' · <span class="bq-sub" style="color:#1d4ed8;">之前没跑完 <b>' + p.pending.length + '</b> 次（在底下，点才补）</span>';
   }
-  /* 配置中途改过：今天这份清单已经锁住了，照原样跑；只提示一句，不重排 */
+  /* 配置改过：今天这份已经按新配置重排了（2026-11-04）；已经跑完的不重跑，只提示一句 */
   const cfgChanged = !!(q.todayPlan && q.todayPlan.day === dayKey && q.todayPlan.sig && q.todayPlan.sig !== drainCfgSig(cfg));
   if (cfgChanged) {
-    sum += '<span style="display:block;font-size:11.5px;color:#b45309;font-weight:600;margin-top:2px;">⚠️ 配置改过了：今天这趟照原样跑，明天按新的排</span>';
+    sum += '<span style="display:block;font-size:11.5px;color:#b45309;font-weight:600;margin-top:2px;">⚠️ 配置改过了：今天的清单已经按新配置重排（跑完的不重跑）</span>';
   }
   sumEl.innerHTML = sum;
 
@@ -2189,30 +2783,64 @@ async function renderBenchQueueBar() {
     return '<div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:8px;padding:6px 10px;font-size:11.5px;line-height:1.6;margin-bottom:8px;">'
       + '⏸ 队列停在「' + escHtml(_bkName(s)) + '」· ' + (_bkType(s)) + ' · ' + hh + '：' + escHtml(s.why) + tail + '</div>';
   })();
-  const _redRows = (p.blocked || []);
+  const _redRows = (p.blocked || []).filter(x => (Number(x.n) || 0) >= 3);
+  const _amberRows = (p.blocked || []).filter(x => (Number(x.n) || 0) < 3);
   const _cityRows = (p.noCity || []);
-  const _redHtml = (_redRows.length || _cityRows.length)
+  /* 🔵 「之前没跑完的」（2026-11-06）：昨天/前天…欠下的、标红的都不跟着今天排，
+     点「接着补」才把它拎回今天队头。展开清单才看得到，收起时只在顶上一句里报个数。 */
+  const _pendRows = (p.pending || []);
+  const _pendType = (x) => x.acct
+    ? (x.scenario === 'rival' ? '🕵️ 蹲人' : '👑 借势')
+    : (x.scenario === 'daily' ? '🌿 日常浏览' : _bkType(x));
+  const _pendHtml = _pendRows.length
+    ? '<div style="margin-top:10px;border-top:1px dashed #93c5fd;padding-top:8px;">'
+      + '<div style="font-size:11.5px;font-weight:700;color:#1d4ed8;margin-bottom:4px;">⏸ 之前没跑完（' + _pendRows.length + ' 次）— 不点「接着补」今天不跑它</div>'
+      + _pendRows.map(x => {
+        const when = _drainQStamp(x.at, now);
+        const tail = x.kind === 'red'
+          ? ('跑不了 · ' + (x.why || '跑不起来'))
+          : ('没跑完' + (x.why ? ' · ' + x.why : ''));
+        return '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
+          + '<span style="color:#1e40af;font-weight:600;">' + escHtml(_bkName(x)) + '</span>'
+          + '<span style="color:#9ca3af;">· ' + escHtml(_pendType(x)) + (x.plat === 'dy' ? '（抖音）' : '') + '</span>'
+          + '<span style="color:' + (x.kind === 'red' ? '#dc2626' : '#1d4ed8') + ';flex:1;min-width:120px;">' + escHtml(when + ' ' + tail) + '</span>'
+          + '<button type="button" class="btn btn-sm" data-bq-pick="' + escAttr(x.k) + '" data-bq-name="' + escAttr(_bkName(x)) + '" data-bq-sc="' + escAttr(String(x.scenario || '')) + '" data-bq-plat="' + escAttr(x.plat || 'xhs') + '" data-bq-pass="' + escAttr(x.passId || '') + '" data-bq-plabel="' + escAttr(x.passLabel || '') + '" title="排到今天队头，下一趟第一个跑它">接着补</button>'
+          + '</div>';
+      }).join('')
+      + '</div>'
+    : '';
+  const _redHtml = (_redRows.length || _amberRows.length || _cityRows.length)
     ? '<div style="margin-top:10px;border-top:1px dashed #fca5a5;padding-top:8px;">'
-      + '<div style="font-size:11.5px;font-weight:700;color:#b91c1c;margin-bottom:4px;">🔴 这些次搜索今天跑不了，等你处理（' + (_redRows.length + _cityRows.length) + ' 次）</div>'
-      + _redRows.map(x => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
-          + '<span style="color:#dc2626;font-weight:600;">' + escHtml(_bkName(x)) + '</span>'
-          + '<span style="color:#9ca3af;">· ' + escHtml(_bkType(x)) + (x.plat === 'dy' ? '（抖音）' : '') + '</span>'
-          + '<span style="color:#dc2626;flex:1;min-width:120px;">' + escHtml(x.why || '跑不起来') + (Number(x.n) > 1 ? '（今天第 ' + Number(x.n) + ' 次）' : '') + '</span>'
-          + '<button type="button" class="btn btn-sm" data-bq-retry="' + escAttr(x.k) + '" data-bq-sc="' + escAttr(String(x.scenario || '')) + '" data-bq-plat="' + escAttr(x.plat || 'xhs') + '" data-bq-pass="' + escAttr(x.passId || '') + '" data-bq-plabel="' + escAttr(x.passLabel || '') + '" title="撤掉标红，让它重新排队">再试一次</button>'
-        + '</div>').join('')
-      + _cityRows.map(x => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
-          + '<span style="color:#dc2626;font-weight:600;">' + escHtml(x.k) + '</span>'
-          + '<span style="color:#9ca3af;">· ' + escHtml(_bkType(x)) + '</span>'
-          + '<span style="color:#dc2626;flex:1;min-width:120px;">这一类的搜法要带属地，可城市还没填</span>'
-          + '<span style="color:#9a3412;">到「📊 诊断」页的「同城挡位 &amp; 城市」填一下就好</span>'
-        + '</div>').join('')
+      + (_redRows.length || _cityRows.length
+        ? '<div style="font-size:11.5px;font-weight:700;color:#b91c1c;margin-bottom:4px;">🔴 这些次搜索今天跑不了，等你处理（' + (_redRows.length + _cityRows.length) + ' 次）</div>'
+          + _redRows.map(x => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
+            + '<span style="color:#dc2626;font-weight:600;">' + escHtml(_bkName(x)) + '</span>'
+            + '<span style="color:#9ca3af;">· ' + escHtml(_bkType(x)) + (x.plat === 'dy' ? '（抖音）' : '') + '</span>'
+            + '<span style="color:#dc2626;flex:1;min-width:120px;">' + escHtml(x.why || '跑不起来') + '（今天第 ' + Number(x.n) + ' 次）</span>'
+            + '<button type="button" class="btn btn-sm" data-bq-retry="' + escAttr(x.k) + '" data-bq-sc="' + escAttr(String(x.scenario || '')) + '" data-bq-plat="' + escAttr(x.plat || 'xhs') + '" data-bq-pass="' + escAttr(x.passId || '') + '" data-bq-plabel="' + escAttr(x.passLabel || '') + '" title="撤掉标红，让它重新排队">再试一次</button>'
+          + '</div>').join('')
+          + _cityRows.map(x => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
+            + '<span style="color:#dc2626;font-weight:600;">' + escHtml(x.k) + '</span>'
+            + '<span style="color:#9ca3af;">· ' + escHtml(_bkType(x)) + '</span>'
+            + '<span style="color:#dc2626;flex:1;min-width:120px;">这一类的搜法要带属地，可城市还没填</span>'
+            + '<span style="color:#9a3412;">到「📊 诊断」页的「同城挡位 &amp; 城市」填一下就好</span>'
+          + '</div>').join('')
+        : '')
+      + (_amberRows.length
+        ? '<div style="font-size:11.5px;font-weight:700;color:#b45309;margin:' + (_redRows.length || _cityRows.length ? '8px 0 4px' : '0 0 4px') + ';">🟡 这些次搜索这一趟没跑成，下次开跑自动再试（今天最多试 3 次，满 3 次才标红）</div>'
+          + _amberRows.map(x => '<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0;flex-wrap:wrap;">'
+            + '<span style="color:#b45309;font-weight:600;">' + escHtml(_bkName(x)) + '</span>'
+            + '<span style="color:#9ca3af;">· ' + escHtml(_bkType(x)) + (x.plat === 'dy' ? '（抖音）' : '') + '</span>'
+            + '<span style="color:#b45309;flex:1;min-width:120px;">今天第 ' + Number(x.n) + ' 次没跑成：' + escHtml(x.why || '跑不起来') + '</span>'
+          + '</div>').join('')
+        : '')
       + '</div>'
     : '';
   bodyEl.innerHTML = _stopTxt + (items.length
     ? bodyHtml
     : '<div class="bq-empty">' + (wordsOn.length || (cfg.accounts || []).length
       ? '今天没有排到点的搜索' + (p.waiting.length ? ' · 计划里还有 ' + p.waiting.length + ' 次搜索' : '')
-      : '还没配关键词<br><a href="#" id="bqToCfg2">去队列页加词</a>') + '</div>') + _redHtml;
+      : '还没配关键词<br><a href="#" id="bqToCfg2">去队列页加词</a>') + '</div>') + _pendHtml + _redHtml;
 
   /* ── 底下那行：今日评论额度 / 待跑数 / ⏰ 每周自动跑 ── */
   if (capsEl) {
@@ -2250,6 +2878,18 @@ async function renderBenchQueueBar() {
     const plabel = btn.getAttribute('data-bq-plabel') || '';
     await drainQueuePushFront(k, sc, nm, plat, pid, plabel);
     drainToast('已拎到最前：' + nm + (plabel ? ' · ' + plabel : ''));
+    await renderBenchQueueBar();
+  });
+  /* 🔵 「之前没跑完的」那颗「接着补」：排回今天队头 + 把旧的那笔没跑完/标红销掉 */
+  bodyEl.querySelectorAll('[data-bq-pick]').forEach(btn => btn.onclick = async () => {
+    const k = btn.getAttribute('data-bq-pick');
+    const nm = btn.getAttribute('data-bq-name') || k;
+    const sc = btn.getAttribute('data-bq-sc') || 'latest';
+    const plat = btn.getAttribute('data-bq-plat') || 'xhs';
+    const pid = btn.getAttribute('data-bq-pass') || '';
+    const plabel = btn.getAttribute('data-bq-plabel') || '';
+    await drainQueuePushFront(k, sc, nm, plat, pid, plabel);
+    drainToast('已接着补：' + nm + '（下一趟第一个跑它）');
     await renderBenchQueueBar();
   });
   /* 🔴 标红那块的「再试一次」：撤掉标红 + 顺手把它拎到最前，下一趟第一个试它 */
@@ -2688,7 +3328,6 @@ async function renderScenarioDrain(container, mode) {
   const _sel = (id) => container.querySelector('#' + id);
   let notes = await drainLoad();
   const st = { scenario: 'all', showDead: true, busyGrab: false, growthDelta: 50, cfg: null };
-  const scanLabel = isCfg ? '🔍 按这套扫一轮' : '🔍 扫描一轮';
 
   container.innerHTML = `
     <style>
@@ -2703,14 +3342,48 @@ async function renderScenarioDrain(container, mode) {
       .sx-table tbody td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:12px;}
       .sx-table tbody tr:hover td{background:#fafafa;}
       .sx-table .sx-t-type{width:74px;}
-      /* 数据列：点赞 / 评论 / 二级评论 各占一列（三列一共 158px，与原来一行写完一样宽，不动笔记列）；
-         没采集过每格一个「—」，鼠标停上去看表头说明 */
-      .sx-table .sx-t-num{width:48px;text-align:right;font-size:11.5px;color:#374151;font-variant-numeric:tabular-nums;}
-      .sx-table .sx-t-num.sx-t-sub{width:62px;}
+      /* 数据列：点赞 / 评论 / 二级评论 合成一格（2026-11-08 复盘并进来，给评论列腾地方）；
+         没采集过整格写「—」，鼠标停上去看表头说明 */
+      .sx-table .sx-t-nums{width:88px;text-align:right;font-size:11.5px;color:#374151;font-variant-numeric:tabular-nums;white-space:nowrap;}
       .sx-nums-empty{color:#c7ccd4;font-size:11px;}
-      .sx-table .sx-t-judge{width:106px;}
+      .sx-table .sx-t-judge{width:104px;}
       .sx-table .sx-t-ops{width:62px;text-align:center;}
-      .sx-col-note a{display:block;color:#1f2937;text-decoration:none;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      /* 我们回的：最近 3 天的评论逐条摊在每一行里（复盘并进笔记池） */
+      .sx-table .sx-col-note{width:26%;}
+      .sx-table .sx-t-cmt{width:auto;vertical-align:top;}
+      .sx-bar .sx-btn{font-size:12px;padding:6px 10px;border:1px solid var(--c-brand-line,#cfe4f5);border-radius:8px;background:var(--c-brand-soft,#f2f8fd);color:var(--c-brand-ink,#0a6b8a);cursor:pointer;font-weight:700;font-family:inherit;}
+      .sx-bar .sx-btn:hover{filter:brightness(.98);}
+      .sx-bar .sx-btn:disabled{color:#9ca3af;background:#f8fafc;border-color:#eceef0;cursor:default;font-weight:400;}
+      /* 📊 这几天：按天算的处理 / 评论账（2026-11-05） */
+      .sx-daily{border:1px solid var(--line,#eceef0);border-radius:10px;background:linear-gradient(180deg,#fff 0%,#fdfafb 100%);padding:10px 12px;margin-bottom:10px;}
+      .sx-daily-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;font-weight:800;color:#1f2937;}
+      .sx-daily-h .tag{font-size:10.5px;font-weight:600;color:#6b7280;background:#f6f8fa;border:1px solid var(--line,#eceef0);border-radius:20px;padding:1px 8px;}
+      .sx-daily-seg{display:inline-flex;border:1px solid #e5e7eb;border-radius:7px;overflow:hidden;background:#fff;}
+      .sx-daily-seg button{border:0;background:#fff;font:inherit;font-size:11px;color:#4b5563;padding:3px 9px;cursor:pointer;}
+      .sx-daily-seg button+button{border-left:1px solid var(--line,#eceef0);}
+      .sx-daily-seg button.on{background:#fdecef;color:#c41d3c;font-weight:700;}
+      .sx-daily-num{display:flex;gap:20px;flex-wrap:wrap;margin-top:8px;}
+      .sx-daily-num .cell b{font-size:20px;font-variant-numeric:tabular-nums;margin-right:4px;}
+      .sx-daily-num .cell span{font-size:11.5px;color:#6b7280;}
+      .sx-daily-num .cell.a b{color:#c41d3c;}
+      .sx-daily-num .cell.b b{color:#0a6b8a;}
+      .sx-daily-why{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+      .sx-daily-pill{font-size:10.5px;border-radius:20px;padding:1px 8px;background:#fdf3e3;color:#b45309;}
+      .sx-daily-pill.g{background:#eaf7ef;color:#1f7a45;}
+      .sx-daily-pill.gray{background:#f3f4f6;color:#6b7280;}
+      .sx-daily-tbl{width:100%;border-collapse:collapse;margin-top:6px;}
+      .sx-daily-tbl th{font-size:10.5px;color:#6b7280;text-align:left;padding:4px 6px;border-bottom:1px solid var(--line,#eceef0);white-space:nowrap;}
+      .sx-daily-tbl td{font-size:12px;padding:5px 6px;border-bottom:1px dashed var(--line,#eceef0);font-variant-numeric:tabular-nums;}
+      .sx-daily-tbl tr:last-child td{border-bottom:0;}
+      .sx-daily-tbl .d{color:#6b7280;white-space:nowrap;}
+      .sx-daily-tbl .num{font-weight:700;}
+      .sx-daily-bar{height:7px;border-radius:4px;background:#f1f3f5;overflow:hidden;min-width:80px;}
+      .sx-daily-bar i{display:block;height:7px;background:#e3b7c1;border-radius:4px;}
+      .sx-daily-bar.b i{background:#9cc8d8;}
+      .sx-rec{margin-top:3px;font-size:10.5px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .sx-rec.ok{color:#0a8f4c;}
+      .sx-rec.no{color:#b45309;}
+      .sx-col-note a,.sx-note-t{display:block;color:#1f2937;text-decoration:none;font-weight:600;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       .sx-col-note a:hover{color:var(--c-brand-text);}
       .sx-sub{font-size:10px;color:#8a8f99;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       /* 笔记列元信息行：作者/时间 + 行末的 ✕（操作列只留「打开」，移除收进这一行） */
@@ -2718,9 +3391,6 @@ async function renderScenarioDrain(container, mode) {
       .sx-sub-tx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
       .sx-row-del{flex:0 0 auto;border:0;background:none;padding:0 2px;font-size:11px;line-height:1;color:#c7ccd4;cursor:pointer;}
       .sx-row-del:hover{color:#d32f2f;}
-      /* 打开：跳到工作台打开这篇（每行唯一的动作） */
-      .sx-open{font-size:11px;font-weight:600;padding:3px 9px;border:1px solid var(--c-brand-line);background:var(--c-brand-soft);color:var(--c-brand-ink);border-radius:6px;cursor:pointer;}
-      .sx-open:hover{background:var(--c-brand-soft2);border-color:var(--c-brand-line);}
       .sx-ico{border:1px solid #e5e7eb;background:#fff;border-radius:6px;width:22px;height:22px;font-size:11px;line-height:1;padding:0;cursor:pointer;color:#4b5563;}
       .sx-ico+.sx-ico{margin-left:3px;}
       .sx-ico:hover{border-color:var(--c-brand);color:var(--c-brand-text);}
@@ -2753,7 +3423,7 @@ async function renderScenarioDrain(container, mode) {
       .pbp-cnt.plain{color:#9ca3af;background:#f8fafc;border-color:var(--line,#eceef0);}
       .pbp-wordcell .pbp-sub2{display:block;font-size:10px;color:#9ca3af;margin-top:3px;}
       .pbp-percell .pbp-tag{white-space:nowrap;}
-      /* 🎛 评论策略十一列（2026-11-04 老板定）：一格一项，点开就地选，不再挤在一格里 */
+      /* 🎛 评论策略十列（2026-11-04 老板定）：一格一项，点开就地选，不再挤在一格里 */
       .pbp-chip{display:inline-flex;align-items:center;gap:4px;max-width:100%;border:1px solid #e5e7eb;background:#fff;border-radius:20px;padding:2px 9px;font:inherit;font-size:11px;line-height:1.7;color:#374151;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
       .pbp-chip:hover{border-color:var(--c-brand-line);background:var(--c-brand-soft);}
       .pbp-chip .cv{font-weight:700;color:var(--c-brand-ink);}
@@ -2766,6 +3436,8 @@ async function renderScenarioDrain(container, mode) {
       .pbp-popopt{border:1px solid #e5e7eb;background:#fff;border-radius:8px;padding:4px 9px;font:inherit;font-size:11.5px;color:#374151;cursor:pointer;}
       .pbp-popopt:hover{border-color:var(--c-brand-line);background:var(--c-brand-soft);}
       .pbp-popopt.on{border-color:var(--c-brand-line);background:var(--c-brand-soft2);color:var(--c-brand-ink);font-weight:700;}
+      .pbp-popwho{width:290px;}
+      .pbp-popwho textarea{width:100%;box-sizing:border-box;border:1px solid #e3e8ee;border-radius:7px;padding:6px 8px;font:inherit;font-size:11.5px;line-height:1.6;color:#374151;resize:vertical;}
       .pbp-popdays{display:flex;gap:4px;}
       .pbp-popday{width:30px;height:28px;border:1px solid #e5e7eb;background:#fff;border-radius:7px;font:inherit;font-size:12px;color:#6b7280;cursor:pointer;padding:0;}
       .pbp-popday.on{background:var(--c-brand-soft2);border-color:var(--c-brand-line);color:var(--c-brand-ink);font-weight:800;}
@@ -2781,6 +3453,14 @@ async function renderScenarioDrain(container, mode) {
       .pbp-weekcard-h .t{font-size:12.5px;font-weight:700;color:#1f2937;white-space:nowrap;}
       .pbp-weekcard-h .x{font-size:11px;color:#9ca3af;}
       .pbp-weekwrap{overflow-x:auto;}
+      .pbp-wkseg{display:inline-flex;border:1px solid #e5e7eb;border-radius:7px;overflow:hidden;background:#fff;}
+      .pbp-wkseg button{border:0;background:#fff;font:inherit;font-size:11px;color:#4b5563;padding:3px 10px;cursor:pointer;}
+      .pbp-wkseg button+button{border-left:1px solid #eef0f3;}
+      .pbp-wkseg button.on{background:var(--c-brand-soft,#f2f8fd);color:var(--c-brand-ink,#0a6b8a);font-weight:700;}
+      .pbp-wkwarn{display:inline-block;margin-left:5px;font-size:10.5px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:20px;padding:0 6px;line-height:1.7;vertical-align:1px;}
+      .pbp-rotbox{margin-top:9px;padding:8px 10px;background:#fafbfc;border:1px solid #eef0f3;border-radius:8px;}
+      .pbp-rot{font-size:11.5px;line-height:1.85;color:#4b5563;}
+      .pbp-rot.warn{color:#b45309;}
       .pbp-week{width:100%;min-width:760px;border-collapse:collapse;table-layout:fixed;font-size:12px;}
       .pbp-week th,.pbp-week td{border:1px solid #eef0f3;padding:9px 10px;vertical-align:top;text-align:left;}
       .pbp-week th{background:#f8fafc;color:#6b7280;font-weight:700;text-align:center;font-size:11.5px;padding:9px 8px;}
@@ -2953,37 +3633,20 @@ async function renderScenarioDrain(container, mode) {
           ${SCENARIO_DRAIN.map(s => `<option value="${s.scenario}">${s.icon} ${s.label}</option>`).join('')}
         </select>
         <span class="sx-count" id="sxCount"></span>
-        <span style="flex:1;"></span>
-        <span style="position:relative;display:inline-flex;align-items:center;">
-          <button type="button" class="btn btn-sm" id="replRun" title="把本轮没打开的池内笔记回看一遍、刷新指标">🔁 补开未打开</button>
-          <button type="button" class="btn btn-sm" id="replCfgBtn" title="补开设置：自动补开开关、点赞增量阈值" style="padding:4px 7px;margin-left:-1px;">⚙︎</button>
-          <div id="replPop" style="display:none;position:absolute;right:0;top:32px;z-index:40;width:280px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 10px 26px rgba(16,24,40,.14);padding:10px 12px;text-align:left;">
-            <div style="font-weight:700;font-size:12px;color:#1f2937;margin-bottom:6px;">🔁 补开设置</div>
-            <div id="replPopBody"></div>
-          </div>
-        </span>
-        <button type="button" class="btn btn-sm" id="sxAdd">＋ 加笔记</button>
-        <button type="button" class="btn btn-sm btn-primary" id="sxScan">${scanLabel}</button>
+        <span style="flex:1"></span>
+        <span class="sx-count" id="sxRevHint"></span>
+        <button type="button" class="sx-btn" id="sxGrade" style="display:none;">AI 判一遍</button>
       </div>
       <div class="sx-hint" id="sxSrcLine" style="margin:0 0 8px;"></div>
-      <div class="sx-hint" id="sxScanNote" style="display:none;margin:-4px 0 8px;white-space:pre-line;color:#d97706;"></div>
-      <div id="sxAddRow" style="display:none;border:1px solid #eef0f3;border-radius:10px;padding:8px 10px;margin-bottom:8px;">
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-          <button type="button" class="btn btn-sm" id="sxGrab">📥 抓当前笔记入列</button>
-          <button type="button" class="btn btn-sm" id="sxRefreshAll">🔄 刷新当前页判断</button>
-        </div>
-        <input class="sx-in" id="sxUrl" placeholder="粘贴笔记链接后回车加入（当前类型）" style="width:100%;box-sizing:border-box;margin:0;">
-      </div>
+      <div id="sxReviewTop"></div>
+      <div id="sxDaily"></div>
       `}
       <div id="sxList"></div>
       ${isCfg ? '' : `
+      <div id="sxReviewFoot"></div>
       <details class="sx-logs" id="sxWaterFold" style="display:none;">
         <summary>💬 评论记录 <span class="sx-logs-n" id="sxWaterN"></span></summary>
         <div id="sxWaterBody"></div>
-      </details>
-      <details class="sx-logs" id="sxAwHistFold" style="display:none;">
-        <summary>💧 灌水历史 <span class="sx-logs-n" id="sxAwHistN"></span></summary>
-        <div id="sxAwHistBody"></div>
       </details>`}
     </div>
   `;
@@ -2999,9 +3662,8 @@ async function renderScenarioDrain(container, mode) {
     if (!panel) return;
     /* 重绘时把上一轮没关的格子弹窗收掉（它们是挂在 body 上的，不跟着 panel.innerHTML 走） */
     document.querySelectorAll('.pbp-pop').forEach(el => el.remove());
-    // 这一页现在只剩「跑什么 / 推广目标」两张卡（日常浏览搬去队列页那个 ▾ 弹窗了）
-    if (_cfgSec !== 'run' && _cfgSec !== 'goal') _cfgSec = 'run';
-    const sec = _cfgSec;
+    // 这一页只剩「跑什么」一张卡（推广目标 2026-11-09 已撤）
+    _cfgSec = 'run';
     const max = await drainPoolMax();
     /* 话术的「让 AI 改」要按这个账号的人设写：人设存在 config 里（账号设置），不另存一份 */
     let personaText = '';
@@ -3011,6 +3673,7 @@ async function renderScenarioDrain(container, mode) {
       personaText = String((c0.persona && c0.persona.text) || '').trim();
     } catch (_) {}
     const run = cfg.typeRun || DRAIN_TYPE_RUN_DEFAULT;
+    const fcfg = drainFreshCfg(cfg);
     let pool = cfg.keywords || [];
     const enabledN = pool.filter(e => e.on !== false).length;
     const now = Date.now();
@@ -3219,7 +3882,7 @@ async function renderScenarioDrain(container, mode) {
     /* ── 🎯 玩法排班卡（2026-11-02）：一个玩法一行，周一到周日七个开关＋每天挑几个词＋评论里怎么提店 ── */
     const WK_SHORT = ['日', '一', '二', '三', '四', '五', '六'];
     const pbAcctN = (s) => (cfg.accounts || []).filter(a => a && a.on !== false && drainScenarioId(a.scenario) === s).length;
-    const pbStoreTip = '评论 / 私信里怎么提店：不提＝只聊事；只提身份＝说自己是做这行的；可报店名＝对方问起可以报名字。公开评论区一律不许主动报店名，这条写死在评论策略里。';
+    const pbStoreTip = '评论 / 私信里能提自己到哪一步：不提＝只聊事；只提身份＝说一句自己是开过店 / 做这行的；讲案例＝可以讲自己开店的情形、带过的人、经手的案例（只用真事）；可报店名＝能直接报自己开的店。报价、联系方式、站外链接，四档都不许写。';
     /* 出词策略那一格显示的那句：自己写的优先，没写就是内置那句（后面挂个「内置」小标） */
     const wrTxHtml = (s, custom) => {
       const full = String(custom || '').trim() || drainAiKeywordRule(s, cfg.city, '', cfg);
@@ -3227,10 +3890,10 @@ async function renderScenarioDrain(container, mode) {
     };
     /* 评论策略各格的短名（一格一项，老板 2026-11-04 定：全部摊成一列一列，不再挤在一格里） */
     const pbModeShort = { note: '只评笔记', both: '评＋回评', reply: '只回评', people: '只收人' };
-    const pbGuideShort = { auto: '跟资料', none: '不引导', dm: '私信', home: '主页', visit: '到店' };
-    const pbStoreShort = { none: '不提', identity: '说身份', store: '问起才报' };
+    const pbGuideShort = { none: '不引导', dm: '私信', home: '主页', visit: '到店' };
+    const pbCityShort = { off: '不筛', priority: '优先', force: '全收' };
+    const pbStoreShort = { none: '不提', identity: '说身份', case: '讲案例', store: '可报店名' };
     const pbEntryShort = { follow: '顺他说', judge: '给判断', ask: '反问', story: '补经验', light: '轻接' };
-    const pbLenShort = { one: '一句', two: '两句', three: '三句' };
     /* 周几压成一句：不跑 / 每天 / 工作日 / 周末 / 一、三、五 */
     const pbDayLabel = (days) => {
       const d = (days || []).slice().sort((a, b) => a - b);
@@ -3259,11 +3922,10 @@ async function renderScenarioDrain(container, mode) {
       const wrOwn = p.wordRule;
       const cadOff = !!(run[s] && run[s].mode === 'off');
       const people = p.mode === 'people';
-      const noReply = people || p.mode === 'note';
       const dimTip = people ? '这个玩法配的是「只收人」：这一格不生效' : '';
-      const capTip = people ? '只收人：不回评论区，这格不生效'
-        : (p.mode === 'note' ? '只评笔记：不回评论区，这格不生效'
-          : '一篇笔记里最多回几个评论区的人；到数就停，剩下的只收进清单');
+      const cityTip = '同城：这个玩法对同城评论怎么处理——不筛＝不看属地；优先＝同省的排前面；全收＝同城的都算机会';
+      const whoTx = drainPbWho(cfg, s);
+      const whoShort = whoTx.length > 20 ? whoTx.slice(0, 20) + '…' : whoTx;
       return `<tr class="pbp-tr">
         <td class="pbp-name" title="${escAttr((drainPbCopy(cfg, s, 'desc') || def.desc || def.label) + (rivalAcctN ? '（含盯的 ' + rivalAcctN + ' 个竞对号）' : ''))}">${def.icon} ${escHtml(def.label)}${s === 'highv' ? `<span class="pbp-sub">不出词${acctN ? ' · 盯 ' + acctN + ' 个号' : ''}</span>` : ''}</td>
         <td>${pbChipHtml(s, 'days', cadOff ? '已停用 · 点恢复' : pbDayLabel(p.days), {
@@ -3271,17 +3933,16 @@ async function renderScenarioDrain(container, mode) {
           tip: cadOff ? '老设置里这个玩法被定成「不跑」，点一下恢复默认节奏' : '点开选周几跑：一天可多选，也能一次套「每天 / 工作日 / 周末」',
         })}</td>
         <td>${pbChipHtml(s, 'mode', pbModeShort[p.mode], { tip: '评论动作：这篇笔记做几件事（只评笔记 / 评＋回评 / 只回评 / 只收人）' })}</td>
-        <td>${pbChipHtml(s, 'guide', pbGuideShort[p.guide], { dim: people, tip: dimTip || '引导：想让对方下一步做什么（跟资料＝用账号资料里那句承接）' })}</td>
+        <td>${pbChipHtml(s, 'who', whoShort, { tip: '捞谁·为了什么：这个玩法在什么样的人 / 评论里找机会、为了什么（点开改）' })}</td>
+        <td>${pbChipHtml(s, 'city', pbCityShort[p.city], { dim: people, tip: dimTip || cityTip })}</td>
+        <td>${pbChipHtml(s, 'guide', pbGuideShort[p.guide], { dim: people, tip: dimTip || '引导：想让对方下一步做什么（不引导 / 私信 / 主页 / 到店）' })}</td>
         <td>${pbChipHtml(s, 'store', pbStoreShort[p.store], { dim: people, tip: dimTip || pbStoreTip })}</td>
         <td>${pbChipHtml(s, 'entry', pbEntryShort[p.entry], { dim: people, tip: dimTip || '进场：这条评论怎么开口' })}</td>
-        <td>${pbChipHtml(s, 'len', pbLenShort[p.len], { dim: people, tip: dimTip || '评论长短：一条评论说几句' })}</td>
-        <td>${noReply
-          ? `<span class="pbp-dash" title="${escAttr(capTip)}">—</span>`
-          : pbChipHtml(s, 'cap', p.cap + ' 人', { tip: capTip })}</td>
         <td>${people
           ? '<span class="pbp-chip seloff" title="只收人：清单是唯一产出，必须收"><span class="cv">收 · 必开</span></span>'
           : pbChipHtml(s, 'collect', p.collect === false ? '不收' : '收', { dim: p.collect === false, tip: '收不收人：找到的人进不进「获客清单 · 待触达」' })}</td>
         <td class="pbp-talkcell"><button type="button" class="pbp-talkedit" data-talkedit="${s}" title="${escAttr(talkText)}">${tOpen ? '收起' : '📄 改'}</button></td>
+        <td class="pbp-tipcell"><button type="button" class="pbp-talkedit" data-promptview="${s}" title="看这个玩法这一步拼给 AI 的提示词：最近一次真发的 / 按现在配置试拼">👁 看</button></td>
         <td class="pbp-wrcell">${noWord
           ? '<span class="pbp-dash">不出词</span>'
           : `<div class="pbp-wrline">
@@ -3289,8 +3950,8 @@ async function renderScenarioDrain(container, mode) {
               <button type="button" class="pbp-talkedit" data-wredit="${s}">${tOpen ? '收起' : '改'}</button>
             </div>`}</td>
       </tr>
-      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="11"><div class="pbp-teditbox">
-        <div class="hint">这里只改「话术那段」：怎么算商机、怎么说话。评论动作、引导、提店、开口、长短、每篇回几个人，都按上面那几列走——「笔记下面评一句」和「回评论区那句」共用这一套。</div>
+      <tr class="pbp-tedit${tOpen ? ' open' : ''}" id="talkedit-${s}"><td colspan="12"><div class="pbp-teditbox">
+        <div class="hint">这里只改「话术那段」：怎么说话、怎么接。评论动作、捞谁·为了什么、同城、引导、提店、开口，都按上面那几列走——「笔记下面评一句」和「回评论区那句」共用这一套。</div>
         <textarea data-talktext="${s}" rows="4">${escHtml(talkText)}</textarea>
         <div class="airow">
           <span class="k">让 AI 改</span>
@@ -3318,31 +3979,59 @@ async function renderScenarioDrain(container, mode) {
       </div></td></tr>`;
     };
     const cardBox = 'background:#fff;border:1px solid var(--line,#eceef0);border-radius:12px;padding:10px 12px;box-shadow:0 1px 3px rgba(16,24,40,.05);';
+    /* 轮词的白话说明：一周几个槽、几个词、多出来的怎么办、几周轮完。没排日子/词为空就不说。 */
+    const rotNoteHtml = () => {
+      const lines = [];
+      DRAIN_PB_WORD.forEach(s => {
+        const st = drainPbRotStat(cfg, s);
+        if (!st || !st.N) return;
+        const def = drainScenarioDef(s);
+        const head = def.icon + ' ' + escHtml(def.label);
+        if (st.off) lines.push({ warn: false, text: head + '：这周没排日子，一个词都不跑' });
+        else if (st.overflow > 0) lines.push({ warn: true, text: head + '：一周 ' + st.slots + ' 个槽、有 ' + st.N + ' 个词，这一周跑到第 ' + st.slots + ' 个，还有 ' + st.overflow + ' 个排不上；下周从第 ' + (st.slots + 1) + ' 个接着往下，约 ' + st.weeks + ' 周轮完一圈' });
+        else if (st.N < st.slots) lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、只有 ' + st.N + ' 个词，跑完会绕回去，把前面的词再跑一遍' });
+        else lines.push({ warn: false, text: head + '：一周 ' + st.slots + ' 个槽、' + st.N + ' 个词，刚好一圈跑完' });
+      });
+      if (!lines.length) return '';
+      return '<div class="pbp-rotbox">' + lines.map(x => '<div class="pbp-rot' + (x.warn ? ' warn' : '') + '">' + x.text + '</div>').join('') + '</div>';
+    };
     const pbWeekHtml = () => {
-      const wk = drainPbWeek(cfg, now);
+      const off = _drainWeekOff || 0;
+      const wk = drainPbWeek(cfg, now + off * 7 * 24 * 3600 * 1000);
+      const t0 = new Date(now);
+      const sameDay = (ts) => {
+        const d = new Date(ts);
+        return !off && d.getFullYear() === t0.getFullYear() && d.getMonth() === t0.getMonth() && d.getDate() === t0.getDate();
+      };
       return `<div style="${cardBox}margin-top:10px;">
         <div class="pbp-weekcard-h">
           <span class="t">📅 周日历</span>
-          <span class="sx-count">这一周每个玩法跑哪些词</span>
+          <span class="sx-count">${off ? '下周' : '这一周'}每个玩法跑哪些词</span>
           <span style="flex:1;"></span>
+          <span class="pbp-wkseg">
+            <button type="button" class="${off ? '' : 'on'}" data-wkoff="0">本周</button>
+            <button type="button" class="${off ? 'on' : ''}" data-wkoff="1">下周（接着轮）</button>
+          </span>
           <span class="x">按上面的排班轮出来的，停用的词不进来</span>
         </div>
-        <div class="sx-hint" style="margin:0 0 8px;line-height:1.7;">按上面排班和「每天挑几个词」轮着算出来的；停用的词不进来。手插和欠账不受排班限制。</div>
+        <div class="sx-hint" style="margin:0 0 8px;line-height:1.7;">按上面排班和「每天挑几个词」轮着算出来的；停用的词不进来。词比一周的槽多时，下一周从这周停下的地方接着往下，不会每周都从头。手插和欠账不受排班限制。</div>
         <div class="pbp-weekwrap">
           <table class="pbp-week">
-            <thead><tr><th style="width:150px;">玩法</th>${DRAIN_WEEK_ORDER.map(d => `<th${d === todayWd ? ' class="today"' : ''}>${WK_LABELS[d]}</th>`).join('')}</tr></thead>
+            <thead><tr><th style="width:150px;">玩法</th>${DRAIN_WEEK_ORDER.map(d => `<th${!off && d === todayWd ? ' class="today"' : ''}>${WK_LABELS[d]}</th>`).join('')}</tr></thead>
             <tbody>${DRAIN_PB_ORDER.map(s => {
               const def = drainScenarioDef(s);
               const acctN = pbAcctN(s);
-              return `<tr><td class="pbp-wk-name">${def.icon} ${escHtml(def.label)}</td>${wk[s].map(cell => {
+              const rs = drainPbRotStat(cfg, s);
+              return `<tr><td class="pbp-wk-name">${def.icon} ${escHtml(def.label)}${rs && rs.overflow ? `<span class="pbp-wkwarn" title="${escAttr('一周只有 ' + rs.slots + ' 个槽，排不上 ' + rs.overflow + ' 个词；下周接着往下轮')}">⚠ ${rs.overflow}</span>` : ''}</td>${wk[s].map(cell => {
                 const words = cell.words || [];
-                if (words.length) return `<td${new Date(cell.at).getDay() === todayWd ? ' class="today"' : ''}>${words.map(w => `<span class="pbp-wchip" title="${escAttr(w)}">${escHtml(w)}</span>`).join('')}</td>`;
-                if (s === 'highv' && acctN && drainPbOnDay(cfg, s, cell.at)) return `<td${new Date(cell.at).getDay() === todayWd ? ' class="today"' : ''}>👤 ${acctN} 个号</td>`;
-                return `<td${new Date(cell.at).getDay() === todayWd ? ' class="today"' : ''}><span class="pbp-wempty">—</span></td>`;
+                if (words.length) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>${words.map(w => `<span class="pbp-wchip" title="${escAttr(w)}">${escHtml(w)}</span>`).join('')}</td>`;
+                if (s === 'highv' && acctN && drainPbOnDay(cfg, s, cell.at)) return `<td${sameDay(cell.at) ? ' class="today"' : ''}>👤 ${acctN} 个号</td>`;
+                return `<td${sameDay(cell.at) ? ' class="today"' : ''}><span class="pbp-wempty">—</span></td>`;
               }).join('')}</tr>`;
             }).join('')}</tbody>
           </table>
         </div>
+        ${rotNoteHtml()}
       </div>`;
     };
     const pbHtml = `
@@ -3356,13 +4045,22 @@ async function renderScenarioDrain(container, mode) {
           <span class="cfgcard-chev">▾</span>
         </summary>
         <div class="cfgcard-b">
-          <div class="sx-hint" style="margin:2px 0 6px;">一格一项，点格子就地选：周几跑、评论动作、引导、提店、开口、长短、每篇回几人、收不收人。话术和出词策略点「改」就地写。「每天挑几个词」搬到下面「📚 关键词」那张表里。
+          <div class="sx-hint" style="margin:2px 0 6px;">一格一项，点格子就地选：周几跑、评论动作、捞谁·为了什么、同城、引导、提店、开口、收不收人。话术和出词策略点「改」就地写。「每天挑几个词」搬到下面「📚 关键词」那张表里。
             <span class="qhelp" tabindex="0" data-tip="一个词可以同时挂几个玩法（在下面词池里勾）。同一玩法里，词按词池顺序轮着来：今天挑前 N 个，下次排上就接着往下挑，几天转完一圈。手插和欠账不受排班限制。">?</span>
+          </div>
+          <div id="pbFreshLine" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px;padding:7px 9px;background:#f8fafc;border:1px solid #e8eef3;border-radius:7px;font-size:12px;color:#374151;">
+            <b>⏱ 抢首评的「刚起来」线</b>
+            <span style="color:#6b7280;">发布时间 ≤</span><input type="number" id="pbFreshHours" min="1" max="168" value="${fcfg.hours}" style="width:54px;padding:3px 5px;font-size:12px;border:1px solid #d8dee5;border-radius:4px;"> 小时
+            <span style="color:#6b7280;">· 赞 &lt;</span><input type="number" id="pbFreshLikes" min="0" max="1000000" value="${fcfg.likes}" style="width:66px;padding:3px 5px;font-size:12px;border:1px solid #d8dee5;border-radius:4px;">
+            <span style="color:#6b7280;">· 评论 &lt;</span><input type="number" id="pbFreshComments" min="0" max="100000" value="${fcfg.comments}" style="width:58px;padding:3px 5px;font-size:12px;border:1px solid #d8dee5;border-radius:4px;">
+            <button type="button" id="pbFreshSave" class="btn btn-sm" style="padding:3px 9px;font-size:12px;">存下</button>
+            <span id="pbFreshMsg" style="font-size:11px;color:#059669;"></span>
+            <span class="qhelp" tabindex="0" data-tip="三条同时满足才算「刚起来」，才会抢首评：发布时间在上面线内、赞低于这条线、评论低于这条线。发布时间读不到、或赞/评论数读不全时，一律不判「刚起来」，不猜。">?</span>
           </div>
           <div class="pbp-scroll">
             <table class="pbp-table">
-              <colgroup><col style="width:116px;"><col style="width:96px;"><col style="width:92px;"><col style="width:74px;"><col style="width:92px;"><col style="width:80px;"><col style="width:62px;"><col style="width:86px;"><col style="width:80px;"><col style="width:58px;"><col></colgroup>
-              <thead><tr><th>玩法</th><th>周几跑</th><th>评论动作</th><th>引导</th><th>提店</th><th>开口</th><th>长短</th><th>每篇回几人</th><th>收进清单</th><th>话术</th><th>出词策略（找词按这句）</th></tr></thead>
+              <colgroup><col style="width:116px;"><col style="width:96px;"><col style="width:92px;"><col style="width:150px;"><col style="width:74px;"><col style="width:74px;"><col style="width:92px;"><col style="width:80px;"><col style="width:80px;"><col style="width:58px;"><col style="width:64px;"><col></colgroup>
+              <thead><tr><th>玩法</th><th>周几跑</th><th>评论动作</th><th>捞谁 · 为了什么</th><th>同城</th><th>引导</th><th>提店</th><th>开口</th><th>收进清单</th><th>话术</th><th>提示词</th><th>出词策略（找词按这句）</th></tr></thead>
               <tbody>${DRAIN_PB_ORDER.map(pbRow).join('')}</tbody>
             </table>
           </div>
@@ -3398,7 +4096,7 @@ async function renderScenarioDrain(container, mode) {
       ${pbWeekHtml()}
     `;
 
-    /* 🎯 玩法配置：周几跑 / 评论动作 / 引导 / 提店 / 开口 / 长短 / 每篇回几人 / 收进清单，
+    /* 🎯 玩法配置：周几跑 / 评论动作 / 引导 / 提店 / 开口 / 收进清单，
        改哪一格就存哪一格（存完整页重绘，展开块按 _drainTalkOpen 自己回来） */
     const pbSave = async (s, patch, msg) => {
       const nextPb = Object.assign({}, cfg.pbPlan || {});
@@ -3412,7 +4110,7 @@ async function renderScenarioDrain(container, mode) {
       if (msg) drainToast(msg);
       return true;
     };
-    /* ── 十一列：点格子就地弹一层选项（fixed 定位，不被表格的横向滚动裁掉） ── */
+    /* ── 十列：点格子就地弹一层选项（fixed 定位，不被表格的横向滚动裁掉） ── */
     let _pbPopEl = null;
     const pbClosePop = () => {
       /* 整页重绘时旧闭包里的 _pbPopEl 已经不是这一个了：按名字把它们全收掉，别留在页面外面 */
@@ -3434,19 +4132,24 @@ async function renderScenarioDrain(container, mode) {
       const p = drainPbPlan(cfg, s);
       const people = p.mode === 'people';
       const TITLE = {
-        days: '周几跑（可多选）', mode: '评论动作：这篇笔记做几件事', guide: '引导：想让对方下一步做什么',
-        store: '提店：评论里提到什么程度', entry: '进场：这条评论怎么开口', len: '评论长短',
-        cap: '每篇最多回几个人', collect: '收不收人',
+        days: '周几跑（可多选）',
+        mode: drainScenarioId(s) === 'top' ? '评论动作：TOP 一定先评主笔记（不适合的帖仍跳过）' : '评论动作：这篇笔记做几件事',
+        who: '捞谁 · 为了什么（这个玩法找什么样的人、为了什么）',
+        city: '同城：这个玩法对同城评论怎么处理',
+        guide: '引导：想让对方下一步做什么',
+        store: '提店：能提自己到哪一步', entry: '进场：这条评论怎么开口',
+        collect: '收不收人',
       };
-      const OPT = { mode: DRAIN_PB_MODE, guide: DRAIN_PB_GUIDE, store: DRAIN_PB_STORE, entry: DRAIN_PB_ENTRY, len: DRAIN_PB_LEN };
+      const OPT = { mode: drainPbModeOptions(s), city: DRAIN_PB_CITY, guide: DRAIN_PB_GUIDE, store: DRAIN_PB_STORE, entry: DRAIN_PB_ENTRY };
       let body = '';
       if (kind === 'days') {
         const cur = p.days.slice();
         body = `<div class="pbp-popdays">${DRAIN_WEEK_ORDER.map(d => `<button type="button" class="pbp-popday${cur.indexOf(d) >= 0 ? ' on' : ''}" data-popday="${d}">${WK_SHORT[d]}</button>`).join('')}</div>
           <div class="pbp-popquick"><button type="button" data-popset="12345">工作日</button><button type="button" data-popset="06">周末</button><button type="button" data-popset="all">每天</button><button type="button" data-popset="none">清空</button></div>
           <div class="pbp-popfoot"><span class="pbp-popmsg">改完点「存下」</span><button type="button" class="btn btn-sm btn-primary" data-popok="1">存下</button></div>`;
-      } else if (kind === 'cap') {
-        body = `<div class="pbp-popopts">${[1, 2, 3, 4, 5].map(n => `<button type="button" class="pbp-popopt${p.cap === n ? ' on' : ''}" data-popval="${n}">${n} 人</button>`).join('')}</div>`;
+      } else if (kind === 'who') {
+        body = `<div class="pbp-popwho"><textarea data-popwho rows="5" maxlength="400" placeholder="${escAttr(DRAIN_PB_WHO_DEFAULT[drainScenarioId(s)] || '写：这个玩法在什么样的人 / 评论里找机会，为了什么')}">${escHtml(p.who || '')}</textarea>
+          <div class="pbp-popfoot"><span class="pbp-popmsg">留空＝用内置那句</span><button type="button" class="btn btn-sm btn-primary" data-popwhook="1">存下</button></div></div>`;
       } else if (kind === 'collect') {
         body = `<div class="pbp-popopts"><button type="button" class="pbp-popopt${p.collect !== false ? ' on' : ''}" data-popval="1">收进清单</button><button type="button" class="pbp-popopt${p.collect === false ? ' on' : ''}" data-popval="0">不收，只评</button></div>`;
       } else {
@@ -3490,10 +4193,19 @@ async function renderScenarioDrain(container, mode) {
           pbClosePop();
           await pbSave(s, { days }, `${def.icon}${def.label}：` + (days.length ? days.map(x => WK_LABELS[x]).join('、') : '这周不跑'));
         };
+      } else if (kind === 'who') {
+        const ta = el.querySelector('[data-popwho]');
+        const saveWho = async () => {
+          const v = String((ta && ta.value) || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+          pbClosePop();
+          await pbSave(s, { who: v }, `${def.icon}${def.label}：捞谁·为了什么已存`);
+        };
+        if (ta) ta.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveWho(); };
+        const ok = el.querySelector('[data-popwhook]');
+        if (ok) ok.onclick = saveWho;
       } else {
         const apply = (v) => {
           if (kind === 'collect') return pbSave(s, { collect: v === '1' }, `${def.icon}${def.label}：` + (v === '1' ? '找到的人收进获客清单' : '不收人，只评'));
-          if (kind === 'cap') return pbSave(s, { cap: Number(v) }, `${def.icon}${def.label}：每篇最多回 ${v} 个人`);
           const txt = (OPT[kind] || {})[v] || v;
           return pbSave(s, { [kind]: v }, `${def.icon}${def.label}：` + txt);
         };
@@ -3502,11 +4214,18 @@ async function renderScenarioDrain(container, mode) {
           pbClosePop();
           apply(v);
         });
-        if (people && kind !== 'mode') {
+        if (people && ['store', 'guide', 'entry'].indexOf(kind) >= 0) {
           const msg = document.createElement('div');
           msg.className = 'pbp-pop-h';
           msg.style.margin = '6px 0 0';
           msg.textContent = '这个玩法配的是「只收人」，这格改了也不生效';
+          el.appendChild(msg);
+        }
+        if (kind === 'mode' && drainScenarioId(s) === 'top') {
+          const msg = document.createElement('div');
+          msg.className = 'pbp-pop-h';
+          msg.style.margin = '6px 0 0';
+          msg.textContent = '回评论区：同城那一列选「优先 / 全收」时，同省的人排前面（按账号规划里的城市）。';
           el.appendChild(msg);
         }
       }
@@ -3518,6 +4237,244 @@ async function renderScenarioDrain(container, mode) {
     /* 一处的点击委托：格子弹窗、话术/出词展开都走这里（整页重绘后不用重新绑）
        用 onclick 赋值而不是 addEventListener：panel 一直是同一个元素，
        addEventListener 每次重绘都会叠一层，点一下弹好几个。 */
+    /* ── 👁 看提示词（2026-11-08）──
+       每个玩法 × 每个动作：最近一次真发的那份 + 按现在配置试拼的一份。
+       客户只读；只有存过后台口令的那台电脑（老板自己）多一颗「让 AI 重写」。 */
+    const openPromptView = async (s) => {
+      const def = drainScenarioDef(s);
+      const isOwner = (() => { try { return !!localStorage.getItem('demo_admin_pass'); } catch (_) { return false; } })();
+      const ACTS = DRAIN_PROMPT_ACTS;
+      const recs = {}, prevs = {};
+      let act = 'note';
+      let mode = 'last';
+      if (!document.getElementById('dqvStyle')) {
+        const css = document.createElement('style');
+        css.id = 'dqvStyle';
+        css.textContent = [
+          '.dqv-mask{position:fixed;inset:0;z-index:99990;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:14px;box-sizing:border-box;}',
+          '.dqv-sheet{width:min(900px,100%);max-height:92vh;background:#fff;border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;overflow:hidden;font:13px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#1f2937;}',
+          '.dqv-h{display:flex;align-items:center;gap:9px;padding:12px 15px;border-bottom:1px solid #eceef0;font-size:14px;}',
+          '.dqv-h .dqv-play{font-size:12px;color:#0a6b8a;background:#eef7fb;border:1px solid #d5e6f2;border-radius:20px;padding:1px 9px;}',
+          '.dqv-x{border:none;background:transparent;font-size:20px;line-height:1;cursor:pointer;color:#6b7280;padding:0 4px;}',
+          '.dqv-tabs{display:flex;gap:6px;padding:9px 15px 0;flex-wrap:wrap;}',
+          '.dqv-tab{border:1px solid #e3e8ee;background:#fff;color:#374151;border-radius:20px;padding:4px 13px;font:inherit;font-size:12.5px;cursor:pointer;}',
+          '.dqv-tab.on{background:#0a6b8a;border-color:#0a6b8a;color:#fff;font-weight:700;}',
+          '.dqv-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 15px;border-bottom:1px solid #f0f2f4;}',
+          '.dqv-src{display:inline-flex;border:1px solid #dfe5ea;border-radius:8px;overflow:hidden;}',
+          '.dqv-src button{border:none;background:#fff;color:#4b5563;font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;}',
+          '.dqv-src button.on{background:#e8f4f8;color:#0a6b8a;font-weight:700;}',
+          '.dqv-note{font-size:11.5px;color:#8a939c;}',
+          '.dqv-ro{font-size:11.5px;color:#9aa3ab;}',
+          '.dqv-body{padding:12px 15px 18px;overflow:auto;flex:1;}',
+          '.dqv-src2{font-size:11.5px;color:#6b7280;margin:0 0 8px;}',
+          '.dqv-h2{font-size:12px;font-weight:800;color:#111827;margin:12px 0 6px;}',
+          '.dqv-seg{border:1px solid #eceef0;border-radius:9px;margin:0 0 7px;overflow:hidden;background:#fcfcfd;}',
+          '.dqv-tag{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;letter-spacing:.3px;}',
+          '.dqv-tag.tpl{background:#eef2f7;color:#334155;}',
+          '.dqv-tag.play{background:#e8f4f8;color:#0a6b8a;}',
+          '.dqv-tag.rule{background:#fff4e5;color:#9a5b00;}',
+          '.dqv-tag.dedup{background:#f3ecff;color:#5b3fa8;}',
+          '.dqv-tag.extra{background:#e9f7ef;color:#0a7b5a;}',
+          '.dqv-tag.note{background:#fdecec;color:#a13b3b;}',
+          '.dqv-pre{margin:0;padding:7px 10px 9px;white-space:pre-wrap;word-break:break-word;font:12px/1.72 ui-monospace,SFMono-Regular,Consolas,"Microsoft YaHei",monospace;color:#243040;}',
+          '.dqv-final{border:1px solid #dfe5ea;border-radius:9px;padding:8px 10px;margin:10px 0 0;background:#f8fafc;}',
+          '.dqv-fh{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:12px;}',
+          '.dqv-fh .btn{font-size:11px;padding:2px 9px;}',
+          '.dqv-ta{width:100%;box-sizing:border-box;height:112px;border:1px solid #e3e8ee;border-radius:7px;padding:7px 9px;font:11.5px/1.68 ui-monospace,Consolas,monospace;color:#374151;background:#fff;resize:vertical;}',
+          '.dqv-out{border:1px solid #e7ecef;border-radius:9px;margin:12px 0 0;padding:9px 11px;background:#fbfdfe;}',
+          '.dqv-oh{font-size:11.5px;font-weight:800;color:#374151;margin:5px 0 3px;}',
+          '.dqv-raw{white-space:pre-wrap;word-break:break-word;font:11.5px/1.7 ui-monospace,Consolas,monospace;color:#6b7280;background:#f5f7f9;border-radius:7px;padding:6px 8px;max-height:150px;overflow:auto;}',
+          '.dqv-used{white-space:pre-wrap;word-break:break-word;font-size:12.5px;color:#0f3d2e;background:#eefaf3;border:1px solid #cdeedd;border-radius:7px;padding:7px 9px;}',
+          '.dqv-skip{font-size:12.5px;color:#9a3412;background:#fff7ed;border:1px solid #fdba74;border-radius:7px;padding:7px 9px;}',
+          '.dqv-meta{font-size:11px;color:#8a939c;margin-top:6px;}',
+          '.dqv-load{font-size:12.5px;color:#6b7280;padding:12px 2px;}',
+          '.dqv-err{font-size:12.5px;color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;}',
+          '.dqv-previewtip{font-size:11.5px;color:#8a939c;margin-top:9px;}',
+          '.dqv-own{border-top:1px solid #eceef0;padding:10px 15px;background:#fcfcfd;}',
+          '.dqv-ownh{font-size:11.5px;color:#6b7280;margin:0 0 7px;}',
+          '.dqv-ownrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}',
+          '.dqv-genmsg{font-size:11.5px;color:#0a7b5a;}',
+          '.dqv-cand{border:1px solid #d5e6f2;border-radius:9px;padding:8px 10px;margin-top:8px;background:#f7fbfd;}',
+          '@media (max-width:640px){.dqv-sheet{max-height:96vh;}.dqv-body{padding:10px 11px 14px;}}',
+        ].join('');
+        document.head.appendChild(css);
+      }
+      const mask = document.createElement('div');
+      mask.className = 'dqv-mask';
+      mask.innerHTML = '<div class="dqv-sheet" role="dialog" aria-modal="true">'
+        + '<div class="dqv-h"><b>👁 看提示词</b><span class="dqv-play">' + escHtml(def.icon + ' ' + def.label) + '</span>'
+        + '<span style="flex:1;"></span><button type="button" class="dqv-x" data-dqvx="1" title="关掉">×</button></div>'
+        + '<div class="dqv-tabs">' + ACTS.map(function (a) { return '<button type="button" class="dqv-tab" data-dqvact="' + a.id + '">' + escHtml(a.label) + '</button>'; }).join('') + '</div>'
+        + '<div class="dqv-bar"><span class="dqv-src"><button type="button" data-dqvmode="last">最近一次</button><button type="button" data-dqvmode="preview">试拼</button></span>'
+        + '<span class="dqv-note" id="dqvNote"></span><span style="flex:1;"></span>'
+        + '<span class="dqv-ro">' + (isOwner ? '这台电脑是老板的：下面可让 AI 重写' : '只读：要改就回玩法配置改参数') + '</span></div>'
+        + '<div class="dqv-body" id="dqvBody"><div class="dqv-load">读取中…</div></div>'
+        + (isOwner ? '<div class="dqv-own"><div class="dqv-ownh">让 AI 按这个玩法现在的料重写它那段话术（只改这个号自己这层，内置提示词和行业包不动）。</div>'
+          + '<div class="dqv-ownrow"><button type="button" class="btn btn-sm btn-primary" id="dqvGen">✨ 让 AI 重写这个玩法的提示词</button>'
+          + '<span id="dqvGenMsg" class="dqv-genmsg"></span></div><div id="dqvGenOut"></div></div>' : '')
+        + '</div>';
+      document.body.appendChild(mask);
+
+      const bodyEl = () => mask.querySelector('#dqvBody');
+      const fmtAt = (t) => {
+        const n = Number(t) || 0;
+        if (!n) return '';
+        const d = new Date(n);
+        const p2 = (x) => (x < 10 ? '0' + x : '' + x);
+        return p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+      };
+      const loadPreview = async (a) => {
+        prevs[a] = { loading: true };
+        try {
+          const material = (recs[a] && recs[a].material) || drainPromptSample(a);
+          const r = await chrome.runtime.sendMessage({ action: 'drainPromptPreview', data: { act: a, scenario: s, material: material } });
+          prevs[a] = (r && r.ok !== false) ? (r || {}) : { ok: false, error: (r && r.error) || '服务器没回话' };
+        } catch (e) {
+          prevs[a] = { ok: false, error: (e && e.message) || String(e) };
+        }
+      };
+      const paintTabs = () => {
+        mask.querySelectorAll('[data-dqvact]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-dqvact') === act); });
+        mask.querySelectorAll('[data-dqvmode]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-dqvmode') === mode); });
+      };
+      const outCard = (r) => {
+        const used = String(r.used || '');
+        const raw = String(r.raw || '');
+        const skip = String(r.skip || '');
+        const meta = [];
+        if (r.chars) meta.push('用出去 ' + r.chars + ' 字');
+        if (r.ms) meta.push('用时 ' + (Number(r.ms) / 1000).toFixed(1) + ' 秒');
+        if (r.tokensIn || r.tokensOut) meta.push('tokens ' + (r.tokensIn || 0) + ' / ' + (r.tokensOut || 0));
+        if (r.model) meta.push(r.model);
+        return '<div class="dqv-out">'
+          + (skip ? '<div class="dqv-skip">这一趟没生成：' + escHtml(skip) + '</div>' : '')
+          + (raw ? '<div class="dqv-oh">AI 原话（回来的原文）</div><div class="dqv-raw">' + escHtml(raw) + '</div>' : '')
+          + (used ? '<div class="dqv-oh">实际发出去的字</div><div class="dqv-used">' + escHtml(used) + '</div>' : '')
+          + (Number(r.chars) > 2000 ? '<div class="dqv-meta">（这里只留前 2000 字，原长 ' + r.chars + ' 字）</div>' : '')
+          + (meta.length ? '<div class="dqv-meta">' + escHtml(meta.join(' · ')) + '</div>' : '')
+          + '</div>';
+      };
+      const paint = () => {
+        paintTabs();
+        const b = bodyEl();
+        if (!b) return;
+        if (mode === 'preview' && prevs[act] === undefined) {
+          b.innerHTML = '<div class="dqv-load">⏳ 按你现在的配置拼一份（不调模型、不计费）……</div>';
+          loadPreview(act).then(paint);
+          return;
+        }
+        if (mode === 'last' && !recs[act]) {
+          const n0 = mask.querySelector('#dqvNote');
+          if (n0) n0.textContent = '这个号还没真跑过这一步';
+          b.innerHTML = '<div class="dqv-load">这一步还没真跑过，没有可看的「最近一次」。点上面的「试拼」，看按现在的配置会拼成什么样。</div>';
+          return;
+        }
+        const r = (mode === 'last') ? recs[act] : prevs[act];
+        const noteEl = mask.querySelector('#dqvNote');
+        if (noteEl) {
+          noteEl.textContent = (mode === 'last'
+            ? (r && r.at ? ('这一份是 ' + fmtAt(r.at) + ' 真的发出去的那次') : '')
+            : '按现在的配置试拼，不会真的发，也不计费');
+        }
+        if (!r) { b.innerHTML = '<div class="dqv-load">这一趟还没跑过。</div>'; return; }
+        if (r.ok === false || r.error) { b.innerHTML = '<div class="dqv-err">拼不出来：' + escHtml(String(r.error || '未知原因')) + '</div>'; return; }
+        const p = r.prompts || { system: r.sys, user: r.user };
+        if (!p || (!p.system && !r.skip)) {
+          b.innerHTML = '<div class="dqv-err">这一趟没留下提示词' + (r.skip ? '：' + escHtml(String(r.skip)) : '') + '</div>';
+          return;
+        }
+        /* 这一步本来就不做（只回评论区 / 只收人 / 同行帖）：没有提示词，把原因摊开 */
+        if (!p.system && !p.user) {
+          b.innerHTML = '<div class="dqv-skip">这一步没生成：' + escHtml(String(r.skip || r.reason || '没过闸门')) + '</div>';
+          return;
+        }
+        const segs = drainPromptSegments(p.system);
+        const userTxt = String(p.user || '');
+        b.innerHTML = '<div class="dqv-src2">' + (mode === 'last' ? '最近一次真发的那一份' : '试拼：按现在的配置 + ' + (recs[act] && recs[act].material ? '上次用的料' : '一份样例料')) + '</div>'
+          + '<div class="dqv-h2">System · 给 AI 的规矩（按来源分段）</div>'
+          + (segs.length ? segs.map(function (x) {
+            return '<div class="dqv-seg"><span class="dqv-tag ' + x.tone + '">' + escHtml(x.label) + '</span><pre class="dqv-pre">' + escHtml(x.text) + '</pre></div>';
+          }).join('') : '<div class="dqv-load">（没有 System）</div>')
+          + '<div class="dqv-h2">User · 这一单的料</div>'
+          + '<div class="dqv-seg"><span class="dqv-tag note">这一单的料</span><pre class="dqv-pre">' + escHtml(userTxt) + '</pre></div>'
+          + '<div class="dqv-final"><div class="dqv-fh"><b>两段全文（可直接复制）</b><button type="button" class="btn btn-sm" data-dqvcopy="1">📋 复制</button></div>'
+          + '<textarea class="dqv-ta" readonly>' + escHtml('【System】\n' + String(p.system || '') + '\n\n【User】\n' + userTxt) + '</textarea></div>'
+          + (mode === 'last' ? outCard(r) : '<div class="dqv-previewtip">试拼不调模型：这里没有 AI 的原话，也没有用出去的字。</div>');
+      };
+      const genTalk = async () => {
+        const msg = mask.querySelector('#dqvGenMsg');
+        const out = mask.querySelector('#dqvGenOut');
+        const btn = mask.querySelector('#dqvGen');
+        if (!msg || !out || !btn) return;
+        if (!personaText) { msg.textContent = '先到「账号规划 → 基础配置」写一句自我介绍，才能按人设重写。'; return; }
+        btn.disabled = true;
+        msg.textContent = 'AI 正在按这个玩法重写…（十来秒）';
+        out.innerHTML = '';
+        try {
+          const r = await chrome.runtime.sendMessage({ action: 'aiGenerateDrainTalk', scenario: s, instruction: '', last: null });
+          if (r && r.ok === false) throw new Error(r.error || 'AI 没回话');
+          const text = String((r && (r.text || (r.talk && r.talk.text))) || '').trim();
+          if (!text) throw new Error('AI 回来的格式不对，再点一次试试');
+          out.dataset.text = text;
+          out.innerHTML = '<div class="dqv-cand"><div class="dqv-oh">AI 写的这一版（还没存）</div>'
+            + '<div class="dqv-used">' + escHtml(text) + '</div>'
+            + '<div class="dqv-ownrow" style="margin-top:7px;"><button type="button" class="btn btn-sm btn-primary" data-dqvkeep="1">存下这版</button>'
+            + '<button type="button" class="btn btn-sm" data-dqvagain="1">再来一版</button>'
+            + '<span class="dqv-genmsg">存下会替换这个玩法现在的话术。</span></div></div>';
+          msg.textContent = '写好了，看下面。';
+        } catch (e) {
+          msg.textContent = '没配上：' + ((e && e.message) || e);
+        } finally {
+          btn.disabled = false;
+        }
+      };
+      mask.addEventListener('click', async (ev) => {
+        if (ev.target === mask) { mask.remove(); return; }
+        const t = ev.target;
+        if (!t || !t.closest) return;
+        if (t.closest('[data-dqvx]')) { mask.remove(); return; }
+        const ab = t.closest('[data-dqvact]');
+        if (ab) { act = ab.getAttribute('data-dqvact'); paint(); return; }
+        const mb = t.closest('[data-dqvmode]');
+        if (mb) { mode = mb.getAttribute('data-dqvmode'); paint(); return; }
+        if (t.closest('[data-dqvcopy]')) {
+          const ta = mask.querySelector('.dqv-ta');
+          if (!ta) return;
+          try {
+            await navigator.clipboard.writeText(ta.value);
+            drainToast('📋 两段全文已复制');
+          } catch (_) {
+            ta.select();
+            try { document.execCommand('copy'); drainToast('📋 已复制'); } catch (e2) { drainToast('复制不了：自己框选一下', true); }
+          }
+          return;
+        }
+        if (t.closest('#dqvGen')) { genTalk(); return; }
+        if (t.closest('[data-dqvagain]')) { genTalk(); return; }
+        if (t.closest('[data-dqvkeep]')) {
+          const out = mask.querySelector('#dqvGenOut');
+          const txt = String((out && out.dataset.text) || '');
+          if (!txt) return;
+          if (!window.confirm('存下会替换「' + def.label + '」现在的话术，接着存？')) return;
+          try {
+            await talkSaveOne(s, txt);
+            mask.querySelector('#dqvGenMsg').textContent = '✅ 已存下；下一趟就按新的拼。';
+            out.innerHTML = '';
+          } catch (e) {
+            mask.querySelector('#dqvGenMsg').textContent = '没存上：' + ((e && e.message) || e);
+          }
+          return;
+        }
+      });
+      try {
+        const d = await chrome.storage.local.get(DRAIN_PROMPT_KEY);
+        const all = (d && d[DRAIN_PROMPT_KEY]) || {};
+        ACTS.forEach(function (a) { recs[a.id] = all[drainPromptSlot(s, a.id)] || null; });
+      } catch (_) {}
+      if (!recs[act]) mode = 'preview';
+      paint();
+    };
+
     panel.onclick = (ev) => {
       const t = ev.target;
       if (!t || !t.closest) return;
@@ -3538,6 +4495,8 @@ async function renderScenarioDrain(container, mode) {
         pbPopOpen(popBtn, s, kind);
         return;
       }
+      const pv = t.closest('[data-promptview]');
+      if (pv) { ev.preventDefault(); openPromptView(pv.getAttribute('data-promptview')); return; }
       const tk = t.closest('[data-talkedit],[data-talkclose]');
       if (tk) { ev.preventDefault(); talkToggle(tk.getAttribute('data-talkedit') || tk.getAttribute('data-talkclose')); return; }
       const wr = t.closest('[data-wredit]');
@@ -3550,6 +4509,29 @@ async function renderScenarioDrain(container, mode) {
       const def = drainScenarioDef(s);
       pbSave(s, { perDay: n }, `${def.icon}${def.label}：每个排上的日子挑 ${n} 个词`);
     });
+    /* 📅 周日历：切本周 / 下周（只换预览，不存配置） */
+    panel.querySelectorAll('[data-wkoff]').forEach(btn => btn.onclick = () => {
+      _drainWeekOff = Number(btn.getAttribute('data-wkoff')) ? 1 : 0;
+      renderScenarioDrain(container, mode);
+    });
+    /* ⏱ 抢首评的「刚起来」线：三条一起判，存进 freshCfg（整页重绘后输入框回到新值） */
+    const freshSave = panel.querySelector('#pbFreshSave');
+    if (freshSave) freshSave.onclick = async () => {
+      const num = (id, d, min, max) => {
+        const v = Number(document.getElementById(id) && document.getElementById(id).value);
+        return Math.min(max, Math.max(min, Number.isFinite(v) && String(document.getElementById(id).value).trim() !== '' ? v : d));
+      };
+      const fc = {
+        hours: num('pbFreshHours', 6, 1, 168),
+        likes: num('pbFreshLikes', 200, 0, 1000000),
+        comments: num('pbFreshComments', 20, 0, 100000),
+      };
+      const msg = document.getElementById('pbFreshMsg');
+      if (msg) msg.textContent = '存着…';
+      const r = await save({ freshCfg: fc }, true);
+      if (msg) msg.textContent = (!r || r.ok === false) ? ('没存上：' + ((r && r.error) || '服务器没回话')) : '✅ 已存下';
+      if (r && r.ok !== false) drainToast(`⏱ 抢首评线：≤${fc.hours} 小时 · 赞<${fc.likes} · 评论<${fc.comments}`);
+    };
 
     /* 出词策略（2026-11-04 老板加）：写在排班行右边那一格，存进 pbPlan[玩法].wordRule；
        找词时后端优先用这句，空着才用内置那句。存完不整页重绘——展开块还开着，接着改。 */
@@ -3566,7 +4548,7 @@ async function renderScenarioDrain(container, mode) {
       const s = b.getAttribute('data-wrsave');
       const ta = panel.querySelector('[data-writext="' + s + '"]');
       const txt = drainPbWordRuleNorm(ta ? ta.value : '');
-      if (txt.length < 6) { wrMsg(s, '太短了 AI 抓不住：至少写一句怎么说词（如「都要带杭州、别出机构名」）。', 'err'); return; }
+      if (txt.length < 6) { wrMsg(s, '太短了 AI 抓不住：至少写一句怎么说词（如「都要带杭州、别出品牌名」）。', 'err'); return; }
       const nextPb = Object.assign({}, cfg.pbPlan || {});
       nextPb[s] = drainPbPlanNorm(Object.assign({}, drainPbPlan(cfg, s), { wordRule: txt }), s);
       b.disabled = true;
@@ -3879,8 +4861,7 @@ async function renderScenarioDrain(container, mode) {
       };
     }
 
-    // 补开弹窗内容 / 上次扫描那行：每重渲染一次就得重挂一次
-    await renderReplCfg();
+    // 上次扫描那行：每重渲染一次就得重挂一次
     await renderLastScan();
   };
 
@@ -3922,108 +4903,193 @@ async function renderScenarioDrain(container, mode) {
     await renderScanCfg();
   };
 
-  /* ---- 扫描一轮 ---- */
-  async function runScan() {
-    const btn = _sel('sxScan');
-    btn.disabled = true; btn.textContent = '⏳ 扫描中(后台开小红书页)...';
+  /* ---- 📊 这几天：逐篇记录按天归档（处理了多少篇 / 评论了多少条 / 没评的都为什么）----
+     数据从「每篇留痕」的同一本账来：公网网页读服务器那本，执行器面板读本机留的那本。 */
+  let _snapList = [];
+  let _dayRange = 't';
+  const _snapTime = (s) => { const n = Number(s && (s.at || s.ts)); return (Number.isFinite(n) && n > 1000000000000) ? n : 0; };
+  const _dayKey = (t) => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  const _mmdd = (t) => { const d = new Date(t); return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  function _dayLabel(key) {
+    const now = Date.now();
+    if (key === _dayKey(now)) return '今天 ' + _mmdd(now);
+    if (key === _dayKey(now - 86400000)) return '昨天 ' + _mmdd(now - 86400000);
+    return key.split('-').slice(1).map(x => String(x).padStart(2, '0')).join('-');
+  }
+  async function loadSnaps() {
     try {
-      const r = await chrome.runtime.sendMessage({ action: 'drainScan' });
-      if (r && r.ok && r.ordered) {
-        // 公网版：扫描这活派给执行器，它在那台机器上开小红书页逐词扫；结果不回网页这头
-        drainToast('📤 已派给执行器扫一轮——进度点右上角执行器按钮看 / 工作台日志', 'ok');
-      } else if (r && r.ok) {
-        const s = r.summary || {};
-        drainToast(`扫描完成：新${s.foundNew} 并入获客${s.imported || 0} 补开${s.backfilled}（共${s.total}）`);
-        notes.length = 0; notes.push(...await drainLoad());
-        // 扫描结果留一份：没扫到新笔记时把来源明细写出来（笔记池/任务配置各有落点），方便定位
-        const warn = !s.foundNew;
-        _lastScanInfo = {
-          text: warn
-            ? '⚠️ 本次未发现新笔记。来源明细：\n' + ((s.detail || []).map(d => `${d.term}: ${d.got}篇${d.err ? ' [' + d.err + ']' : ''}`).join('\n') || '(无来源)') + (s.note ? '\n' + s.note : '')
-            : `本次扫描：新${s.foundNew} 刷${s.refreshed} 补${s.backfilled} 共${s.total}`,
-          warn,
-        };
-        const sv = _sel('sxScanNote');
-        if (sv) {
-          sv.textContent = _lastScanInfo.text;
-          sv.style.whiteSpace = 'pre-line';
-          sv.style.color = warn ? '#d97706' : '';
-          sv.style.display = '';
-        }
-        await renderScanCfg();
-      } else {
-        drainToast('扫描失败：' + ((r && r.error) || '未知'), 'error');
+      if (window.chrome && chrome.runtime && chrome.runtime.id === 'demo-page') {
+        const r = await fetch('api/exec/notesnap/get', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ all: 1 }),
+        });
+        const j = await r.json();
+        if (j && j.ok && Array.isArray(j.snaps) && j.snaps.length) return j.snaps;
       }
-    } catch (e) { drainToast('扫描失败：' + (e.message || e), 'error'); }
-    btn.disabled = false; btn.textContent = scanLabel;
-    render(); await refreshSrcLine();
+    } catch (_) {}
+    try {
+      const d = await chrome.storage.local.get('ex_note_snaps');
+      return Array.isArray(d && d.ex_note_snaps) ? d.ex_note_snaps : [];
+    } catch (_) { return []; }
+  }
+  /* 同一篇跑过两趟：按笔记算一次（取最新那条），别把「处理篇数」和评论条数翻倍 */
+  function _snapKey(s) {
+    const nid = String((s && s.noteId) || '').trim();
+    if (nid) return 'id:' + nid;
+    const t = String((s && s.title) || '').trim();
+    if (t) return 't:' + t;
+    return 'x:' + ((s && (s.id || s.ts)) || '');
+  }
+  function _snapStats(list) {
+    const latest = {};
+    (list || []).forEach(s => {
+      const k = _snapKey(s);
+      if (!latest[k] || _snapTime(s) >= _snapTime(latest[k])) latest[k] = s;
+    });
+    const rows = Object.keys(latest).map(k => latest[k]);
+    let sent = 0, no = 0;
+    const why = {};
+    rows.forEach(s => {
+      const n = Number(s && s.sent) || 0;
+      sent += n;
+      if (n <= 0) {
+        no++;
+        const w = String((s && (s.reason || s.decide)) || '没留原因').trim().replace(/^不评：/, '');
+        const k = w.length > 16 ? w.slice(0, 16) + '…' : w;
+        why[k] = (why[k] || 0) + 1;
+      }
+    });
+    return { n: rows.length, sent, no, why };
+  }
+  function _whyPills(why, limit) {
+    return Object.keys(why).sort((a, b) => why[b] - why[a]).slice(0, limit || 4)
+      .map(k => `<span class="sx-daily-pill">没评 · ${escHtml(k)}${why[k] > 1 ? ' ×' + why[k] : ''}</span>`).join('');
+  }
+  function _indexSnaps() {
+    _snapByNote = {};
+    _snapList.slice().sort((a, b) => _snapTime(a) - _snapTime(b)).forEach(s => {
+      if (s && s.noteId) _snapByNote['id:' + s.noteId] = s;
+      if (s && s.title) _snapByNote['t:' + String(s.title).trim()] = s;
+    });
+  }
+  let _snapByNote = {};
+  function _snapForNote(n) {
+    if (!n) return null;
+    const nid = String(n.noteId || '').trim();
+    if (nid && _snapByNote['id:' + nid]) return _snapByNote['id:' + nid];
+    const t = String(n.title || '').trim();
+    return (t && _snapByNote['t:' + t]) || null;
+  }
+  /* 这一篇的「笔记层结论」：大V/竞对 · 刚起来 · 本篇怎么做（AI 判的，写进每篇记录里） */
+  function _reviewInfo(rev) {
+    if (!rev || typeof rev !== 'object') return null;
+    const who = rev.matched === 'highv' ? '👑 大V'
+      : rev.matched === 'rival' ? '🕵️ 竞对' : '';
+    const fresh = rev.fresh ? '⏱ 刚起来' : '';
+    const ACT = { grab: '抢首评', comment: '值得评', reply: '只回评论', collect: '只收人', skip: '跳过' };
+    const act = rev.fallback ? '没判成·按玩法' : (ACT[rev.action] || (rev.verdict === 'blocked' ? '跳过' : ''));
+    const bits = [who, fresh, act].filter(Boolean);
+    if (!bits.length) return null;
+    const tip = [
+      who ? (rev.matched === 'highv'
+        ? '作者在你盯的大V名单里：整篇按大V口径——先赞同博主再补本行一句，不报店名，不主动捞评论区'
+        : '作者在你盯的竞对名单里：这一篇只蹲人，不评论') : '',
+      fresh ? ('判成「刚起来」：' + (rev.freshWhy || '发布没多久、赞和评论都还少')) : '',
+      rev.reason ? ('AI 判断：' + rev.reason) : '',
+      rev.why ? ('这一篇这么做：' + rev.why) : '',
+    ].filter(Boolean).join('\n');
+    return { text: bits.join(' · '), tip };
+  }
+  function _recLine(rec) {
+    if (!rec) return '';
+    const rv = _reviewInfo(rec.noteReview);
+    const badge = rv
+      ? `<span class="sx-rv" title="${escAttr(rv.tip)}" style="display:inline-block;margin-right:6px;padding:0 6px;border-radius:6px;background:#eef6fb;color:#0a6b8a;font-size:11px;vertical-align:1px;">${escHtml(rv.text)}</span>`
+      : '';
+    const n = Number(rec.sent) || 0;
+    const reps = Array.isArray(rec.replies) ? rec.replies : [];
+    if (n > 0) {
+      const txt = String(rec.noteComment || '').trim();
+      const first = (reps[0] && String(reps[0].t || '').trim()) || '';
+      const said = txt || first;
+      const who = (!txt && reps[0] && reps[0].a) ? '@' + reps[0].a + '：' : '';
+      const head = txt ? '评了：「'
+        : (reps.length > 1 ? '回了 ' + reps.length + ' 条：「' : '回了：「');
+      const more = (txt && reps.length) ? ' · 另回 ' + reps.length + ' 人' : '';
+      const line = said ? head + escHtml(who + said) + '」' + more : '评了 ' + n + ' 条';
+      const tip = [
+        rv ? rv.tip : '',
+        txt ? '在笔记下评的：' + txt : '',
+        reps.length ? '回了评论区：\n' + reps.map(x => '@' + (x.a || '') + '：' + (x.t || '')).join('\n') : '',
+      ].filter(Boolean).join('\n') || line;
+      return `<div class="sx-rec ok" title="${escAttr(tip)}">${badge}✅ ${line}</div>`;
+    }
+    const why = String(rec.reason || rec.decide || '没留原因').trim().replace(/^不评：/, '');
+    const tipNo = [rv ? rv.tip : '', why].filter(Boolean).join('\n');
+    return `<div class="sx-rec no" title="${escAttr(tipNo)}">${badge}没评 · ${escHtml(why)}</div>`;
+  }
+  async function paintDaily() {
+    const box = _sel('sxDaily');
+    if (!box) return;
+    const had = _snapList.length;
+    _snapList = await loadSnaps();
+    _indexSnaps();
+    if (!had && _snapList.length && !isCfg) { try { render(); } catch (_) {} }   // 记录读回来了，把每篇那行「评了啥」补上
+    const now = Date.now();
+    const todayKey = _dayKey(now);
+    const todayList = _snapList.filter(s => _snapTime(s) && _dayKey(_snapTime(s)) === todayKey);
+    const t = _snapStats(todayList);
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const t0 = now - i * 86400000;
+      const k = _dayKey(t0);
+      days.push(Object.assign({ key: k, label: _dayLabel(k) }, _snapStats(_snapList.filter(s => _snapTime(s) && _dayKey(_snapTime(s)) === k))));
+    }
+    const maxN = Math.max(1, ...days.map(d => d.n));
+    const maxC = Math.max(1, ...days.map(d => d.sent));
+    const weekRows = days.map(d => `
+      <tr>
+        <td class="d">${escHtml(d.label)}</td>
+        <td class="num">${d.n}</td>
+        <td><div class="sx-daily-bar"><i style="width:${Math.round(d.n / maxN * 100)}%"></i></div></td>
+        <td class="num" style="color:#0a6b8a;">${d.sent}</td>
+        <td><div class="sx-daily-bar b"><i style="width:${Math.round(d.sent / maxC * 100)}%"></i></div></td>
+        <td style="color:#b45309;">${d.no}</td>
+      </tr>`).join('');
+    const empty = !_snapList.length;
+    box.innerHTML = `
+      <div class="sx-daily">
+        <div class="sx-daily-h">
+          <span>📊 这几天</span>
+          ${empty ? '<span class="tag">账从今天开始记（跑过一篇就出现）</span>' : ''}
+          <span style="flex:1;"></span>
+          <span class="sx-daily-seg">
+            <button type="button" data-day="t" class="${_dayRange === 't' ? 'on' : ''}">今天</button>
+            <button type="button" data-day="w" class="${_dayRange === 'w' ? 'on' : ''}">近 7 天</button>
+          </span>
+        </div>
+        <div id="sxDailyBody">
+          ${_dayRange === 't' ? `
+          <div class="sx-daily-num">
+            <div class="cell a"><b>${t.n}</b><span>篇处理完</span></div>
+            <div class="cell b"><b>${t.sent}</b><span>条评论</span></div>
+            <div class="cell"><b style="color:#b45309;">${t.no}</b><span>篇没评</span></div>
+          </div>
+          ${t.no ? '<div class="sx-daily-why">' + _whyPills(t.why, 4) + '</div>' : (t.n ? '<div class="sx-daily-why"><span class="sx-daily-pill g">今天跑过的都评上了</span></div>' : '')}
+          ` : `
+          <table class="sx-daily-tbl">
+            <thead><tr><th>日期</th><th>处理篇数</th><th></th><th>评论条数</th><th></th><th>没评的篇数</th></tr></thead>
+            <tbody>${weekRows}</tbody>
+          </table>
+          <div class="sx-hint" style="margin:4px 0 0;">只记跑过的篇；更早的日子没有逐篇记录，就是空。</div>
+          `}
+        </div>
+      </div>`;
+    box.querySelectorAll('[data-day]').forEach(b => {
+      b.onclick = () => { _dayRange = b.getAttribute('data-day'); paintDaily(); };
+    });
   }
 
-  // 🔍 扫描一轮只在笔记池的顶栏上有；配置页（三张卡）没有这颗按钮
-  const scanBtn = _sel('sxScan');
-  if (scanBtn) scanBtn.onclick = runScan;
-  // ＋ 加笔记：抓当前页 / 粘贴链接（按需展开）
-  const addBtn = _sel('sxAdd');
-  if (addBtn) addBtn.onclick = () => {
-    const row = _sel('sxAddRow');
-    row.style.display = row.style.display === 'none' ? 'block' : 'none';
-  };
-
-  /* ---- 补开的两个旋钮（开关 + 点赞阈值）收在顶栏「⚙︎」小弹窗里：主页面不再铺这一块 ----
-     节奏不单独配（2026-09-25）：跟「关键词池」表头那列是同一套——表头设「不跑」＝这一类不补，
-     其余按内置默认走（最新/本地 24 小时内回看、TOP 8 小时、求助 6 小时、竞对 12 小时） */
-  const renderReplCfg = async () => {
-    const r = await chrome.runtime.sendMessage({ action: 'drainGetReplenishCfg' });
-    const repl = (r && r.ok && r.repl) || {};
-    const body = _sel('replPopBody');
-    if (!body) return;
-    st.growthDelta = Number(repl.growthDelta) > 0 ? Number(repl.growthDelta) : 50;
-    body.innerHTML = `
-      <label style="display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#374151;line-height:1.6;cursor:pointer;">
-        <input type="checkbox" id="replEnabled" ${repl.enabled !== false ? 'checked' : ''} style="margin:3px 0 0;">
-        <span>启用自动补开<span class="qhelp r" tabindex="0" data-tip="每轮跑完，自动回看本轮没打开的池内笔记：涨势够的标成「去评论」，到点还没打开的淘汰。">?</span></span>
-      </label>
-      <div style="font-size:12px;color:#374151;margin-top:8px;">🆕 点赞增量阈值<span class="qhelp r" tabindex="0" data-tip="一轮涨够这么多赞，就把它标成「去评论」。回看节奏跟「关键词池」表头那列同一套：表头设「不跑」＝这类整类不补，其余按内置默认（最新 / 本地 24 小时内，TOP 8 小时，求助 6 小时，竞对 12 小时）。">?</span>
-        <input id="replGrowth" type="number" min="1" value="${st.growthDelta}" style="width:56px;margin:0 0 0 2px;padding:3px 6px;border:1px solid #e5e7eb;border-radius:6px;"> 赞
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
-        <button type="button" class="btn btn-sm btn-primary" id="replSave">保存</button>
-        <span class="sx-count" id="replLast"></span>
-      </div>`;
-    _sel('replSave').onclick = async () => {
-      await chrome.runtime.sendMessage({ action: 'drainSaveReplenishCfg', repl: {
-        enabled: _sel('replEnabled').checked,
-        growthDelta: parseInt(_sel('replGrowth').value, 10) || 50,
-        lastReplenishAt: repl.lastReplenishAt, lastReplenishSummary: repl.lastReplenishSummary,
-      } });
-      drainToast('已保存');
-      const pop = _sel('replPop'); if (pop) pop.style.display = 'none';
-    };
-    const sm = repl.lastReplenishSummary;
-    if (sm) _sel('replLast').textContent = `上次：开${sm.opened} 淘汰${sm.expired} 失败${sm.failed}`;
-  };
-
-  /* ---- 补开本轮未打开 ---- */
-  const runReplenish = async (fromAuto) => {
-    const btn = _sel('replRun');
-    if (btn) { btn.disabled = true; btn.textContent = '⏳ 补开中...'; }
-    try {
-      const r = await chrome.runtime.sendMessage({ action: 'drainReplenish', round: true, force: true });
-      if (r && r.ok && r.ordered) {
-        drainToast('📤 已派给执行器补开未打开——进度点右上角执行器按钮看 / 工作台日志', 'ok');
-      } else if (r && r.ok && r.busy) {
-        drainToast('补开正在进行中，稍等…', 'info');
-      } else if (r && r.ok) {
-        const s = r.summary || {};
-        drainToast(`补开完成：开${s.opened} 跳${s.skipped} 淘汰${s.expired} 失败${s.failed}`);
-        notes.length = 0; notes.push(...await drainLoad());
-      } else {
-        drainToast('补开失败：' + ((r && r.error) || '未知'), 'error');
-      }
-    } catch (e) { drainToast('补开失败：' + (e.message || e), 'error'); }
-    if (btn) { btn.disabled = false; btn.textContent = '🔁 补开未打开'; }
-    render(); await renderReplCfg();
-  };
   /* 上次扫描结果一行（任务配置顶栏下方）：本轮跑过的优先，其次读落盘的上次汇总 */
   async function renderLastScan() {
     const sv = _sel('sxScanNote');
@@ -4059,15 +5125,8 @@ async function renderScenarioDrain(container, mode) {
       ${due ? '' : '<span style="color:#d97706;margin-left:6px;">（还没到点：可在「队列 → ⚙️ 配置」把要跑的类型改成「每轮跑」）</span>'}`;
   }
 
-  /* 顶栏「🔁 补开未打开」+ 它右边的「⚙︎」小弹窗（自动补开开关 / 点赞增量阈值）
-     这两颗在笔记池的顶栏上（2026-10-24 从任务配置顶栏搬来），配置页和列表页都要挂 */
-  const replRunBtn = _sel('replRun');
-  if (replRunBtn) replRunBtn.onclick = () => runReplenish();
-  const replCfgBtn = _sel('replCfgBtn');
-  if (replCfgBtn) replCfgBtn.onclick = () => { const p = _sel('replPop'); if (p) p.style.display = p.style.display === 'none' ? '' : 'none'; };
-
   if (isCfg) {
-    await renderScanCfg();   // 里面顺带重挂补开弹窗内容 / 上次扫描那行
+    await renderScanCfg();   // 里面顺带重挂「上次扫描」那行
     // 别的 Tab 点「✨找词 / 🏷话题」跳过来 → 交接意图：渲染完直接把候选区拉出来
     const want = _cfgWant;
     _cfgWant = null;
@@ -4101,33 +5160,81 @@ async function renderScenarioDrain(container, mode) {
       paintWaterN();
     });
   }
-  /* 💧 灌水历史（原「灌水规则」页尾的表，那页 2026-09-25 并进拟人化与触达）：同一套折叠块，点开才拉明细 */
-  const awFold = _sel('sxAwHistFold');
-  if (awFold && typeof renderWaterHistory === 'function') {
-    awFold.style.display = '';
-    const hBody = _sel('sxAwHistBody');
-    const hNum = _sel('sxAwHistN');
-    const paintHistN = async () => {
-      if (!hNum || typeof waterHistoryCountLabel !== 'function') return;
-      try { hNum.textContent = await waterHistoryCountLabel(); } catch (_) {}
-    };
-    await paintHistN();
-    awFold.addEventListener('toggle', () => {
-      if (!awFold.open) return;
-      if (hBody) renderWaterHistory(hBody);
-      paintHistN();
-    });
+  /* 📊 这几天（按天的处理/评论账）：进页先画一次；列表本身不用等它 */
+  paintDaily();
+
+  /* 📈 拓客复盘并进这张表（2026-11-08）：顶部汇总/建议、表里评论列、池外评论都归它管。
+     数据只读账本；采纳才写扫描屏蔽词 / 这个号补的规矩。 */
+  let revCtx = null;
+  let revBusy = false;
+  let revFail = '';
+  let revProgress = '';
+  let revAutoTried = false;
+  const revLoad = async () => {
+    if (!window.AcquireReview) { revCtx = null; return; }
+    try { window.AcquireReview.injectStyle(); } catch (_) {}
+    try { revCtx = await window.AcquireReview.load(); } catch (_) { revCtx = null; }
+  };
+  const revChanged = async () => {
+    await revLoad();
+    paintRevTop();
+    render();
+  };
+  const paintRevBar = () => {
+    const hint = _sel('sxRevHint');
+    const btn = _sel('sxGrade');
+    const ready = !!(revCtx && window.AcquireReview);
+    const pend = ready ? window.AcquireReview.pending(revCtx) : 0;
+    if (hint) hint.textContent = !ready ? '' : (revBusy ? (revProgress ? `AI 正在判 ${revProgress}` : 'AI 正在判…') : (pend ? `${pend} 条待判` : (revCtx.rows3.length ? '都判完了' : '最近 3 天没有记录')));
+    if (btn) {
+      btn.style.display = ready ? '' : 'none';
+      btn.disabled = !ready || revBusy || !pend;
+      btn.textContent = revBusy ? 'AI 正在判…' : 'AI 判一遍';
+    }
+  };
+  const paintRevTop = () => {
+    if (!revCtx || !window.AcquireReview) return;
+    const top = _sel('sxReviewTop');
+    if (top) {
+      top.innerHTML = window.AcquireReview.topHtml(revCtx, { fail: revFail });
+      window.AcquireReview.bindTop(top, revCtx, revChanged);
+    }
+    const foot = _sel('sxReviewFoot');
+    if (foot) foot.innerHTML = window.AcquireReview.versionsHtml(revCtx) || '';
+    paintRevBar();
+  };
+  async function revRunGrade() {
+    if (revBusy || !revCtx || !window.AcquireReview) return;
+    revBusy = true;
+    revFail = '';
+    revProgress = '';
+    paintRevBar();
+    try {
+      const res = await window.AcquireReview.grade(revCtx, (done, total) => {
+        revProgress = `${done} / ${total}`;
+        paintRevBar();
+      });
+      revFail = res.fail || '';
+      if (!res.fail && res.graded) drainToast(`判完了：${res.graded} 条`);
+      await revLoad();
+    } catch (e) {
+      revFail = (e && e.message) || String(e);
+    }
+    revBusy = false;
+    revProgress = '';
+    paintRevTop();
+    render();
   }
-  // 补开弹窗内容（「🔁 补开未打开」和它右边的 ⚙︎ 现在挂在笔记池顶栏上，进页就得先画好）
-  await renderReplCfg();
+  const revGradeBtn = _sel('sxGrade');
+  if (revGradeBtn) revGradeBtn.onclick = revRunGrade;
+  await revLoad();
 
   function render() {
-    if (isCfg) return;   // 配置页没有列表 DOM：扫描/补开回调里调 render 时直接跳过
+    if (isCfg) return;   // 配置页没有列表 DOM：回调里调 render 时直接跳过
     const lst = notes.filter(n => (st.scenario === 'all' || n.scenario === st.scenario));
     const byType = SCENARIO_DRAIN.map(s => ({ s, n: notes.filter(x => drainScenarioId(x.scenario) === s.scenario).length })).filter(x => x.n > 0);
     const deadN = notes.filter(x => x.dead).length;
     _sel('sxCount').textContent = `共 ${notes.length} 篇` + (byType.length > 1 ? '（' + byType.map(x => x.s.icon + x.n).join(' ') + '）' : '') + ` · 当前 ${lst.length} 篇` + (deadN ? ` · ⛔作废 ${deadN} 篇` : '');
-    if (!lst.length) { _sel('sxList').innerHTML = '<div class="sx-empty">列表为空<br/>在「🎯 获客」里打开/分析笔记会自动入列，也可以点上方「🔍 扫描一轮」按关键词×类型扫一批，或「＋ 加笔记」手动加。</div>'; return; }
     const rowOf = (n) => {
       const s = drainScenarioDef(n.scenario);
       const dead = !!n.dead;
@@ -4137,10 +5244,13 @@ async function renderScenarioDrain(container, mode) {
       const mc = sg.myComment;
       // 列窄：过万的数字压成「1.2万」，别把表格撑开
       const num = (v) => (v == null ? '—' : (Number(v) >= 10000 ? (Number(v) / 10000).toFixed(1).replace(/\.0$/, '') + '万' : v));
+      const nv = (v) => (v == null ? '<span class="sx-nums-empty">—</span>' : num(v));
+      const cmts = (revCtx && window.AcquireReview) ? window.AcquireReview.rowsOfNote(revCtx, n) : [];
       const mcTxt = (mc && mc.found)
         ? `<span style="color:#0a8f4c;font-weight:600;">第${mc.rank || '?'}位</span>${mc.likes != null ? `<span style="color:#8a8f99;"> 👍${num(mc.likes)}</span>` : ''}`
         : (mc && mc.checked ? '<span style="color:#dc2626;">没找到</span>' : '<span style="color:#c7ccd4;">—</span>');
       const sub = [n.author ? escHtml(n.author) : '', '入列 ' + fmtTime(n.addedAt), n.lastJudgedAt ? '判于 ' + fmtTime(n.lastJudgedAt) : ''].filter(Boolean).join(' · ');
+      const rec = _snapForNote(n);
       return `
         <tr${dead ? ' style="opacity:.55;"' : ''}>
           <td class="sx-t-type">
@@ -4150,44 +5260,54 @@ async function renderScenarioDrain(container, mode) {
             <div class="sx-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="跑法：${escAttr(drainPbTip(n.scenario, st.cfg))}">${escHtml(drainPlaybookLabel(n.scenario))}</div>
           </td>
           <td class="sx-col-note">
-            <a data-act="open" data-id="${n.id}" href="${escAttr(n.url || ('https://www.xiaohongshu.com/explore/' + (n.noteId || '')))}" title="在工作台打开这篇（搜标题末尾减3字 → 按作者名定位 → 点开）：${escAttr(n.title || '(无标题)')}">${escHtml(n.title || '(无标题)')}</a>
+            <div class="sx-note-t" title="${escAttr(n.title || '(无标题)')}">${escHtml(n.title || '(无标题)')}</div>
+            ${_recLine(rec)}
             <div class="sx-sub sx-sub-row">
               <span class="sx-sub-tx" title="${escAttr(sub)}">${sub}</span>
               <button class="sx-row-del" data-act="drop" data-id="${n.id}" title="从笔记池移除（只把这条从监控列表拿掉，不删笔记）">✕</button>
             </div>
           </td>
-          <td class="sx-t-num" title="打开这篇时从评论区数到的点赞数">
-            ${sg.likes == null ? '<span class="sx-nums-empty">—</span>' : num(sg.likes)}
-          </td>
-          <td class="sx-t-num" title="打开这篇时从评论区数到的一级评论数">
-            ${sg.comments == null ? '<span class="sx-nums-empty">—</span>' : num(sg.comments)}
-          </td>
-          <td class="sx-t-num sx-t-sub" title="打开这篇时从评论区数到的二级评论（回复）数">
-            ${sg.subComments == null ? '<span class="sx-nums-empty">—</span>' : num(sg.subComments)}
+          <td class="sx-t-nums" title="打开这篇时从评论区数到的：点赞 / 一级评论 / 二级评论">
+            ${nv(sg.likes)} / ${nv(sg.comments)} / ${nv(sg.subComments)}
           </td>
           <td class="sx-t-judge">
-            <span class="sx-judge ${j.tone}" title="${escAttr(dead ? ('已作废：' + (n.deadReason || '标题+作者都搜不到') + ' · ' + fmtTime(n.deadAt) + '（点标题可再试一次打开，成功就复活）') : j.verdict)}">${j.verdict}</span>
+            <span class="sx-judge ${j.tone}" title="${escAttr(dead ? ('已作废：' + (n.deadReason || '标题+作者都搜不到') + ' · ' + fmtTime(n.deadAt)) : j.verdict)}">${j.verdict}</span>
             <div class="sx-sub" title="我的评论（活水：还在不在前排）">我的评论 ${mcTxt}</div>
           </td>
-          <td class="sx-t-ops">
-            <button class="sx-open" data-act="open" data-id="${n.id}" title="在工作台打开这篇：跳到「🎯 获客 · 工作台」并加载它的评论（工作台正忙时会拦下不让开）">打开</button>
-          </td>
+          <td class="sx-t-cmt">${(revCtx && window.AcquireReview) ? window.AcquireReview.cellHtml(revCtx, cmts) : '<div class="sx-cmt-none">—</div>'}</td>
         </tr>`;
     };
+    // 池外：最近 3 天评过、但已经不在笔记池里的笔记，摆在表格最后，别让这些评论漏看
+    const outHtml = (revCtx && window.AcquireReview && st.scenario === 'all')
+      ? window.AcquireReview.outsideGroups(revCtx, notes).map(g => {
+          const t = g.title || '（未记标题）';
+          return `
+          <tr style="opacity:.78;background:#fcfcfd;">
+            <td class="sx-t-type"><span class="sx-judge purple">池外</span><div class="sx-sub">已移出池子</div></td>
+            <td class="sx-col-note">
+              <div class="sx-note-t" title="${escAttr(t)}">${escHtml(t)}</div>
+              <div class="sx-sub">不在笔记池 · 最近 3 天 ${g.rows.length} 条</div>
+            </td>
+            <td class="sx-t-nums"><span class="sx-nums-empty">—</span></td>
+            <td class="sx-t-judge"><span class="sx-judge gray">—</span><div class="sx-sub">池外不判活水</div></td>
+            <td class="sx-t-cmt">${window.AcquireReview.cellHtml(revCtx, g.rows)}</td>
+          </tr>`;
+        }).join('')
+      : '';
+    // 池子空但池外还有评论：照样把表画出来，别把最近 3 天发出去的评论藏了
+    if (!lst.length && !outHtml) { _sel('sxList').innerHTML = '<div class="sx-empty">列表为空<br/>队列按排班扫到笔记后会自动进来。</div>'; paintRevBar(); return; }
     _sel('sxList').innerHTML = `
       <table class="pl-table sx-table">
         <thead>
           <tr>
             <th class="sx-t-type">类型</th>
-            <th>笔记</th>
-            <th class="sx-t-num" title="打开这篇时从评论区数到的点赞数">点赞</th>
-            <th class="sx-t-num" title="打开这篇时从评论区数到的一级评论数">评论</th>
-            <th class="sx-t-num sx-t-sub" title="打开这篇时从评论区数到的二级评论（回复）数">二级评论</th>
+            <th class="sx-col-note">笔记 · 跑了什么</th>
+            <th class="sx-t-nums" title="打开这篇时从评论区数到的：点赞 / 一级评论 / 二级评论">赞/评/回</th>
             <th class="sx-t-judge">判定 · 我的评论</th>
-            <th class="sx-t-ops">操作</th>
+            <th class="sx-t-cmt">我们回的（最近 3 天，摊开）</th>
           </tr>
         </thead>
-        <tbody>${lst.map(rowOf).join('')}</tbody>
+        <tbody>${lst.map(rowOf).join('')}${outHtml}</tbody>
       </table>`;
     _sel('sxList').querySelectorAll('select[data-scenario]').forEach(sel => {
       sel.onchange = async () => {
@@ -4205,109 +5325,11 @@ async function renderScenarioDrain(container, mode) {
         const note = notes.find(n => n.id === id);
         if (!note) return;
         const act = btn.getAttribute('data-act');
-        if (act === 'open') { ev.preventDefault(); drainOpenInWorkbench(note); return; }
         if (act === 'drop') { ev.preventDefault(); notes = notes.filter(n => n.id !== id); drainSave(notes); render(); }
       };
     });
-  };
-
-  // 抓当前页笔记（脚本读 current tab 的标题/指标）
-  _sel('sxGrab').onclick = async () => {
-    if (st.busyGrab) return;
-    st.busyGrab = true; _sel('sxGrab').textContent = '抓取中…';
-    try {
-      const data = await drainGrabActiveNote();
-      if (!data) { drainToast('当前不是小红书笔记页（需打开一篇 /explore/ 的笔记）', 'warn'); }
-      else {
-        const exists = notes.find(n => n.url === data.url);
-        if (exists) { drainToast('该笔记已在监控列表'); }
-        else {
-          const sc = st.scenario === 'all' ? 'latest' : st.scenario;
-          const sig = { likes: data.likes != null ? data.likes : null, comments: data.comments, collects: data.collects, rank: 0, delta: 0, title: data.title };
-          notes.unshift({ id: _uid(), scenario: sc, url: data.url, title: data.title, author: data.author, signals: sig, addedAt: Date.now(), lastJudgedAt: Date.now() });
-          await drainSave(notes);
-          drainToast(`已加入 → ${drainScenarioDef(sc).label}`);
-        }
-      }
-    } catch (e) { drainToast('抓取失败：' + (e.message || e), 'warn'); }
-    st.busyGrab = false; _sel('sxGrab').textContent = '📥 抓当前笔记入列';
-    render();
-  };
-
-  // 粘贴链接加入
-  _sel('sxUrl').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    const url = _sel('sxUrl').value.trim();
-    if (!/xhs|xiaohongshu/.test(url)) { drainToast('不是小红书链接', 'warn'); return; }
-    _sel('sxUrl').value = '';
-    if (notes.find(n => n.url === url)) { drainToast('已在列表'); return; }
-    const sc = st.scenario === 'all' ? 'latest' : st.scenario;
-    notes.unshift({ id: _uid(), scenario: sc, url, title: '（待抓取标题）', signals: {}, addedAt: Date.now() });
-    drainSave(notes); drainToast('已按链接加入，点「打开」在工作台里加载这篇的评论/指标'); render();
-  });
-
-  /* 工作台是不是正忙（队列在跑 / 正在扫一篇 / 有别的操作占着页面）——忙的时候别去抢页面 */
-  function drainWorkbenchBusy() {
-    try {
-      if (window.AutoBot && window.AutoBot.running) return window.AutoBot.paused ? '队列已暂停但还占着工作台' : '队列正在跑';
-      if (window.__botEngineBusy) return '自动化正在跑';
-      if (window.__scanRunning) return '正在扫一篇笔记';
-      const ov = document.getElementById('lockOverlay');
-      if (ov && ov.style.display && ov.style.display !== 'none') {
-        const t = document.getElementById('lockOverlayText');
-        return (t && t.textContent) ? t.textContent.replace(/^[^\u4e00-\u9fa5]+/, '') : '有操作正在进行';
-      }
-    } catch (_) {}
-    return '';
-  }
-
-  /* 📋 笔记列表「打开」：跳到「🎯 获客 · 工作台」并在那边打开这篇（评论也在工作台里加载，
-     指标/二级评论数随这次打开回写列表）。
-     工作台正忙时不抢页面：队列跑着的笔记正开着，再开一篇会把它的进度打断。 */
-  async function drainOpenInWorkbench(note) {
-    if (!note) return;
-    if (!note.noteId && !note.title) { drainToast('这篇既没有 ID 也没有标题，打不开', 'warn'); return; }
-    const busy = drainWorkbenchBusy();
-    if (busy) { drainToast('工作台有任务在忙（' + busy + '），等它跑完再打开', 'warn'); return; }
-    if (typeof window.switchMainTab === 'function') window.switchMainTab('comment');
-    drainToast('正在工作台打开：' + String(note.title || note.noteId).slice(0, 14) + '…');
-    try {
-      const r = await chrome.runtime.sendMessage({
-        action: 'openNote',
-        note: { noteId: note.noteId || '', title: note.title || '', author: note.author || '', url: note.url || '' },
-      });
-      if (r && r.ok && r.ordered) {
-        drainToast('📤 已派给执行器打开这篇——评论/指标在它那台加载，网页这头不碰平台', 'ok');
-        return;
-      }
-      if (!r || !r.ok) {
-        const skipped = !!(r && r.skipped);
-        drainToast((skipped ? '⏭ ' : '打开失败：') + ((r && r.error) || '未知原因'), 'warn');
-        return;
-      }
-      drainToast('已打开 → 工作台正在加载评论', 'ok');
-      if (typeof window.refreshCommentAssistant === 'function') window.refreshCommentAssistant();
-    } catch (e) { drainToast('打开失败：' + (e.message || e), 'error'); }
-  }
-
-  _sel('sxRefreshAll').onclick = async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !tab.url) { drainToast('请先把要刷新的笔记页打开为当前页', 'warn'); return; }
-    const names = (typeof loadMyAccountNames === 'function') ? await loadMyAccountNames() : [];
-    let hit = 0;
-    for (const n of notes) {
-      if (n.url.split('?')[0] === tab.url.split('?')[0]) {
-        try {
-          const m = await drainReadTabMetrics(tab.id);
-          const prev = (n.signals && n.signals.likes) || 0;
-          n.signals = Object.assign({}, n.signals, m, { delta: m.likes != null && prev != null ? (m.likes - prev) : 0 });
-          if (names.length) { const mc = await drainReadMyCommentFromTab(tab.id, names); if (mc) n.signals.myComment = drainMergeMyComment(n.signals.myComment, mc); }
-          n.lastJudgedAt = Date.now(); hit++;
-        } catch (e) {}
-      }
-    }
-    await drainSave(notes); render();
-    drainToast(hit ? `已刷新 ${hit} 篇（当前页）` : '当前页不在列表，或读指标失败', hit ? 'ok' : 'warn');
+    if (revCtx && window.AcquireReview) window.AcquireReview.bindCell(_sel('sxList'), revCtx, revChanged);
+    paintRevBar();
   };
 
   _sel('sxFilter').onchange = (e) => { st.scenario = e.target.value; render(); };
@@ -4318,7 +5340,13 @@ async function renderScenarioDrain(container, mode) {
   };
   chrome.storage.onChanged.addListener(_drainNotesChanged);
   notes = await drainLoad();
+  paintRevTop();
   render();
+  /* 真号第一次进来：有没判的就自动判一遍（同一条判过的不再花钱）。演示号不自动跑。 */
+  if (!revAutoTried && revCtx && !revCtx.readOnly && window.AcquireReview && window.AcquireReview.pending(revCtx)) {
+    revAutoTried = true;
+    revRunGrade();
+  }
   try {
     const result = await chrome.runtime.sendMessage({ action: 'drainImportFound' });
     if (!result || !result.ok) throw new Error((result && result.error) || '后台未返回结果');
@@ -4595,7 +5623,7 @@ async function handleDrainTrackNotes(data) {
 }
 
 async function handleDrainScan(data) {
-  // 🛡 账号安全：静默期 / 单休 / 起床前 / 发布占线 → 这轮扫描不跑（自动与手动同一口径）
+  // 🛡 账号安全：静默期 / 起床前 / 发布占线 → 这轮扫描不跑（自动与手动同一口径）
   try {
     if (typeof AccountGuard !== 'undefined') {
       const wall = await AccountGuard.blockAllReason();
@@ -4623,6 +5651,15 @@ async function handleDrainScan(data) {
 
   let foundNew = 0, refreshed = 0;
   let allEmpty = 0, anyFail = false;
+  let blocked = 0;
+  /* 📈 复盘采纳的屏蔽词：搜到标题/作者命中就整篇跳过，不再进池、也不再补开 */
+  const blockWords = (Array.isArray(cfg.blockWords) ? cfg.blockWords : [])
+    .map(w => String(w || '').trim()).filter(Boolean);
+  const blockHit = (n) => {
+    if (!blockWords.length) return '';
+    const hay = String((n && n.title) || '') + ' ' + String((n && n.author) || '');
+    return blockWords.find(w => hay.indexOf(w) >= 0) || '';
+  };
   const detail = [];
   for (let i = 0; i < srcs.length; i++) {
     const src = srcs[i];
@@ -4649,6 +5686,7 @@ async function handleDrainScan(data) {
       const noteId = n.noteId;
       if (!noteId) continue;
       seen.add(noteId);
+      if (blockHit(n)) { blocked++; continue; }
       const key = (x) => x.noteId === noteId || (n.noteId && x.url && x.url.includes(noteId));
       const exist = notes.find(key);
       if (exist) {
@@ -4700,7 +5738,7 @@ async function handleDrainScan(data) {
       ? '所有来源都未提取到笔记：多半是浏览器未登录小红书，或那个标签页没在有结果的搜索页。请登录后重试。'
       : '没有新笔记（本轮来源已扫描）。详情见下方。';
   }
-  cfg.lastScanSummary = { foundNew, refreshed, backfilled, missDiscarded, total: notes.length, at: Date.now(), detail, note, imported: importedWater };
+  cfg.lastScanSummary = { foundNew, refreshed, backfilled, missDiscarded, blocked, total: notes.length, at: Date.now(), detail, note, imported: importedWater };
   if ((data && data.autoScanMin) != null) cfg.autoScanMin = data.autoScanMin;
   await drainSaveScanCfg(cfg);
 
@@ -4815,7 +5853,7 @@ async function _drainReopenNote(note, tab, myNames) {
 let _drainReplenishing = false;
 async function handleDrainReplenish(data) {
   if (_drainReplenishing) return { ok: true, busy: true };
-  // 🛡 账号安全：静默期 / 单休 / 起床前 / 发布占线 → 这轮不补开（手动按钮也一样，会提示原因）
+  // 🛡 账号安全：静默期 / 起床前 / 发布占线 → 这轮不补开（手动按钮也一样，会提示原因）
   try {
     if (typeof AccountGuard !== 'undefined') {
       const wall = await AccountGuard.blockAllReason();
@@ -4875,7 +5913,7 @@ async function handleDrainSaveReplenishCfg(data) { const repl = await drainSaveR
  * background 侧：真正调 AI 生成某场景评论（onMessage 'drainComment'）
  * ===================================================================== */
 /* AI 找词按玩法出（2026-11-02）：每个玩法一套口径，别拿一套词喂所有玩法。
-   2026-11-04 三层：老板在排班卡里自己写的那句 > 这个号的行业口径包 > 下面这套内置（亲子口径）。 */
+   2026-11-04 三层：老板在排班卡里自己写的那句 > 这个号的行业口径包（铺底子时抄进配置）> 下面这套中性内置。 */
 function drainAiKeywordRule(scenario, city, customRule, cfg) {
   /* 老板在「玩法排班 → 出词策略」里自己写过一句就用人家那句；没写才看包里有没有本行那句 */
   const own = String(customRule || '').trim();
@@ -4885,44 +5923,62 @@ function drainAiKeywordRule(scenario, city, customRule, cfg) {
   const c = String(city || '').trim() || '（城市没填：先用「本地城市」占位）';
   switch (drainScenarioId(scenario)) {
     case 'latest':
-      return '玩法＝本地泛搜索：出「' + c + ' + 带娃场景」的宽词（如「' + c + ' 周末带娃」「' + c + ' 幼儿园放学」），每个词都要带「' + c + '」，别带本行品类词。';
+      return '玩法＝本地泛搜索：出「' + c + ' + 本地日常场景」的宽词（如「' + c + ' 周末去哪」「' + c + ' 附近推荐」），每个词都要带「' + c + '」，别带本行品类词。';
     case 'top':
-      return '玩法＝TOP搜索：出全国流量的行业词、痛点词、人群词，不用带城市（如「孩子坐不住怎么办」），要能搜到高赞笔记。';
+      return '玩法＝TOP搜索：出全国流量的行业词、痛点词、人群词，不用带城市（如「这件事怎么办」），要能搜到高赞笔记。';
     case 'local':
-      return '玩法＝同城本业：出「' + c + ' + 本行核心品类」的挑机构词（如「' + c + ' 少儿美术」「' + c + ' 美术班哪家好」），每个词都要带「' + c + '」；也可以出本地同品类的通用叫法（如「' + c + ' 儿童体能馆」），用来找到同行笔记下的人；绝不要编具体品牌名。';
+      return '玩法＝同城本业：出「' + c + ' + 本行核心品类」的挑选词（如「' + c + ' 本行品类」「' + c + ' 品类哪家好」），每个词都要带「' + c + '」；也可以出本地同品类的通用叫法，用来找到同行笔记下的人；绝不要编具体品牌名。';
     case 'pain':
       return '玩法＝咨询帖：出求助、避雷口吻的词（求推荐 / 听劝 / 哪家好 / 避雷 / 踩坑），可以不带城市；别出品牌名。';
     case 'cross':
-      return '玩法＝同城异业：只出「' + c + ' + 别的行业品类」的词（如艺体之外的舞蹈、美术、口才、书法、托管），每个词都要带「' + c + '」；绝不出本行品类词。';
+      return '玩法＝同城异业：只出「' + c + ' + 别的行业品类」的词（本地常见的几个异业品类各配一条），每个词都要带「' + c + '」；绝不出本行品类词。';
     case 'rival':
-      return '玩法＝同行/竞对：只出「' + c + ' + 同品类机构/门店的通用叫法」5~8 个（如「' + c + ' 儿童体能馆」「' + c + ' 体适能机构」），纯名字、不带广告词；绝不要编具体品牌名——真正的同行品牌由用户自己往词池里填。';
+      return '玩法＝同行/竞对：只出「' + c + ' + 同品类门店的通用叫法」5~8 个，纯名字、不带广告词；绝不要编具体品牌名——真正的同行品牌由用户自己往词池里填。';
   }
   return '';
 }
 
-/* 提店口径（2026-11-02 定，2026-11-04 补：包里那句优先）：每个玩法在排班卡里选「不提 / 只提身份 / 可报店名」。
-   公开评论区永远不许主动报店名——「可报店名」也只到「对方问起才报」为止。 */
-function drainStoreRule(store, cfg) {
-  const key = (store === 'identity' || store === 'store') ? store : 'none';
-  const own = String((((drainPackOf(cfg) || {}).storeRules) || {})[key] || '').trim();
-  if (own) return own;
-  if (key === 'identity') return '【提店口径】可以在句尾自然带一句「我是做这行的 / 我就是教这个的」，让本地人知道你的身份；但绝不报店名、机构名、地址、价格、联系方式。';
-  if (key === 'store') return '【提店口径】对方明确问起「哪家 / 在哪 / 多少钱」时才可以报店名；不主动报，不写价格、不写联系方式、不发链接。';
-  return '【提店口径】一个字都不提自己做什么、在哪、什么店：只像一个懂行的本地人说话。';
+/* 提店口径（2026-11-09 并成一份）：每个玩法在玩法配置里选「不提 / 只提身份 / 讲案例 / 可报店名」。
+   报价、联系方式、站外链接四档都不许写；「可报店名」只给咨询帖这种放心写的玩法。
+   铺底子时从行业模板抄进来的那份说法存在 cfg.pbStoreRules，有就用它。 */
+function drainStoreRule(store, cfg, opt) {
+  const o = opt || {};
+  const priv = !!o.private;
+  const guide = String(o.guide || '');
+  const key = (store === 'identity' || store === 'case' || store === 'store') ? store : 'none';
+  const own = String((((cfg || {}).pbStoreRules) || {})[key] || '').trim();
+  const L = ['【能提自己到哪一步】'];
+  if (own) L.push(own.replace(/^【提店口径】/, '').trim());
+  else if (priv) {
+    if (key === 'store') L.push('这个号这一趟：私信里对方问起，就可以报自己开的店、说清你怎么做；不报价、不留站外联系方式、不发链接。');
+    else if (key === 'case') L.push('这个号这一趟：私信里可以讲自己开店的实情、带过的人、经手的案例——只用人设里写过的，没写过的不编；不报店名、不报价。');
+    else if (key === 'identity') L.push('这个号这一趟：私信里可以自然带一句「我是做这行的」，让本地人知道你的身份；但不主动报店名、不报价。');
+    else L.push('这个号这一趟：私信里也不提自己做什么、在哪、什么店：先只当一个懂行的本地人说话。');
+  } else {
+    if (key === 'store') L.push('这个号这一趟：对方明确问起你开的哪家、怎么做，就直接说清自己的店和做法；不写地址、不主动揽客，报价、联系方式、站外链接都不写。前面若写着「不报店」，指的是不主动揽客，问起可以报。');
+    else if (key === 'case') L.push('这个号这一趟：可以讲自己开店的实情、带过的人、经手的案例——只用人设里写过的，没写过的一个字不编；不报店名、不说产品、不报价、不留联系方式。前面若写着「不暴露自己是谁／是做什么的」，按这一条：身份和真事可以讲，店名和产品不提。');
+    else if (key === 'identity') L.push('这个号这一趟：可以在句尾带一句「我自己开过店／我是做这行的」，让人知道你是同行；不报店名、不说产品、不报价、不留联系方式。');
+    else L.push('这个号这一趟：一个字都不提自己做什么、有什么工具、做过什么案例。');
+  }
+  /* 同行揽客、避雷吐槽的帖子：只解决问题，不露自己（2026-11-07 定的，四档都保留） */
+  if (!priv) L.push('同行在揽客、避雷吐槽的帖子：一句都不提自己，先把他的问题解决。');
+  /* 只有配成「私信我」的玩法才提价格往私信走；不引导的玩法说了这句就自相矛盾 */
+  if (!priv && guide === 'dm') L.push('对方问价格就说「价格私信说」。');
+  return L.join('\n');
 }
 
-/* 私信按玩法开口（2026-11-02）：同一句私信模板，来源玩法不同，开口角度也不同。
-   2026-11-04：先读这个号的行业口径包（pb[id].dm），没包才用下面这套亲子口径。 */
+/* 私信按玩法开口（2026-11-09）：同一份私信模板，来源玩法不同，开口角度也不同。
+   铺底子时抄进来的那句话存在 cfg.pbDm，没有就用中性内置。 */
 function drainPlaybookDmRule(id, cfg) {
-  const own = drainPbCopy(cfg, id, 'dm');
+  const own = String(((cfg || {}).pbDm || {})[drainScenarioId(id)] || '').trim();
   if (own) return own;
   const key = drainScenarioId(id);
   return {
-    latest: '来源＝本地泛搜索：对方是在同城带娃笔记下留言的本地家长。开场聊本地带娃的实情，别报价、别发链接。',
+    latest: '来源＝本地泛搜索：对方是在同城笔记下留言的本地人。开场聊本地的实情，别报价、别发链接。',
     top: '来源＝TOP搜索：对方是在全国热帖下留言的人，可能不在本地。先接住他评论里的具体问题，别一上来问城市。',
-    local: '来源＝同城本业：对方已经在挑机构，也可能是在同行/机构笔记评论区看到的。先给一条判断，产品只轻带一句；别主动报店名，绝不提在谁的评论区看到他。',
+    local: '来源＝同城本业：对方已经在挑、在比较，也可能是在同行笔记评论区看到的。先给一条判断，别主动报店名，绝不提在谁的评论区看到他。',
     pain: '来源＝咨询帖：对方在求助或避雷。先正面回答他问的那件事，再给价值；不推销、不趁机贬低同行。',
-    cross: '来源＝同城异业：对方是在别家行业笔记下留言的本地家长。从孩子那个具体困扰切进来，别暴露职业。',
+    cross: '来源＝同城异业：对方是在别家行业笔记下留言的本地人。从那个具体困扰切进来，别暴露职业。',
     rival: '来源＝同行/竞对：对方是在竞品评论区看到的精准顾客。绝不提「在某某笔记看到你」，用自己踩过的坑破冰。',
     highv: '来源＝大V：对方是在头部博主评论区留言的人。用「赞同＋本行视角」承接，别让人觉得你是在捞人。',
   }[key] || '来源不明的线索：只按对方评论原话自然接话，别猜场景。';
@@ -4968,7 +6024,7 @@ function drainResolveGuide(config) {
   return p || DRAIN_GUIDE_DEFAULT;
 }
 
-/* 同城本业合并同行后（2026-11-02）：同行/机构在招生卖课的帖子不留言，只收评论区里的人。
+/* 同城本业合并同行后（2026-11-02）：同行卖课招生的帖子不留言，只收评论区里的人。
    固定词先挡一道、省一次 AI；没挡住的交给提示词里的 AI 再判——两边都判「能评」才评。 */
 const DRAIN_SOLICIT_WORDS = ['招生', '开班', '名额有限', '课程顾问', '体验课', '预约试听', '报名咨询', '扫码加', '私信咨询'];
 function drainLooksSolicit(data, cfg) {
@@ -4976,10 +6032,71 @@ function drainLooksSolicit(data, cfg) {
   return drainSolicitWords(cfg).some(w => blob.indexOf(w) >= 0);
 }
 
+/* 2026-11-10：AI 有时把「这篇不值得评／没有评论的必要」这种判断句当成评论吐出来，
+   以前只认整句「跳过」，这类解释句就被当评论发了出去。出口统一过这一道：
+   读起来像在解释这篇笔记的，一律当成「没写」——宁可这篇不评，也不把解释发到别人的评论区。 */
+const DRAIN_META_PHRASE = /(评论(?:的)?必要|值得评论|适合评论|没必要评论|不用评论|无需评论|不需要评论|没有可评论|没什么可评|无可评|不值得评|不适合评|不评了|(这条|这篇|本条|这则)[^。！？!?\n]{0,8}(不评|跳过)|跳过(?:这条|这篇|这则|本条)?)/;
+function drainLooksMetaText(raw) {
+  const s = String(raw || '').trim()
+    .replace(/^(?:```(?:json|text)?|"""|''')/, '').replace(/(?:```|"""|''')$/, '')
+    .replace(/^[\s"'“”「」【】]+|[\s"'“”「」【】]+$/g, '').trim();
+  if (!s) return true;
+  const first = (s.split(/[。！？!?\n]/)[0] || '').trim();
+  if (/^(跳过|skip|不评论|不适合评论|不值得评论|没必要评论|无需评论|不用评论)[。.!！?？\s]*$/i.test(first)) return true;
+  if (/^(分析|结论|判断|说明|复盘)\s*[:：]/.test(first)) return true;
+  if (/^(这篇|本条|这则|这个笔记|本文|该笔记)[^。！？!?\n]{0,12}(笔记|内容|帖子|文章)[^。！？!?\n]{0,24}(没|不|无|评论|必要|值得|适合|跳过)/.test(first)) return true;
+  if (DRAIN_META_PHRASE.test(s)) return true;
+  if (/^(the note|this note|analysis|conclusion|skip)\b/i.test(first)) return true;
+  if (/no need to comment|not (?:worth|suitable for) comment/i.test(s)) return true;
+  return false;
+}
+/* 判/写合一（2026-11-10）：一次 AI 请求同时给出「值不值得评」和「要发的那句」。
+   AI 没按 JSON 回时把原文当评论，仍然过上面那道闸，不因为格式不对就乱发。 */
+function drainParseJudgeJson(raw) {
+  const s = String(raw || '').trim().replace(/^(?:```(?:json)?|""")/, '').replace(/(?:```|""")$/, '').trim();
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  try { const o = JSON.parse(s.slice(a, b + 1)); return (o && typeof o === 'object') ? o : null; } catch (_) { return null; }
+}
+/* 评论区里这条像不像同行（店、老师、机构、招生号）：通用机构词先挡一道，
+   挡不住的交给 AI 判；两边都判不准时，求助帖里按同行处理（宁可漏一个，不误回一个同行）。
+   这里只放跟行业无关的词，别把某个行业的名词写死进来。 */
+const DRAIN_PEER_NAME_WORDS = ['培训', '教育', '艺术', '工作室', '机构', '学院', '俱乐部', '老师', '教练', '助教', '顾问', '官方', '客服', '招生', '报名', '体验课', '店', '馆'];
+const DRAIN_PEER_BODY_WORDS = ['免费试', '欢迎来试', '可以来试', '欢迎咨询', '私信咨询', '扫码加', '加微信', '报名咨询', '预约试听', '我们机构', '我们店', '我们馆', '我们工作室', '我们中心'];
+function drainLooksPeerComment(author, text, cfg) {
+  const name = String(author || '');
+  const body = String(text || '');
+  const words = (typeof drainSolicitWords === 'function') ? drainSolicitWords(cfg) : [];
+  if (words.some(w => w && (body.indexOf(w) >= 0 || name.indexOf(w) >= 0))) return true;
+  if (DRAIN_SOLICIT_WORDS.some(w => body.indexOf(w) >= 0)) return true;
+  if (DRAIN_PEER_BODY_WORDS.some(w => body.indexOf(w) >= 0)) return true;
+  return DRAIN_PEER_NAME_WORDS.some(w => name.indexOf(w) >= 0);
+}
+/* 小红书一条评论最多 300 字，超了发不出去：先按句子收，收不住就硬截 */
+function drainClipComment(text, max) {
+  const s = String(text || '');
+  const n = Math.max(1, Math.floor(Number(max) || 300));
+  if (s.length <= n) return s;
+  const head = s.slice(0, n);
+  const cut = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'), head.lastIndexOf('…'), head.lastIndexOf('\n'));
+  return (cut >= Math.floor(n * 0.6) ? head.slice(0, cut + 1) : head).trim();
+}
 async function handleDrainComment(data) {
   const sc = (SCENARIO_DRAIN || []).find(s => s.scenario === (data && data.scenario));
   if (!sc) throw new Error('未知截流场景: ' + (data && data.scenario));
+  const _pvOnly = !!(data && (data.preview || data.previewOnly));
+  const isJudge = !!(data && data.judge);   // 判这篇＋写评论合成一次（2026-11-10）
+  const _pvMat = drainPromptMaterial('note', data || {});
   const config = await Storage.getConfig();
+  /* 🧩 评论场景表（2026-11-11）：认场景/情况、按说法参考改写 2～3 句候选。
+     表读不到就当没有：老链条照旧只写一句，不因为新表挂了就不评。 */
+  let _ccCards = null, _ccMenu = '';
+  try {
+    if (typeof DrainCards !== 'undefined' && DrainCards) {
+      _ccCards = await DrainCards.getCards();
+      _ccMenu = DrainCards.sceneMenuText(_ccCards, { kind: 'note' });
+    }
+  } catch (_) {}
   let store = (data && data.store) || '';
   let talkBlock = '';
   let scanCfg = null;
@@ -4989,50 +6106,278 @@ async function handleDrainComment(data) {
     scanCfg = await drainGetScanCfg();
     plan = drainPbPlan(scanCfg, data.scenario);
     if (!store) store = plan.store;
+    /* 没设城市＝判断不了同城，连“我是做这行的”也不提，避免在外地帖乱认老乡（事实前提） */
+    if (!String((scanCfg && scanCfg.city) || '').trim()) store = 'none';
     // 这个玩法配好的那段话：当参考带进评论，不逐字照抄
     talkBlock = drainTalkBlock(drainPbTalkOf(scanCfg, data.scenario));
-    stratRule = drainStrategyRule(scanCfg, data.scenario);
+    /* 判这一篇：动作还没判出来，不能先把渠道那行「只回评论区 / 只收人」塞进去，
+       只留「怎么开口 / 引导」那两行；动作等下面类型表一起给 */
+    stratRule = drainStrategyRule(scanCfg, data.scenario, (data && data.act) || '');
+    if (isJudge) stratRule = stratRule.split('\n').slice(1).join('\n');
   } catch (_) {}
-  /* 配成「只回评论区 / 只收人」的玩法不在笔记下面露面（2026-11-04） */
-  if (plan && (plan.mode === 'reply' || plan.mode === 'people')) {
-    return {
-      ok: true, skip: true, comment: '', scenario: data.scenario,
-      reason: '这个玩法配的是「' + DRAIN_PB_MODE[plan.mode] + '」：不在笔记下面评',
-    };
+  /* 配成「只回评论区 / 只收人」的渠道不在笔记下面露面（2026-11-04）；
+     判这一篇时照样要判——类型表还没出来，不能在这道闸前收队 */
+  const _actNow = String((data && data.act) || '') || (plan && plan.mode) || '';
+  if (!isJudge && plan && (_actNow === 'reply' || _actNow === 'people')) {
+    const reason = '这个玩法配的是「' + DRAIN_PB_MODE[plan.mode] + '」：不在笔记下面评';
+    if (_pvOnly) return { ok: true, preview: true, skip: reason, prompts: { system: '', user: '' } };
+    await drainPromptSave({ act: 'note', scenario: data.scenario, skip: reason, material: _pvMat });
+    return { ok: true, skip: true, comment: '', scenario: data.scenario, verdict: isJudge ? 'none' : undefined, reason: reason };
   }
   /* 同行/揽客帖这道闸挪到读完配置之后：判「像不像揽客」的词表要按这个号的行业口径包补（2026-11-04） */
   if (drainScenarioId(data && data.scenario) === 'local' && drainLooksSolicit(data, scanCfg)) {
-    return {
-      ok: true, skip: true, comment: '', scenario: data.scenario,
-      reason: drainPackOf(scanCfg) ? '同行在揽客的帖子：只收人、不留言' : '同行/机构招生帖：只收人、不留言',
-    };
+    const reason = '同行在揽客的帖子：只收人、不留言';
+    if (_pvOnly) return { ok: true, preview: true, skip: reason, prompts: { system: '', user: '' } };
+    await drainPromptSave({ act: 'note', scenario: data.scenario, skip: reason, material: _pvMat });
+    return { ok: true, skip: true, comment: '', scenario: data.scenario, verdict: isJudge ? 'none' : undefined, reason: reason };
   }
   const aiCfg = Object.assign({}, config.ai || {}, { maxTokens: 900 });
-  if (!aiCfg.apiKey && !aiCfg.fallbackApiKey) throw new Error('尚未配置 AI（请在设置里填 API Key）');
+  if (!_pvOnly && !aiCfg.apiKey && !aiCfg.fallbackApiKey) throw new Error('尚未配置 AI（请在设置里填 API Key）');
   const product = (config.product && config.product.name) || '本产品';
   /* 引导那句：玩法上配了明确档位就用它，配「跟账号资料」才用账号资料那句 */
   const guide = drainGuideByPlan(scanCfg, data.scenario) || drainResolveGuide(config);
   const payload = Object.assign({}, data, {
     product, guide,
-    storeRule: drainStoreRule(store, scanCfg),
+    /* 判这一篇：提店档还没判出来，先不塞渠道那档，等类型表一起给 */
+    storeRule: isJudge
+      ? '提店到哪一步，按这次判出的笔记类型表里那一档来：不提 / 只提身份 / 讲案例 / 可报店名；报价、联系方式、站外链接一律不写。'
+      : drainStoreRule(store, scanCfg, { guide: plan ? plan.guide : '' }),
     personaBlock: drainPersonaBlock(config),
   });
-  /* 提示词本体也先读包：包里写了这个玩法的 system/user 就用包里那句，没写才用内置那套 */
-  const sysBuiltin = drainPbCopy(scanCfg, data.scenario, 'system') || sc.system;
-  const userBuiltin = drainPbCopy(scanCfg, data.scenario, 'user') || sc.user;
-  let sysPrompt = _fillSentiment(sysBuiltin, payload);
-  /* 顺序跟「回评论区那句」对齐：提店（已在 payload.storeRule）→ 策略 → 话术 */
-  if (stratRule) sysPrompt += '\n\n【这一趟的评论策略（跟「回评论区那句」用的是同一段）】\n' + stratRule;
+  /* 提示词本体：铺底子时抄进 cfg.pbPrompt 的那份优先，没有才用内置 */
+  const ownPrompt = ((scanCfg || {}).pbPrompt || {})[drainScenarioId(data.scenario)] || {};
+  const sysBuiltin = String(ownPrompt.system || '').trim() || sc.system;
+  const userBuiltin = String(ownPrompt.user || '').trim() || sc.user;
+  /* 五块，一句只说一次：你是谁 → 这一趟要干什么 → 能提自己到哪一步 → 话术库 → 红线 */
+  const personaHead = '【你是谁】\n这个号就是你在打理。下面这段人设就是你的真实身份、经历和立场，不能改、不能演别人：\n'
+    + String(payload.personaBlock || '（这个号还没填人设：就按一个懂行的真人说，别装专家、也别说外行话）')
+    + '\n人设里写过的经历、数字可以自然用；没写过的一律不许编，别把自己写成顾客、路人或别的职业。';
+  const cityLine = (['latest', 'local', 'cross'].indexOf(drainScenarioId(data.scenario)) >= 0)
+    ? '\n你是本地人，就在' + (payload.city || '本地') + '做这一行。' : '';
+  /* 铺过底子的号：模板里自己就带人设 / 提店那两段，外面不再叠一遍 */
+  const tplHasPersona = /\{persona_block\}|【这个账号是谁】/.test(sysBuiltin);
+  const tplHasStore = /\{store_rule\}|【提店口径】|【能提自己到哪一步】/.test(sysBuiltin);
+  let sysPrompt = tplHasPersona ? '' : (personaHead + cityLine);
+  const stratLines = stratRule ? stratRule.split('\n') : [];
+  const modeLine = stratLines.shift() || (isJudge
+    ? '先判这一篇是什么帖，再按「笔记类型表」里这一类的动作来：评不评、怎么评、能提到哪一步。'
+    : '');
+  const whoBlock = drainWhoBlock(scanCfg, data.scenario);
+  const whoText = whoBlock ? whoBlock.replace('【这个玩法捞谁·为了什么】\n', '') : '';
+  sysPrompt += '\n\n【这一趟要干什么】\n' + modeLine;
+  if (whoText) sysPrompt += '\n捞谁：' + whoText.replace(/\n/g, ' ');
+  sysPrompt += '\n' + _fillSentiment(sysBuiltin, payload);
+  if (stratLines.length) sysPrompt += '\n' + stratLines.join('\n');
+  sysPrompt += '\n语感：像本人随手打字，不用「首先 / 总之 / 建议收藏」这种腔，不堆四字词。';
+  if (!tplHasStore && !isJudge) sysPrompt += '\n\n' + drainStoreRule(store, scanCfg, { guide: plan ? plan.guide : '' });
   if (talkBlock) sysPrompt += '\n\n' + talkBlock;
-  const r = await AiClient.chatCompletion(aiCfg, sysPrompt, _fillSentiment(userBuiltin, payload));
+  sysPrompt += '\n\n【话术库（每条挑一种说法，整批别一个套路）】\n' + talkStyleCatalog();
+  sysPrompt += '\n\n【红线】\n不出现站外平台名、链接、二维码、微信号；不承诺效果（几天见效、涨多少粉）；不贬低同行、不点名别家。';
+  if (isJudge) {
+    const relText = data.matched === 'highv' ? '大V（「盯的账号」名单里的头部博主）'
+      : data.matched === 'rival' ? '竞对／同行' : '普通作者';
+    const _hrs = Number(data.publishAt) > 0 ? (Date.now() - Number(data.publishAt)) / 3600000 : null;
+    const timeText = (_hrs == null || _hrs < 0) ? '发布时间没读到（不要据此判断新不新）' : ('发布于 ' + _hrs.toFixed(1) + ' 小时前');
+    const likes = (data.likes != null && Number.isFinite(Number(data.likes))) ? String(data.likes) : '没读到';
+    const cmts = (data.commentsCount != null && Number.isFinite(Number(data.commentsCount))) ? String(data.commentsCount) : '没读到';
+    sysPrompt += '\n\n【先判这一篇是什么帖，再按笔记类型决定这篇怎么跑】\n'
+      + '类型可以多个（比如既是「求助咨询帖」又是「同城本业」），第一个当主类型；只填这张表里的 id：\n'
+      + drainNoteTypeMenuText(scanCfg) + '\n'
+      + '多类型同时命中：评论动作跟主类型；提店取最严的一档（不提 < 只提身份 < 讲案例 < 可报店名）；'
+      + '只要命中「广告招生帖」就不留言、只收人（candidates 和 comment 留空、verdict="none"）；只要命中「悲伤纠纷帖」就完全不碰（verdict="blocked"）。\n'
+      + '判类型只看这篇本身是什么帖，不要因为「是哪个词搜到的」就将就。\n'
+      + '\n【值不值得评】\n'
+      + '先看硬条件，命中任意一条 → verdict="blocked"：招聘/招人/招商加盟；纯广告/硬广/带货链接/引流别处；吵架/维权/纠纷/挂人；悲伤/病痛/事故/悼念；纯带货（通篇卖货、没有可聊的内容）。\n'
+      + '再看有没有可聊的空间：grab＝有明确观点/槽点/经验/问题，评论区还没形成定论，现在留一条本行视角能被看到、能接话；worth＝有可聊的点但不急，正常评一句；none＝没话说，或话题已经闭环，评了也是废话。\n'
+      + '作者是' + relText + '：' + (data.matched === 'highv'
+        ? '只借势（赞同＋补一句本行视角），不抢话、不教育博主；内容没得接就 none。'
+        : (data.matched === 'rival' ? '一律 none（不评论）。' : '按上面正常判断。')) + '\n'
+      + '不要因为「发布得新」就硬评；新只影响优先级，不影响值不值得。\n'
+      + 'verdict 是 none / blocked 时，candidates 和 comment 都留空。\n'
+      + '写 candidates 时，「提店到哪一步」以这次判出的类型表那一档为准；上面若给了更宽的说法（比如可报店名），一律按类型表收窄。\n'
+      + '这是笔记下面的一条公开评论（不是回某个评论人）：博主正文就在讲某个具体场景时，用对应的普通场景卡；正文是在讲一类现象、没有具体场景时，用 #first_ 开头的「首评」卡。\n'
+      + '认场景卡先看它标注的「适用类型」：只从跟这次判出的类型有交集的卡里认；没标适用类型的卡＝通用，都能用；对不上任何一张卡就填 "scene":"none"（未收录），最多给一句共情或一句内行判断，拿不准就不给候选，绝不硬套。\n'
+      + 'candidates / comment 只能是要发出去的话本身：不许写「这篇/本条/分析/结论/跳过/没必要/不值得」这类判断和解释，不许提 AI、不许说明你为什么写或不写。\n'
+      + (isJudge && _ccMenu ? ('\n' + _ccMenu + '\n') : '')
+      + '输出只给一个 JSON（不要 markdown、不要多余文字）：\n'
+      + '{"note_types":["bigv|help|localbiz|localcross|normal|ad|sad"],"main_type":"上面第一个","verdict":"grab|worth|none|blocked","reason":"一句话说清为什么","block":"招聘|纯广告|纠纷|悲伤|纯带货|","scene":"场景 id 或 none","branch":2,"candidates":[{"angle":"共情接住","text":"候选1"},{"angle":"方法拆解","text":"候选2"}],"comment":"（可留空；程序从 candidates 随机选一句）"}';
+    sysPrompt += '\n【笔记信息】\n作者：' + (data.noteAuthor || '未知') + '（' + relText + '）\n' + timeText + '\n赞：' + likes + ' · 评论：' + cmts;
+  } else {
+    sysPrompt += '\n\n【只输出】\n直接返回评论正文，不要解释、不要标题、不要分点。';
+  }
+  let userPrompt = _fillSentiment(userBuiltin, payload);
+  /* 2026-11-11：玩法模板最后一句常是「直接返回评论文本」，跟判帖那段「只回 JSON」顶牛，
+     模型照最后一句办，场景/候选整段白写。判帖时删掉这几句，把 JSON 要求压在最末。 */
+  if (isJudge) {
+    userPrompt = userPrompt.replace(/直接返回[^。\n]*。?/g, '').trim();
+    userPrompt += '\n\n【最后一步·按这个回，覆盖上面所有出稿要求】'
+      + '\n只回一个 JSON 对象，不要 markdown、不要代码块、不要在 JSON 前后写任何字：'
+      + '\n{"note_types":["bigv|help|localbiz|localcross|normal|ad|sad"],"main_type":"上面第一个","verdict":"grab|worth|none|blocked","reason":"一句话原因","block":"招聘|纯广告|纠纷|悲伤|纯带货|","scene":"场景 id 或 none","branch":1,"candidates":[{"angle":"八类之一","text":"候选句"},{"angle":"八类之一","text":"候选句"}],"comment":""}'
+      + '\nverdict=grab/worth 也要给 scene、branch、2～3 句 candidates；comment 留空，程序从 candidates 里随机挑一句。';
+  }
+
+  if (_pvOnly) return { ok: true, preview: true, comment: '', scenario: data.scenario, prompts: { system: sysPrompt, user: userPrompt } };
+  const _t0 = Date.now();
+  const r = await AiClient.chatCompletion(aiCfg, sysPrompt, userPrompt);
+  const _ms = Date.now() - _t0;
+  const _usage = (r && r.usage) || {};
   let text = String((r && r.content) || '').trim();
+  let verdict = '', block = '', aiReason = '', noteTypes = [], mainType = '', typePlan = null;
+  /* 🧩 场景 / 情况 / 候选（2026-11-11）：AI 只认和写，选哪一句由程序随机 */
+  let cardScene = '', cardBranch = 0, cardCands = [], cardBlocked = [], cardPick = null, cardAngle = '';
+  if (isJudge) {
+    const o = drainParseJudgeJson(text);
+    if (o) {
+      const v = String(o.verdict || '').trim();
+      verdict = ['grab', 'worth', 'none', 'blocked'].indexOf(v) >= 0 ? v : 'none';
+      block = String(o.block || '').trim().slice(0, 20);
+      aiReason = String(o.reason || '').trim().slice(0, 200);
+      noteTypes = (Array.isArray(o.note_types) ? o.note_types : [o.note_types || o.note_type])
+        .map(drainNoteTypeId).filter((id, i, a) => id && a.indexOf(id) === i);
+      mainType = drainNoteTypeId(o.main_type) || noteTypes[0] || '';
+      /* 名单认到的作者不让 AI 改类型：大V＝只借势，竞对＝同行招生（只收人） */
+      if (data.matched === 'highv') { noteTypes = ['bigv']; mainType = 'bigv'; }
+      else if (data.matched === 'rival') { noteTypes = ['ad']; mainType = 'ad'; }
+      typePlan = drainNoteTypePlan(scanCfg, noteTypes);
+      text = String(o.comment || '').trim();
+      cardScene = String(o.scene || '').trim();
+      cardBranch = Math.max(0, parseInt(o.branch, 10) || 0);
+      if (typeof DrainCards !== 'undefined' && DrainCards) {
+        cardCands = DrainCards.normalizeCands(o.candidates).slice(0, 4);
+        if (cardScene && cardScene !== 'none' && _ccCards) {
+          const _card = DrainCards.findCard(_ccCards, cardScene);
+          /* 按类型取卡（2026-11-12）：卡标了适用类型、但跟这次判出的类型一个都不对 → 算未收录，
+             不把这张卡记成用过的（句子里没编材料就照发，编了材料由下面的红线/出口闸兜） */
+          const _cardTypes = (_card && Array.isArray(_card.types)) ? _card.types : [];
+          const _hit = !_cardTypes.length || !noteTypes.length || _cardTypes.some(t => noteTypes.indexOf(t) >= 0);
+          if (!_card || !_hit) cardScene = 'none';
+        }
+        if (cardCands.length) {
+          const _recent = await DrainCards.recentTexts(7);
+          cardPick = DrainCards.pickCandidate(cardCands, _recent, { angleMax: 2 });
+          cardAngle = cardPick.angle || '';
+          cardBlocked = cardPick.blocked || [];
+          text = cardPick.picked || '';
+          if (!text) aiReason = cardPick.reason || '候选都跟最近 7 天撞了';
+        }
+      }
+    } else {
+      /* AI 没按 JSON 回：把原文当评论，仍然过下面的闸（格式不对不等于可以乱发） */
+      verdict = drainLooksMetaText(text) ? 'none' : 'worth';
+      aiReason = 'AI 没按格式回，按正文当评论处理';
+    }
+  }
   text = text.replace(/^(```(?:json|text)?|"""|''')/, '').replace(/(```|"""|''')$/, '').trim();
   text = text.replace(/^["']|["']$/g, '').trim();
-  // ★ 「不适合就不评」闸门：评论笔记本身的场景，AI 判断这篇/这个口吻不适合时只回「跳过」
-  //   （竞对=send:'none' 生成的是私信开场白，不适用这道闸门）
-  const isNoteComment = drainPlaybookOf(data.scenario).send !== 'none';
-  if (isNoteComment && (!text || /^(跳过|skip|不适合评论|不评论)[。.!！?？]?$/i.test(text))) {
-    return { ok: true, skip: true, comment: '', scenario: data.scenario, reason: 'AI 判断这篇笔记（或博主口吻）不适合评论' };
+  /* 笔记类型表定这篇能做到哪一步（2026-11-12）：悲伤＝完全不碰，广告＝不留言只收人。
+     这两档在 AI 写之前就由表定了，写回来的那句话一律不作数。 */
+  if (isJudge && typePlan && typePlan.mode === 'block') {
+    const tName = (DRAIN_NOTE_TYPE_DEF[typePlan.mainType] || {}).name || '这类帖';
+    const reason = tName + '：完全不碰，不评也不收';
+    await drainPromptSave({
+      act: 'note', scenario: data.scenario, sys: sysPrompt, user: userPrompt,
+      raw: text, skip: reason, ms: _ms, tokensIn: _usage.prompt_tokens || 0,
+      tokensOut: _usage.completion_tokens || 0, model: aiCfg.model, material: _pvMat,
+    });
+    return {
+      ok: true, skip: true, comment: '', scenario: data.scenario,
+      verdict: 'blocked', block: block || '', reason: reason,
+      ms: _ms, tokensIn: _usage.prompt_tokens || 0, tokensOut: _usage.completion_tokens || 0,
+      prompts: { system: sysPrompt, user: userPrompt },
+      noteType: mainType, noteTypes: noteTypes, mainType: mainType,
+      typeMode: 'block', typeAct: '', typeStore: 'none', typeCollect: false,
+    };
   }
-  return { comment: text, scenario: data.scenario };
+  if (isJudge && typePlan && typePlan.mode === 'silent') {
+    const tName = (DRAIN_NOTE_TYPE_DEF[typePlan.mainType] || {}).name || '这类帖';
+    const reason = tName + '：不留言，只收人';
+    await drainPromptSave({
+      act: 'note', scenario: data.scenario, sys: sysPrompt, user: userPrompt,
+      raw: text, skip: reason, ms: _ms, tokensIn: _usage.prompt_tokens || 0,
+      tokensOut: _usage.completion_tokens || 0, model: aiCfg.model, material: _pvMat,
+    });
+    return {
+      ok: true, skip: true, comment: '', scenario: data.scenario,
+      verdict: 'none', block: block || '', reason: reason,
+      ms: _ms, tokensIn: _usage.prompt_tokens || 0, tokensOut: _usage.completion_tokens || 0,
+      prompts: { system: sysPrompt, user: userPrompt },
+      noteType: mainType, noteTypes: noteTypes, mainType: mainType,
+      typeMode: 'silent', typeAct: 'people', typeStore: 'none', typeCollect: typePlan.collect,
+    };
+  }
+  // ★ 出口硬闸（2026-11-10）：「不适合就不评」＋「AI 想解释」都按跳过记，绝不把解释当成评论发出去
+  //   （竞对=send:'none' 生成的是私信开场白，同样不许发解释句）
+  const looksMeta = drainLooksMetaText(text);
+  const verdictAllows = !verdict || verdict === 'grab' || verdict === 'worth';
+  if (looksMeta || !verdictAllows) {
+    const reason = (cardPick && !cardPick.picked)
+      ? (cardPick.reason || '候选都跟最近 7 天撞了，这条不发')
+      : (!verdictAllows
+        ? (aiReason || 'AI 判断这篇不值得评论')
+        : 'AI 想解释，没发（没有可发的评论正文）');
+    await drainPromptSave({
+      act: 'note', scenario: data.scenario, sys: sysPrompt, user: userPrompt,
+      raw: text, skip: reason, ms: _ms, tokensIn: _usage.prompt_tokens || 0,
+      tokensOut: _usage.completion_tokens || 0, model: aiCfg.model, material: _pvMat,
+      sceneCard: cardScene, branch: cardBranch, angle: cardAngle,
+      candidates: cardCands, blocked: cardBlocked, pickReason: cardPick ? cardPick.reason : '',
+    });
+    try {
+      if (typeof DrainCards !== 'undefined' && DrainCards) {
+        await DrainCards.recordDecision({
+          kind: 'note', scenario: data.scenario, noteId: data.noteId || '',
+          noteTitle: data.title || data.noteTitle || '', peer: '（这篇笔记本身）',
+          scene: cardScene, branch: cardBranch, angle: cardAngle,
+          candidates: cardCands, picked: '', blocked: cardBlocked,
+          reason: reason, verdict: isJudge ? (verdict || 'none') : '',
+        });
+      }
+    } catch (_) {}
+    return {
+      ok: true, skip: true, comment: '', scenario: data.scenario,
+      verdict: isJudge ? (verdict || 'none') : undefined, block: block || '', reason: reason,
+      noteType: isJudge ? mainType : undefined, noteTypes: noteTypes, mainType: mainType,
+      typeMode: typePlan ? typePlan.mode : '', typeAct: typePlan ? typePlan.act : '',
+      typeStore: typePlan ? typePlan.store : '', typeCollect: typePlan ? typePlan.collect : null,
+      sceneCard: cardScene || undefined, branch: cardBranch || undefined, angle: cardAngle || '',
+      candidates: cardCands.length ? cardCands : undefined, blocked: cardBlocked.length ? cardBlocked : undefined,
+      pickReason: cardPick ? cardPick.reason : '',
+      ms: _ms, tokensIn: _usage.prompt_tokens || 0, tokensOut: _usage.completion_tokens || 0,
+      prompts: { system: sysPrompt, user: userPrompt },
+    };
+  }
+  const used = drainClipComment(text, 300);
+  await drainPromptSave({
+    act: 'note', scenario: data.scenario, sys: sysPrompt, user: userPrompt,
+    raw: text, used: used, ms: _ms, tokensIn: _usage.prompt_tokens || 0,
+    tokensOut: _usage.completion_tokens || 0, model: aiCfg.model, material: _pvMat,
+    sceneCard: cardScene, branch: cardBranch, angle: cardAngle,
+    candidates: cardCands, blocked: cardBlocked, pickReason: cardPick ? cardPick.reason : '',
+  });
+  try {
+    if (typeof DrainCards !== 'undefined' && DrainCards) {
+      await DrainCards.recordDecision({
+        kind: 'note', scenario: data.scenario, noteId: data.noteId || '',
+        noteTitle: data.title || data.noteTitle || '', peer: '（这篇笔记本身）',
+        scene: cardScene, branch: cardBranch, angle: cardAngle,
+        candidates: cardCands, picked: used, blocked: cardBlocked,
+        reason: cardPick ? cardPick.reason : '老链路只写了一句，没有候选',
+        verdict: isJudge ? verdict : '',
+      });
+    }
+  } catch (_) {}
+  return {
+    comment: used, scenario: data.scenario,
+    verdict: isJudge ? verdict : undefined, block: block || '', reason: aiReason,
+    noteType: isJudge ? mainType : undefined, noteTypes: noteTypes, mainType: mainType,
+    typeMode: typePlan ? typePlan.mode : '', typeAct: typePlan ? typePlan.act : '',
+    typeStore: typePlan ? typePlan.store : '', typeCollect: typePlan ? typePlan.collect : null,
+    sceneCard: cardScene || undefined, branch: cardBranch || undefined,
+    sceneName: (() => { try { const c = _ccCards && DrainCards.findCard(_ccCards, cardScene); return c ? c.name : ''; } catch (_) { return ''; } })(),
+    sceneBranchLabel: (() => { try { const c = _ccCards && DrainCards.findCard(_ccCards, cardScene); return c ? DrainCards.branchLabel(c, cardBranch) : ''; } catch (_) { return ''; } })(),
+    angle: cardAngle || '', candidates: cardCands.length ? cardCands : undefined,
+    blocked: cardBlocked.length ? cardBlocked : undefined, pickReason: cardPick ? cardPick.reason : '',
+    ms: _ms, tokensIn: _usage.prompt_tokens || 0, tokensOut: _usage.completion_tokens || 0,
+    prompts: { system: sysPrompt, user: userPrompt },
+  };
 }

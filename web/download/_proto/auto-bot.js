@@ -26,6 +26,29 @@
 
   function $$(sel, ctx) { return Array.from((ctx || document).querySelectorAll(sel)); }
 
+  /* 这一轮搜索（我刚点下去的那一轮）是不是已经跑完——不管它报的是什么词 */
+  function _searchDoneThisRound(ss, t0) {
+    ss = ss || {};
+    var fresh = (Number(ss.searchStartedAt) || 0) >= t0 - 3000;   // 新一轮的开始时间必须在我点之前 3 秒内
+    return !!(fresh && ss.searching === false);
+  }
+  /* 跑完了、而且词也对 */
+  function _searchFreshEnough(ss, t0, wantKw) {
+    ss = ss || {};
+    var kwOk = !wantKw || String(ss.currentKeyword || '') === wantKw;
+    return !!(_searchDoneThisRound(ss, t0) && kwOk);
+  }
+  /* TOP 玩法（活水）：笔记排在搜索前 30 名才值得补评论；同一篇 6 小时内最多补一条 */
+  var TOP_MAX_POS = 30;
+  var TOP_REWATER_MS = 6 * 3600000;
+  /* 界面上这份名单和后台这一轮的结果对得上几篇（0＝完全是上一轮的名单） */
+  function _listStateOverlap(domIds, wantIds) {
+    var hit = 0;
+    domIds = domIds || []; wantIds = wantIds || [];
+    for (var i = 0; i < domIds.length; i++) { if (wantIds.indexOf(domIds[i]) >= 0) hit++; }
+    return hit;
+  }
+
   /* ─── 事件驱动的等待函数（MutationObserver） ─── */
 
   /**
@@ -151,15 +174,9 @@
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
-  /* ─── 节奏控制：每日/每轮次数门禁（读 auto_water_daily = { 'YYYY-MM-DD': count }，与设置页共享） ─── */
+  /* ─── 每日评论计数（队列页底部「今日评论 N」显示用）───
+     2026-11-09 老板定：它只记账，不再当上限拦人。 */
   function _awTodayKey() { return new Date().toISOString().slice(0, 10); }
-  async function _awDailyUsed() {
-    try {
-      const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_daily', res); });
-      const d = (r && r['auto_water_daily']) || {};
-      return Number(d[_awTodayKey()]) || 0;
-    } catch (_) { return 0; }
-  }
   async function _awDailyBump(n) {
     try {
       const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_daily', res); });
@@ -168,13 +185,6 @@
       await new Promise(function (res) { chrome.storage.local.set({ auto_water_daily: d }, res); });
       return d[_awTodayKey()];
     } catch (_) { return 0; }
-  }
-  /* 读 auto_water_config.schedule（dailyMax/perRound），0=不限 */
-  async function _awSchedule() {
-    try {
-      const r = await new Promise(function (res) { chrome.storage.local.get('auto_water_config', res); });
-      return ((r && r['auto_water_config'] && r['auto_water_config'].schedule) || {});
-    } catch (_) { return {}; }
   }
 
   /* ─── 发消息给 background（带超时兜底，防止后台不响应导致 bot 永久卡死） ─── */
@@ -206,12 +216,19 @@
     // ★ 血缘校验：广播若带了 noteId，且不是我当前正在等的这篇，直接忽略——防止上（前）一篇的迟到信号误结当前篇
     if (nid && _signalNoteId && nid !== _signalNoteId) return;
     window.removeEventListener('xhsAiScanDone', _onAiScanDone);
-    var ok = !!(d && d.ok);
+    // ★ 2026-11-05：不再只带「成/不成」，把 popup 判定的真实原因一起带回来——
+    //   以前 12 个不同出口全写成「无商机」，老板看不出到底卡在哪一步。
+    var r = {
+      ok: !!(d && d.ok),
+      code: (d && d.code) || '',
+      label: (d && d.label) || '',
+      noteReview: (d && d.noteReview) || null
+    };
     if (_aiSignalResolve) {
-      var r = _aiSignalResolve;
+      var res = _aiSignalResolve;
       _aiSignalResolve = null;
       _signalNoteId = '';
-      r(ok);
+      res(r);
     }
   }
 
@@ -265,6 +282,8 @@
       console.log('[Bot][' + timeStr + '] ' + msg);
     }
   }
+  /* 内核那段（搜索/换词/排序）不在这个页面里，写不进这条日志——给它个钩子，它自己会来拿 */
+  window.__xhsBotLog = botLog;
 
   /* ============================================================
      自动灌水机器人核心
@@ -293,7 +312,7 @@
         botLog('⏳ 机器人已在运行中', 'warn');
         return;
       }
-      // 🛡 账号安全：静默期 / 单休 / 起床前 / 发布占线 → 这趟不新起
+      // 🛡 账号安全：静默期 / 起床前 / 发布占线 → 这趟不新起
       //    （网页上手点的单会带一张「手点这一轮」的放行票，静默期照跑；票是否有效由 AccountGuard 判）
       try {
         if (typeof AccountGuard !== 'undefined') {
@@ -310,14 +329,14 @@
       this.waitUntil = 0;    // 等到的时刻（遮罩上倒计时用；0＝没有确定时刻）
       this.waitWhy = '';     // 在等什么（一句白话，遮罩直接显示）
       this.autoMode = !!(opts && opts.auto);
+      /* 🧠 一趟＝队列里的一个细项（2026-11-09 老板定）：这一行跑完就收工，下一次再跑下一行。
+         seg='daily' 只刷一轮首页；不带 seg 的老单（手点「开始」）也按「只跑一个细项」算。 */
+      this.segMode = (opts && opts.seg === 'daily') ? 'daily' : 1;
       this._autoStopN = 0;
       /* 服务器按平台暂停/没认号算出来的"这趟跳过哪几头"（xhs / dy）：那几头的趟这轮一律不取 */
       this.skipPlats = (opts && Array.isArray(opts.skipPlats))
         ? opts.skipPlats.filter(function (p) { return p === 'xhs' || p === 'dy'; })
         : [];
-      /* 人手点的「▶ 开始」＝现在就跑：队列里没有到点的活，就自动塞一轮日常浏览（一趟只塞一次） */
-      /* 🌿 日常浏览：每趟开跑先在队首插一轮「刷首页」（一趟最多一轮，见 _runQueue） */
-      this._dailyPlugged = false;
       this.scope = scope === 'growing' ? 'growing' : 'all';
       this.pace = (pace === 'once' || pace === 'interval') ? pace : 'interval';
       // ★ 双引擎：启动即绑定水 tab（只在它上面驱动页面，客服走客服 tab，二者互不抢页）
@@ -325,10 +344,20 @@
       // ★ 手动/自动互斥：运行期间禁用列表里的单篇「🔗 打开」，避免人工点开与执行器抢同一个页面
       this._setBotLock(true);
       botLog('🤖 ===== 自动灌水启动（口径：' + (this.scope === 'growing' ? '只追涨势' : '全部未灌过') +
-        ' · 节奏：' + (this.pace === 'interval' ? '定时轮' : '一遍跑完') + (this.autoMode ? ' · 后台保底时钟拉起' : '') + '） =====', 'info');
+        ' · 一趟一个细项' + (this.autoMode ? ' · 后台保底时钟拉起' : '') + '） =====', 'info');
+      await this._codePairCheck();
       if (this.skipPlats.length) {
-        botLog('⏸ 这趟跳过「' + this.skipPlats.map(function (p) { return p === 'dy' ? '抖音' : '小红书'; }).join('、') +
-          '」那一头（后台按了暂停 / 还没认号）', 'warn');
+        /* 只提示今天队列里真被跳掉的那一头（2026-11-04）：跑小红书的趟别拿抖音的提示吓人 */
+        var _hasPlat = {};
+        try {
+          var _p0 = drainQueuePlan(await drainGetScanCfg(), await drainGetQueue(), Date.now(), await drainDailyCtx());
+          (_p0.todo || []).forEach(function (it) { if (it && it.plat) _hasPlat[it.plat] = true; });
+        } catch (_) { this.skipPlats.forEach(function (p) { _hasPlat[p] = true; }); }
+        var _hitPlats = this.skipPlats.filter(function (p) { return _hasPlat[p]; });
+        if (_hitPlats.length) {
+          botLog('⏸ 这趟跳过「' + _hitPlats.map(function (p) { return p === 'dy' ? '抖音' : '小红书'; }).join('、') +
+            '」那一头（后台按了暂停 / 还没认号）', 'warn');
+        }
       }
       this._updateUI(true);
       // 执行器状态：后台看门狗靠它判断"要不要再把窗口拉起来"（跑完/停掉都写回 false）
@@ -342,12 +371,7 @@
       var queueDone = null;
       try {
         // ★ 队列执行器：跑的是「词 × 类型」这一格一格（到点的那些格子＝队列），一格 = 一次搜索 + 按口径灌水
-        if (this.pace === 'interval') {
-          var config = await this._trendConfig();
-          botLog('⏳ 定时轮：每 ' + config.scanIntervalMin + ' 分钟跑队列里的一项（把额度摊开到一天；间隔在「🎯 获客 → ⚙️ 设置 → 🤖 跑活节奏 → ⚙️ 高级配置」里改）', 'info');
-        } else {
-          botLog('▶ 一遍跑完：从队首连跑到队尾（去「🔁 队列」页看这一队：正在跑 / 待跑 / 已完成）', 'info');
-        }
+        botLog('🧠 这一趟只跑队列里的一个细项：跑完就收工，下一次再跑下一行（两项之间公网随机歇 3~10 分钟）', 'info');
         queueDone = await this._runQueue();
       } catch (e) {
         if (e.message === '手动停止') {
@@ -383,6 +407,37 @@
       try { await chrome.runtime.sendMessage({ action: 'dailyAutoIdle' }); } catch (_) {}
     },
 
+    /* ── 开跑前的代码配套检查（2026-11-05）──
+       出过的事：新版判断跑在旧版读配置上，每一篇都被悄悄判成「不评」，日志里还看不出来。
+       这里开跑前把三样对一遍：函数在不在 → 排班读不读得出「评论策略」→ 策略值认不认得。
+       不配就红字喊出来（不拦着跑，但老板一眼能看见要重装）。 */
+    _codePairCheck: async function () {
+      var self = this;
+      var bad = [];
+      try {
+        if (typeof drainGetScanCfg !== 'function') bad.push('读配置的段（drainGetScanCfg）不在');
+        if (typeof drainPbPlan !== 'function') bad.push('算排班的段（drainPbPlan）不在');
+        if (typeof drainPlaybookOf !== 'function') bad.push('玩法表（drainPlaybookOf）不在');
+        if (typeof drainReadTabMetrics !== 'function') bad.push('读页面信息的段（drainReadTabMetrics）不在');
+        if (!bad.length) {
+          var p = drainPbPlan({ pbPlan: {} }, 'top');
+          if (!p || typeof p.mode !== 'string' || !p.mode) bad.push('排班读不出「评论策略」（mode 空）');
+          else if (['note', 'both', 'reply', 'people'].indexOf(p.mode) < 0) bad.push('评论策略的值不认识：' + p.mode);
+        }
+        ['_waterCurrentNote', '_postNoteComment', '_collectProspects'].forEach(function (k) {
+          if (typeof self[k] !== 'function') bad.push('本页缺方法 ' + k);
+        });
+      } catch (e) {
+        bad.push('自检自己出错了：' + ((e && e.message) || e));
+      }
+      if (bad.length) {
+        botLog('  ❌ 代码没配套：' + bad.join('；') + ' → 这趟的「评不评」可能全判错，跑完请重新安装执行器', 'warn');
+        return false;
+      }
+      botLog('  ✅ 代码配套自检通过：读配置 / 排班 / 评论策略 / 发送链都对得上', 'info');
+      return true;
+    },
+
     /** 执行器运行标记（后台看门狗只看这一个键；done=true 表示"到点的都跑完了"） */
     _setRunFlag: async function (running, done) {
       try {
@@ -416,9 +471,9 @@
       } catch (_) {}
     },
 
-    /** 读「💧 灌水频率与去重」里的额度控制/节奏配置（NoteTrend 侧默认值兜底） */
+    /** 读「💧 灌水频率与去重」里的扫描间隔与趋势参数（maxPerRound 不再当限流用，兜底 0＝不限） */
     _trendConfig: async function () {
-      var config = { scanIntervalMin: 10, maxPerRound: 3 };
+      var config = { scanIntervalMin: 10, maxPerRound: 0 };
       try {
         if (window.NoteTrend) {
           var c = await window.NoteTrend.getConfig();
@@ -429,36 +484,50 @@
     },
 
     /* ─── 队列执行器：串行跑「词 × 类型」一格一格 ───
-     *   一遍跑完＝从队首连跑到队尾；定时轮＝每「扫描间隔」分钟跑一项（额度摊到一天）
-     *   撞每日/每轮上限、搜索起不来 → 当前项记欠账并停下（下次点开始从它接着跑）；
+     *   一趟＝只跑队首那一项（一个细项）：这一项跑完就收工，下一次再跑下一行；
+     *   两项之间由公网随机歇 3~10 分钟，机器这边不自己排间隔。
+     *   搜索起不来 → 当前项记欠账并停下（下次点开始从它接着跑）；
      *   配置表里已经没有这一格了 → 直接丢（改表＝改队列，不留死项） */
     _runQueue: async function () {
       var self = this;
       var round = 0, completed = 0;
       var dropped = {};   // 本次跑里"丢掉了、但还挂在队头"的项 → 防止原地反复重搜
       var ran = {};       // 本次跑已跑过的项（"每轮跑"的格子跑完仍算到点，一趟里不重复跑）
-      /* 🌿 每趟开跑先插一轮日常浏览（刷首页），排在队首，获客往后退一位。
-         一趟最多插一轮；开关关着就不插。 */
-      if (!self._dailyPlugged) {
-        var _pd0 = await self._plugDailyRound();
-        if (_pd0) {
-          self._dailyPlugged = true;
-          botLog('🌿 这趟开跑先刷一轮首页（日常浏览，排第一位）', 'info');
-        }
+      /* 🧠 分段：一段只管一类活。日常浏览 2026-11-09 起是队列里的普通一行，
+         seg=1 时照队列顺序取（轮到了就跑它），不再单独拦。 */
+      if (self.segMode) {
+        try {
+          var _p0 = drainQueuePlan(await drainGetScanCfg(), await drainGetQueue(), Date.now(), await drainDailyCtx());
+          if (self.segMode === 'daily') {
+            (_p0.todo || []).forEach(function (it) {
+              if (it && it.scenario !== 'daily') ran[_drainQKey(it.k, it.scenario, it.plat, it.passId)] = true;
+            });
+          }
+          /* 开跑前提醒：缺属地 / 词已停用，别悄悄丢（2026-11-09） */
+          var _warn = [];
+          if ((_p0.noCity || []).length) {
+            var _cw = {};
+            (_p0.noCity || []).forEach(function (x) { if (x && x.k) _cw[x.k] = 1; });
+            var _cwN = Object.keys(_cw);
+            _warn.push('同城城市没填，「本地 / 异业」有 ' + _cwN.length + ' 个词跑不了（' + _cwN.slice(0, 5).join('、') + (_cwN.length > 5 ? '…' : '') + '）');
+          }
+          if ((_p0.stopped || []).length) {
+            var _sw = (_p0.stopped || []).map(function (x) { return x && x.k; }).filter(Boolean);
+            _warn.push(_sw.length + ' 个词已停用、不进队列（' + _sw.slice(0, 5).join('、') + (_sw.length > 5 ? '…' : '') + '）');
+          }
+          if (_warn.length) botLog('⚠️ 开跑前提醒：' + _warn.join('；') + ' —— 同城城市到「📊 诊断 → 基础配置 → 📍 城市」填，停用词到「获客 → 队列 → 配置」打开', 'warn');
+        } catch (_) {}
       }
       while (true) {
         await self._checkStop();
         var item = await drainQueueTake(ran);
         if (!item) {
-          /* 开跑那一刻没插上（开关刚关 / 队里已经排着一轮）：队列跑空了再试一次（还是一趟只插一轮） */
-          if (!self._dailyPlugged) {
-            self._dailyPlugged = true;
-            var _pd = await self._plugDailyRound();
-            if (_pd) {
-              botLog('🌿 队列里没有到点的活了，趁着这会儿补刷一轮首页', 'info');
-              continue;
-            }
-            botLog('🌿 队列里没有到点的活，日常浏览也没插上（开关关着 / 今天被「停止本轮」按住了）——去「获客 → 队列 → 🌿 日常浏览」看一眼', 'warn');
+          /* 🧠 一趟只跑一个细项：这一项跑完/队列里没到点的了，就明确收工，不再接着啃下一行 */
+          if (self.segMode) {
+            botLog(self.segMode === 'daily'
+              ? '✅ 这一段日常浏览刷完（下一次再刷下一轮）'
+              : '✅ 队列里现在没有到点的细项（下一次再跑下一个）', 'success');
+            return true;
           }
           var waitingN = 0, planNow = null;
           try {
@@ -512,6 +581,8 @@
           try { await drainQueueHold(item, r.why || '跑不起来'); } catch (_) {}
           try { await drainQueueLastStop(item, r.why || '跑不起来', { global: true }); } catch (_) {}
           botLog('⏸ 队列停下：' + (r.why || '跑不起来') + '——已记欠账，下次点「🤖 开始」从这一项接着跑', 'warn');
+          self._stats = self._stats || {};
+          self._stats.note = '这一行没跑成：' + (r.why || '跑不起来');
           if (self.autoMode) {
             self._autoStopN = (self._autoStopN || 0) + 1;
             if (self._autoStopN >= 3) {
@@ -536,11 +607,19 @@
           } else {
             botLog('🔴 ' + _nm + '连续 ' + _nb + ' 次没跑起来，标红等你处理：' + _why + '——队列继续往下走', 'warn');
           }
+          /* 🧠 分段：这一段没跑成也收工，把原因带回去（别接着啃下一行） */
+          if (self.segMode) {
+            self._stats = self._stats || {};
+            self._stats.note = '这一行没跑成：' + _why;
+            return false;
+          }
           continue;
         }
         ran[ik] = true;   // 跑过的不再进这一趟（"每轮跑"的格子下一趟再来）
         completed++;
         self._autoStopN = 0;   // 跑通一项就把连续失败次数清零
+        /* 🧠 一趟只跑一个细项：这一行跑完就收工——下一段由公网随机歇 3~10 分钟再派（2026-11-09） */
+        if (self.segMode) return true;
         if (self.pace === 'interval') {
           // 后面还有到点的项才等这一轮；跑完最后一项直接收尾（否则白等一个间隔才报"跑完了"）
           var nextN = 0;
@@ -560,9 +639,13 @@
     _runQueueItem: async function (item, seq) {
       var self = this;
       var card = self._qTypeName(item.scenario);
-      self._capHit = false;
-      self._guardStop = false;   // 🛡 总账拦下（额度用完/时段外）＝整项停下记欠账，跟普通"每日上限"分开报
+      self._guardStop = false;   // 🛡 总账拦下＝整项停下记欠账（额度已删，现在只留兜底）
       self._stats = { found: 0, comments: 0, notes: [] };
+      /* 🧠 分段回执要说清"这一段是哪一行"（公网按它记账） */
+      self._stats.segRow = {
+        k: item.k, scenario: item.scenario, plat: item.plat || 'xhs',
+        label: item.label || '', passLabel: item.passLabel || '',
+      };
       self._curKw = item.k;              // 💬 评论条队列的实时进度要带上"这一项是哪个词 × 哪个类型"
       self._curScenario = item.scenario;
       window.__acqCurScenario = item.scenario || '';   // 这一格是哪个玩法：回评论区那句要跟着它
@@ -594,24 +677,26 @@
       if (self.scope === 'growing') await self._roundGrowing(notes);
       else await self._roundAll(notes);
 
-      /* 🛡 账号安全拦下 / 今天评论到顶：换一项也没用，整队停（队列页顶部会说清原因） */
+      /* 🛡 账号安全拦下：换一项也没用，整队停（队列页顶部会说清原因） */
       if (self._guardStop) {
-        return { stop: true, global: true, why: '🛡 账号安全拦下（今日额度用完 / 不在能跑的时段），下次接着跑' };
+        return { stop: true, global: true, why: '🛡 账号安全拦下，下次接着跑' };
       }
-      if (self._capHit && self._capKind !== 'round') {
-        return { stop: true, global: true, why: '今天评论到上限了，明天接着跑' };
-      }
-      /* 每轮篇数跑满＝这一格这一趟该干的干完了，不算失败：记完成、换队列下一项 */
+      /* 这一格该干的干完了：记完成、等公网派下一行 */
       await drainQueueFinish(item, {
         foundN: self._stats.found,
         commentN: self._stats.comments,
         notes: self._stats.notes,
         allSkipped: !!self._allSkipped,
-        note: self._allSkipped ? '搜到的都评过了'
+        note: self._allSkipped
+          ? ((self._skipOpenedToday >= self._stats.found && self._stats.found > 0)
+            ? '搜到的今天都开过了（同一天不重开）'
+            : '搜到的都评过了')
           : (self._stats.comments > 0 ? ('评论 ' + self._stats.comments + ' 条') : '没找到可评论的'),
       });
       botLog('✅ 第 ' + seq + seqUnit + '跑完（' + cardLine + '）：搜到 ' + self._stats.found + ' 篇 · ' +
-        (self._allSkipped ? '都评过了 · 0 条' : ('评论 ' + self._stats.comments + ' 条')), 'success');
+        (self._allSkipped
+          ? ((self._skipOpenedToday >= self._stats.found && self._stats.found > 0) ? '今天都开过了 · 0 条' : '都评过了 · 0 条')
+          : ('评论 ' + self._stats.comments + ' 条')), 'success');
       return { done: true };
     },
 
@@ -693,29 +778,20 @@
       if (skip) { await drainQueueFinish(item, { note: skip }); botLog('⏭ 这一轮跳过：' + skip, 'warn'); return { done: true }; }
       if (item.manual && !cfg.enabled) botLog('ℹ️ 日常浏览总开关是关的：这一轮是你手插的，照跑一次（队列不会自动排它）', 'info');
 
-      // 🛡 账号安全：静默期/单休/发布占线 → 这轮不跑；「打开浏览」额度用完 → 记欠账（下次接着跑）
-      var _gw = null, _gLeft = Infinity;
+      // 🛡 账号安全：静默期/发布占线 → 这轮不跑（每段之间由公网歇 3~10 分钟；不再有每天额度）
+      var _gw = null;
       try {
-        if (typeof AccountGuard !== 'undefined') {
-          _gw = await AccountGuard.blockAllReason();
-          if (!_gw) {
-            var _gd = await AccountGuard.decide('open', 1);
-            if (!_gd.ok) _gw = _gd;
-            else _gLeft = Math.max(0, _gd.cap - _gd.used);
-          }
-        }
+        if (typeof AccountGuard !== 'undefined') _gw = await AccountGuard.blockAllReason();
       } catch (_) {}
       if (_gw) {
         botLog('⏹ 🛡 ' + (_gw.text || '账号安全拦下这一轮') + '，这一项先跳过', 'warn');
         return { stop: true, why: '🛡 ' + (_gw.text || '账号安全拦下这一轮') };
       }
 
-      /* 一轮刷几篇：在「下限~上限」之间随机取（默认 18~22）
-         账号安全「打开浏览」总账不够时，按剩下的量收口 */
+      /* 一轮刷几篇：在「下限~上限」之间随机取（默认 18~22） */
       var _mn = Math.max(1, Number(cfg.perRoundMin) || 18);
       var _mx = Math.max(_mn, Number(cfg.perRoundMax) || _mn);
       var count = _mn + Math.floor(Math.random() * (_mx - _mn + 1));
-      if (_gLeft < count) count = Math.max(1, _gLeft);
       var url = 'https://www.xiaohongshu.com/explore';
 
       var tabId = await self._ensureWaterTab();
@@ -762,6 +838,7 @@
       /* 这一趟的"刷了几篇日常"要跟着回执走到网页上：不然「搜到 0 篇」会被读成"根本没刷" */
       self._stats = self._stats || {};
       self._stats.daily = { name: dir.name, viewed: viewed };
+      self._stats.segRow = { k: dir.id, scenario: 'daily', plat: 'xhs', label: dir.name || '日常浏览', passLabel: '' };
       var opened = items.filter(x => x && x.opened).length;
       var liked = items.filter(x => x && x.liked).length;
       var collected = items.filter(x => x && x.collected).length;
@@ -800,24 +877,6 @@
     _dailySkipReason: function (cfg, force) {
       if (!force && (!cfg || !cfg.enabled)) return '日常浏览已关（在「获客 → 队列 → 🌿 日常浏览」里打开）';
       return '';
-    },
-    /* 每趟开跑/队列跑空时：塞一轮到队首（等同「🌿 塞一趟」）。没得塞返回 null。 */
-    _plugDailyRound: async function () {
-      try {
-        if (typeof drainDailyCtx !== 'function' || typeof drainQueuePushFront !== 'function') return null;
-        if (typeof DailyBrowse === 'undefined' || !DailyBrowse.pickDirection) return null;
-        var db = await drainDailyCtx();
-        if (!db || !db.cfg || !db.cfg.enabled) return null;
-        /* 队列里已经排着一轮（刚手插过 / 点过「🌿 日常浏览」手塞的待跑或计划 / 欠着没跑完）→ 不重复插 */
-        var q = await drainGetQueue();
-        var hasDaily = ((q && q.manual) || []).concat((q && q.carry) || []).some(function (x) { return x && x.scenario === 'daily'; })
-          || (((q && q.dailyPlan) || []).length > 0);
-        if (hasDaily) return null;
-        var pick = DailyBrowse.pickDirection(db.cfg, db.daily, Date.now());
-        if (!pick) return null;
-        await drainQueuePushFront(pick.id, 'daily', pick.name || '日常浏览');
-        return pick;
-      } catch (_) { return null; }
     },
     _dbLast: async function () {
       try {
@@ -887,6 +946,65 @@
       }
     },
 
+    /* 标题归一：判重用（去空白、去尾部省略号/标点，截 60 字） */
+    _noteTitleKey: function (t) {
+      return String(t || '').replace(/\s+/g, '').replace(/[。．.…,.!！?？~～;；:：]+$/g, '').slice(0, 60);
+    },
+
+    /* TOP 活水：同一篇补过评论的时间（drain_top_water = { noteId/标题: at }；只留 7 天） */
+    _topWaterLog: async function () {
+      try {
+        var d = await chrome.storage.local.get('drain_top_water');
+        return (d && d.drain_top_water) || {};
+      } catch (_) { return {}; }
+    },
+    _topWaterMark: async function (key) {
+      try {
+        var d = await chrome.storage.local.get('drain_top_water');
+        var m = (d && d.drain_top_water) || {};
+        var now = Date.now(), cut = now - 7 * 86400000;
+        Object.keys(m).forEach(function (k) { if (!(Number(m[k]) > cut)) delete m[k]; });
+        if (key) m[key] = now;
+        await chrome.storage.local.set({ drain_top_water: m });
+      } catch (_) {}
+    },
+
+    /* 「今天开过」账本（drain_open_day = { day, items: { 笔记ID/标题: at } }）：
+       2026-11-10 老板定：打开过、但没评上的笔记以前一点痕都不留，下一行/下一趟又把它开一遍；
+       打开成功就记一笔，当天这一篇不再重开。跨天自动清。
+       TOP 玩法不查这本账——它本来就要回看我的评论还在不在前排。 */
+    _openDayKey: function () {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    },
+    _openDayLog: async function () {
+      var today = this._openDayKey();
+      try {
+        var r = await chrome.storage.local.get('drain_open_day');
+        var log = (r && r['drain_open_day']) || null;
+        if (!log || log.day !== today || !log.items) return { day: today, items: {} };
+        return log;
+      } catch (_) { return { day: today, items: {} }; }
+    },
+    _openDayHas: async function (key) {
+      if (!key) return false;
+      try { var log = await this._openDayLog(); return !!log.items[key]; } catch (_) { return false; }
+    },
+    _openDayMark: async function (key) {
+      if (!key) return;
+      try {
+        var log = await this._openDayLog();
+        log.items[key] = Date.now();
+        var ks = Object.keys(log.items);
+        if (ks.length > 600) {
+          ks.sort(function (a, b) { return (Number(log.items[a]) || 0) - (Number(log.items[b]) || 0); })
+            .slice(0, ks.length - 600)
+            .forEach(function (k2) { delete log.items[k2]; });
+        }
+        await chrome.storage.local.set({ drain_open_day: log });
+      } catch (_) {}
+    },
+
     /* ─── 口径「全部未灌过」：当前结果逐屏推进，看到就灌（已灌过/队列已跑过的跳过） ─── */
     _roundAll: async function () {
       var self = this;
@@ -894,17 +1012,25 @@
       //   本屏可见的笔记逐篇处理完 → 滚动搜索页加载下一屏 → popup 重渲染新一批 → 继续，到底为止。
       //   避免旧逻辑"列表登记了一堆滚动后的卡片，但回顶后靠下的卡片不在 DOM"导致的 CTRL+F 找不到。
       var handledNotes = {};
+      var handledTitles = {};   // ★ 同一趟里按标题再挡一道（翻屏后列表重排会出「标题一样、ID 不同」的卡片）
       var screenGuard = 0;   // 一轮最多翻几屏，防死循环
       var SCREEN_MAX = 30;
-      // ★ 节奏控制：本轮已处理篇数 + 每日已达上限（dailyMax/perRound，0=不限）
-      var processedThisRun = 0;
-      var _triesThisRun = 0;   // ★ 这一行实际点开的篇数（失败的也算，否则页面一坏会一路试到底盘 20 篇）
-      var _awSch = await _awSchedule();
-      var _dailyMax = Number(_awSch.dailyMax) || 0;
-      /* 2026-11-03 拆行：上限按「一行（一次搜索）」算；没设过＝3 篇，不在一行上耗到底 */
-      var _perRoundCap = Number(_awSch.perRound) || 3;
+      /* 2026-11-09 老板定：这一行不再设「每轮最多处理 N 篇 / 每天最多 N 条」——
+         搜到的笔记逐篇过完，把这一细项一次刷完。只保留页面卡住的 2 分钟看门狗（那不是限流）。 */
+      var _triesThisRun = 0;   // 这一行实际点开的篇数（只用于日志）
       self._allSkipped = false;
+      self._skipOpenedToday = 0;   // 这一行里因为「今天已经开过」被跳过的篇数（只用于收尾那句话）
       var _seenNotes = 0, _skipNotes = 0;
+      /* 💧 TOP 玩法看「活水」：已评过 / 队列跑过都不等于不用看——
+         先打开看我的评论还在不在前排；还在 → 不动，掉出去 → 补一条。
+         「我的昵称」没配就查不了活水，这一行先不评（开跑前提醒会说明去哪填）。 */
+      var isTop = String(self._curScenario || '') === 'top';
+      var topNames = [], topLog = {};
+      if (isTop) {
+        try { topNames = (typeof drainMyAccountNames === 'function') ? await drainMyAccountNames() : []; } catch (_) { topNames = []; }
+        try { topLog = await self._topWaterLog(); } catch (_) { topLog = {}; }
+        if (!topNames.length) botLog('⚠️ TOP 玩法要查活水（我的评论还在不在前排），但「我的小红书昵称」还没配——这一行先不评，去「📊 诊断 → 基础配置 → 我的小红书昵称」填上再跑', 'warn');
+      }
       var notes = $$('#noteList .note-item');
       if (notes.length === 0) {
         botLog('⚠️ 笔记列表为空，结束本轮', 'warn');
@@ -913,7 +1039,7 @@
 
       while (screenGuard++ < SCREEN_MAX) {
         await self._checkStop();
-        if (self._guardStop) break;   // 🛡 总账拦下（额度用完/时段外）→ 整轮收队，上层记欠账
+        if (self._guardStop) break;   // 🛡 总账拦下 → 整轮收队，上层记欠账（额度已删，只留兜底）
         notes = $$('#noteList .note-item');
         // 按 noteId 挑第一篇“本轮未处理过”的笔记（逐屏推进后整列由 popup 重渲染，仍按 noteId 去重跳过）
         var note = null, nid = '', num = 0;
@@ -930,59 +1056,115 @@
         handledNotes[nid] = true; // 先登记，逐屏推进时据此跳过已处理的，防重复
         _seenNotes++;
 
-        // ★ 节奏控制每日/每轮门禁：达到即停（队列执行器据此把这一项记欠账，下次接着跑）
-        var _usedNow = await _awDailyUsed();
-        if (_dailyMax > 0 && _usedNow >= _dailyMax) {
-          self._capHit = true;
-          self._capKind = 'daily';
-          botLog('⏹ 已达每日评论上限 ' + _dailyMax + ' 条（今天已发 ' + _usedNow + '），本轮结束', 'warn');
-          break;
-        }
-        if (_perRoundCap > 0 && _triesThisRun >= _perRoundCap) {
-          self._capHit = true;
-          self._capKind = 'round';
-          botLog('⏹ 这一行（这次搜索）跑满 ' + _perRoundCap + ' 篇（打开失败也算，别在一行上耗到底；上限在「获客 → ⚙️ 设置 → 高级配置 → 每轮最多处理」里调），换下一行', 'warn');
-          break;
-        }
-
         // ★ 单篇出错只跳过本篇，绝不拖垮整轮（否则一异常整轮"断"）
         var noteTitle = '';
         try {
           var titleEl = note.querySelector('.note-title');
           noteTitle = titleEl ? titleEl.textContent.trim().slice(0, 30) : ('#' + num);
           var openBtn = note.querySelector('.btn-open-note');
-          // 已灌水 → 跳过（与列表徽标「全部未灌过」口径同源）
-          if (!openBtn || openBtn.dataset.watered === 'true') {
+          if (!openBtn) { _skipNotes++; botLog('⏭ 笔记 "' + noteTitle + '" 没有打开按钮，跳过', 'info'); continue; }
+          var _tk = self._noteTitleKey(titleEl ? titleEl.textContent : '');
+          if (isTop) {
+            /* TOP：已灌过 / 队列跑过都不当跳过理由，交给下面的活水判断 */
+            if (!topNames.length) { _skipNotes++; continue; }
+            var _twKey = nid || ('t:' + (_tk || noteTitle));
+            var _twLast = Number(topLog[_twKey]) || 0;
+            if (_twLast && (Date.now() - _twLast) < TOP_REWATER_MS) {
+              _skipNotes++;
+              botLog('⏭ 笔记 "' + noteTitle + '" 6 小时内补过评论，先不动', 'info');
+              continue;
+            }
+            /* 名次按这一趟一路数下来（num 只是本屏第几张，翻屏会从 1 重数） */
+            if (_seenNotes > TOP_MAX_POS) {
+              _skipNotes++;
+              botLog('⏭ 笔记 "' + noteTitle + '" 排在搜索第 ' + _seenNotes + ' 位（前 ' + TOP_MAX_POS + ' 名外），补了也没人看见', 'info');
+              continue;
+            }
+          } else {
+            // 已灌水 → 跳过（与列表徽标「全部未灌过」口径同源）
+            if (openBtn.dataset.watered === 'true') {
+              _skipNotes++;
+              botLog('⏭ 笔记 "' + noteTitle + '" 已灌水，跳过', 'info');
+              continue;
+            }
+            // 队列里已经跑过这一篇（工作台那个「✅ 队列已跑过」标）→ 也跳过，别再开一遍重评
+            var qBtn = note.querySelector('.note-q');
+            if (qBtn && qBtn.dataset.qdone === 'true') {
+              _skipNotes++;
+              botLog('⏭ 笔记 "' + noteTitle + '" 队列里已跑过，跳过', 'info');
+              continue;
+            }
+            /* 今天已经开过这一篇（打开过但没评上的以前不留痕）→ 当天不再重开 */
+            var _odKey = nid || ('t:' + (_tk || self._noteTitleKey(noteTitle)));
+            if (await self._openDayHas(_odKey)) {
+              _skipNotes++;
+              self._skipOpenedToday++;
+              botLog('⏭ 笔记 "' + noteTitle + '" 今天已经开过，不重开', 'info');
+              continue;
+            }
+          }
+          /* ★ 同一趟里同一标题只开一次：翻屏后虚拟列表会重排出「标题一样、ID 不同」的卡片，
+             光按 noteId 去重挡不住（按标题点开会把已经评过的那篇再开一遍） */
+          if (_tk && handledTitles[_tk]) {
             _skipNotes++;
-            botLog('⏭ 笔记 "' + noteTitle + '" 已灌水，跳过', 'info');
+            botLog('⏭ 笔记 "' + noteTitle + '" 这一趟已经开过（翻屏后名单重排），跳过', 'info');
             continue;
           }
-          // 队列里已经跑过这一篇（工作台那个「✅ 队列已跑过」标）→ 也跳过，别再开一遍重评
-          var qBtn = note.querySelector('.note-q');
-          if (qBtn && qBtn.dataset.qdone === 'true') {
-            _skipNotes++;
-            botLog('⏭ 笔记 "' + noteTitle + '" 队列里已跑过，跳过', 'info');
-            continue;
-          }
+          if (_tk) handledTitles[_tk] = true;
           _triesThisRun++;
-          botLog('📄 打开笔记 "' + noteTitle + '" (' + num + '/' + notes.length + ')', 'info');
+          botLog('📄 打开笔记 "' + noteTitle + '" (这一趟第 ' + _triesThisRun + ' 篇 · 本屏 ' + num + '/' + notes.length + ')', 'info');
           self._cqNoteIdx = num; self._cqNoteTotal = notes.length;
           await self._cqLive({ kw: self._curKw, scenario: self._curScenario, title: noteTitle, idx: num, total: notes.length });
 
-          var openOk = await self._openNote(self._noteFromList(nid), { recordOpened: true });
+          /* TOP 要越过后台「已有我的评论」拦截（force），不然一篇「上回评过、这回掉榜」的明明该补，
+             会被内容脚本直接判成已灌水跳过 */
+          var openOk = await self._openNote(self._noteFromList(nid), { recordOpened: true, force: isTop });
           if (!openOk) {
             if (self._guardStop) break;   // 🛡 总账拦下 → 收队（压根没离开列表，不用回退）
             // ★ 方案A下列表与页面实时一致，单篇打开失败多属偶发（页面瞬时态）→ 直接返回列表、跳过本篇继续
             await self._goBackToList();
             continue;
           }
+          /* 打开成功就记「今天开过」（不等有没有评上）：竞对这类只收人不评论的，
+             以前开完一痕不留，下一行/下一趟又把同一批全量重开一遍 */
+          if (!isTop) {
+            try { await self._openDayMark(nid || ('t:' + (_tk || self._noteTitleKey(noteTitle)))); } catch (_) {}
+          }
+
+          /* 💧 TOP 活水：打开后先看我那条评论还在不在前排（位置 + 点赞）。
+             前 3 位＝黄金位；4~10 位但有人赞（≥3）＝还在榜——都不用动；
+             掉出前排 / 这条搜索里没占位 → 补一条。查不到（页面没回话 / 没配昵称）这次不补。 */
+          if (isTop) {
+            var mc = null;
+            try { mc = (typeof drainReadMyCommentFromTab === 'function') ? await drainReadMyCommentFromTab(self.waterTabId, topNames) : null; } catch (_) { mc = null; }
+            if (!mc || !mc.checked) {
+              _skipNotes++;
+              botLog('  ⚠️ 活水没查成（页面没回话），这篇这次不补，下一圈再看', 'warn');
+              await self._goBackToList();
+              continue;
+            }
+            var _mcLikes = Number(mc.likes) || 0;
+            var _alive = !!(mc.found && ((mc.rank > 0 && mc.rank <= 3) || (mc.rank <= 10 && _mcLikes >= 3)));
+            var _where = mc.found
+              ? ('我的评论在第 ' + mc.rank + ' 位' + (mc.likes != null ? ' · 👍' + mc.likes : ''))
+              : '这条搜索里还没我的评论';
+            botLog('  💧 活水：' + _where + ' → ' + (_alive ? '还在前排，这篇不补' : (mc.found ? '掉出前排，补一条' : '还没占位，补一条')), _alive ? 'info' : 'warn');
+            if (_alive) {
+              _skipNotes++;
+              await self._goBackToList();
+              continue;
+            }
+          }
 
           // ===== 等 AI 分析并逐个发送 =====
-          var wRes = await self._waterCurrentNote(noteTitle, note, nid);
+          var wRes = await self._waterCurrentNote(noteTitle, isTop ? null : note, nid);
           var sentCount = wRes ? wRes.count : 0;
-          processedThisRun++; // ★ 节奏控制：本篇计入本轮处理篇数
+          if (isTop && sentCount > 0) {
+            /* 这一篇补过了：6 小时内不再补（记在 drain_top_water，重启也不忘） */
+            try { await self._topWaterMark(_twKey); topLog[_twKey] = Date.now(); } catch (_) {}
+          }
           if (sentCount > 0) {
-            await _awDailyBump(sentCount); // ★ 节奏控制：已发条数计入每日上限
+            await _awDailyBump(sentCount); // ★ 只记账：今天发了多少条（不再设每日上限）
             self._stats.comments += sentCount; // ★ 队列项汇总：这一项评论了几条
             // ★ 笔记级明细：✅ 已完成 里折叠展示；id 让工作台笔记列表能精确标出「队列跑过没」
             self._stats.notes.push({ id: nid || '', t: noteTitle, s: sentCount });
@@ -1011,10 +1193,12 @@
       return true;
     },
 
-    /* ─── 口径「只追涨势」：从趋势库挑点赞增长中的笔记（度控制：每轮上限/每篇总次数/同篇冷却/复核冷却） ─── */
+    /* ─── 口径「只追涨势」：从趋势库挑点赞增长中的笔记（度控制：每篇总次数/同篇冷却/复核冷却） ─── */
     _roundGrowing: async function (foundNotes) {
       var self = this;
       var config = await self._trendConfig();
+      /* 2026-11-09 老板定：这一行不设「每轮最多处理」——挑到多少篇就跑多少篇 */
+      config.maxPerRound = 0;
       // 等点赞采样落库 → 挑"增长中"的笔记
       try { if (window.NoteTrend) await window.NoteTrend.flushSamples(); } catch (_) {}
       // ★ 只从"当前这轮搜索结果"里挑：用本轮 DOM 笔记的 noteId 作为候选池，
@@ -1054,17 +1238,7 @@
       // 逐篇打开（追涨复核：无视已灌水标记）→ 等 AI → 发送 → 返回
       for (var pi = 0; pi < picked.length; pi++) {
         await self._checkStop();
-        if (self._guardStop) break;   // 🛡 总账拦下（额度用完/时段外）→ 整轮收队，上层记欠账
-        // ★ 节奏控制每日门禁：达到即停下（队列执行器据此把这一项记欠账，下次接着跑）
-        var _sch = await _awSchedule();
-        var _dMax = Number(_sch.dailyMax) || 0;
-        var _used = await _awDailyUsed();
-        if (_dMax > 0 && _used >= _dMax) {
-          self._capHit = true;
-          self._capKind = 'daily';
-          botLog('⏹ 已达每日评论上限 ' + _dMax + ' 条（今天已发 ' + _used + '），本轮停止', 'warn');
-          break;
-        }
+        if (self._guardStop) break;   // 🛡 总账拦下 → 整轮收队，上层记欠账（额度已删，只留兜底）
         var note = picked[pi];
         var nid = note.noteId || '';
         // ★ 用当前搜索结果里的实时标题/链接/索引定位（趋势库里的历史标题可能与卡片文字有细微差异）
@@ -1085,7 +1259,7 @@
             var wRes = await self._waterCurrentNote(title, null, nid);
             var sent = wRes ? wRes.count : 0;
             if (sent > 0) {
-              await _awDailyBump(sent); // ★ 节奏控制：已发条数计入每日上限
+              await _awDailyBump(sent); // ★ 只记账：今天发了多少条（不再设每日上限）
               self._stats.comments += sent; // ★ 队列项汇总：这一项评论了几条
               // ★ 笔记级明细：✅ 已完成 里折叠展示；id 让工作台笔记列表能精确标出「队列跑过没」
               self._stats.notes.push({ id: nid || '', t: title, s: sent });
@@ -1189,7 +1363,8 @@
       //   避免在刚 reload / 还没渲染的搜索页上立刻开下一篇 → “未定位到笔记”
       var tabId = self.waterTabId || null;
       var reloaded = false;
-      var deadline = Date.now() + 12000;
+      var backStart = Date.now();
+      var deadline = backStart + 15000;
       var ready = false;
       while (Date.now() < deadline) {
         var curl = '';
@@ -1202,8 +1377,10 @@
           // 已在搜索页：确认笔记卡片已渲染
           var cnt = await chrome.tabs.sendMessage(tabId, { action: 'countSearchNotes' }).catch(function () { return { count: 0 }; });
           if (cnt && cnt.count > 0) { ready = true; break; }
-        } else if (!reloaded && tabId) {
-          // 未在搜索页（可能退回首页）→ 兜底 reload 到搜索结果页，并置标记等待渲染
+        } else if (!reloaded && tabId && Date.now() - backStart > 7000) {
+          // ★ 先给「浏览器返回」7 秒：返回是 SPA 跳转，头一两秒人还在笔记页是正常的。
+          //   以前第一轮轮询就强刷搜索页，等于每开一篇就把结果页重载一次（排序丢了、顺序也变了），
+          //   后面的笔记全对不上——这才是「页面明明有、却说没有这篇」的主凶（2026-11-05 实锤）。
           reloaded = true;
           try { chrome.tabs.update(tabId, { url: '/search_result?keyword=' + encodeURIComponent(kw) + '&source=web_search_result_note' }); } catch (_) {}
         }
@@ -1254,13 +1431,14 @@
         var lbl = item.label || item.k;
         botLog('👤 进「' + lbl + '」的主页，扒 ' + card + '（盯人走主页，不搜名字）...', 'info');
         var a = null;
+        var at0 = Date.now();
         try { a = await window._useAcct(item.k, item.scenario, item.label || ''); } catch (e) { a = { ok: false, error: (e && e.message) || String(e) }; }
         if (!a || !a.ok) {
           var aem = (a && a.error) || '主页没打开';
           self._qErr = /取消盯|已不在/.test(aem) ? { kind: 'drop', msg: aem } : { kind: 'hold', msg: aem };
           return null;
         }
-        return await self._awaitSearchResults();
+        return await self._awaitSearchResults(item, at0);
       }
       if (typeof window._useKw !== 'function') { self._qErr = { kind: 'hold', msg: '前台搜索入口未就绪（重开弹窗再试）' }; return null; }
       // 词在启用列表里的下标：与 searchNotes 读的是同一份 auto_water_config.keywords（词池＝唯一真源）
@@ -1271,6 +1449,7 @@
       botLog('🔍 搜「' + item.k + '」的 ' + card + (item.passLabel ? ' · ' + item.passLabel : '') +
         '（只跑这一搜，不顺延到别的词/别的筛选）...', 'info');
       var r = null;
+      var t0 = Date.now();
       try { r = await window._useKw(idx, item.scenario, item.passId); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
       if (!r || !r.ok) {
         var em = (r && r.error) || '搜索没起来';
@@ -1278,45 +1457,112 @@
         self._qErr = /没勾|不在启用词|还没设城市/.test(em) ? { kind: 'drop', msg: em } : { kind: 'hold', msg: em };
         return null;
       }
-      return await self._awaitSearchResults();
+      return await self._awaitSearchResults(item, t0);
     },
 
-    /* 点完搜索 → 等「搜索中」→ 结果面板 → 笔记列表（等多久按本词有几个搜索动作放宽）；超时返回 null */
-    _awaitSearchResults: async function () {
+    /* 点完搜索 → 等这一轮搜索「真跑完」→ 核对界面名单确实是这一轮的结果 → 返回笔记列表
+       等多久按本词有几个搜索动作放宽；超时或名单对不上都返回 null（这一项记欠账，不硬跑） */
+    _awaitSearchResults: async function (item, startedBefore) {
       var self = this;
       await self._checkStop();
+      item = item || {};
+      var wantKw = (!item.acct && item.k) ? String(item.k) : '';
+      var t0 = Number(startedBefore) || Date.now();
       var planTotal = 1;
       try {
         var _st = await new Promise(function (res) { chrome.storage.local.get('auto_water_state', res); });
         planTotal = Number(((_st['auto_water_state'] || {}).searchState || {}).planTotal) || 1;
       } catch (_) {}
-      var searchWaitMs = planTotal > 1 ? (45000 + 30000 * (planTotal - 1)) : 45000;
+      /* ★ 等的是「后台把这一轮搜完」，不是「面板亮没亮」：面板会沿用上一次的状态，等它等于白等。
+         换词 + 核词 + 点排序都要时间，BASE 给到 60 秒；同一个词的多个搜索动作再加。 */
+      var searchWaitMs = 60000 + 30000 * (Math.max(1, planTotal) - 1);
       if (planTotal > 1) botLog('  → 本词 ' + planTotal + ' 个搜索动作各搜一遍（等结果上限 ' + Math.round(searchWaitMs / 1000) + 's）', 'info');
-      try {
-        // ★ 先等进入"搜索中"态：结果面板与 #noteList 里的旧 .note-item 只是 display:none 没销毁，
-        //   不等就取会拿到上一次搜索的旧列表
-        await waitPanel('panelSearching', 45000);
-        botLog('  → 已在搜索中', 'info');
-        await waitPanel('panelResults', searchWaitMs);
-        botLog('  → 搜索结果面板已激活', 'success');
-        await waitElement('#noteList .note-item', searchWaitMs);
-        var foundNotes = $$('#noteList .note-item');
-        botLog('  ✅ 搜索完成，找到 ' + foundNotes.length + ' 篇笔记', 'success');
+      botLog('  → 等这一轮搜索真跑完（最多 ' + Math.round(searchWaitMs / 1000) + ' 秒）…', 'info');
+
+      var st = null;
+      var lastSs = null;
+      var deadline = Date.now() + searchWaitMs;
+      while (Date.now() < deadline) {
+        await self._checkStop();
+        st = null;
         try {
-          var _titles = foundNotes.slice(0, 5).map(function (n) {
-            var a = n.querySelector('.note-title a');
-            return (a ? a.textContent : '').trim().slice(0, 20) || '(无标题/noteId=' + (n.dataset.noteId || '').slice(0, 8) + ')';
-          });
-          botLog('  📋 [诊断] 前5篇：' + _titles.join(' / '), 'info');
+          var raw = await new Promise(function (res) { chrome.storage.local.get('auto_water_state', res); });
+          st = raw['auto_water_state'] || null;
         } catch (_) {}
-        // 等搜索结果页稳定：列表可能还在滚动加载、SPA 路由可能还没绑定完成，立刻点笔记常被吞
+        if (st && !st.error) {
+          lastSs = st.searchState || null;
+          /* ★ 这一轮一跑完就收手——不再为「词对不上」死等到超时；词不对当场说清两个词 */
+          if (_searchDoneThisRound(st.searchState, t0)) {
+            var _gotKw = String((st.searchState || {}).currentKeyword || '');
+            if (wantKw && _gotKw && _gotKw !== wantKw) {
+              var _mm = '这一行要搜「' + wantKw + '」，后台实际跑的是「' + _gotKw + '」——对不上，先不跑';
+              botLog('🔴 ' + _mm, 'error');
+              self._qErr = { kind: 'hold', msg: _mm };
+              return null;
+            }
+            break;
+          }
+        }
+        st = null;
+        await sleep(700);
+      }
+      if (!st) {
+        /* 日志要跟页面对得上：把后台最后报的词/进度、以及小红书页现在的网址一起带出来 */
+        var _info = '';
+        try {
+          if (lastSs) {
+            _info = ' · 后台词「' + (lastSs.currentKeyword || '—') + '」第 ' +
+              ((Number(lastSs.planIdx) || 0) + 1) + '/' + (Number(lastSs.planTotal) || 1) + ' 搜' +
+              (lastSs.searching ? '·还在搜' : '·已跑完');
+          }
+        } catch (_) {}
+        try {
+          var _tabs = await new Promise(function (res) { chrome.tabs.query({ url: '*://www.xiaohongshu.com/*' }, res); });
+          if (_tabs && _tabs[0] && _tabs[0].url) _info += ' · 页面：' + String(_tabs[0].url).slice(0, 120);
+        } catch (_) {}
+        var tmo = '搜索超时（' + Math.round(searchWaitMs / 1000) + 's）' + _info;
+        botLog('❌ ' + tmo + '，这一项先不算跑过', 'error');
+        self._qErr = { kind: 'hold', msg: tmo };
+        return null;
+      }
+
+      var ss2 = st.searchState || {};
+      var wantIds = (ss2.foundNotes || []).map(function (n) { return String((n && n.noteId) || ''); }).filter(Boolean);
+      if (!wantIds.length) {
+        var _pe = Number(ss2.pageErrors) || 0, _po = Number(ss2.pageOk) || 0;
+        /* 搜了但一篇没出来、而且有错误 → 当没跑成，留欠账；页面正常只是真没结果 → 这一项算跑完（0 篇） */
+        if (_pe > 0 && _po === 0) {
+          var _bad0 = '这一轮搜索没成功（换词/排序没过关），等下一轮再跑';
+          botLog('⚠️ ' + _bad0, 'warn');
+          self._qErr = { kind: 'hold', msg: _bad0 };
+          return null;
+        }
+        botLog('  ⚠️ 这一轮没搜到笔记（0 篇）', 'warn');
+        return [];
+      }
+      try {
+        await waitElement('#noteList .note-item', 15000);
+        var items = $$('#noteList .note-item');
+        var domIds = items.map(function (li) { return String(li.dataset.noteId || ''); }).filter(Boolean);
+        var hit = _listStateOverlap(domIds, wantIds);
+        /* ★ 界面上这串名单必须和这一轮搜出来的结果对得上；对不上就整项不跑（不再拿旧名单去点新页面） */
+        if (wantIds.length && (!domIds.length || hit === 0)) {
+          var bad = '这一轮的名单和搜索结果对不上（界面 ' + domIds.length + ' 篇 / 结果 ' + wantIds.length + ' 篇），先不跑，等下一轮';
+          botLog('🔴 ' + bad, 'error');
+          self._qErr = { kind: 'hold', msg: bad };
+          return null;
+        }
+        var _titles = items.slice(0, 3).map(function (n) {
+          var a = n.querySelector('.note-title a');
+          return ((a ? a.textContent : '') || '').trim().slice(0, 16) || '(无标题)';
+        });
+        botLog('  ✅ 搜索完成，这一轮名单 ' + items.length + ' 篇（已核对对上）| 前3篇：' + _titles.join(' / '), 'success');
         botLog('  → 等待搜索结果页稳定（2 秒）...', 'info');
         await sleep(2000);
-        return foundNotes;
+        return items;
       } catch (e) {
-        var tmo = '搜索超时（' + Math.round(searchWaitMs / 1000) + 's）';
-        botLog('❌ ' + tmo + '，请检查搜索是否正常', 'error');
-        self._qErr = { kind: 'hold', msg: tmo };
+        botLog('🔴 这一轮的结果没在页面上出现，先不跑', 'error');
+        self._qErr = { kind: 'hold', msg: '搜索结果没渲染出来' };
         return null;
       }
     },
@@ -1328,8 +1574,13 @@
      */
     _openNote: async function (note, opts) {
       opts = opts || {};
+      // 每篇重新认人：默认还是队列这一格的口径，popup 判出大V/竞对后会在 window.__noteReview 里改
+      this._noteScenario = this._curScenario || '';
+      this._noteReview = null;
+      /* 上一篇判出的大V/竞对不能留给下一篇：每开一篇先把口径和结论清回这一格原来的玩法 */
+      try { window.__acqCurScenario = this._curScenario || ''; window.__noteReview = null; } catch (_) {}
       try {
-        // 🛡 账号安全：打开笔记＝总账「打开浏览」一笔；额度用完 / 静默等 → 不开（上层据 _guardStop 收队记欠账）
+        // 🛡 账号安全：打开笔记＝总账「打开浏览」一笔；被拦下 → 不开（上层据 _guardStop 收队记欠账）
         if (typeof AccountGuard !== 'undefined') {
           var _g = await AccountGuard.decide('open', 1);
           if (!_g.ok) {
@@ -1418,6 +1669,21 @@
       });
     },
 
+    /* ─── 页面脚本还在不在：不在就补装一份（扩展重载、整页刷新会把上一份冲掉）。
+       返回 true＝页面这头确实能回话 ─── */
+    _ensureContentScript: async function (tabId) {
+      var ping = async function () {
+        try {
+          var r = await chrome.tabs.sendMessage(tabId, { action: 'checkSearchReady' });
+          return !!r;
+        } catch (_) { return false; }
+      };
+      if (await ping()) return true;
+      try { await chrome.scripting.executeScript({ target: { tabId: tabId }, files: ['content.js'] }); } catch (_) {}
+      await sleep(900);
+      return await ping();
+    },
+
     /* ─── 「我的账号名」（设置里维护）：防把自己刚发的评论当成商机再回一遍。
      *   读一次缓存 60s，不每条评论都问一次 background。 ─── */
     _myNames: async function () {
@@ -1432,11 +1698,18 @@
     /* ─── 一级评论：按跑法表在「笔记本身」下发一条评论（最新=抢位 / TOP=活水 / 本地=地域信任 /
      *   求助=作者侧 / 高V=借势）。评论内容走截流话术库（口径＝当前类型），属地用扫描配置里的城市兜底。
      *   返回 { count, reason }：1=发出去了，0=没发出去（reason 里带原因） ─── */
-    _postNoteComment: async function (noteTitle, noteId, pb) {
+    _postNoteComment: async function (noteTitle, noteId, pb, opts) {
       var self = this;
+      opts = opts || {};
       var tId = self.waterTabId || 0;
       if (!tId) return { count: 0, reason: 'failed', error: '没绑定灌水标签页' };
-      var sc = self._curScenario || 'latest';
+      /* 2026-11-05：点开笔记后整页刷新会把页面脚本冲掉，评论就发不出去（报「Receiving end does not exist」）。
+         发之前先确页面这头能回话，不在就补装一份。 */
+      if (!(await self._ensureContentScript(tId))) {
+        botLog('  ⚠️ 详情页脚本没接上（补装后仍没回话），这条评论可能发不出去', 'warn');
+      }
+      // 整篇改过的口径（大V/竞对认人）优先：评论生成、属地、话术都按这个场景走
+      var sc = opts.scenario || self._noteScenario || self._curScenario || 'latest';
       var label = (typeof drainPlaybookLabel === 'function') ? drainPlaybookLabel(sc) : sc;
 
       // ① 等详情页就绪（评论区/回复框出现才动手，最多 12s；超时也试一把，别把偶发慢页当失败）
@@ -1458,13 +1731,27 @@
       try { var c = await drainGetScanCfg(); cfgCity = String(((c || {}).city) || '').trim(); } catch (_) {}
       var nMeta = {};
       try { if (typeof drainReadTabMetrics === 'function') nMeta = (await drainReadTabMetrics(tId)) || {}; } catch (_) {}
+      /* 2026-11-10：判这篇的那次 AI 请求已经顺手写好评论了，这里直接用，不再单独烧一次；
+         没带回来（AI 没回来/老包）才退回单独生成。 */
+      var pre = (opts && opts.noteReview) || null;
+      var preComment = '';
+      if (pre && !pre.fallback && (pre.verdict === 'grab' || pre.verdict === 'worth')) {
+        preComment = String(pre.comment || '').trim();
+        if (preComment && typeof drainLooksMetaText === 'function' && drainLooksMetaText(preComment)) preComment = '';
+      }
       var g = null;
       try {
-        g = await sendMsg('drainComment', {
-          scenario: sc, noteTitle: noteTitle || nMeta.title || '', noteContent: nMeta.content || '', noteAuthor: nMeta.author || '',
-          keyword: self._curKw || '', city: cfgCity, region: '',
-          painText: '',
-        }, 60000);
+        g = preComment
+          ? { ok: true, comment: preComment }
+          : await sendMsg('drainComment', {
+            scenario: sc, noteTitle: noteTitle || nMeta.title || '', noteContent: nMeta.content || '', noteAuthor: nMeta.author || '',
+            keyword: self._curKw || '', city: cfgCity, region: '',
+            painText: '',
+            /* 笔记类型表判出的动作 / 提店档（2026-11-12）：只在这篇真的判出来了才传，没传＝老口径 */
+            store: (opts && opts.store) || '',
+            act: (opts && opts.act) || '',
+          }, 60000);
+        if (preComment) botLog('  💬 用「判这篇」同一次请求写好的那句评论（省一次 AI）', 'info');
       } catch (e) { g = { ok: false, error: (e && e.message) || String(e) }; }
       // ★ 不适合就不评：AI 自己判断这篇（或博主口吻）不适合露面评论 → 跳过，别硬发一条尴尬评论
       if (g && g.ok && g.skip) {
@@ -1478,7 +1765,7 @@
         return { count: 0, reason: 'failed', error: ge };
       }
 
-      // 🛡 账号安全：评论＝总账「评论+回复」一笔；额度用完/时段外 → 这条不发（上层收队记欠账）
+      // 🛡 账号安全：评论＝总账「评论+回复」一笔；被拦下 → 这条不发（上层收队记欠账）
       try {
         if (typeof AccountGuard !== 'undefined') {
           var _gc = await AccountGuard.decide('comment', 1);
@@ -1497,11 +1784,24 @@
         author: '笔记作者', ci: 0, cTotal: 1, sent: 0,
       });
       var res = null;
-      try {
-        res = await self._tabSend(tId, {
+      var _sendComment = async function () {
+        return await self._tabSend(tId, {
           action: 'sendNoteComment', text: text, title: noteTitle || '', noteId: noteId || '',
         }, 60000);
-      } catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
+      };
+      try { res = await _sendComment(); }
+      catch (e) { res = { success: false, error: (e && e.message) || String(e) }; }
+      /* 页面脚本掉线（整页刷新/扩展重载）→ 补装一份再发一次，别把这一条白扔掉 */
+      if (!res || !res.success) {
+        var _re0 = String((res && res.error) || '');
+        if (/Receiving end|Could not establish|message port|Extension context|页面无响应|内容脚本/i.test(_re0)) {
+          botLog('  🔁 详情页脚本掉线（' + (_re0 || '没回话') + '）→ 补装后重发一次', 'warn');
+          try { await chrome.scripting.executeScript({ target: { tabId: tId }, files: ['content.js'] }); } catch (_) {}
+          await sleep(1200);
+          try { res = await _sendComment(); }
+          catch (e2) { res = { success: false, error: (e2 && e2.message) || String(e2) }; }
+        }
+      }
       if (res && res.success) {
         try { if (typeof AccountGuard !== 'undefined') await AccountGuard.spend('comment', 1); } catch (_) {}
         botLog('  ✅ 已发一级评论（' + label + '）：' + text.slice(0, 60) + (text.length > 60 ? '…' : ''), 'success');
@@ -1585,28 +1885,136 @@
       // ★ 跑法表（按笔记类型的口径分派；sc 为空=老入口，按原样走"评论区找人+回复"）
       var sc = self._curScenario || '';
       var pb = (sc && typeof drainPlaybookOf === 'function') ? drainPlaybookOf(sc) : null;
+      // ★ 「玩法配置」里这一玩法的评论策略（2026-11-04）：没配过就跑现网那套（评＋回评、每篇 3 人、收人）
+      var plan = null;
+      var cfgScan0 = null;
+      try {
+        if (sc && typeof drainGetScanCfg === 'function' && typeof drainPbPlan === 'function') {
+          cfgScan0 = await drainGetScanCfg();
+          plan = drainPbPlan(cfgScan0, sc);
+        }
+      } catch (_) {}
+      // ★ 2026-11-05 代码配套自检：配置读出来了、但「评论策略」读不出来，就是新版判断配了旧版读法。
+      //   这种错配会把每一篇都悄悄判成「不评笔记、只收人」，一条报错都没有（11-05 那次就是它）。
+      //   宁可回落玩法表默认跑法，也要红字喊出来。
+      if (plan && (typeof plan.mode !== 'string' || !plan.mode)) {
+        botLog('  ❌ 代码没配套：排班配置里读不出「评论策略」（该字段缺失）→ 本篇改按玩法表默认跑法执行，请重新安装执行器', 'warn');
+        plan = null;
+      }
       var ncCount = 0;   // 「评笔记本身」那一条的成绩（0/1）
-      var replyCommenters = !pb || pb.send === 'both';   // 六个玩法现在全走 both（评笔记＋回评论区）；只有同行／竞对不逐条回复
+      var postNote = pb ? (plan ? (plan.mode === 'both' || plan.mode === 'note') : pb.send !== 'none') : true;
+      var replyCommenters = pb ? (plan ? (plan.mode === 'both' || plan.mode === 'reply') : pb.send === 'both') : true;
       var scanCommenters = !pb || pb.find === 'commenters';   // 本地不扫评论区，其余类型都扫
+      var collectOn = plan ? plan.collect !== false : true;
+      var modeText = plan
+        ? (({ note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' })[plan.mode] || ('未知（' + plan.mode + '）'))
+        : (pb ? ('玩法表默认：' + (({ both: '评笔记＋回评论区', none: '只埋伏', reply: '只回评论区' })[pb.send] || pb.send)) : '老入口：评＋回评');
+      botLog('  ⚙️ 这篇的评论策略：' + modeText
+        + ((plan && Number(plan.cap) >= 1) ? '（每篇最多回 ' + plan.cap + ' 人）' : ''), 'info');
 
-      // ① 对笔记本身发一条一级评论（最新=抢位 / TOP=活水 / 本地 / 高V=借势 / 求助=对楼主）
-      if (pb && pb.send !== 'none') {
-        botLog('  ' + pb.icon + ' 跑法「' + pb.name + '」：' + pb.tip, 'info');
-        var ncRes = await self._postNoteComment(noteTitle, noteId, pb);
-        ncCount = (ncRes && ncRes.count) || 0;
-        if (!ncCount) {
-          // 🛡 总账拦下（额度用完/时段外）：别再等 AI 分析，直接收队
-          if (ncRes && ncRes.reason === 'guard') return { count: 0, reason: 'guard', error: ncRes.error || '' };
-          var ncWhy = (ncRes && (ncRes.error || ncRes.reason)) || '未知';
-          if (!scanCommenters) return { count: 0, reason: (ncRes && ncRes.reason === 'skip') ? 'skip' : 'failed', error: ncWhy };
-          botLog('  ⏭ 一级评论没发出去（' + ncWhy + '），继续按评论区找商机...', 'warn');
+      /* ─── 每篇留痕（2026-11-05）：正文 + 读到的评论 + 本篇怎么决定的 ───
+         老板要能回看「这一篇写了什么、评论里都有谁、我为什么没评」，所以每一篇、每一个出口都留痕，不留哑巴分支。 */
+      var snap = {
+        noteId: noteId || '',
+        title: noteTitle || '',
+        scenario: sc || '',
+        mode: plan ? plan.mode : (pb ? 'pb默认' : '老入口'),
+        body: '',
+        bodyLen: 0,
+        totalComments: 0,
+        comments: [],
+        hotNames: [],
+        readErr: '',
+        decide: '',
+        reason: '',
+        sent: 0,
+        noteComment: '',   // 在笔记本身下面发的那一条（老板要回看「评了啥」）
+        replies: [],       // 回了评论区的谁、回了什么
+        result: '',
+        ts: Date.now()
+      };
+      function snapClip(s, n) {
+        s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+        return s.length > n ? s.slice(0, n) + '…' : s;
+      }
+      async function readNoteSnapshot() {
+        var tId = self.waterTabId || 0;
+        if (!tId) snap.readErr = '找不到笔记页面';
+        else try {
+          var r = await self._tabSend(tId, { action: 'extract' }, 8000);
+          if (r && r._notNotePage) snap.readErr = '当前页不是笔记详情页';
+          else if (!r) snap.readErr = '页面没回内容';
+          else {
+            snap.title = r.title || snap.title;
+            var body = String(r.description || '');
+            snap.bodyLen = body.length;
+            snap.body = body.slice(0, 4000);
+            var cs = Array.isArray(r.comments) ? r.comments : [];
+            snap.totalComments = cs.length;
+            snap.comments = cs.slice(0, 10).map(function (c) {
+              return {
+                a: String((c && c.author) || '用户').slice(0, 24),
+                t: String((c && c.content) || '').slice(0, 120),
+                l: String((c && c.location) || ''),
+                rp: String((c && c.replyTo) || '')
+              };
+            });
+          }
+        } catch (e) {
+          snap.readErr = (e && e.message) ? e.message : String(e);
+        }
+        // 正文读不到：退一步拿页面元信息（og:description）补上，至少让老板知道这篇讲什么
+        if (!snap.body) {
+          try {
+            if (tId && typeof drainReadTabMetrics === 'function') {
+              var m = await drainReadTabMetrics(tId);
+              if (m && m.content) { snap.bodyLen = String(m.content).length; snap.body = String(m.content).slice(0, 4000); }
+              if (m && m.title && !snap.title) snap.title = m.title;
+            }
+          } catch (_) {}
+        }
+        // 📝 正文摘要（日志里只放前 150 字，全文另存进快照）
+        if (snap.body) {
+          botLog('  📝 《' + snapClip(snap.title, 30) + '》正文 ' + snap.bodyLen + ' 字：' + snapClip(snap.body, 150), 'info');
+        } else {
+          botLog('  📝 正文没读到' + (snap.readErr ? '（' + snap.readErr + '）' : '') + '，这篇只能按标题《' + snapClip(snap.title, 30) + '》判断', 'warn');
+        }
+        // 💬 评论前 10 条（昵称 / 属地 / 40 字；判成有商机的标 🔥）
+        var hot = {};
+        (snap.hotNames || []).forEach(function (n) { var k = String(n).trim(); if (k) hot[k] = 1; });
+        if (snap.comments.length) {
+          var hotN = 0;
+          botLog('  💬 读到 ' + snap.totalComments + ' 条评论，列前 ' + snap.comments.length + ' 条：', 'info');
+          snap.comments.forEach(function (c, i) {
+            c.hot = !!hot[String(c.a).trim()];
+            if (c.hot) hotN++;
+            botLog('     ' + (c.hot ? '🔥 ' : '') + (i + 1) + '. @' + c.a + (c.l ? '（' + c.l + '）' : '') + '：' + snapClip(c.t, 40), c.hot ? 'success' : 'info');
+          });
+          if (!hotN && snap.hotNames.length) {
+            botLog('  ⚠️ 扫出来的人在读到的前 ' + snap.comments.length + ' 条里没对上号（可能更靠后），不影响发送', 'warn');
+          }
+        } else {
+          botLog('  💬 评论区一条都没读到' + (snap.readErr ? '（' + snap.readErr + '）' : '') + '——多半是评论还没加载出来', 'warn');
         }
       }
-      // ② 竞对（埋伏）：一个字都不发，扫出来的商机直接进清单待私信
-      if (pb && pb.send === 'none') {
-        botLog('  ' + pb.icon + ' 跑法「' + pb.name + '」：' + pb.tip, 'info');
+      // 每个出口都走它：读快照 → 打一行「本篇决定」→ 上报服务端（供网页「这一趟的记录」展开看）
+      function finishSnap(res, decide, reason) {
+        return (async function () {
+          res = res || {};
+          await readNoteSnapshot();
+          snap.decide = decide || '';
+          snap.reason = reason || '';
+          snap.sent = res.count || 0;
+          snap.result = res.reason || '';
+          botLog('  🖊 本篇决定：' + snap.decide + (snap.reason ? '（原因：' + snap.reason + '）' : ''), snap.sent > 0 ? 'success' : 'info');
+          try { chrome.runtime.sendMessage({ type: 'ex.notesnap', snap: snap }); } catch (_) {}
+          return res;
+        })();
       }
-      botLog('  ⏳ 等待 AI 分析（约 15~90 秒）...期间页面保持轻微划动（防后台节流），AI 完成后自动停止', 'info');
+
+      // 🧠 先挖后评（2026-11-08）：不再先评笔记再挖。先等这一篇的「商机挖掘＋笔记结论」回来，
+      //   再按结论决定 抢首评 / 评一句 / 回评论区 / 只收人 / 跳过（见下方 decide）。
+      botLog('  ⏳ 先等这一篇的商机挖掘＋笔记结论（约 15~90 秒）...期间页面保持轻微划动（防后台节流），AI 完成后自动停止', 'info');
       var nudgeStopped = false;
       var nudgeTimer = setInterval(function () {
         if (nudgeStopped) return;
@@ -1657,9 +2065,10 @@
       //   否则它们的 MutationObserver / interval 会滞留、跨多篇笔记累积成资源泄漏。
       var sendArm = waitElement('#mainContent .send-btn', 0);
       var wateredArm = waitWateredEl ? waitClass(waitWateredEl, 'watered', 0) : null;
+      var _aiSignalInfo = null;   // popup 广播回来的真实原因（code/label），「不评」那行照它写
       var races = [
         sendArm.then(function () { return 'sendbtn'; }),
-        aiSignalPromise.then(function (ok) { return ok ? 'sendbtn' : 'empty'; }),
+        aiSignalPromise.then(function (r) { _aiSignalInfo = r; return (r && r.ok) ? 'sendbtn' : 'empty'; }),
         deadlinePromise
       ];
       if (wateredArm) races.push(wateredArm.then(function () { return 'watered'; }));
@@ -1679,32 +2088,187 @@
 
       if (sendWait === 'watered') {
         botLog('  → 笔记已判定已灌水（已有我的评论），跳过 AI 分析', 'info');
-        return { count: ncCount, reason: ncCount > 0 ? 'sent' : 'watered' };
-      }
-      if (sendWait !== 'sendbtn') {
-        botLog('  → 无潜在顾客（' + (sendWait === 'empty' ? 'AI 判定无商机/评论不足' : '180s 超时') + '），返回列表', 'info');
-        return { count: ncCount, reason: ncCount > 0 ? 'sent' : (sendWait === 'empty' ? 'empty' : 'timeout') };
+        return await finishSnap({ count: ncCount, reason: ncCount > 0 ? 'sent' : 'watered' }, '不评：这一篇已经有我的评论', '补灌会重复，跳过');
       }
 
-      var sendBtns = $$('#mainContent .send-btn:not(.watered)');
-      if (!sendBtns || sendBtns.length === 0) {
-        botLog('  → 笔记 "' + noteTitle + '" 无待发送评论，返回列表', 'info');
-        return { count: ncCount, reason: ncCount > 0 ? 'sent' : 'nobtns' };
+      /* ── 先挖后评：收 popup 带回来的「笔记层结论」，再决定这一篇怎么做 ──
+         ① 作者在「👤 盯的账号」名单里（按主页 id 认，认不上再看昵称）→ 整篇改按大V / 竞对口径，
+            不管这篇是从哪个玩法搜出来的；
+         ② 「刚起来」只认发布时间＋赞＋评论三条（发布时间读不到就不判），
+         ③ AI 判值不值得露面；AI 没回来就保留玩法原样，但绝不判抢首评；
+         ④ 玩法里配的评论策略是上限：只能更保守，不能越过它。 */
+      var review = null;
+      try {
+        var rv0 = window.__noteReview || null;
+        if (rv0 && rv0.verdict && (!noteId || !rv0.noteId || rv0.noteId === noteId)) review = rv0;
+      } catch (_) {}
+      if (!review && _aiSignalInfo && _aiSignalInfo.noteReview) review = _aiSignalInfo.noteReview;
+
+      var scEff = (review && review.matched) ? review.matched : ((review && review.strategy) || window.__acqCurScenario || sc);
+      var pbEff = pb;
+      var planEff = plan;
+      if (scEff !== sc) {
+        try { pbEff = drainPlaybookOf(scEff); } catch (_) {}
+        try { planEff = drainPbPlan(cfgScan0, scEff); } catch (_) {}
       }
-      // ★ 只收人不回复：只有同行／竞对（埋伏，一个字都不评论）走这条，其余玩法评完笔记接着回评论区
-      if (!replyCommenters) {
-        var pbNone = !!(pb && pb.send === 'none');
+      /* 笔记类型表（2026-11-12）：这一篇判成哪几类，就按表取动作 / 提店 / 收人。
+         渠道排班那套动作只当老包 / 判不出类型时的兜底；判出来了就以表为准。 */
+      var _typeMode = (review && review.typeMode) || '';
+      if (_typeMode) {
+        planEff = Object.assign({}, planEff || {}, {
+          mode: _typeMode === 'rate' ? (review.typeAct || 'note') : (_typeMode === 'silent' ? 'people' : ''),
+          store: (_typeMode === 'rate' && review.typeStore) ? review.typeStore : ((planEff && planEff.store) || 'none'),
+          collect: _typeMode === 'block' ? false : (review.typeCollect !== false),
+        });
+        botLog('  📝 按笔记类型表跑：' + (review.mainType || '普通帖')
+          + (_typeMode === 'rate' ? ('｜' + ({ note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' }[planEff.mode] || planEff.mode)
+            + '｜提店「' + ({ none: '不提', identity: '只提身份', case: '讲案例', store: '可报店名' }[planEff.store] || planEff.store) + '」'
+            + '｜' + (planEff.collect ? '收人' : '不收人'))
+            : (_typeMode === 'silent' ? '｜不留言 · 只收人' : '｜完全不碰')), 'info');
+      }
+      self._noteScenario = scEff;
+      self._noteReview = review;
+      snap.scenario = scEff || '';
+      snap.mode = planEff ? planEff.mode : (pbEff ? 'pb默认' : '老入口');
+      /* 换了口径（或按类型表改过动作），回不回评论区 / 收不收人也要重算 */
+      replyCommenters = planEff ? (planEff.mode === 'both' || planEff.mode === 'reply') : (pbEff ? pbEff.send === 'both' : true);
+      collectOn = planEff ? planEff.collect !== false : true;
+      if (review && review.strategy && !review.matched && scEff !== sc) {
+        var _srcPbName = ((typeof drainPlaybookOf === 'function' && (drainPlaybookOf(sc) || {}).name) || sc);
+        var _effPbName = ((typeof drainPlaybookOf === 'function' && (drainPlaybookOf(scEff) || {}).name) || scEff);
+        botLog('  🔀 这篇按「' + _effPbName + '」的口径走（次数仍记在「' + _srcPbName + '」）', 'info');
+      }
+
+      var sendBtns = (sendWait === 'sendbtn') ? $$('#mainContent .send-btn:not(.watered)') : [];
+      var hasProsp = !!(sendBtns && sendBtns.length);
+      var fresh = !!(review && review.fresh);
+      var fallback = !review || review.fallback !== false;
+      var dec = null;
+      try {
+        dec = drainDecideNote({
+          matched: (review && review.matched) || '',
+          verdict: (review && review.verdict) || '',
+          fresh: fresh,
+          mode: planEff ? planEff.mode : '',
+          typeMode: _typeMode,
+          hasProspects: hasProsp,
+          collect: planEff ? planEff.collect !== false : true,
+          fallback: fallback,
+          blockReason: (review && (review.block || review.reason)) || '',
+        });
+      } catch (_) {}
+      if (!dec) {
+        var _allowNote = planEff ? (planEff.mode === 'note' || planEff.mode === 'both') : (pbEff ? pbEff.send !== 'none' : true);
+        dec = { action: _allowNote ? 'comment' : (hasProsp ? 'collect' : 'skip'), text: _allowNote ? '按原玩法评一句' : '只收人', reason: '结论没算出来，按玩法原样处理' };
+      }
+      var reviewText = review
+        ? ('作者=' + ((review.matched === 'highv') ? '大V' : (review.matched === 'rival' ? '竞对' : '普通'))
+          + ' · ' + (review.fresh ? '刚起来' : '不算刚起来')
+          + ' · ' + ({ grab: '值得抢首评', worth: '可以评一句', none: '不值得评', blocked: '不适合露面' }[review.verdict] || (review.verdict || '结论没回来')))
+        : '没有笔记结论（按玩法原样）';
+      snap.noteReview = {
+        matched: (review && review.matched) || '',
+        strategy: (review && review.strategy) || '',
+        noteType: (review && review.noteType) || '',
+        noteTypes: (review && review.noteTypes) || [],
+        mainType: (review && review.mainType) || '',
+        typeMode: _typeMode,
+        typeAct: (review && review.typeAct) || '',
+        typeStore: (review && review.typeStore) || '',
+        verdict: (review && review.verdict) || '',
+        fresh: fresh,
+        freshWhy: (review && review.freshWhy) || '',
+        reason: (review && review.reason) || '',
+        fallback: fallback,
+        action: dec.action,
+        text: dec.text,
+        why: dec.reason || '',
+      };
+      botLog('  🧠 笔记结论：' + reviewText, 'info');
+      botLog('  🧭 本篇怎么做：' + dec.text + (dec.reason ? '（' + dec.reason + '）' : ''), 'info');
+
+      /* ── 评笔记：抢首评 / 评一句 / 大V借势（同一入口，按结论只发一次）── */
+      if (dec.action === 'grab' || dec.action === 'comment') {
+        if (pbEff) botLog('  ' + pbEff.icon + ' 跑法「' + pbEff.name + '」：' + pbEff.tip, 'info');
+        var ncRes = await self._postNoteComment(noteTitle, noteId, pbEff, {
+          scenario: scEff, noteReview: review,
+          /* 判出类型了就按类型表的提店档 / 动作走；退回单独生成评论时也照这档 */
+          store: (review && _typeMode === 'rate' && review.typeStore) || '',
+          act: (review && _typeMode === 'rate' && review.typeAct) || '',
+        });
+        ncCount = (ncRes && ncRes.count) || 0;
+        if (ncRes && ncRes.comment) snap.noteComment = String(ncRes.comment).slice(0, 200);
+        // 🛡 总账拦下：直接收队
+        if (ncRes && ncRes.reason === 'guard') {
+          return await finishSnap({ count: 0, reason: 'guard', error: ncRes.error || '' }, '不评：这一篇先停手', '账号总账拦下：' + (ncRes.error || '账号安全'));
+        }
+        if (!ncCount) botLog('  ⏭ 笔记评论没发出去（' + ((ncRes && (ncRes.error || ncRes.reason)) || '未知') + '）', 'warn');
+      } else if (pbEff && planEff && planEff.mode === 'reply') {
+        botLog('  ' + pbEff.icon + ' 跑法「' + pbEff.name + '」：这一趟只回评论区，不在笔记下面评', 'info');
+      }
+
+      if (dec.action === 'skip') {
+        return await finishSnap(
+          { count: ncCount, reason: ncCount > 0 ? 'sent' : 'skip' },
+          ncCount > 0 ? '只在笔记下评了 1 条，评论区不动' : ('不评：' + (dec.text || '这篇不适合')),
+          dec.reason || reviewText
+        );
+      }
+      if (!hasProsp) {
+        var emptyWhy = sendWait === 'sendbtn'
+          ? '扫描完了，页面没有可发送的评论'
+          : (sendWait === 'empty'
+            ? ((_aiSignalInfo && _aiSignalInfo.label) || 'AI 扫描结束了，但没带原因')
+            : '180 秒没等到 AI 分析结果（页面可能卡住、或根本没进扫描）');
+        botLog('  → 这篇评论区没可发的人：' + emptyWhy, 'info');
+        return await finishSnap(
+          { count: ncCount, reason: ncCount > 0 ? 'sent' : (sendWait === 'empty' ? 'empty' : (sendWait === 'timeout' ? 'timeout' : 'nobtns')) },
+          ncCount > 0 ? '只在笔记下评了 1 条，评论区没回人' : '不评：没找到值得评论的人',
+          emptyWhy
+        );
+      }
+      // ★ 记下「本篇被判成有商机的人」，供快照里给对应评论标 🔥（收人流程会把按钮点掉，所以先记名字）
+      try {
+        snap.hotNames = sendBtns.map(function (b) { return String((b.dataset && b.dataset.author) || ''); }).filter(Boolean);
+      } catch (_) {}
+      // ★ 不逐条回评论区（只评笔记 / 只收人 / 竞对 / 大V）：扫出来的人按「收不收人」决定进不进清单
+      if (dec.action === 'collect' || !replyCommenters) {
+        var pbNone = !!(planEff ? planEff.mode === 'people' : (pbEff && pbEff.send === 'none'));
+        var collectEff = planEff ? planEff.collect !== false : collectOn;
+        // 大V笔记：老口径不主动捞评论区的人（只回接我话的人，popup 已按 replyTo 筛过）；
+        // 按笔记类型表跑时，收不收人以表里那一格为准（2026-11-12）
+        if (scEff === 'highv' && !_typeMode) {
+          return await finishSnap(
+            { count: ncCount, reason: ncCount > 0 ? 'sent' : 'lurk' },
+            ncCount > 0 ? '大V写法：只评了笔记，不主动捞评论区的人' : '不评：大V这篇没露面',
+            reviewText
+          );
+        }
+        if (!collectEff) {
+          botLog('  ⏭ 这个玩法配的是「不收人」：扫到的 ' + sendBtns.length + ' 个人不写入清单', 'info');
+          return await finishSnap({ count: ncCount, reason: ncCount > 0 ? 'sent' : 'lurk' }, '不评：这个玩法配的是「不收人」', '扫到 ' + sendBtns.length + ' 个人，配置决定一个都不收');
+        }
         botLog('  ' + (pbNone ? '🕵️ 发现 ' : '📥 发现 ') + sendBtns.length + ' 个有商机的评论者（'
           + (pbNone ? '只埋伏不评论' : '只收进获客清单，不逐条回复') + '）', 'success');
-        return await self._collectProspects(noteTitle, sendBtns, ncCount);
+        return await finishSnap(
+          await self._collectProspects(noteTitle, sendBtns, ncCount),
+          pbNone ? '不评：只埋伏，把 ' + sendBtns.length + ' 个人收进清单' : '不评：只收人，不逐条回复',
+          '评论策略是「' + (planEff ? planEff.mode : modeText) + '」'
+        );
       }
       botLog('  💬 发现 ' + sendBtns.length + ' 个潜在顾客', 'success');
 
       var sentCount = 0;
+      var capHit = false;
       var toProfile = []; // ★ 收集本篇新入清单的商机，结尾批量跑 AI 画像（获客逻辑）
       var myNames = await self._myNames();   // ★ 防自回复：一级评论刚发出去可能被扫成候选
+      if (planEff && Number(planEff.cap) >= 1 && sendBtns.length > planEff.cap) {
+        botLog('  🎯 这一篇最多回 ' + planEff.cap + ' 个人，超出的只收进清单', 'info');
+      }
       for (var si = 0; si < sendBtns.length; si++) {
         await self._checkStop();
+        // 到数就停：这篇已回够 N 个人（设置里的「每篇回几个人」）
+        if (planEff && Number(planEff.cap) >= 1 && sentCount >= planEff.cap) { capHit = true; break; }
 
         // ★ 自动评论条间发送间隔（手动逐条发送不加此间隔）：
         //   优先用设置里的 batchItemGap 区间随机；未配置时默认 3~8s；自用版(_noDelayApplied) 为 0 零等待
@@ -1751,7 +2315,7 @@
           botLog('  ⏭ @' + author + ' 是自己（我的账号名），跳过', 'info');
           continue;
         }
-        // 🛡 账号安全：每条回复＝总账「评论+回复」一笔；额度用完/时段外 → 本篇停止剩余发送（上层收队记欠账）
+        // 🛡 账号安全：每条回复＝总账「评论+回复」一笔；被拦下 → 本篇停止剩余发送（上层收队记欠账）
         try {
           if (typeof AccountGuard !== 'undefined') {
             var _gr = await AccountGuard.decide('comment', 1);
@@ -1764,7 +2328,7 @@
         } catch (_) {}
         botLog('📤 一键发送给 @' + author + ' (' + (si + 1) + '/' + sendBtns.length + ')', 'info');
         // 💬 评论条队列：本条进度（队列页 + 获客助手页都读这一行；sent 是本篇已发成功的条数）
-        await self._cqLive({ kw: self._curKw, scenario: self._curScenario, title: noteTitle, idx: (self._cqNoteIdx || 0), total: (self._cqNoteTotal || 0), author: author, ci: si + 1, cTotal: sendBtns.length, sent: sentCount });
+        await self._cqLive({ kw: self._curKw, scenario: (self._noteScenario || self._curScenario), title: noteTitle, idx: (self._cqNoteIdx || 0), total: (self._cqNoteTotal || 0), author: author, ci: si + 1, cTotal: sendBtns.length, sent: sentCount });
 
         // 使用 MutationObserver 等待 .watered 类出现；
         // ★ 同时监听 data-send-done（popup 发送成功/失败都会置该标记）——失败时立即推进，不再干等超时
@@ -1801,12 +2365,16 @@
           if (sendBtn.classList.contains('watered')) {
             botLog('  ✅ @' + author + ' 发送成功', 'success');
             sentCount++;
+            try {
+              var _rt = String(sendBtn.dataset.replyText || '').trim();
+              if (_rt && snap.replies.length < 20) snap.replies.push({ a: String(author).slice(0, 24), t: _rt.slice(0, 120) });
+            } catch (_) {}
             try { if (typeof AccountGuard !== 'undefined') await AccountGuard.spend('comment', 1); } catch (_) {}
             // 💬 评论条队列：成功一条 → 刷新"本篇已发 N/M"
-            await self._cqLive({ kw: self._curKw, scenario: self._curScenario, title: noteTitle, idx: (self._cqNoteIdx || 0), total: (self._cqNoteTotal || 0), author: author, ci: si + 1, cTotal: sendBtns.length, sent: sentCount });
-            // ★ 自动把成功发送的商机写入获客清单（去重按 userId）
+            await self._cqLive({ kw: self._curKw, scenario: (self._noteScenario || self._curScenario), title: noteTitle, idx: (self._cqNoteIdx || 0), total: (self._cqNoteTotal || 0), author: author, ci: si + 1, cTotal: sendBtns.length, sent: sentCount });
+            // ★ 自动把成功发送的商机写入获客清单（去重按 userId）；这个玩法配「不收人」就跳过
             //   ★ 非阻塞 + 3秒超时兜底：写入清单绝不许卡住“返回列表”主流程
-            try {
+            if (collectOn) try {
               // ★ 修正 userId 提取：userLink 形如 /user/profile/5f_abc 或 /user/5f_abc。
               //   （旧正则 /user/(\w+) 会错把 "profile" 当 userId，导致所有人并成一条 → 清单只显示一个）
               var uidM = (sendBtn.dataset.userlink || '').match(/\/user\/(?:profile\/)?([\w-]+)/);
@@ -1821,7 +2389,7 @@
                   noteUrl: _curNid ? ('https://www.xiaohongshu.com/explore/' + _curNid) : '',
                   comment: sendBtn.dataset.original || '',
                   userUrl: sendBtn.dataset.userlink || '',
-                  scenario: self._curScenario || '',
+                  scenario: self._noteScenario || self._curScenario || '',
                 },
                 dmStatus: 'sent',
                 dmCount: 1,
@@ -1852,6 +2420,19 @@
         }
       }
 
+      // 到数就停之后：剩下的评论者按「收不收人」处理（只收进清单，不再回复）
+      if (capHit) {
+        var restBtns = $$('#mainContent .send-btn:not(.watered)').filter(function (b) { return !b.dataset.sendDone; });
+        if (!restBtns.length) {
+          botLog('  ✅ 这一篇已回够 ' + planEff.cap + ' 个人，没有剩下的人', 'info');
+        } else if (collectOn) {
+          botLog('  📥 这一篇已回够 ' + planEff.cap + ' 个人，剩下 ' + restBtns.length + ' 个只收进清单', 'info');
+          await self._collectProspects(noteTitle, restBtns, 0);
+        } else {
+          botLog('  ⏭ 这一篇已回够 ' + planEff.cap + ' 个人，剩下 ' + restBtns.length + ' 个（这个玩法不收人，不再处理）', 'info');
+        }
+      }
+
       // ★ AI 获客逻辑：本篇灌完，把新入清单的商机批量跑 AI 画像（意向/需求/人群标签）。
       //   非阻塞 + 超时兜底：AI 慢/没配 key 也不影响返回列表、继续灌水下篇。
       if (toProfile.length > 0) {
@@ -1868,7 +2449,13 @@
         });
       }
 
-      return { count: sentCount + ncCount, reason: (sentCount + ncCount) > 0 ? 'sent' : 'failed' };
+      return await finishSnap(
+        { count: sentCount + ncCount, reason: (sentCount + ncCount) > 0 ? 'sent' : 'failed' },
+        (sentCount + ncCount) > 0
+          ? ('已处理：评论区回了 ' + sentCount + ' 人' + (ncCount ? '，笔记下评了 1 条' : ''))
+          : '没评成：人点完了，但一条都没发出去',
+        (sentCount + ncCount) > 0 ? ('评论策略「' + (planEff ? (({ note: '只评笔记', both: '评笔记＋回评论区', reply: '只回评论区', people: '只收人' })[planEff.mode] || planEff.mode) : modeText) + '」') : '每条都发送失败/被拦下（详见上面的 ⚠️ 行）'
+      );
     },
 
     /* ─── 一项跑完 → 可中断等待下一项（定时轮：把一天的额度摊开跑） ─── */
